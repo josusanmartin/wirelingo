@@ -457,3 +457,81 @@ async def test_i2c_master(dut):
     assert r[0] & 1 == 1
     assert (await spi.read(sim.A_FSET))[0] & 2 == 0, "clock-stretch timeout flag set"
     dut._log.info("i2c log: " + " ".join(eeprom.log))
+
+
+# ------------------------------------------------------------------ USB low speed
+
+USB_DEFS = {"DP": 0, "DM": 1, "F_IN": 0, "F_ACK": 1, "F_EXP": 2}
+USB_LINE = {"J": (0, 1), "K": (1, 0), "0": (0, 0)}
+
+
+async def usb_drive(dut, states):
+    for s in states:
+        dp, dm = USB_LINE[s]
+        EXT.set(0, True, dp)
+        EXT.set(1, True, dm)
+        await ClockCycles(dut.clk, 32)
+    EXT.set(0, False)
+    EXT.set(1, False)
+
+
+async def usb_listen(dut, cycles):
+    trace = []
+    for _ in range(cycles):
+        await RisingEdge(dut.clk)
+        v = int(dut.uio_in.value) & 3
+        trace.append({2: "J", 1: "K", 0: "0"}.get(v, "?"))
+    return trace
+
+
+def usb_decode_trace(trace):
+    from pe import usb
+    k = trace.index("K")
+    states = [trace[j] for j in range(k + 16, len(trace), 32)]
+    return usb.decode(["J"] + states), k
+
+
+@cocotb.test()
+async def test_usb_ls_device(dut):
+    """USB low-speed device side in firmware: SETUP+DATA0 -> ACK, IN -> NAK, IN -> staged DATA1.
+    Two cores (RX on core 0, TX on core 1); bit time = 32 clocks (48 MHz / 1.5 Mbit/s)."""
+    from pe import usb
+    spi = await setup(dut)
+    dut.pull_up.value = 0b10  # D- pull-up: J when idle
+    rx = load_fw("usb_ls_rx", **USB_DEFS)
+    tx = load_fw("usb_ls_tx", **USB_DEFS)
+    await spi.apply(host.pin_owner_writes({0: 1, 1: 1}))
+    await run_program(spi, 0, rx, clkdiv=1 << 8)
+    await run_program(spi, 1, tx, out_pins=(0, 2), clkdiv=1 << 8)
+    await ClockCycles(dut.clk, 100)
+
+    async def drain():
+        st = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
+        n = (st >> 4) & 7
+        if n:
+            await spi.read(sim.core_reg(0, sim.C_FIFO), n, fixed=True)
+
+    # SETUP + DATA0 -> ACK
+    await usb_drive(dut, usb.encode(usb.token(usb.PID_SETUP, 0, 0)))
+    await drain()
+    await usb_drive(dut, usb.encode(usb.data_packet(usb.PID_DATA0, bytes([0x80, 6, 0, 1, 0, 0, 0x40, 0]))))
+    resp, ta = usb_decode_trace(await usb_listen(dut, 1500))
+    assert resp == usb.handshake(usb.PID_ACK), resp
+    assert ta < 7.5 * 32, ta
+    await ClockCycles(dut.clk, 200)
+    await drain()
+    # IN with nothing staged -> NAK
+    await usb_drive(dut, usb.encode(usb.token(usb.PID_IN, 0, 0)))
+    resp, ta = usb_decode_trace(await usb_listen(dut, 1500))
+    assert resp == usb.handshake(usb.PID_NAK), resp
+    await ClockCycles(dut.clk, 200)
+    await drain()
+    # stage DATA1 (first 8 bytes of a device descriptor), IN -> DATA1
+    desc = bytes([0x12, 0x01, 0x10, 0x01, 0x00, 0x00, 0x00, 0x08])
+    pkt = bytes([0x80]) + usb.data_packet(usb.PID_DATA1, desc)
+    words = [int.from_bytes(pkt[i:i + 4].ljust(4, b"\0"), "little") for i in range(0, len(pkt), 4)]
+    await spi.write(sim.core_reg(1, sim.C_FIFO), [8 * len(pkt)] + words, fixed=True)
+    await usb_drive(dut, usb.encode(usb.token(usb.PID_IN, 0, 0)))
+    resp, ta = usb_decode_trace(await usb_listen(dut, 4000))
+    assert resp == usb.data_packet(usb.PID_DATA1, desc), resp
+    assert ta < 7.5 * 32, ta
