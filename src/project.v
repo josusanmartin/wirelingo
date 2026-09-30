@@ -18,8 +18,10 @@
 `define PE_BANK_AW 8
 `endif
 // Number of cores and IMEM banks in this build (the ISA allows up to 4 of each).
+// The IHP 6x4 tapeout has 2 of each: 4 cores don't route on this tile's single
+// horizontal routing layer (docs/physical.md).
 `ifndef PE_NCORES
-`define PE_NCORES 4
+`define PE_NCORES 2
 `endif
 `ifndef PE_NBANKS
 `define PE_NBANKS `PE_NCORES

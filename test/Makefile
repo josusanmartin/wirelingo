@@ -24,10 +24,18 @@ override PE_BANK_AW = 8
 IMEM_ARGS =
 endif
 export PE_BANK_AW
-PE_NCORES ?= 4
-PE_NBANKS ?= 4
-PE_FIFO_LOG2 ?= 2
-export PE_NCORES PE_NBANKS PE_FIFO_LOG2
+# Build parameters: unset = each testbench's own default (tb.v -> project.v, the
+# tapeout configuration: 2 cores, 2 banks, 8-deep FIFOs; tb_chip.v -> 4/4/4).
+BUILD_DEFS = $(if $(PE_NCORES),-DPE_NCORES=$(PE_NCORES)) $(if $(PE_NBANKS),-DPE_NBANKS=$(PE_NBANKS)) $(if $(PE_FIFO_LOG2),-DPE_FIFO_LOG2=$(PE_FIFO_LOG2))
+ifeq ($(TB),chip)
+export PE_NCORES ?= 4
+export PE_NBANKS ?= 4
+export PE_FIFO_LOG2 ?= 2
+else
+export PE_NCORES ?= 2
+export PE_NBANKS ?= 2
+export PE_FIFO_LOG2 ?= 3
+endif
 
 export PYTHONPATH := $(PWD)/../tools:$(PYTHONPATH)
 
@@ -36,7 +44,7 @@ ifneq ($(GATES),yes)
 # RTL simulation:
 SIM_BUILD				= sim_build/rtl_$(TB)_$(IMEM)$(PE_BANK_AW)_c$(PE_NCORES)b$(PE_NBANKS)f$(PE_FIFO_LOG2)
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-COMPILE_ARGS    += $(IMEM_ARGS) -DPE_NCORES=$(PE_NCORES) -DPE_NBANKS=$(PE_NBANKS) -DPE_FIFO_LOG2=$(PE_FIFO_LOG2)
+COMPILE_ARGS    += $(IMEM_ARGS) $(BUILD_DEFS)
 ifneq ($(IMEM),flop)
 VERILOG_SOURCES += $(PWD)/sram_model.v
 endif
