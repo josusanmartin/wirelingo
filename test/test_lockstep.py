@@ -32,7 +32,7 @@ def core_state_rtl(core):
         z=v(core.z), c=v(core.c), t=v(core.t), dcnt=v(core.dcnt), in_wait=v(core.in_wait),
         halted=v(core.halted), fault=v(core.fault), stalled=v(core.stalled),
         cnt=v(core.cnt), facc=v(core.facc),
-        txl=v(core.txf.cnt), rxl=v(core.rxf.cnt),
+        txl=v(core.txf.cnt), rxl=v(core.rxf.cnt), crc=v(core.crc),
     )
 
 
@@ -42,7 +42,7 @@ def core_state_model(m):
         isr=m.isr, isr_cnt=m.isr_cnt, osr=m.osr, osr_cnt=m.osr_cnt,
         z=m.z, c=m.c, t=m.t, dcnt=m.dcnt, in_wait=m.in_wait,
         halted=m.halted, fault=m.fault, stalled=m.stalled,
-        cnt=m.cnt, facc=m.facc, txl=len(m.txf), rxl=len(m.rxf),
+        cnt=m.cnt, facc=m.facc, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
     )
 
 
@@ -144,7 +144,7 @@ async def test_registers(dut):
             await h.cycle_step(addr=sim.core_reg(c, off))
     rng = random.Random(1)
     for c in range(4):
-        for off in (0, 1, 2, 3, 4, 5, 0xA, 0xB, 0xC, 0xD):
+        for off in (0, 1, 2, 3, 4, 5, 6, 7, 0xA, 0xB, 0xC, 0xD):
             await h.write(sim.core_reg(c, off), rng.getrandbits(32))
             await h.cycle_step(addr=sim.core_reg(c, off))
     for a in (sim.A_BANK, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
@@ -204,7 +204,7 @@ async def test_random_lockstep(dut):
                     | (rng.getrandbits(4) << 16 if rng.random() < 0.3 else 0)
                 await h.cycle_step(ui, uio, we=True, addr=sim.A_CTRL, wdata=ctrl)
             elif op < 0.152:
-                await h.cycle_step(ui, uio, we=True, addr=sim.core_reg(c, rng.choice([0, 1, 2, 3, 4, 5])),
+                await h.cycle_step(ui, uio, we=True, addr=sim.core_reg(c, rng.choice([0, 1, 2, 3, 4, 5, 6, 7])),
                                    wdata=rng.getrandbits(32))
             elif op < 0.155:
                 await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD,

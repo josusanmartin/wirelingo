@@ -5,7 +5,7 @@ Everything reads start-of-cycle state; effects combine into the next state,
 mirroring the synchronous RTL.
 """
 from . import isa
-from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC)
+from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC)
 
 M32 = 0xFFFFFFFF
 M16 = 0xFFFF
@@ -17,7 +17,7 @@ IMEM_WORDS = 1024
 # Register map
 A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE = range(0x800, 0x80B)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
-C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP = 0, 1, 2, 3, 4, 5
+C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
 
 
@@ -47,6 +47,8 @@ class Core:
         self.out_shr = self.in_shr = self.autopull = self.autopush = 0
         self.pull_thresh = self.push_thresh = 0
         self.entry, self.wrap_bottom, self.wrap_top = 256 * idx, 0, 1023
+        self.crc_poly = self.crc_w = self.in_tap = self.out_tap = 0
+        self.crc = 0
         self.r = [0, 0, 0, 0]
         self.txf, self.rxf = [], []
         self.restart()
@@ -80,6 +82,10 @@ class Core:
             return self.entry
         if off == C_WRAP:
             return self.wrap_bottom | (self.wrap_top << 16)
+        if off == C_CRCCTRL:
+            return self.crc_poly | (self.crc_w << 16) | (self.in_tap << 20) | (self.out_tap << 21)
+        if off == C_CRC:
+            return self.crc
         if off == C_PC:
             return self.pc
         if off == C_STATUS:
@@ -113,6 +119,11 @@ class Core:
             self.entry = v & 1023
         elif off == C_WRAP:
             self.wrap_bottom, self.wrap_top = v & 1023, (v >> 16) & 1023
+        elif off == C_CRCCTRL:
+            self.crc_poly, self.crc_w = v & M16, (v >> 16) & 15
+            self.in_tap, self.out_tap = (v >> 20) & 1, (v >> 21) & 1
+        elif off == C_CRC:
+            self.crc = v & M16
         elif off == C_PC:
             self.pc = v & 1023
             self.dcnt = 0
@@ -188,7 +199,13 @@ class Core:
             if code < 4:
                 return self.r[code]
             return {PINS: rotr32(pins_in, self.in_base), ISR: self.isr, OSR: self.osr,
-                    STATUS: self.status() & 0x7FF, FLAGS: flags, PC: self.pc}.get(code, 0)
+                    STATUS: self.status() & 0x7FF, FLAGS: flags, PC: self.pc, CRC: self.crc}.get(code, 0)
+
+        crc_mask = mask(self.crc_w + 1)
+
+        def crc_feed(b):
+            fb = ((self.crc >> self.crc_w) & 1) ^ b
+            self.crc = ((self.crc << 1) & crc_mask) ^ ((self.crc_poly & crc_mask) if fb else 0)
 
         jump = None
         complete = True
@@ -261,6 +278,8 @@ class Core:
                     self.isr, self.isr_cnt = 0, 0
             else:
                 self.isr, self.isr_cnt = nisr, ncnt
+            if complete and n == 1 and self.in_tap:
+                crc_feed(b & 1)
 
         elif op == isa.OP_OUT:
             dst, n = isa.bits(x, 18, 15), isa.bits(x, 4, 0) or 32
@@ -279,6 +298,8 @@ class Core:
                     data = osr0 >> (32 - n)
                     nosr = 0 if n == 32 else (osr0 << n) & M32
                 self.osr, self.osr_cnt = nosr, min(32, cnt0 + n)
+                if n == 1 and self.out_tap:
+                    crc_feed(data & 1)
                 if dst < 4:
                     self.r[dst] = data & M16
                 elif dst == PINS:
@@ -289,6 +310,8 @@ class Core:
                     self.isr, self.isr_cnt = data, n
                 elif dst == PC:
                     jump = data & 1023
+                elif dst == CRC:
+                    self.crc = data & crc_mask
 
         elif op == isa.OP_PUSH:
             iff, blk = isa.bits(x, 18, 18), isa.bits(x, 17, 17)
@@ -335,6 +358,8 @@ class Core:
                 self.osr, self.osr_cnt = v, 0
             elif dst == PC:
                 jump = v & 1023
+            elif dst == CRC:
+                self.crc = v & crc_mask
 
         elif op == isa.OP_SET:
             tgt = fx["oe"] if isa.bits(x, 18, 18) else fx["out"]

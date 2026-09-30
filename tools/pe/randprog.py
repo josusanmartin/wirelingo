@@ -38,6 +38,11 @@ def random_instr(rng, bank, bank_words, owners):
     elif op == isa.OP_OUT and rng.random() < 0.1:
         # computed jump: keep it mostly in range by using small counts
         x = (isa.PC << 15) | rng.randrange(32)
+    elif op in (isa.OP_IN, isa.OP_OUT) and rng.random() < 0.4:
+        x = (rng.randrange(13) << 15) | 1  # 1-bit shifts feed the CRC tap
+    elif op == isa.OP_MOV and rng.random() < 0.2:
+        x = rng.getrandbits(19)
+        x = (x & ~(0xF << 15)) | (isa.CRC << 15) if rng.random() < 0.5 else (x & ~(0xF << 9)) | (isa.CRC << 9)
     else:
         x = rng.getrandbits(19)
     if op == isa.OP_WAIT and rng.random() < 0.5:
@@ -71,6 +76,9 @@ def random_config_writes(rng, bank_words, owners):
         lo, hi = sorted(rng.randrange(bank_words) for _ in range(2))
         if rng.random() < 0.5:
             w.append((base(sim.C_WRAP), ((wb << 8) | lo) | (((wb << 8) | hi) << 16)))
+        if rng.random() < 0.7:
+            w.append((base(sim.C_CRCCTRL), rng.getrandbits(22)))
+            w.append((base(sim.C_CRC), rng.getrandbits(16)))
         for r in range(4):
             w.append((base(sim.C_R0 + r), rng.getrandbits(16) if rng.random() < 0.2 else rng.randrange(12)))
     w.append((sim.A_POWN_LO, rng.getrandbits(32)))

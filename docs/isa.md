@@ -181,7 +181,31 @@ pins starting at `SIDE_BASE` (mod 32). If `SIDE_PINDIR` is set, it writes
 * Thresholds are 5-bit fields where 0 means 32. `OUT_COUNT` > 32 behaves as
   32, and `SET_COUNT` 6–7 behave as 5.
 
-### 4.5 Flags
+### 4.5 CRC tap
+
+Each core has a 16-bit CRC register fed by its shift registers, for protocols
+that append a CRC (USB CRC5/CRC16, CAN CRC15, CRC-CCITT, Modbus, ...).
+`CRCCTRL` sets the polynomial `POLY` (without the top term), the width
+`W = CRC_W + 1` (1–16), and which shifts feed it:
+
+* `IN_TAP`: every `IN src, 1` feeds the bit shifted into the ISR.
+* `OUT_TAP`: every `OUT dst, 1` feeds the bit shifted out of the OSR.
+
+Only 1-bit shifts update the CRC. Each fed bit `b` does:
+
+```
+fb  = CRC[W-1] ^ b
+CRC = ((CRC << 1) & CRC_MASK) ^ (fb ? POLY & CRC_MASK : 0)      CRC_MASK = 2^W - 1
+```
+
+This is the non-reflected LFSR over bits in time order (for USB, the order
+they appear on the wire). `MOV crc, ~null` presets all ones, and `MOV r, crc`
+reads the CRC back for a compare. Over a correct USB DATA packet (payload plus
+its inverted CRC16) the register ends at the residue 0x800D; over a correct
+token it ends at 0b01100. The CRC is not changed by restart; the host can
+write it through `CRC` (core block 0x07).
+
+### 4.6 Flags
 
 * **Z, C** are set only by ALU instructions.
 * **T** is set by a WAIT with timeout: 1 if it timed out, 0 if the condition
@@ -233,7 +257,8 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 9    | STATUS   | `[2:0]` TXF level, `[6:4]` RXF level, `[8]` Z, `[9]` C, `[10]` T | discard            |
 | 10   | FLAGS    | `{24'b0, F7..F0}`                          | discard                                      |
 | 11   | PC       | `{22'b0, PC}`                              | jump to `value[9:0]`                         |
-| 12–15| —        | 0                                          | discard                                      |
+| 12   | CRC      | `{16'b0, CRC}`                             | `CRC = value[15:0] & CRC_MASK` (§4.5)        |
+| 13–15| —        | 0                                          | discard                                      |
 
 For a PINS/PINDIRS destination, pin `(OUT_BASE + i) mod 32` gets `value[i]`
 for `0 ≤ i < OUT_COUNT`.
@@ -427,6 +452,8 @@ Core block (offset from `0x0400 + 0x20·c`):
 | 0x03 | SHIFTCTRL | RW     | `[0]` OUT_SHIFT_RIGHT, `[1]` IN_SHIFT_RIGHT, `[2]` AUTOPULL, `[3]` AUTOPUSH, `[12:8]` PULL_THRESH, `[20:16]` PUSH_THRESH |
 | 0x04 | ENTRY     | RW     | `[9:0]` restart PC (reset 256·c)                                       |
 | 0x05 | WRAP      | RW     | `[9:0]` WRAP_BOTTOM (reset 0), `[25:16]` WRAP_TOP (reset 1023)         |
+| 0x06 | CRCCTRL   | RW     | `[15:0]` POLY, `[19:16]` CRC_W (width − 1), `[20]` IN_TAP, `[21]` OUT_TAP |
+| 0x07 | CRC       | RW     | `[15:0]` CRC register                                                  |
 | 0x08 | PC        | RW     | current PC; a write sets it                                            |
 | 0x09 | STATUS    | R      | `[2:0]` TXF lvl, `[6:4]` RXF lvl, `[8]` Z, `[9]` C, `[10]` T, `[12]` stalled, `[13]` halted, `[14]` fault |
 | 0x0A–0x0D | R0–R3 | RW   | registers                                                              |

@@ -46,7 +46,7 @@ module pe_core #(
   localparam OP_PIN = 5'd10, OP_FLAG = 5'd11, OP_HALT = 5'd12;
 
   localparam L_PINS = 4'd4, L_PINDIRS = 4'd5, L_ISR = 4'd6, L_OSR = 4'd7;
-  localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11;
+  localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12;
 
   localparam W_PIN1 = 3'd0, W_PIN0 = 3'd1, W_RISE = 3'd2, W_FALL = 3'd3, W_EDGE = 3'd4;
   localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6;
@@ -61,6 +61,9 @@ module pe_core #(
   reg        out_shr, in_shr, autopull, autopush;
   reg [4:0]  pull_thresh, push_thresh;
   reg [9:0]  entry, wrap_bottom, wrap_top;
+  reg [15:0] crc_poly;
+  reg [3:0]  crc_w;
+  reg        in_tap, out_tap;
 
   // ---------------------------------------------------------------- state
   reg [9:0]  pc;
@@ -73,6 +76,7 @@ module pe_core #(
   reg [15:0] cnt;
   reg [7:0]  facc;
   reg        halted, fault, stalled;
+  reg [15:0] crc;
 
   // ---------------------------------------------------------------- FIFOs
   wire        host_push = bus_sel && bus_we && bus_off == 5'h10;
@@ -182,6 +186,7 @@ module pe_core #(
       L_STATUS: src_val = {21'd0, status16[10:0]};
       L_FLAGS:  src_val = {24'd0, flags};
       L_PC:     src_val = {22'd0, pc};
+      L_CRC:    src_val = {16'd0, crc};
       default:  src_val = 32'd0;
     endcase
   end
@@ -283,6 +288,13 @@ module pe_core #(
   wire [15:0] w_tr = rsel(w_treg, r0, r1, r2, r3);
   wire        w_timeout = !wbase && w_to && w_tr == 16'd0;
 
+  // CRC tap (docs/isa.md §4.5): 1-bit IN/OUT feed one bit; MOV/OUT to CRC set it
+  wire [15:0] crc_mask = 16'hFFFF >> (4'd15 - crc_w);
+  reg         crc_feed, crc_bit, crc_set;
+  reg  [15:0] crc_set_val;
+  wire        crc_fb = crc[crc_w] ^ crc_bit;
+  wire [15:0] crc_fed = ((crc << 1) & crc_mask) ^ (crc_fb ? (crc_poly & crc_mask) : 16'd0);
+
   // ---------------------------------------------------------------- execute (combinational)
   reg         complete, jump, new_wait;
   reg  [9:0]  jump_target;
@@ -332,6 +344,10 @@ module pe_core #(
     core_txpop = 1'b0;
     core_rxpush = 1'b0;
     core_rxdata = isr;
+    crc_feed = 1'b0;
+    crc_bit = 1'b0;
+    crc_set = 1'b0;
+    crc_set_val = 16'd0;
 
     case (op)
       OP_JMP: begin
@@ -379,6 +395,10 @@ module pe_core #(
           isr_nv = in_isr;
           isr_cnt_nv = in_cnt;
         end
+        if (in_tap && n == 6'd1 && !(in_autopush && rxf_full)) begin
+          crc_feed = 1'b1;
+          crc_bit = in_bits[0];
+        end
       end
 
       OP_OUT: begin
@@ -388,6 +408,10 @@ module pe_core #(
           osr_we = 1'b1;
           osr_nv = out_osr;
           osr_cnt_nv = out_cnt;
+          if (out_tap && n == 6'd1) begin
+            crc_feed = 1'b1;
+            crc_bit = out_data[0];
+          end
           case (dst)
             4'd0, 4'd1, 4'd2, 4'd3: begin
               reg_we = 1'b1;
@@ -404,6 +428,10 @@ module pe_core #(
             L_PC: begin
               jump = 1'b1;
               jump_target = out_data[9:0];
+            end
+            L_CRC: begin
+              crc_set = 1'b1;
+              crc_set_val = out_data[15:0];
             end
             default: ;
           endcase
@@ -467,6 +495,10 @@ module pe_core #(
           L_PC: begin
             jump = 1'b1;
             jump_target = mov_val[9:0];
+          end
+          L_CRC: begin
+            crc_set = 1'b1;
+            crc_set_val = mov_val[15:0];
           end
           default: ;
         endcase
@@ -555,6 +587,8 @@ module pe_core #(
       5'h03: bus_rdata = {11'd0, push_thresh, 3'd0, pull_thresh, 4'd0, autopush, autopull, in_shr, out_shr};
       5'h04: bus_rdata = {22'd0, entry};
       5'h05: bus_rdata = {6'd0, wrap_top, 6'd0, wrap_bottom};
+      5'h06: bus_rdata = {10'd0, out_tap, in_tap, crc_w, crc_poly};
+      5'h07: bus_rdata = {16'd0, crc};
       5'h08: bus_rdata = {22'd0, pc};
       5'h09: bus_rdata = {16'd0, status16};
       5'h0A: bus_rdata = {16'd0, r0};
@@ -571,10 +605,10 @@ module pe_core #(
   // ---------------------------------------------------------------- config registers
   // Written only by the host, so each register gets a clock gate rather than
   // a hold mux per bit.
-  wire [5:0] cfg_gclk;
+  wire [6:0] cfg_gclk;
   genvar g;
   generate
-    for (g = 0; g < 6; g = g + 1) begin : g_cfg_cg
+    for (g = 0; g < 7; g = g + 1) begin : g_cfg_cg
       pe_cg u_cg (.clk(clk), .en(bus_sel && bus_we && bus_off == g), .gclk(cfg_gclk[g]));
     end
   endgenerate
@@ -606,6 +640,10 @@ module pe_core #(
     if (!rst_n) {wrap_bottom, wrap_top} <= {10'd0, 10'd1023};
     else {wrap_bottom, wrap_top} <= {bus_wdata[9:0], bus_wdata[25:16]};
 
+  always @(posedge cfg_gclk[6] or negedge rst_n)
+    if (!rst_n) {crc_poly, crc_w, in_tap, out_tap} <= 22'd0;
+    else {crc_poly, crc_w, in_tap, out_tap} <= {bus_wdata[15:0], bus_wdata[19:16], bus_wdata[20], bus_wdata[21]};
+
   // ---------------------------------------------------------------- sequential
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -630,6 +668,7 @@ module pe_core #(
       halted <= 1'b0;
       fault <= 1'b0;
       stalled <= 1'b0;
+      crc <= 16'd0;
     end else begin
       pc <= fetch_addr;
 
@@ -697,6 +736,8 @@ module pe_core #(
               c <= alu_res[16];
             end
             if (t_we) t <= t_nv;
+            if (crc_set) crc <= crc_set_val & crc_mask;
+            else if (crc_feed) crc <= crc_fed;
           end
         end
       end
@@ -709,6 +750,7 @@ module pe_core #(
           5'h0B: r1 <= bus_wdata[15:0];
           5'h0C: r2 <= bus_wdata[15:0];
           5'h0D: r3 <= bus_wdata[15:0];
+          5'h07: crc <= bus_wdata[15:0];
           default: ;
         endcase
       end

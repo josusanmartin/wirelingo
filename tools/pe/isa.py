@@ -11,9 +11,9 @@ OPNAMES = {
 }
 
 # src/dst operand codes (§5.1)
-R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC = range(12)
+R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC, CRC = range(13)
 LOC_NAMES = ["r0", "r1", "r2", "r3", "pins", "pindirs", "isr", "osr",
-             "null", "status", "flags", "pc"]
+             "null", "status", "flags", "pc", "crc"]
 
 # JMP conditions
 (C_ALWAYS, C_ZERO, C_NZERO, C_DEC, C_PIN, C_NPIN, C_Z, C_NZ, C_C, C_NC,
