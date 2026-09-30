@@ -22,25 +22,36 @@ module pe_fifo #(
     output wire [1:0]     f_rd
 `endif
 );
-  reg [W-1:0] mem[0:3];
   reg [1:0]   rd, wr;
   reg [2:0]   cnt;
 
   wire do_push = push && !cnt[2];
   wire do_pop  = pop && cnt != 3'd0;
 
-  assign head  = mem[rd];
-  assign level = cnt;
-
-  // storage: one clock gate per entry instead of a hold mux per bit
+  // storage: one register per entry. Normally each entry has its own clock
+  // gate instead of a hold mux per bit (IHP flops have no enable input).
+  // PE_FIFO_NO_CG selects functionally identical enable flops; the core proof
+  // (formal/core.sby) uses it to stay single-clock, while formal/fifo.sby
+  // proves the clock-gated version equal to a reference queue.
+  wire [W-1:0] ent[0:3];
   genvar e;
   generate
     for (e = 0; e < 4; e = e + 1) begin : g_ent
+      reg [W-1:0] q;
+      wire        wen = do_push && wr == e;
+`ifdef PE_FIFO_NO_CG
+      always @(posedge clk) if (wen) q <= push_data;
+`else
       wire gclk;
-      pe_cg u_cg (.clk(clk), .en(do_push && wr == e), .gclk(gclk));
-      always @(posedge gclk) mem[e] <= push_data;
+      pe_cg u_cg (.clk(clk), .en(wen), .gclk(gclk));
+      always @(posedge gclk) q <= push_data;
+`endif
+      assign ent[e] = q;
     end
   endgenerate
+
+  assign head  = ent[rd];
+  assign level = cnt;
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -59,7 +70,7 @@ module pe_fifo #(
   end
 
 `ifdef FORMAL
-  assign f_mem = {mem[3], mem[2], mem[1], mem[0]};
+  assign f_mem = {ent[3], ent[2], ent[1], ent[0]};
   assign f_rd = rd;
   // Internal invariants (used by formal/fifo.sby for induction).
   always @(*) begin
