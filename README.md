@@ -27,7 +27,10 @@ golden model and the assembler all implement it.
 | `docs/isa.md` | architecture, ISA, register map, host SPI protocol |
 | `src/` | RTL: `pe_core` (one core), `pe_chip` (4 cores + IMEM + pins), `pe_spi_slave`, TT top in `project.v` |
 | `tools/pe/` | Python: `isa` encodings, `asm` assembler, `sim` cycle-accurate golden model, `host` register-write helpers, `randprog` random program generator |
-| `firmware/` | `.pasm` programs: `uart_tx`, `uart_rx`, `spi_master`, `i2c_master` |
+| `firmware/` | `.pasm` programs: `uart_tx`, `uart_rx`, `spi_master`, `i2c_master`, `usb_ls_rx`, `usb_ls_tx` |
+| `formal/` | SymbiYosys proofs (`make -C formal`) |
+| `flow/`, `librelane_plugin_protoemu.py` | hardening helpers: SRAM power stripes, routability experiments |
+| `tools/micropython/` | host driver for the TT demo board (RP2350) |
 | `test/` | cocotb: `test.py` (top level, over the real SPI port, with device models), `test_lockstep.py` (RTL vs model, every register every cycle) |
 
 ## Verification
@@ -51,10 +54,23 @@ LOCKSTEP_SEEDS=200 make TB=chip                  # random lockstep regression
 
 ## Status
 
-The v0.2 core ISA is done and verified in simulation. Next up:
-
-- SRAM instruction memory (4× 256x32 macros) and the first GDS run.
-- Area reduction.
-- Formal properties.
-- The v0.3 serial pipeline (bit stuffing, NRZI/Manchester, CRC) for USB-LS and
-  10BASE-T.
+* **ISA v0.2:** the RTL, the golden model and the assembler are done.
+* **Verification:**
+  * RTL-vs-model lockstep across thousands of random programs, with zero mismatches.
+  * SymbiYosys proofs: the FIFO against a reference queue by k-induction; SPI
+    slave bus safety; core safety invariants.
+* **Firmware**, all verified on the RTL through the SPI host port:
+  * UART TX and RX.
+  * SPI master.
+  * I2C master with clock stretching and timeouts.
+  * **USB low-speed device transactions** (SETUP→ACK, IN→NAK/DATA). NRZI,
+    bit stuffing and CRC-carrying packets are handled in firmware, and tokens
+    are recognized on-chip so the device answers within the bus turnaround.
+* **Physical design:** SRAM integration and timing work, but routability is the
+  constraint (a single horizontal routing layer). See
+  [docs/physical.md](docs/physical.md). The architecture is being sized from
+  routability experiments.
+* **Next:**
+  * Size the architecture to route.
+  * The serial pipeline / CRC assist.
+  * Demo board bring-up tooling.
