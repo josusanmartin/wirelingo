@@ -30,7 +30,10 @@ module tb_chip ();
 `ifndef PE_NBANKS
 `define PE_NBANKS 4
 `endif
-  pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS)) u_chip (
+`ifndef PE_FIFO_LOG2
+`define PE_FIFO_LOG2 2
+`endif
+  pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS), .FIFO_LOG2(`PE_FIFO_LOG2)) u_chip (
       .clk(clk),
       .rst_n(rst_n),
       .ui_in(ui_in),

@@ -24,6 +24,10 @@
 `ifndef PE_NBANKS
 `define PE_NBANKS `PE_NCORES
 `endif
+// FIFO depth per direction: 2**PE_FIFO_LOG2 words.
+`ifndef PE_FIFO_LOG2
+`define PE_FIFO_LOG2 3
+`endif
 
 module tt_um_josusanmartin_protoemu (
     input  wire [7:0] ui_in,
@@ -61,7 +65,7 @@ module tt_um_josusanmartin_protoemu (
       .bus_commit(bus_commit),
       .bus_rdata(bus_rdata));
 
-  pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS)) u_chip (
+  pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS), .FIFO_LOG2(`PE_FIFO_LOG2)) u_chip (
       .clk(clk),
       .rst_n(rstn),
       .ui_in(ui_in[4:0]),

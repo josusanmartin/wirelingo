@@ -26,16 +26,17 @@ endif
 export PE_BANK_AW
 PE_NCORES ?= 4
 PE_NBANKS ?= 4
-export PE_NCORES PE_NBANKS
+PE_FIFO_LOG2 ?= 2
+export PE_NCORES PE_NBANKS PE_FIFO_LOG2
 
 export PYTHONPATH := $(PWD)/../tools:$(PYTHONPATH)
 
 ifneq ($(GATES),yes)
 
 # RTL simulation:
-SIM_BUILD				= sim_build/rtl_$(TB)_$(IMEM)$(PE_BANK_AW)_c$(PE_NCORES)b$(PE_NBANKS)
+SIM_BUILD				= sim_build/rtl_$(TB)_$(IMEM)$(PE_BANK_AW)_c$(PE_NCORES)b$(PE_NBANKS)f$(PE_FIFO_LOG2)
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-COMPILE_ARGS    += $(IMEM_ARGS) -DPE_NCORES=$(PE_NCORES) -DPE_NBANKS=$(PE_NBANKS)
+COMPILE_ARGS    += $(IMEM_ARGS) -DPE_NCORES=$(PE_NCORES) -DPE_NBANKS=$(PE_NBANKS) -DPE_FIFO_LOG2=$(PE_FIFO_LOG2)
 ifneq ($(IMEM),flop)
 VERILOG_SOURCES += $(PWD)/sram_model.v
 endif

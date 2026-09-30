@@ -220,7 +220,7 @@ class Core:
                 True, rv == 0, rv != 0, rv != 0,
                 pin_of(sel) == 1, pin_of(sel) == 0,
                 self.z == 1, self.z == 0, self.c == 1, self.c == 0, self.t == 1,
-                self.osr_cnt < pull_th, len(self.txf) > 0, len(self.rxf) >= FIFO_DEPTH,
+                self.osr_cnt < pull_th, len(self.txf) > 0, len(self.rxf) >= chip.fifo_depth,
                 (flags >> (sel & 7)) & 1 == 1, (flags >> (sel & 7)) & 1 == 0,
             ][cond]
             if cond == isa.C_DEC:
@@ -271,7 +271,7 @@ class Core:
                 nisr = ((self.isr << n) | b) & M32
             ncnt = min(32, self.isr_cnt + n)
             if self.autopush and ncnt >= push_th:
-                if len(self.rxf) >= FIFO_DEPTH:
+                if len(self.rxf) >= chip.fifo_depth:
                     complete = False
                 else:
                     fx["rxpush"] = nisr
@@ -317,7 +317,7 @@ class Core:
             iff, blk = isa.bits(x, 18, 18), isa.bits(x, 17, 17)
             if iff and self.isr_cnt < push_th:
                 pass
-            elif len(self.rxf) >= FIFO_DEPTH:
+            elif len(self.rxf) >= chip.fifo_depth:
                 if blk:
                     complete = False
                 else:
@@ -438,13 +438,13 @@ class Core:
 
 
 class Chip:
-    def __init__(self, bank_words=256, ncores=NCORES, nbanks=4):
+    def __init__(self, bank_words=256, ncores=NCORES, nbanks=4, fifo_depth=FIFO_DEPTH):
         """ncores/nbanks < 4 model a reduced build: missing cores never run and their
         registers read 0; missing banks read as 0 (a core fetching there executes 0,
         i.e. `jmp 0`, unless the bank-owner check faults it first)."""
         assert bank_words & (bank_words - 1) == 0 and bank_words <= 256
         self.bank_words = bank_words
-        self.ncores, self.nbanks = ncores, nbanks
+        self.ncores, self.nbanks, self.fifo_depth = ncores, nbanks, fifo_depth
         self.imem = [0] * (4 * bank_words)
         self.cores = [Core(i) for i in range(NCORES)]
         self.enable = 0
@@ -576,7 +576,7 @@ class Chip:
             tx, rx = list(core.txf), list(core.rxf)
             if txpop:
                 tx = tx[1:]
-            if host_push[c] is not None and len(core.txf) < FIFO_DEPTH:
+            if host_push[c] is not None and len(core.txf) < self.fifo_depth:
                 tx.append(host_push[c])
             if host_pop[c] and core.rxf:
                 rx = rx[1:]

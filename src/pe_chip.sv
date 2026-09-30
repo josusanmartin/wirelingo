@@ -8,7 +8,8 @@
 module pe_chip #(
     parameter BANK_AW = 4,
     parameter NCORES = 4,  // cores >= NCORES are tied off
-    parameter NBANKS = 4   // IMEM banks >= NBANKS don't exist
+    parameter NBANKS = 4,  // IMEM banks >= NBANKS don't exist
+    parameter FIFO_LOG2 = 2  // FIFO depth 2**FIFO_LOG2
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -77,7 +78,7 @@ module pe_chip #(
           if (!rst_n) fbank <= c[1:0];
           else fbank <= fetch_addr[10*c+8 +: 2];
         end
-        pe_core #(.IDX(c[1:0])) u_core (
+        pe_core #(.IDX(c[1:0]), .FIFO_LOG2(FIFO_LOG2)) u_core (
             .clk(clk),
             .rst_n(rst_n),
             .enable(enable[c]),

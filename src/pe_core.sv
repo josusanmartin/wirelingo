@@ -5,7 +5,8 @@
 `default_nettype none
 
 module pe_core #(
-    parameter [1:0] IDX = 2'd0
+    parameter [1:0] IDX = 2'd0,
+    parameter FIFO_LOG2 = 2      // FIFO depth 2**FIFO_LOG2 per direction
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -82,19 +83,19 @@ module pe_core #(
   wire        host_push = bus_sel && bus_we && bus_off == 5'h10;
   wire        host_pop  = bus_sel && bus_commit && bus_off == 5'h10;
   wire [31:0] txf_head, rxf_head;
-  wire [2:0]  txf_level, rxf_level;
-  wire        txf_empty = txf_level == 3'd0;
-  wire        rxf_full  = rxf_level[2];  // depth 4
+  wire [3:0]  txf_level, rxf_level;
+  wire        txf_empty = txf_level == 4'd0;
+  wire        rxf_full  = rxf_level[FIFO_LOG2];
   reg         core_txpop, core_rxpush;   // decoded; qualified by exec below
   reg  [31:0] core_rxdata;
   wire        exec;
 
-  pe_fifo txf (
+  pe_fifo #(.LOG2(FIFO_LOG2)) txf (
       .clk(clk), .rst_n(rst_n), .clear(fifo_clear),
       .push(host_push), .push_data(bus_wdata),
       .pop(exec && core_txpop), .head(txf_head), .level(txf_level));
 
-  pe_fifo rxf (
+  pe_fifo #(.LOG2(FIFO_LOG2)) rxf (
       .clk(clk), .rst_n(rst_n), .clear(fifo_clear),
       .push(exec && core_rxpush), .push_data(core_rxdata),
       .pop(host_pop), .head(rxf_head), .level(rxf_level));
@@ -140,7 +141,7 @@ module pe_core #(
     endcase
   endfunction
 
-  wire [15:0] status16 = {1'b0, fault, halted, stalled, 1'b0, t, c, z, 1'b0, rxf_level, 1'b0, txf_level};
+  wire [15:0] status16 = {1'b0, fault, halted, stalled, 1'b0, t, c, z, rxf_level, txf_level};
   wire [5:0]  pull_th = (pull_thresh == 5'd0) ? 6'd32 : {1'b0, pull_thresh};
   wire [5:0]  push_th = (push_thresh == 5'd0) ? 6'd32 : {1'b0, push_thresh};
 
@@ -597,7 +598,7 @@ module pe_core #(
       5'h0D: bus_rdata = {16'd0, r3};
       5'h0E: bus_rdata = isr;
       5'h0F: bus_rdata = osr;
-      5'h10: bus_rdata = (rxf_level != 3'd0) ? rxf_head : 32'd0;
+      5'h10: bus_rdata = (rxf_level != 4'd0) ? rxf_head : 32'd0;
       default: bus_rdata = 32'd0;
     endcase
   end

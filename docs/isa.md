@@ -105,8 +105,8 @@ Per-core architectural state:
 | OSR          | 32    | 0                                |
 | OSR_CNT      | 6     | 32 (bits shifted out; 32 = empty) |
 | Z, C, T      | 1 each| 0                                |
-| TXF          | 4×32  | empty (host → core)              |
-| RXF          | 4×32  | empty (core → host)              |
+| TXF          | D×32  | empty (host → core)              |
+| RXF          | D×32  | empty (core → host)              |
 
 ### 4.1 Ticks, clock divider
 
@@ -257,7 +257,7 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 6    | ISR      | ISR                                        | ISR (and `ISR_CNT = 0`)                      |
 | 7    | OSR      | OSR                                        | OSR (and `OSR_CNT = 0`)                      |
 | 8    | NULL     | 0                                          | discard                                      |
-| 9    | STATUS   | `[2:0]` TXF level, `[6:4]` RXF level, `[8]` Z, `[9]` C, `[10]` T | discard            |
+| 9    | STATUS   | `[3:0]` TXF level, `[7:4]` RXF level, `[8]` Z, `[9]` C, `[10]` T | discard            |
 | 10   | FLAGS    | `{24'b0, F7..F0}`                          | discard                                      |
 | 11   | PC       | `{22'b0, PC}`                              | jump to `value[9:0]`                         |
 | 12   | CRC      | `{16'b0, CRC}`                             | `CRC = value[15:0] & CRC_MASK` (§4.5)        |
@@ -458,7 +458,7 @@ Core block (offset from `0x0400 + 0x20·c`):
 | 0x06 | CRCCTRL   | RW     | `[15:0]` POLY, `[19:16]` CRC_W (width − 1), `[20]` IN_TAP, `[21]` OUT_TAP |
 | 0x07 | CRC       | RW     | `[15:0]` CRC register                                                  |
 | 0x08 | PC        | RW     | current PC; a write sets it                                            |
-| 0x09 | STATUS    | R      | `[2:0]` TXF lvl, `[6:4]` RXF lvl, `[8]` Z, `[9]` C, `[10]` T, `[12]` stalled, `[13]` halted, `[14]` fault |
+| 0x09 | STATUS    | R      | `[3:0]` TXF lvl, `[7:4]` RXF lvl, `[8]` Z, `[9]` C, `[10]` T, `[12]` stalled, `[13]` halted, `[14]` fault |
 | 0x0A–0x0D | R0–R3 | RW   | registers                                                              |
 | 0x0E | ISR       | R      |                                                                        |
 | 0x0F | OSR       | R      |                                                                        |
@@ -475,7 +475,8 @@ addresses read as 0 and ignore writes.
 ## 7. Reduced builds
 
 A build may implement fewer than four cores (`NCORES`) and IMEM banks
-(`NBANKS`). The IHP tapeout's values are recorded in `info.yaml` and the
+(`NBANKS`), and chooses the FIFO depth `D` (4 or 8 words per direction;
+"full" in this document means D entries). The IHP tapeout's values are recorded in `info.yaml` and the
 README. For the parts that don't exist:
 
 * **Missing core *c*:** its register block reads as 0 and ignores writes

@@ -18,6 +18,7 @@ from pe.randprog import random_program, random_config_writes
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
 NBANKS = int(os.environ.get("PE_NBANKS", "4"))
+FIFO_DEPTH = 1 << int(os.environ.get("PE_FIFO_LOG2", "2"))
 BANK_WORDS = 1 << BANK_AW
 
 
@@ -51,7 +52,7 @@ class Harness:
         self.dut = dut
         self.chip = dut.u_chip
         self.cores = [self.chip.g_core[i].g_on.u_core for i in range(NCORES)]
-        self.model = sim.Chip(bank_words=BANK_WORDS, ncores=NCORES, nbanks=NBANKS)
+        self.model = sim.Chip(bank_words=BANK_WORDS, ncores=NCORES, nbanks=NBANKS, fifo_depth=FIFO_DEPTH)
         self.cycle = 0
         self.stats = {}
         self.trace = []  # recent (cycle, description) for failure reports
@@ -69,7 +70,7 @@ class Harness:
             await RisingEdge(d.clk)
         await FallingEdge(d.clk)
         d.rst_n.value = 1
-        self.model = sim.Chip(bank_words=BANK_WORDS, ncores=NCORES, nbanks=NBANKS)
+        self.model = sim.Chip(bank_words=BANK_WORDS, ncores=NCORES, nbanks=NBANKS, fifo_depth=FIFO_DEPTH)
 
     def compare(self):
         errs = []
