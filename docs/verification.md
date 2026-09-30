@@ -110,6 +110,20 @@ the same tests are then repeated on the RTL through the **real SPI host port**
     descriptor packets.
 * The CRC tap is checked against the USB reference CRCs, both the transmitted
   fields and the residues.
+* More protocols, each against an independent device model on the model:
+  * **CAN 2.0A:** a transmitter model at ±1 % bit rate, a corrupted frame
+    (no ACK), an on-chip TX→RX loopback between two cores on a wired-AND bus,
+    and arbitration loss against a higher-priority node.
+  * **SWD:** an ARM DP model (request parity, ACK, DPIDR, SELECT write/read).
+  * **JTAG:** an IEEE 1149.1 TAP state machine (IDCODE through Shift-DR).
+  * **1-Wire:** a slave model (reset/presence, READ ROM).
+  * **PS/2:** a host model decoding frames on CLK falling edges, checking parity.
+  * **WS2812:** pulse widths checked against the datasheet timing windows.
+  * **I2C sniffer:** runs on one core while the I2C master runs on another,
+    against an EEPROM model.
+* **Host software:** the demo-board MicroPython driver runs unmodified against
+  the model through a Python model of the SPI host port, loading the
+  generated firmware bundle and checking UART output on the pin.
 
 ## 5. Gate level
 
