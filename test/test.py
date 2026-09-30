@@ -138,7 +138,7 @@ async def test_id(dut):
     # FIFO: push 3 words to core 1's TXF, check level
     await spi.write(sim.core_reg(core(1), sim.C_FIFO), [1, 2, 3], fixed=True)
     st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
-    assert st & 7 == 3, hex(st)
+    assert st & 15 == 3, hex(st)
 
 
 class UartMonitor:
@@ -181,7 +181,7 @@ async def test_uart_tx(dut):
         chunk = msg[i:i + 4]
         while True:
             st = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
-            if (st & 7) == 0:
+            if (st & 15) == 0:
                 break
         await spi.write(sim.core_reg(0, sim.C_FIFO), list(chunk), fixed=True)
     for _ in range(200):
@@ -211,12 +211,12 @@ async def test_uart_rx(dut):
             await ClockCycles(dut.clk, cpb)
         # drain while sending
         st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
-        n = (st >> 4) & 7
+        n = (st >> 4) & 15
         if n:
             got += await spi.read(sim.core_reg(core(1), sim.C_FIFO), n, fixed=True)
     await ClockCycles(dut.clk, 3 * cpb)
     st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
-    n = (st >> 4) & 7
+    n = (st >> 4) & 15
     if n:
         got += await spi.read(sim.core_reg(core(1), sim.C_FIFO), n, fixed=True)
     assert bytes(got) == msg, got
@@ -286,7 +286,7 @@ async def test_spi_master(dut):
     await spi.write(sim.core_reg(core(2), sim.C_FIFO), [b << 24 for b in tx], fixed=True)
     for _ in range(100):
         st = (await spi.read(sim.core_reg(core(2), sim.C_STATUS)))[0]
-        if (st >> 4) & 7 == len(tx):
+        if (st >> 4) & 15 == len(tx):
             break
         await ClockCycles(dut.clk, 50)
     got = await spi.read(sim.core_reg(core(2), sim.C_FIFO), len(tx), fixed=True)
@@ -420,7 +420,7 @@ async def test_i2c_master(dut):
         for w in words:
             while True:
                 st = (await spi.read(sim.core_reg(core(3), sim.C_STATUS)))[0]
-                if st & 7 < 4:
+                if st & 15 < 4:
                     break
             await spi.write(fifo, [w], fixed=True)
         return replies
@@ -429,7 +429,7 @@ async def test_i2c_master(dut):
         out = []
         for _ in range(400):
             st = (await spi.read(sim.core_reg(core(3), sim.C_STATUS)))[0]
-            k = (st >> 4) & 7
+            k = (st >> 4) & 15
             if k:
                 out += await spi.read(fifo, k, fixed=True)
             if len(out) >= n:
@@ -510,7 +510,7 @@ async def test_usb_ls_device(dut):
 
     async def drain():
         st = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
-        n = (st >> 4) & 7
+        n = (st >> 4) & 15
         if n:
             await spi.read(sim.core_reg(0, sim.C_FIFO), n, fixed=True)
 
