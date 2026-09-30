@@ -414,8 +414,8 @@ Each transaction (CS_n low → high) is `cmd[7:0] addr[15:0] data...`:
 | 0x0806             | PIN_OWNER_HI | RW     | owner of pin 16+i                            |
 | 0x0807             | OD_MASK      | RW     | `[7:0]` open-drain enable for P0–P7          |
 | 0x0808             | PINS         | R      | `pins_in[31:0]`                              |
-| 0x0809             | PIN_OUT      | R      | `pin_out[31:0]`                              |
-| 0x080A             | PIN_OE       | R      | `pin_oe[31:0]`                               |
+| 0x0809             | PIN_OUT      | RW     | `pin_out[31:0]`; a write replaces it (see below) |
+| 0x080A             | PIN_OE       | RW     | `pin_oe[31:0]`; a write replaces it          |
 
 Core block (offset from `0x0400 + 0x20·c`):
 
@@ -433,6 +433,11 @@ Core block (offset from `0x0400 + 0x20·c`):
 | 0x0E | ISR       | R      |                                                                        |
 | 0x0F | OSR       | R      |                                                                        |
 | 0x10 | FIFO      | RW     | W: push TXF (dropped if full); R: pop RXF (0 if empty)                 |
+
+A host write to PIN_OUT or PIN_OE replaces the whole register, ignoring pin
+ownership and overriding every core's writes in that cycle. It is meant for
+putting pins into a known state (for example releasing open-drain lines)
+before starting programs, and for host-driven GPIO.
 
 `STATUS.stalled` is 1 when the last attempted instruction stalled. Unlisted
 addresses read as 0 and ignore writes.

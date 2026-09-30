@@ -158,8 +158,8 @@ module pe_chip #(
     end else begin
       sync1 <= {ui_in, uio_in};
       sync2 <= sync1;
-      pin_out <= pin_out_n;
-      pin_oe <= pin_oe_n;
+      pin_out <= (bus_we && sel_glob && goff == 4'h9) ? bus_wdata : pin_out_n;
+      pin_oe <= (bus_we && sel_glob && goff == 4'hA) ? bus_wdata : pin_oe_n;
       flags <= (flags & ~all_clr) | all_set;
       if (bus_we && sel_glob) begin
         case (goff)

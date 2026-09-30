@@ -205,7 +205,8 @@ async def test_random_lockstep(dut):
                 await h.cycle_step(ui, uio, we=True, addr=sim.core_reg(c, rng.choice([0, 1, 2, 3, 4, 5])),
                                    wdata=rng.getrandbits(32))
             elif op < 0.155:
-                await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD]),
+                await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD,
+                                                                   sim.A_POUT, sim.A_POE]),
                                    wdata=rng.getrandbits(32))
             else:
                 # idle cycle, with a random (side-effect free) read address

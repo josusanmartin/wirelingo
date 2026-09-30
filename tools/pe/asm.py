@@ -240,7 +240,8 @@ def _encode(line, prog, defs, lineno):
         if len(args) == 1:
             cond, sel, tgt = isa.C_ALWAYS, 0, args[0]
         elif len(args) == 2:
-            c, tgt = args[0].lower().split(), args[1]
+            c_orig, tgt = args[0].split(), args[1]
+            c = [t.lower() for t in c_orig]
             cs = " ".join(c)
             m = re.fullmatch(r"(!?)(r[0-3]|x|y)(--)?", cs)
             if m:
@@ -249,9 +250,9 @@ def _encode(line, prog, defs, lineno):
                 if m.group(1) and m.group(3):
                     raise err("can't combine ! and --")
             elif c[0] in ("pin", "!pin"):
-                cond, sel = (isa.C_NPIN if c[0][0] == "!" else isa.C_PIN), E(" ".join(c[1:]))
+                cond, sel = (isa.C_NPIN if c[0][0] == "!" else isa.C_PIN), E(" ".join(c_orig[1:]))
             elif c[0] in ("f", "!f", "flag", "!flag"):
-                cond, sel = (isa.C_NF if c[0][0] == "!" else isa.C_F), E(" ".join(c[1:]))
+                cond, sel = (isa.C_NF if c[0][0] == "!" else isa.C_F), E(" ".join(c_orig[1:]))
                 if sel > 7:
                     raise err("flag index 0..7")
             else:
@@ -273,33 +274,34 @@ def _encode(line, prog, defs, lineno):
         # wait <1|0> pin p | <1|0> flag k | rise|fall|edge p
         #      [if pin q == v] [clear] [timeout rN]
         op = isa.OP_WAIT
-        body = rest.lower().replace(",", " ")
+        body = rest.replace(",", " ")
         to, treg = 0, 3
-        m = re.search(r"\btimeout(?:\s+(r[0-3]|x|y))?\b", body)
+        m = re.search(r"\btimeout(?:\s+(r[0-3]|x|y))?\b", body, re.I)
         if m:
             to = 1
             treg = reg(m.group(1)) if m.group(1) else 3
             body = body[: m.start()] + body[m.end():]
         clr = 0
-        if re.search(r"\bclear\b", body):
+        if re.search(r"\bclear\b", body, re.I):
             clr = 1
-            body = re.sub(r"\bclear\b", "", body)
+            body = re.sub(r"\bclear\b", "", body, flags=re.I)
         qen = qpol = qpin = 0
-        m = re.search(r"\bif\s+pin\s+(.+?)\s*==\s*([01])\s*$", body.strip())
+        m = re.search(r"\bif\s+pin\s+(.+?)\s*==\s*([01])\s*$", body.strip(), re.I)
         if m:
             qen, qpin, qpol = 1, E(m.group(1)), int(m.group(2))
             body = body.strip()[: m.start()]
             if not 0 <= qpin < 32:
                 raise err("qualifier pin out of range")
         toks = body.split()
-        if len(toks) >= 3 and toks[0] in ("1", "0") and toks[1] == "pin":
+        kw = [t.lower() for t in toks]
+        if len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] == "pin":
             kind, idx = (isa.W_PIN1 if toks[0] == "1" else isa.W_PIN0), E(" ".join(toks[2:]))
-        elif len(toks) >= 3 and toks[0] in ("1", "0") and toks[1] in ("flag", "irq"):
+        elif len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] in ("flag", "irq"):
             kind, idx = (isa.W_FLAG1 if toks[0] == "1" else isa.W_FLAG0), E(" ".join(toks[2:]))
             if idx > 7:
                 raise err("flag index 0..7")
-        elif len(toks) >= 2 and toks[0] in ("rise", "fall", "edge"):
-            kind = {"rise": isa.W_RISE, "fall": isa.W_FALL, "edge": isa.W_EDGE}[toks[0]]
+        elif len(toks) >= 2 and kw[0] in ("rise", "fall", "edge"):
+            kind = {"rise": isa.W_RISE, "fall": isa.W_FALL, "edge": isa.W_EDGE}[kw[0]]
             idx = E(" ".join(toks[1:]))
         else:
             raise err("bad wait")
@@ -368,13 +370,13 @@ def _encode(line, prog, defs, lineno):
         x = (isa.PIN_ACTIONS.index(args[1].lower()) << 17) | p
     elif mn == "flag":
         op = isa.OP_FLAG
-        toks = rest.lower().split()
-        if toks[0] not in ("set", "clr", "clear"):
+        toks = rest.split()
+        if toks[0].lower() not in ("set", "clr", "clear"):
             raise err("flag set|clr k")
         k = E(" ".join(toks[1:]))
         if not 0 <= k < 8:
             raise err("flag index 0..7")
-        x = (int(toks[0] != "set") << 18) | k
+        x = (int(toks[0].lower() != "set") << 18) | k
     elif mn == "halt":
         op = isa.OP_HALT
     else:

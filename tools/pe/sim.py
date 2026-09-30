@@ -528,6 +528,10 @@ class Chip:
                     self.pin_owner[16 + i] = (wdata >> (2 * i)) & 3
             elif addr == A_OD:
                 self.od_mask = wdata & 0xFF
+            elif addr == A_POUT:
+                new_out = wdata & M32
+            elif addr == A_POE:
+                new_oe = wdata & M32
 
         for c, core in enumerate(self.cores):
             if (fclear >> c) & 1:

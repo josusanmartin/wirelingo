@@ -1,42 +1,60 @@
-![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
+# protoemu — a programmable protocol emulator ASIC
 
-# Tiny Tapeout Verilog Project Template
+An entry for the [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/),
+targeting IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles).
 
-- [Read the documentation for project](docs/info.md)
+Four small cores, each specialised for bit-banging, run protocols in firmware:
+UART, SPI and I2C today, with low-speed USB, 10BASE-T and CAN planned. The ISA
+is PIO-inspired but removes its main limits:
 
-## What is Tiny Tapeout?
+- **Up to 1024 instructions** in four banks that can be reassigned between cores.
+  PIO has 32.
+- **Registers and arithmetic:** 16-bit R0–R3, a 16-bit immediate load, and a real
+  ALU with Z/C flags.
+- **Richer WAITs:** a WAIT can time out, can wait on a rise, fall or any edge
+  (caught at full clock resolution), and can be qualified by a second pin.
+  "SDA falls while SCL is high" is one instruction.
+- **Pin conveniences:** per-pin open drain, direct `PIN p, hi/lo/toggle/hiz` on
+  any pin, and 8 virtual pins that act as wires between cores.
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+The full spec is in [docs/isa.md](docs/isa.md) and is normative. The RTL, the
+golden model and the assembler all implement it.
 
-To learn more and get started, visit https://tinytapeout.com.
+## Layout
 
-## Set up your Verilog project
+| Path | What |
+|------|------|
+| `docs/isa.md` | architecture, ISA, register map, host SPI protocol |
+| `src/` | RTL: `pe_core` (one core), `pe_chip` (4 cores + IMEM + pins), `pe_spi_slave`, TT top in `project.v` |
+| `tools/pe/` | Python: `isa` encodings, `asm` assembler, `sim` cycle-accurate golden model, `host` register-write helpers, `randprog` random program generator |
+| `firmware/` | `.pasm` programs: `uart_tx`, `uart_rx`, `spi_master`, `i2c_master` |
+| `test/` | cocotb: `test.py` (top level, over the real SPI port, with device models), `test_lockstep.py` (RTL vs model, every register every cycle) |
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+## Verification
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+- **Lockstep:** the RTL and the Python model run the same constrained-random
+  programs, random pin stimulus and random host bus traffic. Every architectural
+  register, FIFO level, flag and pin is compared every cycle. Mutating the model
+  is caught within about 1K cycles.
+- **Protocol tests:** firmware is loaded through the SPI host port and talks to
+  Python device models (UART, SPI slave, I2C EEPROM with clock stretching) that
+  see only the pins.
 
-## Enable GitHub actions to build the results page
+```
+python3 -m venv .venv && .venv/bin/pip install -r test/requirements.txt
+export PATH=$HOME/tools/oss-cad-suite/bin:$PWD/.venv/bin:$PATH   # iverilog, yosys, verilator
+cd test
+make                          # top-level protocol tests (flop build, 16 words/bank)
+PE_BANK_AW=8 make SIM_BUILD=sim_build/rtl_top8   # same with 256 words/bank (SRAM build)
+LOCKSTEP_SEEDS=200 make TB=chip                  # random lockstep regression
+```
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+## Status
 
-## Resources
+The v0.2 core ISA is done and verified in simulation. Next up:
 
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
-
-## What next?
-
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+- SRAM instruction memory (4× 256x32 macros) and the first GDS run.
+- Area reduction.
+- Formal properties.
+- The v0.3 serial pipeline (bit stuffing, NRZI/Manchester, CRC) for USB-LS and
+  10BASE-T.
