@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+test/sim_build/
+test/results.xml
+test/*.fst
+test/*.vcd
+syn/*.log
+syn/*.lib
+runs/
+tt/
