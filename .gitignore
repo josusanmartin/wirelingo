@@ -13,3 +13,6 @@ tt/
 src/user_config.json
 src/config_merged.json
 harden.log
+formal/fifo_*/
+formal/spi_*/
+formal/core_*/

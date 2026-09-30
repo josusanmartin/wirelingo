@@ -722,4 +722,43 @@ module pe_core #(
     end
   end
 
+`ifdef FORMAL
+  // Safety properties, checked by formal/core.sby with unconstrained inputs
+  // (any instruction stream, pins, flags and host traffic).
+  reg f_past = 1'b0;
+  always @(posedge clk) f_past <= 1'b1;
+
+  always @(*) begin
+    if (rst_n) begin
+      assert (isr_cnt <= 6'd32);
+      assert (osr_cnt <= 6'd32);
+      assert (!fault || halted);
+      // a disabled or restarting core has no side effects
+      if (!active) begin
+        assert (wr_out_en == 32'd0 && wr_oe_en == 32'd0);
+        assert (flag_set == 8'd0 && flag_clr == 8'd0);
+        assert (!(exec && core_txpop) && !(exec && core_rxpush));
+      end
+      // side effects only on an executing tick
+      if (!exec) assert (wr_out_en == 32'd0 && wr_oe_en == 32'd0 && flag_set == 8'd0 && flag_clr == 8'd0);
+      if (exec) assert (tick && !halted && dcnt == 8'd0 && bank_ok);
+    end
+  end
+
+  always @(posedge clk) begin
+    if (rst_n && f_past && $past(rst_n)) begin
+      // halted/faulted cores stay that way until restarted
+      if ($past(halted) && !$past(restart)) assert (halted);
+      if ($past(fault) && !$past(restart)) assert (fault);
+      // the PC only moves on a completed instruction, a restart or a host write
+      if (!$past(restart) && !$past(host_pc_w) && !$past(commit)) assert (pc == $past(pc));
+      // a disabled core's execution state is frozen (host writes aside)
+      if (!$past(enable) && !$past(restart) && !$past(host_w)) begin
+        assert (pc == $past(pc) && isr == $past(isr) && osr == $past(osr));
+        assert (dcnt == $past(dcnt) && cnt == $past(cnt) && in_wait == $past(in_wait));
+        assert (r0 == $past(r0) && r1 == $past(r1) && r2 == $past(r2) && r3 == $past(r3));
+      end
+    end
+  end
+`endif
 endmodule

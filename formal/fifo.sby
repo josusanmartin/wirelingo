@@ -1,0 +1,20 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 12
+cover: mode cover
+cover: depth 12
+
+[engines]
+smtbmc yices
+
+[script]
+read_verilog -sv -formal pe_fifo.sv fifo_props.sv
+prep -top fifo_props
+
+[files]
+../src/pe_fifo.sv
+fifo_props.sv

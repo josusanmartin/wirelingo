@@ -16,6 +16,11 @@ module pe_fifo #(
     input  wire         pop,
     output wire [W-1:0] head,
     output wire [2:0]   level
+`ifdef FORMAL
+    ,
+    output wire [4*W-1:0] f_mem,  // storage and read pointer, for formal/fifo.sby
+    output wire [1:0]     f_rd
+`endif
 );
   reg [W-1:0] mem[0:3];
   reg [1:0]   rd, wr;
@@ -46,4 +51,16 @@ module pe_fifo #(
       cnt <= cnt + {2'd0, do_push} - {2'd0, do_pop};
     end
   end
+
+`ifdef FORMAL
+  assign f_mem = {mem[3], mem[2], mem[1], mem[0]};
+  assign f_rd = rd;
+  // Internal invariants (used by formal/fifo.sby for induction).
+  always @(*) begin
+    if (rst_n) begin
+      assert (cnt <= 3'd4);
+      assert (cnt[1:0] == wr - rd);
+    end
+  end
+`endif
 endmodule

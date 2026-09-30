@@ -19,6 +19,12 @@ module pe_spi_slave (
     output reg  [31:0] bus_wdata,
     output reg         bus_commit,
     input  wire [31:0] bus_rdata
+`ifdef FORMAL
+    ,
+    output wire        f_cs_idle,      // synchronised CS_n is high
+    output wire        f_cs_idle_all,  // whole CS_n synchroniser is high
+    output wire        f_idle          // waiting for a command byte
+`endif
 );
   // synchronisers
   reg [2:0] sck_s, cs_s, mosi_s;
@@ -112,4 +118,9 @@ module pe_spi_slave (
       end
     end
   end
+`ifdef FORMAL
+  assign f_cs_idle = cs_s[1];
+  assign f_cs_idle_all = &cs_s;
+  assign f_idle = phase == PH_CMD && bitcnt == 5'd0;
+`endif
 endmodule
