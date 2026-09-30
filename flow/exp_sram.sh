@@ -8,7 +8,6 @@ rm -rf $W; git -C protoemu worktree prune
 git -C protoemu worktree add -q --detach $W HEAD
 cd $W
 cp -r $HOME/dev/protoemu/tt .
-cp $HOME/dev/protoemu/src/pe_imem.sv $HOME/dev/protoemu/src/pe_chip.sv src/   # uncommitted param work
 cp $HOME/dev/protoemu/flow/gen_config.py flow/
 python3 flow/gen_config.py --banks $NC --density $DEN --grt-adjust $ADJ
 python3 - "$NC" <<'PY'

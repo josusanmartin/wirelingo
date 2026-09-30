@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--banks", type=int, default=2)
     ap.add_argument("--density", type=int, default=60)
     ap.add_argument("--grt-adjust", type=float, default=None)
+    ap.add_argument("--threads", type=int, default=8)
     a = ap.parse_args()
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
@@ -61,6 +62,8 @@ def main():
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
     c["CLOCK_PORT"] = "clk"
+    c["//threads"] = "LibreLane 3.1.0.dev3 passes '-threads None' to OpenROAD when this is unset (single-threaded)"
+    c["OPENROAD_THREADS"] = a.threads
     c["//corners"] = "Optimise for typ (TT signoff) and slow; fast-corner hold fixing alone added ~3200 buffers"
     c["PNR_CORNERS"] = ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"]
     if a.grt_adjust is not None:
