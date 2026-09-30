@@ -463,7 +463,7 @@ async def test_i2c_master(dut):
 
 # ------------------------------------------------------------------ USB low speed
 
-USB_DEFS = {"DP": 0, "DM": 1, "F_IN": 0, "F_ACK": 1, "F_EXP": 2}
+USB_DEFS = {"DP": 0, "DM": 1, "F_IN": 0, "F_ACK": 1, "F_EXP": 2, "F_SETUP": 3}
 USB_LINE = {"J": (0, 1), "K": (1, 0), "0": (0, 0)}
 
 

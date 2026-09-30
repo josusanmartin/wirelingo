@@ -10,7 +10,7 @@ from pe.modelhost import ModelHost
 FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 DP, DM = 0, 1  # uio0, uio1
 LINE = {usb.J: (0, 1), usb.K: (1, 0), usb.SE0: (0, 0)}
-USB_DEFS = {"DP": DP, "DM": DM, "F_IN": 0, "F_ACK": 1, "F_EXP": 2}
+USB_DEFS = {"DP": DP, "DM": DM, "F_IN": 0, "F_ACK": 1, "F_EXP": 2, "F_SETUP": 3}
 USB_CRCCTRL = 0x8005 | (15 << 16) | (1 << 20)  # CRC16, IN tap
 
 
@@ -18,6 +18,7 @@ def rx_setup():
     mh = ModelHost()
     prog = asm.assemble((FW / "usb_ls_rx.pasm").read_text(), USB_DEFS)
     mh.apply(host.load_program(0, prog, clkdiv=1 << 8))
+    mh.write(sim.core_reg(0, sim.C_CRCCTRL), USB_CRCCTRL)
     mh.ext_oe = 0b11
     mh.uio = 0b10  # J
     mh.start(1)
@@ -39,11 +40,12 @@ def drive(mh, states, ticks_per_bit=32.0, phase=0.0):
 
 
 def rx_packet(mh):
-    """Words for one packet: full words, the partial word, then the bit count."""
+    """Words for one pushed DATA packet: full words..., the partial word, then the
+    bit count (including SYNC + PID). Returns payload + CRC16 bytes."""
     words = mh.pop_all(0)
     if not words:
         return None
-    nbits, body = words[-1], words[:-1]
+    nbits, body = words[-1] - 16, words[:-1]
     nfull, rem = divmod(nbits, 32)
     assert len(body) == nfull + 1, (nbits, [hex(w) for w in words])
     data = b"".join(w.to_bytes(4, "little") for w in body[:nfull])
@@ -55,21 +57,24 @@ def rx_packet(mh):
 
 @pytest.mark.parametrize("ppm", [0, 15000, -15000, 25000, -25000])
 def test_usb_rx_packets(ppm):
+    """Tokens/handshakes only raise flags; DATA after SETUP/OUT is pushed (payload+CRC)."""
     mh = rx_setup()
     rng = random.Random(ppm)
-    packets = [
-        usb.token(usb.PID_SETUP, 0, 0),
-        usb.data_packet(usb.PID_DATA0, bytes([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00])),
-        usb.handshake(usb.PID_ACK),
-        usb.data_packet(usb.PID_DATA1, bytes([0xFF] * 8)),  # lots of stuffing
-        usb.token(usb.PID_IN, 0x15, 0xE),
-    ]
-    got = []
-    for p in packets:
-        drive(mh, usb.encode(p), 32 * (1 + ppm / 1e6), rng.random())
-        got.append(rx_packet(mh))
-    exp = [b"\x80" + p for p in packets]
-    assert got == exp, [g.hex() for g in got]
+    tpb = 32 * (1 + ppm / 1e6)
+    setup = bytes([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00])
+    drive(mh, usb.encode(usb.token(usb.PID_SETUP, 0, 0)), tpb, rng.random())
+    assert rx_packet(mh) is None and mh.chip.flags & 0b1100 == 0b1100  # F_EXP, F_SETUP
+    drive(mh, usb.encode(usb.data_packet(usb.PID_DATA0, setup)), tpb, rng.random())
+    assert rx_packet(mh) == setup + usb.crc16(setup)
+    assert mh.chip.flags & 0b0110 == 0b0010  # F_ACK set, F_EXP cleared
+    drive(mh, usb.encode(usb.handshake(usb.PID_ACK)), tpb, rng.random())
+    assert rx_packet(mh) is None
+    drive(mh, usb.encode(usb.token(usb.PID_OUT, 0, 0)), tpb, rng.random())
+    ones = bytes([0xFF] * 8)  # lots of stuffing
+    drive(mh, usb.encode(usb.data_packet(usb.PID_DATA1, ones)), tpb, rng.random())
+    assert rx_packet(mh) == ones + usb.crc16(ones)
+    drive(mh, usb.encode(usb.token(usb.PID_IN, 0x15, 0xE)), tpb, rng.random())
+    assert rx_packet(mh) is None and mh.chip.flags & 1
 
 
 # ---------------------------------------------------------------- transactions

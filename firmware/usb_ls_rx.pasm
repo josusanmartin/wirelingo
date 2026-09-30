@@ -5,9 +5,15 @@
 ;   * no edge shortly after the expected boundary -> a 1 bit
 ; Stuffed bits (a 0 after six 1s) are dropped; SE0 (both lines low) ends the packet.
 ;
-; Output (RX FIFO, ISR shifts right, autopush 32): packet bytes packed
-; little-endian 4 per word (SYNC byte first), then the partial last word, then
-; a word with the number of bits received (excluding stuffed bits).
+; Output (RX FIFO, ISR shifts right, autopush 32): only DATA packets that follow
+; a SETUP/OUT token are pushed, without SYNC and PID: the payload + CRC16 bytes
+; packed little-endian 4 per word, then the partial last word, then a word with
+; the number of bits received including SYNC and PID (so payload+CRC bits =
+; count - 16). An 8-byte SETUP payload is exactly 4 words, which fits the FIFO.
+; Tokens and handshakes only raise flags; F_SETUP marks that the pushed packet
+; was a SETUP's data stage (the host clears it). Once the PID is in (bit 16),
+; anything other than an expected DATA packet is skipped to its end, so nothing
+; of it (not even autopushed words) reaches the FIFO.
 ;
 ; Timing: D is the tick a WAIT completes. The next WAIT's first attempt is at
 ; D+w, and its timeout N = target - w. The "no edge" decision is taken 10 ticks
@@ -15,7 +21,8 @@
 ; not mid-cell: after six 1s at the +-1.5% clock tolerance the boundaries drift
 ; by ~3 ticks, and the next WAIT must be armed before the following boundary,
 ; so 10 leaves ~5 ticks of margin on both sides with this code's overhead.
-; Every path is padded so w is the same whichever branch is taken.
+; Paths of different length load different budgets so the decision time is the
+; same whichever branch is taken (the once-per-packet PID grab takes 3 ticks more).
 ;
 ;
 ; Token handling (so the TX core can answer within the bus turnaround time):
@@ -60,19 +67,19 @@ zero:
     in null, 1                     ; D+8
     add r0, 1                      ; D+9
     cmp r0, 16                     ; D+10
-    jmp !z, z_nograb               ; D+11
-    mov r3, ::isr                  ; D+12
+    jmp z, z_grab                  ; D+11
+    ldi r2, 28                     ; D+12  (W = D+14, target 42)
+    jmp wait_bit                   ; D+13
+z_grab:                            ; once per packet, after SYNC + PID
+    mov r3, ::isr                  ; D+12  SYNC + PID
     mov crc, ~null                 ; D+13  CRC16 covers what follows the PID
-    jmp z_cont                     ; D+14
-z_nograb:
-    nop                       [2]  ; D+12..14
-z_cont:
-    ldi r2, 25                     ; D+15  (W = D+17, target 42)
-    jmp wait_bit                   ; D+16
+    mov isr, null                  ; D+14  drop SYNC + PID from the output
+    jmp !f F_EXP, rx_skip          ; D+15  not an expected DATA packet
+    ldi r2, 24                     ; D+16  (W = D+18, same decision time)
+    jmp wait_bit                   ; D+17
 stuffed:
-    nop                       [6]  ; D+8..14
-    ldi r2, 25                     ; D+15
-    jmp wait_bit                   ; D+16
+    ldi r2, 32                     ; D+8   (W = D+10, target 42)
+    jmp wait_bit                   ; D+9
 ; -- no edge by the decision point: a 1 bit, unless the line went SE0 (K -> SE0 moves only D+)
 one:
     jmp pin DP, one_k              ; D+2   D+ high: K
@@ -86,15 +93,31 @@ one_ok:
     in osr, 1                      ; D+6
     add r0, 1                      ; D+7
     cmp r0, 16                     ; D+8
-    jmp !z, o_nograb               ; D+9
+    jmp z, o_grab                  ; D+9
+    ldi r2, 20                     ; D+10  (W = D+12, target 32)
+    jmp wait_bit                   ; D+11
+o_grab:
     mov r3, ::isr                  ; D+10
     mov crc, ~null                 ; D+11
-    jmp o_cont                     ; D+12
-o_nograb:
-    nop                       [2]  ; D+10..12
-o_cont:
-    ldi r2, 17                     ; D+13  (W = D+15, target 32)
-    jmp wait_bit                   ; D+14
+    mov isr, null                  ; D+12
+    jmp !f F_EXP, rx_skip          ; D+13
+    ldi r2, 16                     ; D+14  (W = D+16, same decision time)
+    jmp wait_bit                   ; D+15
+; -- tokens, handshakes and our own transmissions: nothing to receive, just find
+; the end of the packet. One qualified WAIT detects SE0 (D+ low while D- is low);
+; it must still be there 8 ticks later, which rejects glitches during J/K edges.
+rx_skip:
+    wait 0 pin DP if pin DM == 0
+    nop                       [7]
+    jmp pin DP, rx_skip
+    jmp pin DM, rx_skip
+    cmp r3, 0x196                  ; SYNC + IN
+    jmp z, got_in
+    cmp r3, 0x1B4                  ; SYNC + SETUP
+    jmp z, got_setup
+    cmp r3, 0x187                  ; SYNC + OUT
+    jmp z, got_out
+    jmp eop_skip
 ; -- end of packet: raise the response flags first (the TX core must answer
 ; within the bus turnaround), then push the tail words (may wait for the host)
 eop:
@@ -105,23 +128,28 @@ eop:
     cmp r3, 0x1B4                  ; SYNC + SETUP
     jmp z, got_setup
     cmp r3, 0x187                  ; SYNC + OUT
-    jmp z, got_setup
-eop_data:                          ; DATA packets (a zero-length DATA is also 32 bits)
-    jmp !f F_EXP, eop_push
+    jmp z, got_out
+eop_data:                          ; DATA (a zero-length DATA is also 32 bits) or handshake
+    cmp r0, 16
+    jmp z, eop_skip                ; handshake
+    jmp !f F_EXP, eop_skip         ; not after SETUP/OUT (e.g. our own IN response)
     flag clr F_EXP
     ldi r2, 0x800D                 ; CRC16 residue of a correct packet
     mov r1, crc
     cmp r1, r2
-    jmp !z, eop_push               ; bad CRC: stay silent, the host retries
+    jmp !z, eop_skip               ; bad CRC: stay silent, the host retries
     flag set F_ACK
-    jmp eop_push
-got_in:
-    flag set F_IN
-    jmp eop_push
-got_setup:
-    flag set F_EXP
-eop_push:
     push block                     ; partial last word (bytes in the top bits)
     mov isr, r0
     push block                     ; bit count
+    jmp idle
+got_in:
+    flag set F_IN
+    jmp eop_skip
+got_setup:
+    flag set F_SETUP
+got_out:
+    flag set F_EXP
+eop_skip:
+    mov isr, null
     jmp idle
