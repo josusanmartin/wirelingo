@@ -89,11 +89,12 @@ def device_setup():
 
 def host_send(mh, packet, tpb=32.0):
     mh.ext_oe = 0b11
-    drive(mh, usb.encode(packet), tpb)  # ends with J driven, 200 idle cycles... release:
+    drive(mh, usb.encode(packet), tpb)  # ends with J driven, then idle
     mh.ext_oe = 0
+    mh.pop_all(0)  # the host drains the RX FIFO promptly
 
 
-def host_send_then_listen(mh, packet, tpb=32.0, listen=1500):
+def host_send_then_listen(mh, packet, tpb=32.0, listen=4000):
     """Send a packet, release the bus, and decode whatever the device answers."""
     mh.ext_oe = 0b11
     t = 0.0
@@ -105,6 +106,7 @@ def host_send_then_listen(mh, packet, tpb=32.0, listen=1500):
         t -= n
         mh.step(n)
     mh.ext_oe = 0  # release after our EOP's J
+    mh.pop_all(0)
     trace = []
     first_k = None
     for i in range(listen):
