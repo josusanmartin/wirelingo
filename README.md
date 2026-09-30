@@ -47,9 +47,11 @@ golden model and the assembler all implement it.
 python3 -m venv .venv && .venv/bin/pip install -r test/requirements.txt
 export PATH=$HOME/tools/oss-cad-suite/bin:$PWD/.venv/bin:$PATH   # iverilog, yosys, verilator
 cd test
-make                          # top-level protocol tests (flop build, 16 words/bank)
-PE_BANK_AW=8 make SIM_BUILD=sim_build/rtl_top8   # same with 256 words/bank (SRAM build)
-LOCKSTEP_SEEDS=200 make TB=chip                  # random lockstep regression
+make                                   # top-level tests through the SPI port (SRAM build, behavioral SRAM)
+LOCKSTEP_SEEDS=200 make TB=chip        # random RTL-vs-model lockstep regression
+make TB=chip IMEM=flop                 # same on the small flop IMEM (faster)
+cd .. && PYTHONPATH=tools .venv/bin/python -m pytest test/model   # firmware on the model, assembler tests
+make -C formal                         # SymbiYosys proofs
 ```
 
 ## Status
