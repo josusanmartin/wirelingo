@@ -61,15 +61,23 @@ make -C formal                         # SymbiYosys proofs
   * RTL-vs-model lockstep across thousands of random programs, with zero mismatches.
   * SymbiYosys proofs: the FIFO against a reference queue by k-induction; SPI
     slave bus safety; core safety invariants.
-* **Firmware**, all verified on the RTL through the SPI host port:
-  * UART TX and RX.
-  * SPI master.
-  * I2C master with clock stretching and timeouts.
-  * **USB low-speed device, all the way to enumeration** (on the model):
-    GET_DESCRIPTOR, SET_ADDRESS, a multi-packet configuration descriptor and
-    SET_CONFIGURATION, in 2 ms of bus time at 48 MHz. Firmware on two cores
-    handles NRZI, bit stuffing, token recognition, turnaround-time ACK/NAK and
-    a CRC16 check through the CRC tap. The host software only answers requests.
+* **Firmware** (`firmware/`), each with a device model to talk to:
+
+  | Protocol | Notes | Verified on |
+  |---|---|---|
+  | UART TX / RX | 8N1; RX start edge caught at clock resolution | RTL (SPI port) |
+  | SPI master | mode 0, 2 instructions | RTL |
+  | I2C master | open drain, clock stretching with timeouts, repeated START | RTL |
+  | **USB low-speed device** | NRZI, bit stuffing, on-chip token recognition, ACK/NAK in the turnaround window, CRC16 check via the CRC tap; **full enumeration** | RTL + model |
+  | SWD probe | ARM Serial Wire Debug engine: DPIDR read, register writes | model |
+  | JTAG | IEEE 1149.1 shift engine: IDCODE via Shift-DR | model |
+  | CAN 2.0A receiver | edge resync, destuffing, CRC15 via the CRC tap, ACK slot, ±1 % bit rate | model |
+  | 1-Wire master | reset/presence with WAIT timeout, READ ROM | model |
+  | PS/2 device | self-clocked, odd parity from the CRC tap as a 1-bit LFSR | model |
+  | WS2812 | NeoPixel timing, checked against the datasheet windows | model |
+  | I2C sniffer | passive; START = `wait fall SDA if pin SCL == 1` | model (runs alongside the I2C master on another core) |
+
+  "model" means the cycle-accurate model, which is lockstep-verified against the RTL.
 * **Physical design:** SRAM integration and timing work, but routability is the
   constraint (a single horizontal routing layer). See
   [docs/physical.md](docs/physical.md). The architecture is being sized from
