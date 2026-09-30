@@ -78,11 +78,17 @@ make -C formal                         # SymbiYosys proofs
   | I2C sniffer | passive; START = `wait fall SDA if pin SCL == 1` | model (runs alongside the I2C master on another core) |
 
   "model" means the cycle-accurate model, which is lockstep-verified against the RTL.
-* **Physical design:** SRAM integration and timing work, but routability is the
-  constraint (a single horizontal routing layer). See
-  [docs/physical.md](docs/physical.md). The architecture is being sized from
-  routability experiments.
+* **Physical design (IHP SG13CMOS5L, 6x4 tiles):**
+  * The tapeout configuration is **2 cores, 2 × 256-word SRAM banks, 8-deep
+    FIFOs and the CRC tap**, at 50 MHz typical (48 MHz for USB).
+  * SRAM macros sit in the bottom corners, mirrored with pins up. Placement
+    density is matched to utilization (about 30 %).
+  * Detailed routing reached **0 violations**; signoff (antenna, DRC, LVS,
+    timing) is in progress.
+  * Four cores don't route on this tile's single horizontal routing layer.
+    [docs/physical.md](docs/physical.md) has the routability experiments that
+    led here.
 * **Next:**
-  * Size the architecture to route.
-  * The serial pipeline / CRC assist.
-  * Demo board bring-up tooling.
+  * Signoff and gate-level simulation of the final netlist.
+  * Bring-up scripts for the demo board.
+  * A public repository with the TT GDS action.
