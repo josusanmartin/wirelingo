@@ -25,8 +25,9 @@ MOSI, SCK, CS = 5, 6, 7
 
 
 class ProtoEmu:
-    def __init__(self, tt):
+    def __init__(self, tt, fifo_depth=8):
         self.tt = tt
+        self.depth = fifo_depth
         self.ui = 1 << CS
         self._set_ui()
 
@@ -96,12 +97,12 @@ class ProtoEmu:
         return self.read(self.core_reg(core, C_STATUS))
 
     def push(self, core, word):
-        while self.status(core) & 7 >= 4:
+        while self.status(core) & 15 >= self.depth:
             pass
         self.write(self.core_reg(core, C_FIFO), word, fixed=True)
 
     def pop(self, core):
         """Return one RX FIFO word, or None if empty."""
-        if (self.status(core) >> 4) & 7 == 0:
+        if (self.status(core) >> 4) & 15 == 0:
             return None
         return self.read(self.core_reg(core, C_FIFO), fixed=True)
