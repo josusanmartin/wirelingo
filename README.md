@@ -65,9 +65,11 @@ make -C formal                         # SymbiYosys proofs
   * UART TX and RX.
   * SPI master.
   * I2C master with clock stretching and timeouts.
-  * **USB low-speed device transactions** (SETUP→ACK, IN→NAK/DATA). NRZI,
-    bit stuffing and CRC-carrying packets are handled in firmware, and tokens
-    are recognized on-chip so the device answers within the bus turnaround.
+  * **USB low-speed device, all the way to enumeration** (on the model):
+    GET_DESCRIPTOR, SET_ADDRESS, a multi-packet configuration descriptor and
+    SET_CONFIGURATION, in 2 ms of bus time at 48 MHz. Firmware on two cores
+    handles NRZI, bit stuffing, token recognition, turnaround-time ACK/NAK and
+    a CRC16 check through the CRC tap. The host software only answers requests.
 * **Physical design:** SRAM integration and timing work, but routability is the
   constraint (a single horizontal routing layer). See
   [docs/physical.md](docs/physical.md). The architecture is being sized from

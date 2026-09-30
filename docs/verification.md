@@ -103,7 +103,11 @@ the same tests are then repeated on the RTL through the **real SPI host port**
     against known vectors);
   * packets at ±2.5% bit-rate error, beyond the ±1.5% the USB spec requires;
   * SETUP→ACK within the 7.5-bit turnaround, IN→NAK and IN→DATA1;
-  * a corrupted DATA packet that must *not* be ACKed.
+  * a corrupted DATA packet that must *not* be ACKed;
+  * **full enumeration** (`test/model/test_usb_enum.py`): a cycle-level USB
+    host (`tools/pe/usbhost.py`, with NAK retries) enumerates the device, while
+    slow "device software" on the SPI side decodes SETUPs and stages
+    descriptor packets.
 * The CRC tap is checked against the USB reference CRCs, both the transmitted
   fields and the residues.
 
@@ -121,3 +125,5 @@ SRAM models (`make GATES=yes`, as in Tiny Tapeout's CI).
 | USB RX firmware | response flags raised after the (possibly blocking) FIFO push | trace review; flags now precede pushes |
 | test harness | EEPROM model lost bus updates (cocotb deferred writes) | I2C test; drivers now shadowed in Python |
 | flow | LibreLane passes `-threads None` to OpenROAD | investigation of slow runs |
+| USB RX firmware | autopushed words of skipped packets (our own IN responses) leaked into the FIFO | enumeration test (host software desync) |
+| USB RX firmware | a 12-byte packet plus its token overflowed the 4-word FIFO | enumeration test; now only DATA payloads are pushed, without SYNC/PID |
