@@ -2,6 +2,7 @@
 prove
 
 [options]
+multiclock on
 mode prove
 depth 6
 
@@ -9,10 +10,11 @@ depth 6
 smtbmc yices
 
 [script]
-read_verilog -sv -formal -DPE_FIFO_NO_CG pe_core.sv pe_fifo.sv core_props.sv
+read_verilog -sv -formal pe_core.sv pe_fifo.sv pe_cg.sv core_props.sv
 prep -top core_props
 
 [files]
 ../src/pe_core.sv
 ../src/pe_fifo.sv
+../src/pe_cg.sv
 core_props.sv

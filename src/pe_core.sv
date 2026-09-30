@@ -568,30 +568,47 @@ module pe_core #(
     endcase
   end
 
+  // ---------------------------------------------------------------- config registers
+  // Written only by the host, so each register gets a clock gate rather than
+  // a hold mux per bit.
+  wire [5:0] cfg_gclk;
+  genvar g;
+  generate
+    for (g = 0; g < 6; g = g + 1) begin : g_cfg_cg
+      pe_cg u_cg (.clk(clk), .en(bus_sel && bus_we && bus_off == g), .gclk(cfg_gclk[g]));
+    end
+  endgenerate
+
+  always @(posedge cfg_gclk[0] or negedge rst_n)
+    if (!rst_n) {div_int, div_frac} <= {16'd1, 8'd0};
+    else {div_int, div_frac} <= bus_wdata[23:0];
+
+  always @(posedge cfg_gclk[1] or negedge rst_n)
+    if (!rst_n) {out_base, out_count, set_base, set_count} <= 19'd0;
+    else {out_base, out_count, set_base, set_count} <=
+        {bus_wdata[4:0], bus_wdata[13:8], bus_wdata[20:16], bus_wdata[26:24]};
+
+  always @(posedge cfg_gclk[2] or negedge rst_n)
+    if (!rst_n) {side_base, side_count, side_opt, side_pindir, in_base} <= 15'd0;
+    else {side_base, side_count, side_opt, side_pindir, in_base} <=
+        {bus_wdata[4:0], bus_wdata[10:8], bus_wdata[12], bus_wdata[13], bus_wdata[20:16]};
+
+  always @(posedge cfg_gclk[3] or negedge rst_n)
+    if (!rst_n) {out_shr, in_shr, autopull, autopush, pull_thresh, push_thresh} <= 14'd0;
+    else {out_shr, in_shr, autopull, autopush, pull_thresh, push_thresh} <=
+        {bus_wdata[0], bus_wdata[1], bus_wdata[2], bus_wdata[3], bus_wdata[12:8], bus_wdata[20:16]};
+
+  always @(posedge cfg_gclk[4] or negedge rst_n)
+    if (!rst_n) entry <= {IDX, 8'd0};
+    else entry <= bus_wdata[9:0];
+
+  always @(posedge cfg_gclk[5] or negedge rst_n)
+    if (!rst_n) {wrap_bottom, wrap_top} <= {10'd0, 10'd1023};
+    else {wrap_bottom, wrap_top} <= {bus_wdata[9:0], bus_wdata[25:16]};
+
   // ---------------------------------------------------------------- sequential
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      div_int <= 16'd1;
-      div_frac <= 8'd0;
-      out_base <= 5'd0;
-      out_count <= 6'd0;
-      set_base <= 5'd0;
-      set_count <= 3'd0;
-      side_base <= 5'd0;
-      side_count <= 3'd0;
-      side_opt <= 1'b0;
-      side_pindir <= 1'b0;
-      in_base <= 5'd0;
-      out_shr <= 1'b0;
-      in_shr <= 1'b0;
-      autopull <= 1'b0;
-      autopush <= 1'b0;
-      pull_thresh <= 5'd0;
-      push_thresh <= 5'd0;
-      entry <= {IDX, 8'd0};
-      wrap_bottom <= 10'd0;
-      wrap_top <= 10'd1023;
-
       pc <= {IDX, 8'd0};
       r0 <= 16'd0;
       r1 <= 16'd0;
@@ -687,30 +704,6 @@ module pe_core #(
       // host writes (win over core writes in the same cycle)
       if (host_w) begin
         case (bus_off)
-          5'h00: begin div_int <= bus_wdata[23:8]; div_frac <= bus_wdata[7:0]; end
-          5'h01: begin
-            out_base <= bus_wdata[4:0];
-            out_count <= bus_wdata[13:8];
-            set_base <= bus_wdata[20:16];
-            set_count <= bus_wdata[26:24];
-          end
-          5'h02: begin
-            side_base <= bus_wdata[4:0];
-            side_count <= bus_wdata[10:8];
-            side_opt <= bus_wdata[12];
-            side_pindir <= bus_wdata[13];
-            in_base <= bus_wdata[20:16];
-          end
-          5'h03: begin
-            out_shr <= bus_wdata[0];
-            in_shr <= bus_wdata[1];
-            autopull <= bus_wdata[2];
-            autopush <= bus_wdata[3];
-            pull_thresh <= bus_wdata[12:8];
-            push_thresh <= bus_wdata[20:16];
-          end
-          5'h04: entry <= bus_wdata[9:0];
-          5'h05: begin wrap_bottom <= bus_wdata[9:0]; wrap_top <= bus_wdata[25:16]; end
           5'h08: begin dcnt <= 8'd0; in_wait <= 1'b0; end
           5'h0A: r0 <= bus_wdata[15:0];
           5'h0B: r1 <= bus_wdata[15:0];
@@ -745,18 +738,32 @@ module pe_core #(
     end
   end
 
+  // previous-cycle copies (explicit, so the checks also hold under multiclock)
+  reg        p_rst_n, p_halted, p_fault, p_restart, p_host_pc_w, p_commit, p_enable, p_host_w;
+  reg [9:0]  p_pc;
+  reg [31:0] p_isr, p_osr;
+  reg [7:0]  p_dcnt;
+  reg [15:0] p_cnt, p_r0, p_r1, p_r2, p_r3;
+  reg        p_in_wait;
   always @(posedge clk) begin
-    if (rst_n && f_past && $past(rst_n)) begin
+    p_rst_n <= rst_n; p_halted <= halted; p_fault <= fault; p_restart <= restart;
+    p_host_pc_w <= host_pc_w; p_commit <= commit; p_enable <= enable; p_host_w <= host_w;
+    p_pc <= pc; p_isr <= isr; p_osr <= osr; p_dcnt <= dcnt; p_cnt <= cnt; p_in_wait <= in_wait;
+    p_r0 <= r0; p_r1 <= r1; p_r2 <= r2; p_r3 <= r3;
+  end
+
+  always @(*) begin
+    if (rst_n && f_past && p_rst_n) begin
       // halted/faulted cores stay that way until restarted
-      if ($past(halted) && !$past(restart)) assert (halted);
-      if ($past(fault) && !$past(restart)) assert (fault);
+      if (p_halted && !p_restart) assert (halted);
+      if (p_fault && !p_restart) assert (fault);
       // the PC only moves on a completed instruction, a restart or a host write
-      if (!$past(restart) && !$past(host_pc_w) && !$past(commit)) assert (pc == $past(pc));
+      if (!p_restart && !p_host_pc_w && !p_commit) assert (pc == p_pc);
       // a disabled core's execution state is frozen (host writes aside)
-      if (!$past(enable) && !$past(restart) && !$past(host_w)) begin
-        assert (pc == $past(pc) && isr == $past(isr) && osr == $past(osr));
-        assert (dcnt == $past(dcnt) && cnt == $past(cnt) && in_wait == $past(in_wait));
-        assert (r0 == $past(r0) && r1 == $past(r1) && r2 == $past(r2) && r3 == $past(r3));
+      if (!p_enable && !p_restart && !p_host_w) begin
+        assert (pc == p_pc && isr == p_isr && osr == p_osr);
+        assert (dcnt == p_dcnt && cnt == p_cnt && in_wait == p_in_wait);
+        assert (r0 == p_r0 && r1 == p_r1 && r2 == p_r2 && r3 == p_r3);
       end
     end
   end

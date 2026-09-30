@@ -30,7 +30,8 @@ module pe_chip #(
   reg [3:0]  enable;
   reg [7:0]  flags;
   reg [7:0]  bank_owner;
-  reg [63:0] pin_owner;
+  reg [31:0] pin_owner_lo, pin_owner_hi;
+  wire [63:0] pin_owner = {pin_owner_hi, pin_owner_lo};
   reg [7:0]  od_mask;
   reg [31:0] pin_out, pin_oe;
   reg [12:0] sync1, sync2;
@@ -143,14 +144,25 @@ module pe_chip #(
     end
   end
 
+  // ---------------------------------------------------------------- config registers
+  // host-only writes: clock-gated instead of a hold mux per bit
+  wire [3:0] gcfg_gclk;
+  genvar gi;
+  generate
+    for (gi = 0; gi < 4; gi = gi + 1) begin : g_gcfg_cg
+      pe_cg u_cg (.clk(clk), .en(bus_we && sel_glob && goff == 4'h4 + gi), .gclk(gcfg_gclk[gi]));
+    end
+  endgenerate
+  always @(posedge gcfg_gclk[0] or negedge rst_n) if (!rst_n) bank_owner <= 8'hE4; else bank_owner <= bus_wdata[7:0];
+  always @(posedge gcfg_gclk[1] or negedge rst_n) if (!rst_n) pin_owner_lo <= 32'd0; else pin_owner_lo <= bus_wdata;
+  always @(posedge gcfg_gclk[2] or negedge rst_n) if (!rst_n) pin_owner_hi <= 32'd0; else pin_owner_hi <= bus_wdata;
+  always @(posedge gcfg_gclk[3] or negedge rst_n) if (!rst_n) od_mask <= 8'd0; else od_mask <= bus_wdata[7:0];
+
   // ---------------------------------------------------------------- sequential
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       enable <= 4'd0;
       flags <= 8'd0;
-      bank_owner <= 8'hE4;
-      pin_owner <= 64'd0;
-      od_mask <= 8'd0;
       pin_out <= 32'd0;
       pin_oe <= 32'd0;
       sync1 <= 13'd0;
@@ -164,10 +176,6 @@ module pe_chip #(
       if (bus_we && sel_glob) begin
         case (goff)
           4'h1: enable <= bus_wdata[3:0];
-          4'h4: bank_owner <= bus_wdata[7:0];
-          4'h5: pin_owner[31:0] <= bus_wdata;
-          4'h6: pin_owner[63:32] <= bus_wdata;
-          4'h7: od_mask <= bus_wdata[7:0];
           default: ;
         endcase
       end
