@@ -64,6 +64,7 @@ def main():
     ap.add_argument("--density", type=int, default=60)
     ap.add_argument("--grt-adjust", type=float, default=None)
     ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--every-other", action="store_true", help="extra SRAM array stripe pairs (prism's setting)")
     ap.add_argument("--layout", choices=["top", "sides", "corners"], default="top")
     a = ap.parse_args()
     c = collections.OrderedDict()
@@ -100,7 +101,7 @@ def main():
         f"{esc(b)} VPWR VGND VDD! VSS!", f"{esc(b)} VPWR VGND VDDARRAY! VSS!")]
     c["PDN_CFG"] = "dir::pdn_cfg.tcl"
     c["ERROR_ON_PDN_VIOLATIONS"] = 0
-    c["EXTEND_STRIPES_SRAM_ARRAY_EVERY_OTHER"] = True
+    c["EXTEND_STRIPES_SRAM_ARRAY_EVERY_OTHER"] = a.every_other
     c["EXTEND_STRIPES_PIN_FACE_MARGIN"] = 0
     c["FP_MACRO_HORIZONTAL_HALO"] = 2.0
     c["FP_MACRO_VERTICAL_HALO"] = 0.48
