@@ -7,8 +7,11 @@ two get fixed.
 
 ## 1. Overview
 
-protoemu is a programmable protocol engine: four small cores ("lanes"), each a
-single-issue, one-instruction-per-tick processor specialised for bit-banging.
+protoemu is a programmable protocol engine: up to four small cores ("lanes"),
+each a single-issue, one-instruction-per-tick processor specialised for
+bit-banging. A build has `NCORES` cores and `NBANKS` instruction-memory banks
+(1–4 each). The architecture, register map and encodings always describe four;
+see §7 for what a smaller build does with the missing ones.
 Each core has its own clock divider, registers, shift registers and FIFOs to
 the host. The instruction set is PIO-inspired but addresses PIO's main
 limitations:
@@ -468,3 +471,19 @@ before starting programs, and for host-driven GPIO.
 
 `STATUS.stalled` is 1 when the last attempted instruction stalled. Unlisted
 addresses read as 0 and ignore writes.
+
+## 7. Reduced builds
+
+A build may implement fewer than four cores (`NCORES`) and IMEM banks
+(`NBANKS`). The IHP tapeout's values are recorded in `info.yaml` and the
+README. For the parts that don't exist:
+
+* **Missing core *c*:** its register block reads as 0 and ignores writes
+  (including FIFO pushes). `CTRL.enable[c]` and `CTRL.restart[c]` are stored or
+  accepted but have no effect. Pins and flags are never written by it. A pin
+  owned by a missing core keeps its value unless the host writes `PIN_OUT` or
+  `PIN_OE`.
+* **Missing bank *b*:** host writes to it are ignored and fetches from it read
+  instruction 0 (`jmp 0`). `BANK_OWNER` still resets to bank *b* → core *b*, so
+  a present core that runs into a missing bank faults (§3), unless the host has
+  explicitly given it that bank.
