@@ -32,9 +32,15 @@ module pe_fifo #(
   assign head  = mem[rd];
   assign level = cnt;
 
-  always @(posedge clk) begin
-    if (do_push) mem[wr] <= push_data;
-  end
+  // storage: one clock gate per entry instead of a hold mux per bit
+  genvar e;
+  generate
+    for (e = 0; e < 4; e = e + 1) begin : g_ent
+      wire gclk;
+      pe_cg u_cg (.clk(clk), .en(do_push && wr == e), .gclk(gclk));
+      always @(posedge gclk) mem[e] <= push_data;
+    end
+  endgenerate
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin

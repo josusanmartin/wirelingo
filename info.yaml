@@ -21,6 +21,7 @@ project:
     - "pe_chip.sv"
     - "pe_core.sv"
     - "pe_fifo.sv"
+    - "pe_cg.sv"
     - "pe_imem.sv"
     - "pe_spi_slave.sv"
 

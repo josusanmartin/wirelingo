@@ -118,5 +118,10 @@
   "RUN_CTS": 1,
   "FP_PDN_MULTILAYER": 0,
   "MAGIC_DEF_LABELS": 0,
-  "MAGIC_WRITE_LEF_PINONLY": 1
+  "MAGIC_WRITE_LEF_PINONLY": 1,
+  "//corners": "Optimise for the corners TT signs off on (typ) plus slow; fast-corner hold fixing alone inserted ~3200 buffers and broke placement",
+  "PNR_CORNERS": [
+    "nom_typ_1p20V_25C",
+    "nom_slow_1p08V_125C"
+  ]
 }

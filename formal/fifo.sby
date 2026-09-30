@@ -3,6 +3,7 @@ prove
 cover
 
 [options]
+multiclock on
 prove: mode prove
 prove: depth 12
 cover: mode cover
@@ -12,9 +13,10 @@ cover: depth 12
 smtbmc yices
 
 [script]
-read_verilog -sv -formal pe_fifo.sv fifo_props.sv
+read_verilog -sv -formal pe_fifo.sv pe_cg.sv fifo_props.sv
 prep -top fifo_props
 
 [files]
 ../src/pe_fifo.sv
+../src/pe_cg.sv
 fifo_props.sv
