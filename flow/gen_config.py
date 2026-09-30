@@ -38,6 +38,13 @@ def placements(nbanks, layout="top"):
            inward, starting at the bottom (bank 0 right, 1 left, 2 right, 3 left);
            the top band stays free for the I/O pins (all at the top-left).
     The top-left corner, where all the TT I/O pins are, stays free either way."""
+    if layout == "corners":
+        # bottom corners, mirrored (pins up), banks 2-3 above them if needed
+        x_r = snap(CORE_X1 - W - 3 * SITE, SITE)
+        x_l = snap(2.88 + 3 * SITE, SITE)
+        y2 = snap(3.78 + H + 30 * ROW, ROW)
+        spots = [(x_r, 3.78, "FS"), (x_l, 3.78, "FS"), (x_r, y2, "FS"), (x_l, y2, "FS")]
+        return {b: spots[b] for b in range(nbanks)}
     if layout == "sides":
         x_r = snap(CORE_X1 - H - 3 * SITE, SITE)
         x_l = snap(2.88 + 3 * SITE, SITE)
@@ -57,7 +64,7 @@ def main():
     ap.add_argument("--density", type=int, default=60)
     ap.add_argument("--grt-adjust", type=float, default=None)
     ap.add_argument("--threads", type=int, default=8)
-    ap.add_argument("--layout", choices=["top", "sides"], default="top")
+    ap.add_argument("--layout", choices=["top", "sides", "corners"], default="top")
     a = ap.parse_args()
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
