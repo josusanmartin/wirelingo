@@ -7,7 +7,16 @@
  * everything else belongs to the four protocol cores (docs/isa.md §2).
  */
 `default_nettype none
-`include "pe_config.vh"
+// IMEM: SRAM macros (256 words/bank) by default. Define PE_FLOP_IMEM (and
+// optionally PE_BANK_AW) for the flop build used in fast simulations.
+`ifdef PE_FLOP_IMEM
+`ifndef PE_BANK_AW
+`define PE_BANK_AW 4
+`endif
+`else
+`undef PE_BANK_AW
+`define PE_BANK_AW 8
+`endif
 
 module tt_um_josusanmartin_protoemu (
     input  wire [7:0] ui_in,

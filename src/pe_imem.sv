@@ -1,7 +1,8 @@
 /*
  * Banked instruction memory with registered (SRAM-like) reads.
  * Bank b is read at the fetch address of its owner core (BANK_OWNER).
- * This is the flop build: BANK_AW address bits per bank, higher bits alias.
+ * Default: one IHP 256x32 SRAM macro per bank (BANK_AW = 8).
+ * PE_FLOP_IMEM: flop banks with BANK_AW address bits; higher bits alias.
  * SPDX-License-Identifier: Apache-2.0
  */
 `default_nettype none
@@ -34,18 +35,44 @@ module pe_imem #(
 endmodule
 
 module pe_imem_bank #(
-    parameter AW = 4
+    parameter AW = 8
 ) (
     input  wire          clk,
     input  wire [AW-1:0] raddr,
     input  wire          we,
     input  wire [AW-1:0] waddr,
     input  wire [31:0]   wdata,
-    output reg  [31:0]   rdata
+    output wire [31:0]   rdata
 );
+`ifdef PE_FLOP_IMEM
+  // Flop build (simulation / small experiments): same registered-read behaviour.
   reg [31:0] mem[0:(1<<AW)-1];
+  reg [31:0] rdata_q;
   always @(posedge clk) begin
     if (we) mem[waddr] <= wdata;
-    rdata <= mem[raddr];
+    rdata_q <= mem[raddr];
   end
+  assign rdata = rdata_q;
+`else
+  // IHP 256x32 single-port SRAM. A write cycle doesn't read (DOUT holds), which is
+  // fine because a bank is only written while its owner core is disabled (isa.md §3).
+  (* keep *) RM_IHPSG13_1P_256x32_c2_bm_bist sram (
+      .A_CLK(clk),
+      .A_MEN(1'b1),
+      .A_WEN(we),
+      .A_REN(!we),
+      .A_ADDR(we ? waddr : raddr),
+      .A_DIN(wdata),
+      .A_DLY(1'b1),
+      .A_DOUT(rdata),
+      .A_BM(32'hFFFF_FFFF),
+      .A_BIST_CLK(1'b0),
+      .A_BIST_EN(1'b0),
+      .A_BIST_MEN(1'b0),
+      .A_BIST_WEN(1'b0),
+      .A_BIST_REN(1'b0),
+      .A_BIST_ADDR(8'd0),
+      .A_BIST_DIN(32'd0),
+      .A_BIST_BM(32'd0));
+`endif
 endmodule

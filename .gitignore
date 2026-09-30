@@ -9,3 +9,7 @@ syn/*.log
 syn/*.lib
 runs/
 tt/
+.venv-flow/
+src/user_config.json
+src/config_merged.json
+harden.log
