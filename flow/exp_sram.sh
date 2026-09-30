@@ -14,10 +14,10 @@ python3 - "$NC" <<'PY'
 import sys
 nc = sys.argv[1]
 p = 'src/project.v'; s = open(p).read()
-s = s.replace('pe_chip #(.BANK_AW(`PE_BANK_AW)) u_chip (', f'pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES({nc}), .NBANKS({nc})) u_chip (')
+s = s.replace('`define PE_NCORES 4', f'`define PE_NCORES {nc}')
 open(p, 'w').write(s)
 PY
-grep -q "NCORES($NC)" src/project.v
+grep -q "define PE_NCORES $NC" src/project.v
 export PATH=$HOME/dev/protoemu/.venv-flow/bin:$PATH PDK_ROOT=$HOME/ttpdk PDK=ihp-sg13cmos5l
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null 2>&1
 python ./tt/tt_tool.py --harden --ihp > exp.log 2>&1 || true
