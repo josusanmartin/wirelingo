@@ -14,6 +14,8 @@ from pe import asm, host, sim
 
 FW = pathlib.Path(__file__).resolve().parent.parent / "firmware"
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
+NCORES = int(os.environ.get("PE_NCORES", "4"))
+core = lambda i: i % NCORES  # tests spread over the cores that exist
 CLK_NS = 20  # 50 MHz
 SCK_HALF = 4  # SPI SCK half period in clk cycles (SCK = clk/8)
 
@@ -131,11 +133,11 @@ async def run_program(spi, core, prog, base=None, **cfg):
 async def test_id(dut):
     spi = await setup(dut)
     assert (await spi.read(sim.A_ID))[0] == sim.ID_VALUE
-    await spi.write(sim.core_reg(2, sim.C_R0), [0x1234, 0xBEEF], fixed=False)
-    assert await spi.read(sim.core_reg(2, sim.C_R0), 2) == [0x1234, 0xBEEF]
+    await spi.write(sim.core_reg(core(2), sim.C_R0), [0x1234, 0xBEEF], fixed=False)
+    assert await spi.read(sim.core_reg(core(2), sim.C_R0), 2) == [0x1234, 0xBEEF]
     # FIFO: push 3 words to core 1's TXF, check level
-    await spi.write(sim.core_reg(1, sim.C_FIFO), [1, 2, 3], fixed=True)
-    st = (await spi.read(sim.core_reg(1, sim.C_STATUS)))[0]
+    await spi.write(sim.core_reg(core(1), sim.C_FIFO), [1, 2, 3], fixed=True)
+    st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
     assert st & 7 == 3, hex(st)
 
 
@@ -197,7 +199,7 @@ async def test_uart_rx(dut):
     prog = load_fw("uart_rx", RX=RX)
     div = 3  # 24 clks per bit
     cpb = 8 * div
-    await run_program(spi, 1, prog, in_pins=RX, clkdiv=div << 8)
+    await run_program(spi, core(1), prog, in_pins=RX, clkdiv=div << 8)
     spi.set_low_inputs(1)  # idle high
     await ClockCycles(dut.clk, 50)
     msg = b"\x55\xAA\x00\xFFok"
@@ -208,15 +210,15 @@ async def test_uart_rx(dut):
             spi.set_low_inputs(bit)
             await ClockCycles(dut.clk, cpb)
         # drain while sending
-        st = (await spi.read(sim.core_reg(1, sim.C_STATUS)))[0]
+        st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
         n = (st >> 4) & 7
         if n:
-            got += await spi.read(sim.core_reg(1, sim.C_FIFO), n, fixed=True)
+            got += await spi.read(sim.core_reg(core(1), sim.C_FIFO), n, fixed=True)
     await ClockCycles(dut.clk, 3 * cpb)
-    st = (await spi.read(sim.core_reg(1, sim.C_STATUS)))[0]
+    st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
     n = (st >> 4) & 7
     if n:
-        got += await spi.read(sim.core_reg(1, sim.C_FIFO), n, fixed=True)
+        got += await spi.read(sim.core_reg(core(1), sim.C_FIFO), n, fixed=True)
     assert bytes(got) == msg, got
     assert (await spi.read(sim.A_FSET))[0] & 1 == 0, "unexpected framing error flag"
 
@@ -271,23 +273,23 @@ async def test_spi_master(dut):
     pin {MOSI}, lo
     halt
 """)
-    await spi.apply(host.pin_owner_writes({SCK: 2, MOSI: 2, MISO: 2}))
-    await run_program(spi, 2, pro)
+    await spi.apply(host.pin_owner_writes({SCK: core(2), MOSI: core(2), MISO: core(2)}))
+    await run_program(spi, core(2), pro)
     await ClockCycles(dut.clk, 20)
     await spi.write(sim.A_CTRL, [0])
     pins = int(dut.uio_oe.value)
     assert pins & (1 << SCK) and pins & (1 << MOSI), hex(pins)
-    await run_program(spi, 2, prog, out_pins=(MOSI, 1), side_pins=SCK, in_pins=MISO, clkdiv=2 << 8)
+    await run_program(spi, core(2), prog, out_pins=(MOSI, 1), side_pins=SCK, in_pins=MISO, clkdiv=2 << 8)
     resp = [0xC3, 0x5A, 0x01, 0x80]
     slave = SpiSlave(dut, SCK, MOSI, MISO, resp)
     tx = [0xA5, 0x0F, 0xFF, 0x00]
-    await spi.write(sim.core_reg(2, sim.C_FIFO), [b << 24 for b in tx], fixed=True)
+    await spi.write(sim.core_reg(core(2), sim.C_FIFO), [b << 24 for b in tx], fixed=True)
     for _ in range(100):
-        st = (await spi.read(sim.core_reg(2, sim.C_STATUS)))[0]
+        st = (await spi.read(sim.core_reg(core(2), sim.C_STATUS)))[0]
         if (st >> 4) & 7 == len(tx):
             break
         await ClockCycles(dut.clk, 50)
-    got = await spi.read(sim.core_reg(2, sim.C_FIFO), len(tx), fixed=True)
+    got = await spi.read(sim.core_reg(core(2), sim.C_FIFO), len(tx), fixed=True)
     assert list(slave.rx) == tx, list(slave.rx)
     assert [g & 0xFF for g in got] == resp, got
 
@@ -401,9 +403,9 @@ async def test_i2c_master(dut):
     dut.pull_up.value = 0b11
     await spi.write(sim.A_POUT, [0b11])  # released
     await spi.write(sim.A_OD, [0b11])
-    await spi.apply(host.pin_owner_writes({SDA: 3, SCL: 3}))
+    await spi.apply(host.pin_owner_writes({SDA: core(3), SCL: core(3)}))
     eeprom = I2cEeprom(dut, SDA, SCL, stretch=int(os.environ.get("I2C_STRETCH", "40")))
-    await run_program(spi, 3, prog, out_pins=(SDA, 1), in_pins=SDA, clkdiv=4 << 8)
+    await run_program(spi, core(3), prog, out_pins=(SDA, 1), in_pins=SDA, clkdiv=4 << 8)
     if os.environ.get("TRACE"):
         import dbg_trace
         tl = []
@@ -411,13 +413,13 @@ async def test_i2c_master(dut):
     START, STOP = 2, 3
     WR = lambda b: (b << 24) | 0
     RD = lambda ack: 1 | (0 if ack else 4)
-    fifo = sim.core_reg(3, sim.C_FIFO)
+    fifo = sim.core_reg(core(3), sim.C_FIFO)
 
     async def cmds(words):
         replies = []
         for w in words:
             while True:
-                st = (await spi.read(sim.core_reg(3, sim.C_STATUS)))[0]
+                st = (await spi.read(sim.core_reg(core(3), sim.C_STATUS)))[0]
                 if st & 7 < 4:
                     break
             await spi.write(fifo, [w], fixed=True)
@@ -426,7 +428,7 @@ async def test_i2c_master(dut):
     async def drain(n):
         out = []
         for _ in range(400):
-            st = (await spi.read(sim.core_reg(3, sim.C_STATUS)))[0]
+            st = (await spi.read(sim.core_reg(core(3), sim.C_STATUS)))[0]
             k = (st >> 4) & 7
             if k:
                 out += await spi.read(fifo, k, fixed=True)

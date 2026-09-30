@@ -17,6 +17,13 @@
 `undef PE_BANK_AW
 `define PE_BANK_AW 8
 `endif
+// Number of cores and IMEM banks in this build (the ISA allows up to 4 of each).
+`ifndef PE_NCORES
+`define PE_NCORES 4
+`endif
+`ifndef PE_NBANKS
+`define PE_NBANKS `PE_NCORES
+`endif
 
 module tt_um_josusanmartin_protoemu (
     input  wire [7:0] ui_in,
@@ -54,7 +61,7 @@ module tt_um_josusanmartin_protoemu (
       .bus_commit(bus_commit),
       .bus_rdata(bus_rdata));
 
-  pe_chip #(.BANK_AW(`PE_BANK_AW)) u_chip (
+  pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS)) u_chip (
       .clk(clk),
       .rst_n(rstn),
       .ui_in(ui_in[4:0]),
