@@ -61,11 +61,11 @@ jmp [cond,] target
 wait 1|0 pin p   [if pin q == v] [timeout rN]
 wait rise|fall|edge p   [if pin q == v] [timeout rN]
 wait 1 flag k [clear] [timeout rN]      wait 0 flag k
-in  src, n        ; src: r0-r3 pins isr osr null status flags pc
-out dst, n        ; dst: r0-r3 pins pindirs isr pc null
+in  src, n        ; src: r0-r3 pins isr osr null status flags pc crc
+out dst, n        ; dst: r0-r3 pins pindirs isr pc crc null
 push [iffull] [block|noblock]
 pull [ifempty] [block|noblock]
-mov dst, [~|::]src        ; ~ invert, :: bit-reverse
+mov dst, [~|::]src        ; ~ invert, :: bit-reverse; `mov crc, ~null` presets the CRC tap
 set pins|pindirs, v       ; v = 0..31
 ldi rN, imm16
 add|sub|and|or|xor|shl|shr|cmp rN, rM|imm13
