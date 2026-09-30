@@ -34,18 +34,33 @@ A running log of what the flow taught us. The numbers come from local LibreLane
 
 ## Routability is the constraint (not cell area)
 
-| Build | Utilization | Overflowed tiles (GPL est.) | Metal3 (H) after GRT |
-|-------|-------------|-----------------------------|----------------------|
-| 4 cores, flop IMEM 4 w/bank | 51 % | 13 % | **146 %** (overflow 95.8K) |
-| 4 cores + 4 SRAM macros | 65 % | 47 % | (aborted) |
-| 3 cores, flop IMEM | 43 % | 7.0 % | pending |
-| 2 cores, flop IMEM | 32 % | 2.1 % | pending |
-| 4 cores without shifters/rotators | 44 % | 3.0 % | pending |
-| reference: WilliamZhang20/protocol-emulator (passes) | 36 % | — | 51 % |
+Numbers are quick global-routing runs (5 iterations) on placed databases.
+Metal3 is the only horizontal layer.
 
-The barrel shifters and rotators (a 64-bit funnel shifter and 32-bit pin
-rotators in every core) cost far more wiring than their area suggests: removing
-them helps more than removing a whole core.
+| Build | Utilization | Metal3 (H) | Overflow | Notes |
+|-------|-------------|------------|----------|-------|
+| 4 cores, flop IMEM, placement density 60 % | 51 % | **146 %** | 95.8K | infeasible at any spreading |
+| 3 cores, flop IMEM, density 60 % | 43 % | 100 % | 17.6K | |
+| 4 cores without shifters/rotators | 44 % | 84 % | 2.2K | datapath ≈ 40 % of per-core wiring |
+| 2 cores, flop IMEM, density 60 % | 32 % | 83 % | 2.5K | cells clustered in the middle, sides empty |
+| 2 cores, flop IMEM, **density 38 %** | 32 % | **58 %** | **0** | spreading fixes it |
+| 2 cores + 2 SRAMs, top-right pair, density 34 % | 30 % | 68 % | 794 | hotspot under the left macro's pin edge |
+| **2 cores + 2 SRAMs, bottom corners (FS), density 34 %** | 30 % | 66 % | **34** | |
+| reference: WilliamZhang20/protocol-emulator (passes) | 36 % | 51 % | — | |
+
+Lessons:
+
+* **Wiring is set by the datapath.** Barrel shifters and rotators cost about
+  0.42 m of wire per core (40 %), far more than their area suggests.
+* **Placement density must track utilization.** TT's default
+  `PL_TARGET_DENSITY_PCT` of 60 packs a 30 %-utilized design into the middle
+  of the die. Set it a few points above utilization.
+* **SRAM floorplan matters.** Put the macros in the bottom corners, mirrored so
+  the pins face the logic. That keeps the top band (where every TT I/O pin
+  is) and the middle free. Rotated macros (E/W) would be better still, but
+  `Project.ExtendPowerStripes` supports only N and FS.
+* **LibreLane 3.1.0.dev3 runs OpenROAD single-threaded** unless
+  `OPENROAD_THREADS` is set (it passes `-threads None`).
 
 ## Area reductions applied
 
