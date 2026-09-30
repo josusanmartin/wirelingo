@@ -234,7 +234,7 @@ def _encode(line, prog, defs, lineno):
 
     op, x = None, 0
     if mn == "nop":
-        op, x = isa.OP_MOV, (isa.NULL << 10) | (isa.NULL << 4)
+        op, x = isa.OP_MOV, (isa.NULL << 15) | (isa.NULL << 9)
     elif mn == "jmp":
         op = isa.OP_JMP
         if len(args) == 1:

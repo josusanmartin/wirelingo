@@ -3,7 +3,7 @@ from cocotb.triggers import RisingEdge, ReadOnly
 from pe import isa
 
 async def trace_core(dut, idx, n=400, log=None):
-    core = dut.user_project.u_chip.g_core[idx].u_core
+    core = dut.user_project.u_chip.g_core[idx].g_on.u_core
     chip = dut.user_project.u_chip
     out = log if log is not None else []
     while len(out) < n:

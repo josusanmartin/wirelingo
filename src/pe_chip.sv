@@ -6,7 +6,8 @@
 `default_nettype none
 
 module pe_chip #(
-    parameter BANK_AW = 4
+    parameter BANK_AW = 4,
+    parameter NCORES = 4   // experiments only: cores >= NCORES are tied off
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -68,36 +69,47 @@ module pe_chip #(
   genvar c;
   generate
     for (c = 0; c < 4; c = c + 1) begin : g_core
-      // instr = bank read data for the bank the core fetched from last cycle
-      reg  [1:0] fbank;
-      always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) fbank <= c[1:0];
-        else fbank <= fetch_addr[10*c+8 +: 2];
+      if (c < NCORES) begin : g_on
+        // instr = bank read data for the bank the core fetched from last cycle
+        reg  [1:0] fbank;
+        always @(posedge clk or negedge rst_n) begin
+          if (!rst_n) fbank <= c[1:0];
+          else fbank <= fetch_addr[10*c+8 +: 2];
+        end
+        pe_core #(.IDX(c[1:0])) u_core (
+            .clk(clk),
+            .rst_n(rst_n),
+            .enable(enable[c]),
+            .restart(restart[c]),
+            .fifo_clear(fclear[c]),
+            .fetch_addr(fetch_addr[10*c +: 10]),
+            .instr(bank_rdata[32*fbank +: 32]),
+            .bank_owner(bank_owner),
+            .pins_in(pins_in),
+            .pin_out_cur(pin_out),
+            .wr_out_en(w_out_en[32*c +: 32]),
+            .wr_out_val(w_out_val[32*c +: 32]),
+            .wr_oe_en(w_oe_en[32*c +: 32]),
+            .wr_oe_val(w_oe_val[32*c +: 32]),
+            .flags(flags),
+            .flag_set(c_fset[8*c +: 8]),
+            .flag_clr(c_fclr[8*c +: 8]),
+            .bus_sel(sel_core && core_idx == c),
+            .bus_off(bus_addr[4:0]),
+            .bus_we(bus_we),
+            .bus_wdata(bus_wdata),
+            .bus_commit(bus_commit),
+            .bus_rdata(c_rdata[32*c +: 32]));
+      end else begin : g_off
+        assign fetch_addr[10*c +: 10] = 10'd0;
+        assign w_out_en[32*c +: 32] = 32'd0;
+        assign w_out_val[32*c +: 32] = 32'd0;
+        assign w_oe_en[32*c +: 32] = 32'd0;
+        assign w_oe_val[32*c +: 32] = 32'd0;
+        assign c_fset[8*c +: 8] = 8'd0;
+        assign c_fclr[8*c +: 8] = 8'd0;
+        assign c_rdata[32*c +: 32] = 32'd0;
       end
-      pe_core #(.IDX(c[1:0])) u_core (
-          .clk(clk),
-          .rst_n(rst_n),
-          .enable(enable[c]),
-          .restart(restart[c]),
-          .fifo_clear(fclear[c]),
-          .fetch_addr(fetch_addr[10*c +: 10]),
-          .instr(bank_rdata[32*fbank +: 32]),
-          .bank_owner(bank_owner),
-          .pins_in(pins_in),
-          .pin_out_cur(pin_out),
-          .wr_out_en(w_out_en[32*c +: 32]),
-          .wr_out_val(w_out_val[32*c +: 32]),
-          .wr_oe_en(w_oe_en[32*c +: 32]),
-          .wr_oe_val(w_oe_val[32*c +: 32]),
-          .flags(flags),
-          .flag_set(c_fset[8*c +: 8]),
-          .flag_clr(c_fclr[8*c +: 8]),
-          .bus_sel(sel_core && core_idx == c),
-          .bus_off(bus_addr[4:0]),
-          .bus_we(bus_we),
-          .bus_wdata(bus_wdata),
-          .bus_commit(bus_commit),
-          .bus_rdata(c_rdata[32*c +: 32]));
     end
   endgenerate
 

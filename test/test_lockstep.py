@@ -48,7 +48,7 @@ class Harness:
     def __init__(self, dut):
         self.dut = dut
         self.chip = dut.u_chip
-        self.cores = [self.chip.g_core[i].u_core for i in range(4)]
+        self.cores = [self.chip.g_core[i].g_on.u_core for i in range(4)]
         self.model = sim.Chip(bank_words=BANK_WORDS)
         self.cycle = 0
         self.stats = {}
