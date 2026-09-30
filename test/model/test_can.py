@@ -120,3 +120,80 @@ def test_can_rx_frames(ppm):
     words = RXQ + mh.pop_all(0)
     RXQ.clear()
     assert words[-1] == 0
+
+
+# ---------------------------------------------------------------- transmitter
+
+def tx_words(bits):
+    words = [len(bits)]
+    for i in range(0, len(bits), 32):
+        chunk = bits[i:i + 32] + [0] * (32 - len(bits[i:i + 32]))
+        words.append(int("".join(map(str, chunk)), 2))
+    return words
+
+
+TXD0, TXD1 = 8, 9  # uo0 (can_tx), uo1 (can_rx's ACK)
+
+
+def loop_setup():
+    """can_tx on core 0 and can_rx on core 1 on one wired-AND bus (RXD = ui0)."""
+    mh = ModelHost()
+    tx = asm.assemble((FW / "can_tx.pasm").read_text(), {"RX": RX, "TX": TXD0})
+    rx = asm.assemble((FW / "can_rx.pasm").read_text(), {"RX": RX, "TX": TXD1})
+    mh.apply(host.pin_owner_writes({TXD0: 0, TXD1: 1}))
+    mh.apply(host.load_program(0, tx, out_pins=(TXD0, 1), in_pins=RX, clkdiv=2 << 8))
+    mh.apply(host.load_program(1, rx, in_pins=RX, clkdiv=2 << 8))
+    mh.write(sim.core_reg(0, sim.C_CRCCTRL), 0x4599 | (14 << 16) | (1 << 21))   # OUT tap
+    mh.write(sim.core_reg(1, sim.C_CRCCTRL), 0x4599 | (14 << 16) | (1 << 20))   # IN tap
+    mh.write(sim.A_POUT, (1 << TXD0) | (1 << TXD1))
+    mh.ui = 1
+    mh.start(0b11)
+    return mh
+
+
+def run_bus(mh, cycles, other=None):
+    """Step with RXD = TXD0 & TXD1 (& another node's bit, from other(t))."""
+    rx_words = []
+    for t in range(cycles):
+        po = mh.chip.pin_out
+        bus = ((po >> TXD0) & 1) & ((po >> TXD1) & 1) & (other(t) if other else 1)
+        mh.ui = (mh.ui & ~1) | bus
+        mh.step()
+        rx_words += mh.pop_all(1)
+        if mh.chip.cores[0].rxf:
+            return mh.pop_all(0), rx_words
+    return [], rx_words
+
+
+def test_can_loopback_tx_to_rx():
+    mh = loop_setup()
+    for ident, data in [(0x123, bytes([1, 2, 3, 4])), (0x7F0, bytes([0xFF] * 8)), (0x001, b"")]:
+        bits = frame_bits(ident, data)
+        for w in tx_words(bits[:-15]):         # the TX appends the CRC itself
+            mh.push(0, w)
+        status, rx_words = run_bus(mh, 400 * TPB)
+        assert status == [0], f"TX status {status} for {ident:#x}"      # ACKed by core 1
+        rx_words += mh.pop_all(1)
+        assert rx_words[-1] == 1                                         # core 1: CRC ok
+        assert unpack(rx_words[:-1], len(bits)) == bits
+
+
+def test_can_arbitration_lost():
+    mh = loop_setup()
+    ours = frame_bits(0x123, bytes([0xAA]))[:-15]
+    theirs = stuff(frame_bits(0x100, bytes([0x55]))) + [1] * 20           # lower ID wins
+    for w in tx_words(ours):
+        mh.push(0, w)
+    # the other node starts its SOF when ours does: watch our TXD for the SOF edge
+    start = []
+
+    def other(t):
+        if not start and (mh.chip.pin_out >> TXD0) & 1 == 0:
+            start.append(t)
+        if not start:
+            return 1
+        i = (t - start[0]) // TPB
+        return theirs[i] if i < len(theirs) else 1
+
+    status, _ = run_bus(mh, 400 * TPB, other)
+    assert status == [2], status

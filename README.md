@@ -71,7 +71,7 @@ make -C formal                         # SymbiYosys proofs
   | **USB low-speed device** | NRZI, bit stuffing, on-chip token recognition, ACK/NAK in the turnaround window, CRC16 check via the CRC tap; **full enumeration** | RTL + model |
   | SWD probe | ARM Serial Wire Debug engine: DPIDR read, register writes | model |
   | JTAG | IEEE 1149.1 shift engine: IDCODE via Shift-DR | model |
-  | CAN 2.0A receiver | edge resync, destuffing, CRC15 via the CRC tap, ACK slot, ±1 % bit rate | model |
+  | CAN 2.0A TX + RX | TX: stuffing, CRC15 from the CRC tap, arbitration, ACK check. RX: edge resync, destuffing, CRC15 check, drives ACK (±1 % bit rate). Two cores form a working CAN link on one chip | model |
   | 1-Wire master | reset/presence with WAIT timeout, READ ROM | model |
   | PS/2 device | self-clocked, odd parity from the CRC tap as a 1-bit LFSR | model |
   | WS2812 | NeoPixel timing, checked against the datasheet windows | model |
