@@ -413,9 +413,13 @@ class Core:
 
 
 class Chip:
-    def __init__(self, bank_words=256):
+    def __init__(self, bank_words=256, ncores=NCORES, nbanks=4):
+        """ncores/nbanks < 4 model a reduced build: missing cores never run and their
+        registers read 0; missing banks read as 0 (a core fetching there executes 0,
+        i.e. `jmp 0`, unless the bank-owner check faults it first)."""
         assert bank_words & (bank_words - 1) == 0 and bank_words <= 256
         self.bank_words = bank_words
+        self.ncores, self.nbanks = ncores, nbanks
         self.imem = [0] * (4 * bank_words)
         self.cores = [Core(i) for i in range(NCORES)]
         self.enable = 0
@@ -432,6 +436,8 @@ class Chip:
         return (addr >> 8) * self.bank_words + (addr & (self.bank_words - 1))
 
     def fetch(self, addr):
+        if (addr >> 8) >= self.nbanks:
+            return 0
         return self.imem[self._imem_index(addr)]
 
     # -- combinational views of current state
@@ -451,7 +457,7 @@ class Chip:
         """Bus read data (peek, no side effects)."""
         if CORE_BASE <= addr < CORE_BASE + NCORES * CORE_STRIDE:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
-            return self.cores[c].read_reg(off)
+            return self.cores[c].read_reg(off) if c < self.ncores else 0
         return {
             A_ID: ID_VALUE,
             A_CTRL: self.enable,
@@ -479,7 +485,7 @@ class Chip:
         new_out, new_oe = self.pin_out, self.pin_oe
         fifo_ops = []
         for c, core in enumerate(self.cores):
-            if (restart >> c) & 1 or not (self.enable >> c) & 1:
+            if c >= self.ncores or (restart >> c) & 1 or not (self.enable >> c) & 1:
                 fifo_ops.append((False, None))
                 continue
             fx = core.step(self, pins_in, flags)
@@ -500,13 +506,17 @@ class Chip:
         host_push = [None] * NCORES
         host_pop = [False] * NCORES
         in_cores = CORE_BASE <= addr < CORE_BASE + NCORES * CORE_STRIDE
+        if in_cores and (addr - CORE_BASE) // CORE_STRIDE >= self.ncores:
+            in_cores = False
+            we = False if addr >= CORE_BASE else we
         if in_cores:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
             if commit and off == C_FIFO:
                 host_pop[c] = True
         if we:
             if addr < IMEM_WORDS:
-                self.imem[self._imem_index(addr)] = wdata & M32
+                if (addr >> 8) < self.nbanks:
+                    self.imem[self._imem_index(addr)] = wdata & M32
             elif in_cores:
                 if off == C_FIFO:
                     host_push[c] = wdata & M32

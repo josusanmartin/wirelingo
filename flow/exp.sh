@@ -19,6 +19,8 @@ s = s.replace('pe_chip #(.BANK_AW(`PE_BANK_AW)) u_chip (', f'pe_chip #(.BANK_AW(
 open(p, 'w').write(s)
 c = json.load(open('src/config.json'), object_pairs_hook=collections.OrderedDict)
 c["PNR_CORNERS"] = ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"]
+import os
+c.update(json.loads(os.environ.get("EXP_CFG", "{}")))
 json.dump(c, open('src/config.json', 'w'), indent=2)
 PY
 if [ -n "$3" ]; then python3 -c "$3"; fi
@@ -26,6 +28,6 @@ export PATH=$HOME/dev/protoemu/.venv-flow/bin:$PATH PDK_ROOT=$HOME/ttpdk PDK=ihp
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null 2>&1
 mkdir -p runs/exp
 python -m librelane --pdk-root $PDK_ROOT --docker-no-tty --dockerized --pdk ihp-sg13cmos5l --manual-pdk \
-  --run-tag exp --force-run-dir runs/exp --to OpenROAD.GlobalRouting src/config_merged.json > exp.log 2>&1 || true
-{ grep -E "GPL-0019" exp.log | tail -1; grep -A10 "Final congestion report" exp.log | grep -E "Metal[234] |Total "; } > result.txt
+  --run-tag exp --force-run-dir runs/exp ${EXP_TO:---to OpenROAD.GlobalRouting} src/config_merged.json > exp.log 2>&1 || true
+{ grep -E "GPL-0019" exp.log | tail -1; grep -A10 "Final congestion report" exp.log | grep -E "Metal[234] |Total "; grep -E "DRT-0199|Number of violations|flow failed|Flow complete|ERROR" exp.log | tail -5; } > result.txt
 echo DONE >> result.txt

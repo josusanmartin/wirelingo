@@ -8,7 +8,8 @@
 `default_nettype none
 
 module pe_imem #(
-    parameter BANK_AW = 4
+    parameter BANK_AW = 4,
+    parameter NBANKS = 4   // banks >= NBANKS don't exist (read as 0; fetching there faults)
 ) (
     input  wire         clk,
     input  wire [39:0]  fetch_addr,   // {core3, core2, core1, core0} x 10 bits
@@ -21,15 +22,19 @@ module pe_imem #(
   genvar b;
   generate
     for (b = 0; b < 4; b = b + 1) begin : g_bank
-      wire [1:0] owner = bank_owner[2*b+1:2*b];
-      wire [9:0] a = fetch_addr[10*owner +: 10];
-      pe_imem_bank #(.AW(BANK_AW)) u_bank (
-          .clk(clk),
-          .raddr(a[BANK_AW-1:0]),
-          .we(we && waddr[9:8] == b),
-          .waddr(waddr[BANK_AW-1:0]),
-          .wdata(wdata),
-          .rdata(bank_rdata[32*b +: 32]));
+      if (b < NBANKS) begin : g_on
+        wire [1:0] owner = bank_owner[2*b+1:2*b];
+        wire [9:0] a = fetch_addr[10*owner +: 10];
+        pe_imem_bank #(.AW(BANK_AW)) u_bank (
+            .clk(clk),
+            .raddr(a[BANK_AW-1:0]),
+            .we(we && waddr[9:8] == b),
+            .waddr(waddr[BANK_AW-1:0]),
+            .wdata(wdata),
+            .rdata(bank_rdata[32*b +: 32]));
+      end else begin : g_off
+        assign bank_rdata[32*b +: 32] = 32'd0;
+      end
     end
   endgenerate
 endmodule

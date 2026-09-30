@@ -24,15 +24,18 @@ override PE_BANK_AW = 8
 IMEM_ARGS =
 endif
 export PE_BANK_AW
+PE_NCORES ?= 4
+PE_NBANKS ?= 4
+export PE_NCORES PE_NBANKS
 
 export PYTHONPATH := $(PWD)/../tools:$(PYTHONPATH)
 
 ifneq ($(GATES),yes)
 
 # RTL simulation:
-SIM_BUILD				= sim_build/rtl_$(TB)_$(IMEM)$(PE_BANK_AW)
+SIM_BUILD				= sim_build/rtl_$(TB)_$(IMEM)$(PE_BANK_AW)_c$(PE_NCORES)b$(PE_NBANKS)
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-COMPILE_ARGS    += $(IMEM_ARGS)
+COMPILE_ARGS    += $(IMEM_ARGS) -DPE_NCORES=$(PE_NCORES) -DPE_NBANKS=$(PE_NBANKS)
 ifneq ($(IMEM),flop)
 VERILOG_SOURCES += $(PWD)/sram_model.v
 endif

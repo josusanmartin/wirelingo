@@ -7,7 +7,8 @@
 
 module pe_chip #(
     parameter BANK_AW = 4,
-    parameter NCORES = 4   // experiments only: cores >= NCORES are tied off
+    parameter NCORES = 4,  // cores >= NCORES are tied off
+    parameter NBANKS = 4   // IMEM banks >= NBANKS don't exist
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -53,7 +54,7 @@ module pe_chip #(
   wire [39:0]  fetch_addr;
   wire [127:0] bank_rdata;
 
-  pe_imem #(.BANK_AW(BANK_AW)) u_imem (
+  pe_imem #(.BANK_AW(BANK_AW), .NBANKS(NBANKS)) u_imem (
       .clk(clk),
       .fetch_addr(fetch_addr),
       .bank_owner(bank_owner),

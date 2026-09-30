@@ -24,7 +24,13 @@ module tb_chip ();
   reg         bus_commit;
   wire [31:0] bus_rdata;
 
-  pe_chip #(.BANK_AW(`PE_BANK_AW)) u_chip (
+`ifndef PE_NCORES
+`define PE_NCORES 4
+`endif
+`ifndef PE_NBANKS
+`define PE_NBANKS 4
+`endif
+  pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS)) u_chip (
       .clk(clk),
       .rst_n(rst_n),
       .ui_in(ui_in),

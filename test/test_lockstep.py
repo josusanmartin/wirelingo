@@ -16,6 +16,8 @@ from pe import isa, sim
 from pe.randprog import random_program, random_config_writes
 
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
+NCORES = int(os.environ.get("PE_NCORES", "4"))
+NBANKS = int(os.environ.get("PE_NBANKS", "4"))
 BANK_WORDS = 1 << BANK_AW
 
 
@@ -48,8 +50,8 @@ class Harness:
     def __init__(self, dut):
         self.dut = dut
         self.chip = dut.u_chip
-        self.cores = [self.chip.g_core[i].g_on.u_core for i in range(4)]
-        self.model = sim.Chip(bank_words=BANK_WORDS)
+        self.cores = [self.chip.g_core[i].g_on.u_core for i in range(NCORES)]
+        self.model = sim.Chip(bank_words=BANK_WORDS, ncores=NCORES, nbanks=NBANKS)
         self.cycle = 0
         self.stats = {}
         self.trace = []  # recent (cycle, description) for failure reports
@@ -67,12 +69,12 @@ class Harness:
             await RisingEdge(d.clk)
         await FallingEdge(d.clk)
         d.rst_n.value = 1
-        self.model = sim.Chip(bank_words=BANK_WORDS)
+        self.model = sim.Chip(bank_words=BANK_WORDS, ncores=NCORES, nbanks=NBANKS)
 
     def compare(self):
         errs = []
         m = self.model
-        for i, (rc, mc) in enumerate(zip(self.cores, m.cores)):
+        for i, (rc, mc) in enumerate(zip(self.cores, m.cores[:NCORES])):
             a, b = core_state_rtl(rc), core_state_model(mc)
             for k in a:
                 if a[k] != b[k]:
