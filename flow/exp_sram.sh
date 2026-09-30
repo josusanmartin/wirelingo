@@ -1,7 +1,7 @@
 #!/bin/bash
 # Full SRAM-build hardening experiment. Usage: flow/exp_sram.sh NAME NCORES DENSITY [GRT_ADJ]
 set -e
-NAME=$1; NC=$2; DEN=$3; ADJ=${4:-0.15}
+NAME=$1; NC=$2; DEN=$3; ADJ=${4:-0.15}; LAYOUT=${5:-top}
 W=$HOME/dev/protoemu-exp-$NAME
 cd $HOME/dev
 rm -rf $W; git -C protoemu worktree prune
@@ -9,7 +9,7 @@ git -C protoemu worktree add -q --detach $W HEAD
 cd $W
 cp -r $HOME/dev/protoemu/tt .
 cp $HOME/dev/protoemu/flow/gen_config.py flow/
-python3 flow/gen_config.py --banks $NC --density $DEN --grt-adjust $ADJ
+python3 flow/gen_config.py --banks $NC --density $DEN --grt-adjust $ADJ --layout $LAYOUT
 python3 - "$NC" <<'PY'
 import sys
 nc = sys.argv[1]

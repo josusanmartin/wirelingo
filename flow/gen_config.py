@@ -31,10 +31,19 @@ def snap(v, g):
     return round(int(v / g) * g, 2)
 
 
-def placements(nbanks):
-    """Banks 0-1 along the top edge from the right (pins down), banks 2-3 along the
-    bottom edge from the right (mirrored, pins up). The top-left corner, where all
-    the TT I/O pins are, stays free."""
+def placements(nbanks, layout="top"):
+    """top:   banks 0-1 along the top edge from the right (pins down), banks 2-3
+              along the bottom edge (mirrored, pins up).
+    sides: macros rotated 90 degrees on the right and left die edges, pins facing
+           inward, starting at the bottom (bank 0 right, 1 left, 2 right, 3 left);
+           the top band stays free for the I/O pins (all at the top-left).
+    The top-left corner, where all the TT I/O pins are, stays free either way."""
+    if layout == "sides":
+        x_r = snap(CORE_X1 - H - 3 * SITE, SITE)
+        x_l = snap(2.88 + 3 * SITE, SITE)
+        y0, y1 = 3.78, snap(3.78 + W + 3 * ROW, ROW)
+        spots = [(x_r, y0, "E"), (x_l, y0, "W"), (x_r, y1, "E"), (x_l, y1, "W")]
+        return {b: spots[b] for b in range(nbanks)}
     y_top = snap(CORE_Y1 - H - 2 * ROW, ROW)
     x_r = snap(CORE_X1 - W - 3 * SITE, SITE)
     x_l = snap(x_r - W - 8.64, SITE)
@@ -48,6 +57,7 @@ def main():
     ap.add_argument("--density", type=int, default=60)
     ap.add_argument("--grt-adjust", type=float, default=None)
     ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--layout", choices=["top", "sides"], default="top")
     a = ap.parse_args()
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
@@ -68,7 +78,7 @@ def main():
     c["PNR_CORNERS"] = ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"]
     if a.grt_adjust is not None:
         c["GRT_ADJUSTMENT"] = a.grt_adjust
-    pl = placements(a.banks)
+    pl = placements(a.banks, a.layout)
     c["MACROS"] = {M: {
         "instances": {inst(b): {"location": [x, y], "orientation": o} for b, (x, y, o) in pl.items()},
         "gds": [f"{P}/gds/{M}.gds"],
