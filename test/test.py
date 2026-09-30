@@ -503,6 +503,7 @@ async def test_usb_ls_device(dut):
     rx = load_fw("usb_ls_rx", **USB_DEFS)
     tx = load_fw("usb_ls_tx", **USB_DEFS)
     await spi.apply(host.pin_owner_writes({0: 1, 1: 1}))
+    await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [0x8005 | (15 << 16) | (1 << 20)])  # CRC16 tap
     await run_program(spi, 0, rx, clkdiv=1 << 8)
     await run_program(spi, 1, tx, out_pins=(0, 2), clkdiv=1 << 8)
     await ClockCycles(dut.clk, 100)

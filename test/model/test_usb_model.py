@@ -11,6 +11,7 @@ FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 DP, DM = 0, 1  # uio0, uio1
 LINE = {usb.J: (0, 1), usb.K: (1, 0), usb.SE0: (0, 0)}
 USB_DEFS = {"DP": DP, "DM": DM, "F_IN": 0, "F_ACK": 1, "F_EXP": 2}
+USB_CRCCTRL = 0x8005 | (15 << 16) | (1 << 20)  # CRC16, IN tap
 
 
 def rx_setup():
@@ -80,6 +81,7 @@ def device_setup():
     tx = asm.assemble((FW / "usb_ls_tx.pasm").read_text(), USB_DEFS)
     mh.apply(host.pin_owner_writes({DP: 1, DM: 1}))
     mh.apply(host.load_program(0, rx, clkdiv=1 << 8))
+    mh.write(sim.core_reg(0, sim.C_CRCCTRL), USB_CRCCTRL)
     mh.apply(host.load_program(1, tx, out_pins=(DP, 2), clkdiv=1 << 8))
     mh.pull_up = 0b10  # 1.5k pull-up on D- (low-speed device), J when idle
     mh.start(0b11)
@@ -147,3 +149,15 @@ def test_usb_in_nak_then_data():
     resp, turnaround = host_send_then_listen(mh, usb.token(usb.PID_IN, 0, 0))
     assert resp == usb.data_packet(usb.PID_DATA1, desc), resp
     assert turnaround < 7.5 * 32
+
+
+def test_usb_bad_crc_not_acked():
+    mh = device_setup()
+    host_send(mh, usb.token(usb.PID_SETUP, 0, 0))
+    good = usb.data_packet(usb.PID_DATA0, bytes([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00]))
+    bad = good[:-1] + bytes([good[-1] ^ 0x10])
+    resp, _ = host_send_then_listen(mh, bad)
+    assert resp is None, resp          # no handshake: the host will retry
+    host_send(mh, usb.token(usb.PID_SETUP, 0, 0))
+    resp, _ = host_send_then_listen(mh, good)
+    assert resp == usb.handshake(usb.PID_ACK), resp

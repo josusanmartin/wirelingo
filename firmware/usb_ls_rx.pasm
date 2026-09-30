@@ -23,7 +23,10 @@
 ; r3[7:0] = rev(PID). At the end of a 32-bit packet:
 ;   IN          -> set F_IN (usb_ls_tx sends the staged packet or NAK)
 ;   SETUP / OUT -> set F_EXP (a DATA packet follows)
-; At the end of a DATA packet while F_EXP is set -> clear F_EXP, set F_ACK.
+; At the end of a DATA packet while F_EXP is set -> clear F_EXP, and set F_ACK
+; if the CRC16 checks out. The CRC tap (CRCCTRL: poly 0x8005, 16 bits, IN_TAP)
+; sees every received bit; it is preset after the PID so that at EOP it holds
+; the residue 0x800D for a correct packet.
 ;
 ; Registers: r0 = bit count, r1 = consecutive 1s, r2 = timeout budget, r3 = PID.
 ; OSR = all ones.
@@ -59,16 +62,17 @@ zero:
     cmp r0, 16                     ; D+10
     jmp !z, z_nograb               ; D+11
     mov r3, ::isr                  ; D+12
-    jmp z_cont                     ; D+13
+    mov crc, ~null                 ; D+13  CRC16 covers what follows the PID
+    jmp z_cont                     ; D+14
 z_nograb:
-    nop                       [1]  ; D+12..13
+    nop                       [2]  ; D+12..14
 z_cont:
-    ldi r2, 26                     ; D+14  (W = D+16, target 42)
-    jmp wait_bit                   ; D+15
+    ldi r2, 25                     ; D+15  (W = D+17, target 42)
+    jmp wait_bit                   ; D+16
 stuffed:
-    nop                       [5]  ; D+8..13
-    ldi r2, 26                     ; D+14
-    jmp wait_bit                   ; D+15
+    nop                       [6]  ; D+8..14
+    ldi r2, 25                     ; D+15
+    jmp wait_bit                   ; D+16
 ; -- no edge by the decision point: a 1 bit, unless the line went SE0 (K -> SE0 moves only D+)
 one:
     jmp pin DP, one_k              ; D+2   D+ high: K
@@ -84,12 +88,13 @@ one_ok:
     cmp r0, 16                     ; D+8
     jmp !z, o_nograb               ; D+9
     mov r3, ::isr                  ; D+10
-    jmp o_cont                     ; D+11
+    mov crc, ~null                 ; D+11
+    jmp o_cont                     ; D+12
 o_nograb:
-    nop                       [1]  ; D+10..11
+    nop                       [2]  ; D+10..12
 o_cont:
-    ldi r2, 18                     ; D+12  (W = D+14, target 32)
-    jmp wait_bit                   ; D+13
+    ldi r2, 17                     ; D+13  (W = D+15, target 32)
+    jmp wait_bit                   ; D+14
 ; -- end of packet: raise the response flags first (the TX core must answer
 ; within the bus turnaround), then push the tail words (may wait for the host)
 eop:
@@ -104,6 +109,10 @@ eop:
 eop_data:                          ; DATA packets (a zero-length DATA is also 32 bits)
     jmp !f F_EXP, eop_push
     flag clr F_EXP
+    ldi r2, 0x800D                 ; CRC16 residue of a correct packet
+    mov r1, crc
+    cmp r1, r2
+    jmp !z, eop_push               ; bad CRC: stay silent, the host retries
     flag set F_ACK
     jmp eop_push
 got_in:
