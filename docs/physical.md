@@ -32,6 +32,24 @@ bd07aa5; see git history).
 
 ## Timing
 
+### Wire capacitance (2026-10-01)
+
+final5's extracted SPEF has **0.19 fF/µm** of wire capacitance (least squares
+over all 19.9K signal nets against their routed length); the tech LEF, which
+PnR estimates use, says 0.092–0.097 fF/µm. Resistance agrees (0.515 Ω/µm, 20 Ω
+per via). With the LEF values the slow corner showed +1.95 ns after CTS and
+−6.9 ns at signoff, so setup repair never ran ("No setup violations found").
+`flow/gen_config.py` now sets `LAYERS_RC` to the measured capacitance
+(`--wire-cap`) and turns on post-GRT timing repair. First run (t1): repair
+found 573 violating endpoints after CTS and brought the slow corner from
+−7.9 to −0.48 ns (+0.8 % area); −1.18 ns after global routing.
+
+The core's own instruction → next-fetch-address logic is 13.9 ns at the slow
+corner (standalone, before repair). Computed jumps (MOV/OUT to PC) put the
+source mux and the funnel shifter on it; fetching their target a cycle later
+(docs/isa.md §4.2) makes it 11.6 ns.
+
+
 * 50 MHz at the typical corner is comfortable. The flop build has +8.9 ns setup
   slack after CTS, the SRAM build +8.4 ns, and the SRAM build also meets 50 MHz
   at the slow corner (+1.9 ns).
@@ -65,6 +83,40 @@ Lessons:
   `Project.ExtendPowerStripes` supports only N and FS.
 * **LibreLane 3.1.0.dev3 runs OpenROAD single-threaded** unless
   `OPENROAD_THREADS` is set (it passes `-threads None`).
+
+### Three cores don't fit (2026-10-01)
+
+3 cores, 3 SRAM banks, 4-deep FIFOs, current RTL, 5 global-routing iterations
+(`STOP=grt FIFO_LOG2=2 flow/harden.sh NAME 3 -- --grt-iters 5`):
+
+| Build | Utilization | Metal3 (H) | Overflow |
+|-------|-------------|------------|----------|
+| 2 cores (final5, routes clean) | 47 % | 68 % | 9 |
+| 3 cores | 57 % | **99.8 %** | 24.1K |
+| 3 cores, no config readback, no second read-ahead word | 55 % | 95.9 % | 21.2K |
+
+A third core needs about 30 % less horizontal wiring at chip level; the best
+cuts found are worth 4 %.
+
+### Where a core's wiring goes
+
+`flow/core_route.sh` places and globally routes one core (pe_core + FIFOs,
+core 0's ports) alone in about two minutes. Removing one block at a time
+(baseline 116K µm², 762K µm of wire):
+
+| Removed | Wire | Area |
+|---------|------|------|
+| host bus read mux | −11 % | −6.5K µm² |
+| IN/OUT funnel shifter | −8.5 % | −9.3K |
+| side-set rotators | −4.5 % | −3.8K |
+| pin-write rotators | −4 % | −7.1K |
+| config register readback only | −5.7 % | −1.3K |
+| second read-ahead word (`rxf_head2`) | −4 % | −2.6K |
+| ALU shifts / MOV bit reverse / IN pin rotate | −2.4 / −1.6 / −1.3 % | |
+
+Rewrites that keep the behaviour gained nothing: masks from thermometer codes
+instead of rotators (−0.5 %), ALU shifts through the funnel (+1.8 %).
+Synthesis already shares well; the wiring is in what the core does.
 
 ## Signoff runs
 
