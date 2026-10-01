@@ -3,9 +3,10 @@
 An entry for the [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/),
 targeting IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles).
 
-Four small cores, each specialised for bit-banging, run protocols in firmware:
-UART, SPI and I2C today, with low-speed USB, 10BASE-T and CAN planned. The ISA
-is PIO-inspired but removes its main limits:
+Small cores specialised for bit-banging run protocols in firmware: UART, SPI,
+I2C, low-speed USB, 10BASE-T TX, CAN, SWD, JTAG, 1-Wire, PS/2, WS2812 and an
+I2C sniffer (two cores on the IHP tapeout; the RTL scales to four). The ISA is
+PIO-inspired but removes its main limits:
 
 - **Up to 1024 instructions** in four banks that can be reassigned between cores.
   PIO has 32.
@@ -16,6 +17,9 @@ is PIO-inspired but removes its main limits:
   "SDA falls while SCL is high" is one instruction.
 - **Pin conveniences:** per-pin open drain, direct `PIN p, hi/lo/toggle/hiz` on
   any pin, and 8 virtual pins that act as wires between cores.
+- **A CRC tap** (any polynomial up to 16 bits) fed by the shift registers, and
+  **FIFO join** (RXF as a second TX stage) for line rates above what the SPI
+  host port can stream.
 
 The full spec is in [docs/isa.md](docs/isa.md) and is normative. The RTL, the
 golden model and the assembler all implement it.
@@ -27,7 +31,7 @@ golden model and the assembler all implement it.
 | `docs/isa.md` | architecture, ISA, register map, host SPI protocol |
 | `src/` | RTL: `pe_core` (one core), `pe_chip` (4 cores + IMEM + pins), `pe_spi_slave`, TT top in `project.v` |
 | `tools/pe/` | Python: `isa` encodings, `asm` assembler, `sim` cycle-accurate golden model, `host` register-write helpers, `randprog` random program generator |
-| `firmware/` | `.pasm` programs: `uart_tx`, `uart_rx`, `spi_master`, `i2c_master`, `usb_ls_rx`, `usb_ls_tx` |
+| `firmware/` | `.pasm` programs, one per protocol (table below) |
 | `formal/` | SymbiYosys proofs (`make -C formal`) |
 | `flow/`, `librelane_plugin_protoemu.py` | hardening helpers: SRAM power stripes, routability experiments |
 | `tools/micropython/` | host driver for the TT demo board (RP2350) |
@@ -75,6 +79,7 @@ make -C formal                         # SymbiYosys proofs
   | 1-Wire master | reset/presence with WAIT timeout, READ ROM | model |
   | PS/2 device | self-clocked, odd parity from the CRC tap as a 1-bit LFSR | model |
   | WS2812 | NeoPixel timing, checked against the datasheet windows | model |
+  | **10BASE-T TX** | 40 MHz, 4 clocks per bit: Manchester on a TD+/TD− side-set pair, preamble/SFD generated in-core, TP_IDL, 16 ms link pulses. FIFO join gives 16 words, so a minimum 64-byte frame needs no streaming; longer frames stream at SPI speed | RTL + model (frames with a zlib CRC-32 FCS decoded from the waveform) |
   | I2C sniffer | passive; START = `wait fall SDA if pin SCL == 1` | model (runs alongside the I2C master on another core) |
 
   "model" means the cycle-accurate model, which is lockstep-verified against the RTL.
@@ -83,12 +88,13 @@ make -C formal                         # SymbiYosys proofs
     FIFOs and the CRC tap**, at 50 MHz typical (48 MHz for USB).
   * SRAM macros sit in the bottom corners, mirrored with pins up. Placement
     density is matched to utilization (about 30 %).
-  * Detailed routing reached **0 violations**; signoff (antenna, DRC, LVS,
-    timing) is in progress.
+  * A full run (2 cores, 4-deep FIFOs) signed off clean: 0 DRT, 0 KLayout DRC,
+    LVS clean, 0 antenna, typ timing met, and the gate-level simulation passes.
+    The current RTL is being hardened (docs/physical.md).
   * Four cores don't route on this tile's single horizontal routing layer.
     [docs/physical.md](docs/physical.md) has the routability experiments that
     led here.
 * **Next:**
-  * Signoff and gate-level simulation of the final netlist.
+  * Signoff and gate-level simulation of the current RTL (CTRL pipelining, FIFO join).
   * Bring-up scripts for the demo board.
   * A public repository with the TT GDS action.

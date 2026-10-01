@@ -538,3 +538,37 @@ async def test_usb_ls_device(dut):
     resp, ta = usb_decode_trace(await usb_listen(dut, 4000))
     assert resp == usb.data_packet(usb.PID_DATA1, desc), resp
     assert ta < 7.5 * 32, ta
+
+
+@cocotb.test()
+async def test_eth10_tx(dut):
+    """10BASE-T TX with FIFO join: a 64-byte frame from one 16-word FIFO burst.
+    CLKDIV = 1, so 4 clocks per bit (10 Mbit/s at 40 MHz). The decoder is the
+    one in test/model/test_eth10.py."""
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "model"))
+    import test_eth10 as eth
+    spi = await setup(dut)
+    c = 0  # pins reset to owner core 0
+    await run_program(spi, c, load_fw("eth10_tx", F_GO=eth.F_GO), side_pins=UO(0), clkdiv=1 << 8)
+    fr = eth.frame(46)
+    await spi.write(sim.core_reg(c, sim.C_R0), [8 * len(fr) - 1])
+    await spi.write(sim.core_reg(c, sim.C_FIFO), eth.words(fr), fixed=True)
+    st = (await spi.read(sim.core_reg(c, sim.C_STATUS)))[0]
+    assert (st & 15, (st >> 4) & 15) == (8, 8), hex(st)   # TXF and RXF (second TX stage) full
+    trace = []
+
+    async def sample():
+        while True:
+            await RisingEdge(dut.clk)
+            v = int(dut.uo_out.value) & 3
+            assert v != 3
+            trace.append(v)
+    task = cocotb.start_soon(sample())
+    await spi.write(sim.A_FSET, [1 << eth.F_GO])
+    for _ in range(100):
+        await ClockCycles(dut.clk, 100)
+        if not (await spi.read(sim.A_FSET))[0] >> eth.F_GO & 1:
+            break
+    task.cancel()
+    eth.check(trace, 0, fr)
