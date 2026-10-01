@@ -229,6 +229,92 @@ write it through `CRC` (core block 0x07).
 * **Global flags F0–F7** are shared by all cores and the host. Any core can set
   or clear them (`FLAG`), wait on them (`WAIT`) and branch on them (`JMP`).
 
+### 4.7 Line unit (core 0)
+
+One line unit per chip does the bit-level work of serial lines: line coding,
+bit stuffing, bit timing and clock recovery. Core 0 feeds and drains it with
+`OUT LINE, n` and `IN LINE, n` (operand code 13). Other cores see LINE as
+NULL. With it, a USB low-speed device fits on one core, and 10BASE-T receive
+becomes possible.
+
+| Register | Address | Fields |
+|---|---|---|
+| LINECFG | 0x080C | `[0]` EN, `[2:1]` CODE (0 NRZ, 1 NRZI, 2 Manchester), `[5:3]` STUFF_K (0 = off), `[6]` STUFF_ONES, `[7]` DIFF, `[9:8]` END, `[12:10]` END_BITS, `[13]` IDLE, `[14]` RX_EN |
+| LINEDIV | 0x080D | `[15:8]` INT, `[7:0]` FRAC: TX clocks per symbol (≥ 2); `[31:16]` RX clocks per bit (≥ 4) |
+| LINEPINS | 0x080E | `[4:0]` TXP, `[12:8]` RXP; with DIFF, TXN = TXP + 1 and RXN = RXP + 1 (mod 32) |
+| LINESTAT | 0x080F | read-only: `[1:0]` TX entries queued, `[13:8]` RX bits available, `[16]` TX active, `[17]` RX in a frame, `[18]` RX frame end pending, `[19]` RX overflow (sticky until EN = 0) |
+
+A symbol is a bit in NRZ and NRZI, and half a bit in Manchester. Writing
+LINECFG with EN = 0 empties both queues and returns the unit to idle.
+
+**Core 0 side.**
+
+* `OUT LINE, n` queues the `n` bits OUT produced (§4.4) as one entry, to be
+  sent in the order they left the OSR (`data[0]` first if OUT_SHIFT_RIGHT,
+  else `data[n-1]` first). The TX queue holds two entries; it stalls while
+  both are taken.
+* `IN LINE, n` takes `n` received bits, oldest first, into the ISR as IN does
+  (the oldest bit is shifted in first), with T = 0. If fewer than `n` are
+  available and a frame end is pending, it takes the `k < n` that are there
+  (possibly none), shifting by `k`, sets T = 1 and clears the pending end.
+  Otherwise it stalls.
+
+**Transmitter** (each enabled cycle; outputs change on the following cycle):
+
+```
+idle:      if the queue is not empty: start (load the next bit, below)
+sending:   if the symbol counter is 0:
+             reload it (the fractional divider of §4.1 with INT/FRAC)
+             Manchester, first half done:  second half (level = bit)
+             ending:   one end symbol fewer; at 0, release the pins
+             else:     load the next bit
+           else: count down
+next bit:  if STUFF_K and the run reached STUFF_K: send a stuff bit
+             (STUFF_ONES: a 0 after K ones; else the complement of the last
+             K equal bits); the run restarts with it
+           elif the queue has a bit: take it; update the run
+           else: end: drive END for END_BITS bits (0: release now)
+           NRZ: level = bit; NRZI: level toggles for a 0;
+           Manchester: first half, level = !bit (802.3: a 1 is low then high)
+```
+
+The run counts consecutive equal data bits (STUFF_ONES: consecutive ones). A
+stuff bit is sent even after the last queued bit. TXP = level; with DIFF,
+TXN = !level. The line starts each frame from IDLE. END is one of:
+
+* 0: release;
+* 1: SE0 (TXP = TXN = 0) for END_BITS bits, then IDLE for one bit (a USB EOP);
+* 2: high (TXP = 1, TXN = 0) for END_BITS bits (10BASE-T TP_IDL);
+* 3: hold the last level for END_BITS bits.
+
+While the transmitter is active it drives TXP (and TXN) as outputs,
+overriding pin ownership. When it releases them, the pins show the PIN_OUT and
+PIN_OE registers again. Those (or open drain and a pull-up) must hold the line
+at the IDLE level between frames, or the receiver misses the first edge.
+
+**Receiver** (each enabled cycle with RX_EN; P = RX clocks per bit, `rx` =
+RXP from `pins_in`):
+
+```
+idle:     a transition on rx starts a frame
+NRZ/NRZI: a transition sets the sample counter to P/2;
+          otherwise at 0 it samples and reloads P, else counts down
+          sample: with DIFF, RXP = RXN = 0 (SE0) ends the frame;
+                  bit = rx (NRZ), or 1 if rx equals the last sample (NRZI)
+          without a transition for STUFF_K + 2 bits (8 if STUFF_K = 0): end
+Manchester: after a mid-bit transition, transitions in the next 3P/4 are bit
+          boundaries; the first one after that is the next mid-bit
+          transition: bit = rx after it. The frame's first transition counts
+          as mid-bit, so a frame must start with a bit whose first half is the
+          idle level (a 1 after a low line, as the 10BASE-T preamble does).
+          No mid-bit transition within 3P/2: end.
+bit:      if STUFF_K and the run reached STUFF_K: drop it as a stuff bit
+          (if it isn't the expected one: end the frame); else queue it
+```
+
+The RX queue holds 32 bits. Bits beyond that are dropped and set the overflow bit.
+The end of a frame sets the pending end that `IN LINE` reports.
+
 ## 5. Instruction encoding
 
 All instructions are 32 bits:
@@ -274,7 +360,8 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 10   | FLAGS    | `{24'b0, F7..F0}`                          | discard                                      |
 | 11   | PC       | `{22'b0, PC}`                              | jump to `value[9:0]`                         |
 | 12   | CRC      | `{16'b0, CRC}`                             | `CRC = value[15:0] & CRC_MASK` (§4.5)        |
-| 13–15| —        | 0                                          | discard                                      |
+| 13   | LINE     | IN: received bits (§4.7; core 0)           | OUT: queue bits to transmit (§4.7; core 0); MOV: discard |
+| 14–15| —        | 0                                          | discard                                      |
 
 For a PINS/PINDIRS destination, pin `(OUT_BASE + i) mod 32` gets `value[i]`
 for `0 ≤ i < OUT_COUNT`.

@@ -5,7 +5,8 @@ Everything reads start-of-cycle state; effects combine into the next state,
 mirroring the synchronous RTL.
 """
 from . import isa
-from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC)
+from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE)
+from .line import Line
 
 M32 = 0xFFFFFFFF
 M16 = 0xFFFF
@@ -16,6 +17,7 @@ IMEM_WORDS = 1024
 
 # Register map
 A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
+A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
@@ -309,6 +311,8 @@ class Core:
 
     def _op_in(self, e):
         src, n = isa.bits(e.x, 18, 15), isa.bits(e.x, 4, 0) or 32
+        if src == LINE and self.idx == 0:
+            return self._in_line(e, n)
         b = self._src(e, src) & mask(n)
         if n == 32:
             nisr = b
@@ -331,6 +335,10 @@ class Core:
 
     def _op_out(self, e):
         dst, n = isa.bits(e.x, 18, 15), isa.bits(e.x, 4, 0) or 32
+        line = dst == LINE and self.idx == 0
+        if line and not e.chip.line.room():
+            e.complete = False                  # TX queue full: no side effects
+            return
         osr0, cnt0 = self.osr, self.osr_cnt
         if self.autopull and self.osr_cnt >= e.pull_th:
             if not e.pullq:
@@ -348,8 +356,41 @@ class Core:
         self.osr, self.osr_cnt = nosr, min(32, cnt0 + n)
         if n == 1 and self.out_tap:
             self._crc_feed(data & 1)
-        if dst != OSR:                  # OUT to OSR only shifts (docs/isa.md §5)
+        if line:
+            e.chip.line.push([(data >> i) & 1 for i in (range(n) if self.out_shr else range(n - 1, -1, -1))])
+        elif dst != OSR:                # OUT to OSR only shifts (docs/isa.md §5)
             self._write_dst(e, dst, data, n)
+
+    def _in_line(self, e, n):
+        """IN LINE, n on core 0 (§4.7): n received bits, or fewer at a frame end (T = 1)."""
+        got = e.chip.line.peek(n)
+        if got is None:
+            e.complete = False
+            return
+        bits, t = got
+        k = len(bits)
+        v = sum(b << i for i, b in enumerate(bits)) if self.in_shr else sum(b << (k - 1 - i) for i, b in enumerate(bits))
+        if k == 32:
+            nisr = v
+        elif k == 0:
+            nisr = self.isr
+        elif self.in_shr:
+            nisr = ((self.isr >> k) | (v << (32 - k))) & M32
+        else:
+            nisr = ((self.isr << k) | v) & M32
+        ncnt = min(32, self.isr_cnt + k)
+        if self.autopush and ncnt >= e.push_th:
+            if e.rx_full:
+                e.complete = False
+                return
+            e.fx["rxpush"] = nisr
+            self.isr, self.isr_cnt = 0, 0
+        else:
+            self.isr, self.isr_cnt = nisr, ncnt
+        e.chip.line.consume(k, t)
+        self.t = t
+        if n == 1 and k == 1 and self.in_tap:
+            self._crc_feed(bits[0])
 
     def _op_push(self, e):
         iff, blk = isa.bits(e.x, 18, 18), isa.bits(e.x, 17, 17)
@@ -485,6 +526,7 @@ class Chip:
         self.od_mask = 0
         self.pin_out = self.pin_oe = 0
         self.hostcfg = 0  # QUAD_EN: only the host port uses it
+        self.line = Line()
         self.sync1 = self.sync2 = 0  # {ui[4:0], uio[7:0]}
         self.cycle = 0
         self.stats = {}
@@ -502,17 +544,28 @@ class Chip:
         return self.imem[self._imem_index(addr)]
 
     # -- combinational views of current state
+    def eff_pins(self):
+        """(pin_out, pin_oe) as driven: the registers, with the line unit's
+        transmit pins overriding them while it sends (§4.7)."""
+        out, oe = self.pin_out, self.pin_oe
+        for p, v in self.line.drive().items():
+            out = (out & ~(1 << p)) | (v << p)
+            oe |= 1 << p
+        return out, oe
+
     def pins_in(self):
         s = self.sync2
-        return ((s & 0xFF) | (self.pin_out & 0x7F00) | (((s >> 8) & 0x1F) << 16)
-                | (self.pin_out & 0xFF000000))
+        out, _ = self.eff_pins()
+        return ((s & 0xFF) | (out & 0x7F00) | (((s >> 8) & 0x1F) << 16)
+                | (out & 0xFF000000))
 
     def outputs(self):
         """(uo_out[6:0], uio_out, uio_oe)"""
         od = self.od_mask
-        uio_out = self.pin_out & 0xFF & ~od
-        uio_oe = ((self.pin_oe & ~od) | (~self.pin_out & od)) & 0xFF
-        return (self.pin_out >> 8) & 0x7F, uio_out, uio_oe
+        out, oe = self.eff_pins()
+        uio_out = out & 0xFF & ~od
+        uio_oe = ((oe & ~od) | (~out & od)) & 0xFF
+        return (out >> 8) & 0x7F, uio_out, uio_oe
 
     def read(self, addr):
         """Bus read data (peek, no side effects)."""
@@ -532,6 +585,7 @@ class Chip:
             A_POUT: self.pin_out,
             A_POE: self.pin_oe,
             A_HOSTCFG: self.hostcfg,
+            **{a: self.line.read(a - A_LINECFG) for a in (A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT)},
         }.get(addr, 0)
 
     def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False, cancel=False):
@@ -541,6 +595,7 @@ class Chip:
         says the oldest snapped word was sent (pops it if it was a real entry);
         `cancel` ends the transaction and drops the reservations."""
         pins_in = self.pins_in()
+        line_write = None
         flags = self.flags
         fjoin = [core.fjoin for core in self.cores]  # start of cycle: a host write lands at the edge
         restart = fclear = 0
@@ -624,6 +679,8 @@ class Chip:
                 new_oe = wdata & M32
             elif addr == A_HOSTCFG:
                 self.hostcfg = wdata & 1
+            elif A_LINECFG <= addr <= A_LINEPINS:
+                line_write = (addr - A_LINECFG, wdata)
 
         for c, core in enumerate(self.cores):
             if (fclear >> c) & 1:
@@ -673,6 +730,10 @@ class Chip:
                 core.res = []
         if ctrl is not None:
             self.enable = ctrl & 15
+        self.line.step(pins_in)          # after the cores: they used its start-of-cycle state
+        self.line.commit()
+        if line_write:
+            self.line.write(*line_write)
         self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None
         self.flags = ((flags & ~fclr) | fset) & 0xFF
         self.pin_out, self.pin_oe = new_out & M32, new_oe & M32

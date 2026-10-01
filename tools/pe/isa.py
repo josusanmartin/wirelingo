@@ -11,12 +11,12 @@ OPNAMES = {
 }
 
 # src/dst operand codes (§5.1)
-R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC, CRC = range(13)
+R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC, CRC, LINE = range(14)
 LOC_NAMES = ["r0", "r1", "r2", "r3", "pins", "pindirs", "isr", "osr",
-             "null", "status", "flags", "pc", "crc"]
+             "null", "status", "flags", "pc", "crc", "line"]
 
 # OUT can write these; OUT to OSR/STATUS/FLAGS would only discard, so the assembler rejects them
-OUT_DSTS = {R0, R1, R2, R3, PINS, PINDIRS, ISR, NULL, PC, CRC}
+OUT_DSTS = {R0, R1, R2, R3, PINS, PINDIRS, ISR, NULL, PC, CRC, LINE}
 
 
 def clkdiv_fields(d):

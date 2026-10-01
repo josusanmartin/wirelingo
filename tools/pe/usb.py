@@ -90,9 +90,9 @@ def encode(packet):
     return states + [SE0, SE0, J]
 
 
-def decode(states):
-    """Line states -> packet bytes (after SYNC), or raises ValueError."""
-    # find SYNC: first K after idle
+def nrzi_destuff(states):
+    """Line states from idle (J) -> NRZI-decoded, destuffed bits up to SE0, from
+    the first K. Raises ValueError on a bit stuffing error."""
     try:
         i = states.index(K)
     except ValueError:
@@ -110,6 +110,12 @@ def decode(states):
             continue
         ones = ones + 1 if b else 0
         bits.append(b)
+    return bits
+
+
+def decode(states):
+    """Line states -> packet bytes (after SYNC), or raises ValueError."""
+    bits = nrzi_destuff(states)
     if bits[:8] != [0, 0, 0, 0, 0, 0, 0, 1]:
         raise ValueError(f"bad SYNC {bits[:8]}")
     bits = bits[8:]
