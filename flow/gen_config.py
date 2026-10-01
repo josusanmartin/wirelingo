@@ -78,6 +78,10 @@ def main():
     ap.add_argument("--post-grt-repair", action=argparse.BooleanOptionalAction, default=True,
                     help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
     ap.add_argument("--max-wire", type=int, default=400, help="buffer wires longer than this (um, 0 = off)")
+    ap.add_argument("--wire-cap", type=float, default=1.9e-4,
+                    help="wire capacitance for PnR estimates, pF/um (0 = the tech LEF's, about half of it)")
+    ap.add_argument("--post-grt-timing", action=argparse.BooleanOptionalAction, default=True,
+                    help="setup/hold repair on global-routing parasitics (off in the Classic flow)")
     a = ap.parse_args()
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
@@ -106,6 +110,17 @@ def main():
     if a.max_wire:
         c["DESIGN_REPAIR_MAX_WIRE_LENGTH"] = a.max_wire
         c["GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH"] = a.max_wire
+    if a.wire_cap:
+        # final5's extracted SPEF: 0.19 fF/um over all signal nets (least squares on
+        # routed length), while the tech LEF says 0.092-0.097; resistance matches
+        # (0.515 ohm/um, 20 ohm per via). With the LEF values the resizer saw +1.95 ns
+        # of slow-corner slack after CTS that was -6.9 ns after extraction.
+        c["//rc"] = "Measured wire capacitance (flow/gen_config.py --wire-cap); LEF resistance"
+        m1 = a.wire_cap * 6.8784e-5 / 9.2e-5
+        c["LAYERS_RC"] = {"*": {"Metal1": {"res": 8.4375e-4, "cap": round(m1, 8)},
+                                **{m: {"res": 5.15e-4, "cap": a.wire_cap} for m in ("Metal2", "Metal3", "Metal4")}}}
+    if a.post_grt_timing:
+        c["RUN_POST_GRT_RESIZER_TIMING"] = 1
     if a.grt_adjust is not None:
         c["GRT_ADJUSTMENT"] = a.grt_adjust
     pl = placements(a.banks, a.layout)
