@@ -144,6 +144,8 @@ def _assemble_block(name, lines, defs):
                 prog.config[d[1:]] = (_eval(args[0], defs, lineno), _eval(args[1], defs, lineno))
             elif d in (".side_pins", ".in_pins"):
                 prog.config[d[1:]] = _eval(args[0], defs, lineno)
+            elif d == ".fifo" and args == ["join_tx"]:
+                prog.config["fjoin"] = True
             elif d in (".shift_out", ".shift_in"):
                 right = args[0] == "right"
                 auto = any(a in ("autopull", "autopush") for a in args[1:])

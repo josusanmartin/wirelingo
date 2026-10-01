@@ -46,6 +46,7 @@ class Core:
         self.side_base = self.side_count = self.side_opt = self.side_pindir = self.in_base = 0
         self.out_shr = self.in_shr = self.autopull = self.autopush = 0
         self.pull_thresh = self.push_thresh = 0
+        self.fjoin = 0  # SHIFTCTRL.FJOIN_TX: RXF becomes a second TX stage (TXF -> RXF -> OSR)
         self.entry, self.wrap_bottom, self.wrap_top = 256 * idx, 0, 1023
         self.crc_poly = self.crc_w = self.in_tap = self.out_tap = 0
         self.crc = 0
@@ -77,7 +78,7 @@ class Core:
                     | (self.side_pindir << 13) | (self.in_base << 16))
         if off == C_SHIFTCTRL:
             return (self.out_shr | (self.in_shr << 1) | (self.autopull << 2) | (self.autopush << 3)
-                    | (self.pull_thresh << 8) | (self.push_thresh << 16))
+                    | (self.fjoin << 4) | (self.pull_thresh << 8) | (self.push_thresh << 16))
         if off == C_ENTRY:
             return self.entry
         if off == C_WRAP:
@@ -97,7 +98,7 @@ class Core:
         if off == C_OSR:
             return self.osr
         if off == C_FIFO:
-            return self.rxf[0] if self.rxf else 0
+            return self.rxf[0] if self.rxf and not self.fjoin else 0
         return 0
 
     def write_reg(self, off, v):
@@ -114,6 +115,7 @@ class Core:
         elif off == C_SHIFTCTRL:
             self.out_shr, self.in_shr = v & 1, (v >> 1) & 1
             self.autopull, self.autopush = (v >> 2) & 1, (v >> 3) & 1
+            self.fjoin = (v >> 4) & 1
             self.pull_thresh, self.push_thresh = (v >> 8) & 31, (v >> 16) & 31
         elif off == C_ENTRY:
             self.entry = v & 1023
@@ -140,6 +142,8 @@ class Core:
         pin_of = lambda p: (pins_in >> (p & 31)) & 1
         pull_th = self.pull_thresh or 32
         push_th = self.push_thresh or 32
+        pullq = self.rxf if self.fjoin else self.txf
+        rx_full = self.fjoin or len(self.rxf) >= chip.fifo_depth
 
         # -- divider
         tick = self.cnt == 0
@@ -220,7 +224,7 @@ class Core:
                 True, rv == 0, rv != 0, rv != 0,
                 pin_of(sel) == 1, pin_of(sel) == 0,
                 self.z == 1, self.z == 0, self.c == 1, self.c == 0, self.t == 1,
-                self.osr_cnt < pull_th, len(self.txf) > 0, len(self.rxf) >= chip.fifo_depth,
+                self.osr_cnt < pull_th, len(pullq) > 0, rx_full,
                 (flags >> (sel & 7)) & 1 == 1, (flags >> (sel & 7)) & 1 == 0,
             ][cond]
             if cond == isa.C_DEC:
@@ -271,7 +275,7 @@ class Core:
                 nisr = ((self.isr << n) | b) & M32
             ncnt = min(32, self.isr_cnt + n)
             if self.autopush and ncnt >= push_th:
-                if len(self.rxf) >= chip.fifo_depth:
+                if rx_full:
                     complete = False
                 else:
                     fx["rxpush"] = nisr
@@ -285,10 +289,10 @@ class Core:
             dst, n = isa.bits(x, 18, 15), isa.bits(x, 4, 0) or 32
             osr0, cnt0 = self.osr, self.osr_cnt
             if self.autopull and self.osr_cnt >= pull_th:
-                if not self.txf:
+                if not pullq:
                     complete = False
                 else:
-                    osr0, cnt0 = self.txf[0], 0
+                    osr0, cnt0 = pullq[0], 0
                     fx["txpop"] = True
             if complete:
                 if self.out_shr:
@@ -317,7 +321,7 @@ class Core:
             iff, blk = isa.bits(x, 18, 18), isa.bits(x, 17, 17)
             if iff and self.isr_cnt < push_th:
                 pass
-            elif len(self.rxf) >= chip.fifo_depth:
+            elif rx_full:
                 if blk:
                     complete = False
                 else:
@@ -330,13 +334,13 @@ class Core:
             ife, blk = isa.bits(x, 18, 18), isa.bits(x, 17, 17)
             if ife and self.osr_cnt < pull_th:
                 pass
-            elif not self.txf:
+            elif not pullq:
                 if blk:
                     complete = False
                 else:
                     self.osr, self.osr_cnt = self.r[0], 0
             else:
-                self.osr, self.osr_cnt = self.txf[0], 0
+                self.osr, self.osr_cnt = pullq[0], 0
                 fx["txpop"] = True
 
         elif op == isa.OP_MOV:
@@ -503,6 +507,7 @@ class Chip:
         `commit`: read side effect (FIFO pop) for addr this cycle."""
         pins_in = self.pins_in()
         flags = self.flags
+        fjoin = [core.fjoin for core in self.cores]  # start of cycle: a host write lands at the edge
         restart = fclear = 0
         ctrl = self.ctrl_pend
         if ctrl is not None:
@@ -576,14 +581,22 @@ class Chip:
                 continue
             txpop, rxpush = fifo_ops[c]
             tx, rx = list(core.txf), list(core.rxf)
-            if txpop:
-                tx = tx[1:]
+            if fjoin[c]:
+                # TXF -> RXF -> OSR; the move uses start-of-cycle levels
+                if txpop:
+                    rx = rx[1:]
+                if core.txf and len(core.rxf) < self.fifo_depth:
+                    tx = tx[1:]
+                    rx.append(core.txf[0])
+            else:
+                if txpop:
+                    tx = tx[1:]
+                if host_pop[c] and core.rxf:
+                    rx = rx[1:]
+                if rxpush is not None:
+                    rx.append(rxpush)
             if host_push[c] is not None and len(core.txf) < self.fifo_depth:
                 tx.append(host_push[c])
-            if host_pop[c] and core.rxf:
-                rx = rx[1:]
-            if rxpush is not None:
-                rx.append(rxpush)
             core.txf, core.rxf = tx, rx
 
         for c in range(NCORES):

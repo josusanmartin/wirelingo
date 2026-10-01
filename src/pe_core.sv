@@ -59,7 +59,7 @@ module pe_core #(
   reg [5:0]  out_count;
   reg [2:0]  set_count, side_count;
   reg        side_opt, side_pindir;
-  reg        out_shr, in_shr, autopull, autopush;
+  reg        out_shr, in_shr, autopull, autopush, fjoin;
   reg [4:0]  pull_thresh, push_thresh;
   reg [9:0]  entry, wrap_bottom, wrap_top;
   reg [15:0] crc_poly;
@@ -85,20 +85,29 @@ module pe_core #(
   wire [31:0] txf_head, rxf_head;
   wire [3:0]  txf_level, rxf_level;
   wire        txf_empty = txf_level == 4'd0;
+  wire        rxf_empty = rxf_level == 4'd0;
   wire        rxf_full  = rxf_level[FIFO_LOG2];
   reg         core_txpop, core_rxpush;   // decoded; qualified by exec below
   reg  [31:0] core_rxdata;
   wire        exec;
 
+  // SHIFTCTRL.FJOIN_TX: RXF becomes a second TX stage (TXF -> RXF -> OSR), for
+  // 2*D words of TX buffering. The core pulls from RXF; its pushes block and
+  // host FIFO reads return 0 without popping.
+  wire        xfer     = fjoin && !txf_empty && !rxf_full;
+  wire [31:0] pq_head  = fjoin ? rxf_head : txf_head;    // what PULL / autopull take
+  wire        pq_empty = fjoin ? rxf_empty : txf_empty;
+  wire        rx_block = fjoin || rxf_full;              // PUSH / autopush stall
+
   pe_fifo #(.LOG2(FIFO_LOG2)) txf (
       .clk(clk), .rst_n(rst_n), .clear(fifo_clear),
       .push(host_push), .push_data(bus_wdata),
-      .pop(exec && core_txpop), .head(txf_head), .level(txf_level));
+      .pop(fjoin ? xfer : exec && core_txpop), .head(txf_head), .level(txf_level));
 
   pe_fifo #(.LOG2(FIFO_LOG2)) rxf (
       .clk(clk), .rst_n(rst_n), .clear(fifo_clear),
-      .push(exec && core_rxpush), .push_data(core_rxdata),
-      .pop(host_pop), .head(rxf_head), .level(rxf_level));
+      .push(fjoin ? xfer : exec && core_rxpush), .push_data(fjoin ? txf_head : core_rxdata),
+      .pop(fjoin ? exec && core_txpop : host_pop), .head(rxf_head), .level(rxf_level));
 
   // ---------------------------------------------------------------- helpers
   function automatic [31:0] rotl32(input [31:0] v, input [4:0] s);
@@ -203,7 +212,7 @@ module pe_core #(
   wire [31:0] nmask = lowmask(n);
   wire [31:0] in_bits = src_val & nmask;
   wire        out_refill = autopull && osr_cnt >= pull_th;
-  wire [31:0] osr0 = out_refill ? txf_head : osr;
+  wire [31:0] osr0 = out_refill ? pq_head : osr;
   wire        is_in = op == OP_IN;
   wire        shr = is_in ? in_shr : out_shr;
   wire [31:0] fs_hi = is_in ? (in_shr ? in_bits : isr) : (out_shr ? 32'd0 : osr0);
@@ -264,8 +273,8 @@ module pe_core #(
       4'd9:  cond_ok = !c;
       4'd10: cond_ok = t;
       4'd11: cond_ok = osr_cnt < pull_th;
-      4'd12: cond_ok = !txf_empty;
-      4'd13: cond_ok = rxf_full;
+      4'd12: cond_ok = !pq_empty;
+      4'd13: cond_ok = rx_block;
       4'd14: cond_ok = flags[jsel[2:0]];
       default: cond_ok = !flags[jsel[2:0]];
     endcase
@@ -383,7 +392,7 @@ module pe_core #(
 
       OP_IN: begin
         if (in_autopush) begin
-          if (rxf_full) complete = 1'b0;
+          if (rx_block) complete = 1'b0;
           else begin
             core_rxpush = 1'b1;
             core_rxdata = in_isr;
@@ -396,14 +405,14 @@ module pe_core #(
           isr_nv = in_isr;
           isr_cnt_nv = in_cnt;
         end
-        if (in_tap && n == 6'd1 && !(in_autopush && rxf_full)) begin
+        if (in_tap && n == 6'd1 && !(in_autopush && rx_block)) begin
           crc_feed = 1'b1;
           crc_bit = in_bits[0];
         end
       end
 
       OP_OUT: begin
-        if (out_refill && txf_empty) complete = 1'b0;
+        if (out_refill && pq_empty) complete = 1'b0;
         else begin
           core_txpop = out_refill;
           osr_we = 1'b1;
@@ -441,7 +450,7 @@ module pe_core #(
 
       OP_PUSH: begin
         if (x[18] && isr_cnt < push_th) ;
-        else if (rxf_full) begin
+        else if (rx_block) begin
           if (x[17]) complete = 1'b0;
           else begin
             isr_we = 1'b1;
@@ -459,7 +468,7 @@ module pe_core #(
 
       OP_PULL: begin
         if (x[18] && osr_cnt < pull_th) ;
-        else if (txf_empty) begin
+        else if (pq_empty) begin
           if (x[17]) complete = 1'b0;
           else begin
             osr_we = 1'b1;
@@ -469,7 +478,7 @@ module pe_core #(
         end else begin
           core_txpop = 1'b1;
           osr_we = 1'b1;
-          osr_nv = txf_head;
+          osr_nv = pq_head;
           osr_cnt_nv = 6'd0;
         end
       end
@@ -585,7 +594,7 @@ module pe_core #(
       5'h00: bus_rdata = {8'd0, div_int, div_frac};
       5'h01: bus_rdata = {5'd0, set_count, 3'd0, set_base, 2'd0, out_count, 3'd0, out_base};
       5'h02: bus_rdata = {11'd0, in_base, 2'd0, side_pindir, side_opt, 1'b0, side_count, 3'd0, side_base};
-      5'h03: bus_rdata = {11'd0, push_thresh, 3'd0, pull_thresh, 4'd0, autopush, autopull, in_shr, out_shr};
+      5'h03: bus_rdata = {11'd0, push_thresh, 3'd0, pull_thresh, 3'd0, fjoin, autopush, autopull, in_shr, out_shr};
       5'h04: bus_rdata = {22'd0, entry};
       5'h05: bus_rdata = {6'd0, wrap_top, 6'd0, wrap_bottom};
       5'h06: bus_rdata = {10'd0, out_tap, in_tap, crc_w, crc_poly};
@@ -598,7 +607,7 @@ module pe_core #(
       5'h0D: bus_rdata = {16'd0, r3};
       5'h0E: bus_rdata = isr;
       5'h0F: bus_rdata = osr;
-      5'h10: bus_rdata = (rxf_level != 4'd0) ? rxf_head : 32'd0;
+      5'h10: bus_rdata = (!rxf_empty && !fjoin) ? rxf_head : 32'd0;
       default: bus_rdata = 32'd0;
     endcase
   end
@@ -629,9 +638,9 @@ module pe_core #(
         {bus_wdata[4:0], bus_wdata[10:8], bus_wdata[12], bus_wdata[13], bus_wdata[20:16]};
 
   always @(posedge cfg_gclk[3] or negedge rst_n)
-    if (!rst_n) {out_shr, in_shr, autopull, autopush, pull_thresh, push_thresh} <= 14'd0;
-    else {out_shr, in_shr, autopull, autopush, pull_thresh, push_thresh} <=
-        {bus_wdata[0], bus_wdata[1], bus_wdata[2], bus_wdata[3], bus_wdata[12:8], bus_wdata[20:16]};
+    if (!rst_n) {out_shr, in_shr, autopull, autopush, fjoin, pull_thresh, push_thresh} <= 15'd0;
+    else {out_shr, in_shr, autopull, autopush, fjoin, pull_thresh, push_thresh} <=
+        {bus_wdata[0], bus_wdata[1], bus_wdata[2], bus_wdata[3], bus_wdata[4], bus_wdata[12:8], bus_wdata[20:16]};
 
   always @(posedge cfg_gclk[4] or negedge rst_n)
     if (!rst_n) entry <= {IDX, 8'd0};

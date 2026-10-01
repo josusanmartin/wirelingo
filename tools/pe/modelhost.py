@@ -11,8 +11,8 @@ from . import sim, host
 
 
 class ModelHost:
-    def __init__(self, bank_words=256):
-        self.chip = sim.Chip(bank_words=bank_words)
+    def __init__(self, bank_words=256, fifo_depth=8):  # 8 = the IHP tapeout's FIFO depth
+        self.chip = sim.Chip(bank_words=bank_words, fifo_depth=fifo_depth)
         self.ui = 0      # ui_in[4:0]
         self.uio = 0     # value external devices drive on uio (where they drive)
         self.ext_oe = 0  # uio bits driven externally

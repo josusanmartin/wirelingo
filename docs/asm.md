@@ -41,6 +41,7 @@ writes = host.load_program(core=1, prog=prog, in_pins=16, clkdiv=host.clkdiv_for
 | `.clkdiv f` | default clock divider (e.g. `.clkdiv 54.25`) |
 | `.out_pins base count`, `.set_pins base count`, `.side_pins base`, `.in_pins base` | default pin mapping |
 | `.shift_out right\|left [autopull] [thresh]`, `.shift_in right\|left [autopush] [thresh]` | default shift configuration |
+| `.fifo join_tx` | set SHIFTCTRL.FJOIN_TX: RXF becomes a second TX stage (2·D words of TX buffering) |
 | `.word value` | raw 32-bit instruction word |
 
 Pin and shift directives are defaults. `host.load_program(..., out_pins=…)`

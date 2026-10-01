@@ -48,7 +48,7 @@ def core_config(prog, *, out_pins=None, set_pins=None, side_pins=None, in_pins=N
     osr_right, autopull, pull_th = cfg.get("shift_out", (False, False, 32))
     isr_right, autopush, push_th = cfg.get("shift_in", (False, False, 32))
     shiftctrl = (int(osr_right) | (int(isr_right) << 1) | (int(autopull) << 2) | (int(autopush) << 3)
-                 | ((pull_th & 31) << 8) | ((push_th & 31) << 16))
+                 | (int(cfg.get("fjoin", False)) << 4) | ((pull_th & 31) << 8) | ((push_th & 31) << 16))
     if clkdiv is None:
         i, f = cfg.get("clkdiv", (1, 0))
         clkdiv = (i << 8) | f

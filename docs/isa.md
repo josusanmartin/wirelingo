@@ -181,6 +181,15 @@ pins starting at `SIDE_BASE` (mod 32). If `SIDE_PINDIR` is set, it writes
 * **Autopush** (if enabled): an IN whose result has `ISR_CNT ≥ PUSH_THRESH`
   pushes the new ISR to RXF, then clears ISR and ISR_CNT. If RXF is full, the
   IN stalls and nothing is shifted.
+* **FIFO join** (`FJOIN_TX`): RXF becomes a second TX stage, giving 2·D
+  words of TX buffering for protocols the host can't keep up with
+  (10BASE-T). The host pushes into TXF as usual. Each cycle, if TXF is not
+  empty and RXF is not full (start-of-cycle levels), the TXF head moves to
+  RXF. PULL, autopull and `txne` use RXF. PUSH and autopush act as if RXF
+  were full, and so does the `rxf` condition. Host FIFO reads return 0 and
+  pop nothing. STATUS still reports both levels, so the host sees
+  `TXF lvl < D` as "room to push". The move runs whether or not the core is
+  enabled. Change `FJOIN_TX` only with both FIFOs empty (or clear them).
 * Thresholds are 5-bit fields where 0 means 32. `OUT_COUNT` > 32 behaves as
   32, and `SET_COUNT` 6–7 behave as 5.
 
@@ -455,7 +464,7 @@ Core block (offset from `0x0400 + 0x20·c`):
 | 0x00 | CLKDIV    | RW     | `[23:8]` INT, `[7:0]` FRAC (reset INT = 1)                              |
 | 0x01 | PINCTRL0  | RW     | `[4:0]` OUT_BASE, `[13:8]` OUT_COUNT, `[20:16]` SET_BASE, `[26:24]` SET_COUNT |
 | 0x02 | PINCTRL1  | RW     | `[4:0]` SIDE_BASE, `[10:8]` SIDE_COUNT, `[12]` SIDE_OPT, `[13]` SIDE_PINDIR, `[20:16]` IN_BASE |
-| 0x03 | SHIFTCTRL | RW     | `[0]` OUT_SHIFT_RIGHT, `[1]` IN_SHIFT_RIGHT, `[2]` AUTOPULL, `[3]` AUTOPUSH, `[12:8]` PULL_THRESH, `[20:16]` PUSH_THRESH |
+| 0x03 | SHIFTCTRL | RW     | `[0]` OUT_SHIFT_RIGHT, `[1]` IN_SHIFT_RIGHT, `[2]` AUTOPULL, `[3]` AUTOPUSH, `[4]` FJOIN_TX (§4.4), `[12:8]` PULL_THRESH, `[20:16]` PUSH_THRESH |
 | 0x04 | ENTRY     | RW     | `[9:0]` restart PC (reset 256·c)                                       |
 | 0x05 | WRAP      | RW     | `[9:0]` WRAP_BOTTOM (reset 0), `[25:16]` WRAP_TOP (reset 1023)         |
 | 0x06 | CRCCTRL   | RW     | `[15:0]` POLY, `[19:16]` CRC_W (width − 1), `[20]` IN_TAP, `[21]` OUT_TAP |
