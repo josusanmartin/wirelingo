@@ -77,70 +77,47 @@ COCOTB_TEST_MODULES=test COCOTB_TESTCASE= COCOTB_TEST_FILTER= COCOTB_TOPLEVEL=tb
      -.--ns INFO     gpi                                ../gpi/GpiCommon.cpp:216  in gpi_load_users                  Running entry func 'initialize' from loaded library '[home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs/libcocotb.so'
      -.--ns INFO     gpi                                ..mbed/gpi_embed.cpp:96   in initialize                      Using Python 3.11.6 interpreter at [home directory redacted]/tools/oss-cad-suite/bin/tabbypy3
      0.00ns INFO     cocotb                             Running on Icarus Verilog version 14.0 (devel)
-     0.00ns INFO     cocotb                             Seeding Python random module with 1790828660
+     0.00ns INFO     cocotb                             Seeding Python random module with 1790833383
      0.00ns INFO     cocotb                             Initialized cocotb v2.1.0.dev0+41564633 from [home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb
      0.00ns INFO     cocotb                             Running tests
-     0.00ns INFO     cocotb.regression                  running test.test_id (1/8)
+     0.00ns INFO     cocotb.regression                  running test.test_id (1/9)
  66760.00ns INFO     cocotb.regression                  test.test_id passed
- 66760.00ns INFO     cocotb.regression                  running test.test_uart_tx (2/8)
+ 66760.00ns INFO     cocotb.regression                  running test.test_uart_tx (2/9)
 283860.00ns INFO     cocotb.regression                  test.test_uart_tx passed
-283860.00ns INFO     cocotb.regression                  running test.test_uart_rx (3/8)
-552680.00ns INFO     cocotb.regression                  test.test_uart_rx passed
-552680.00ns INFO     cocotb.regression                  running test.test_spi_master (4/8)
-775380.00ns INFO     cocotb.regression                  test.test_spi_master passed
-775380.00ns INFO     cocotb.regression                  running test.test_i2c_master (5/8)
-1412160.00ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42
-1731040.00ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42 P S Aa0 W10 S Aa1 Rde Rad R42 P S Nb0 P
-1731040.00ns INFO     cocotb.regression                  test.test_i2c_master passed
-1731040.00ns INFO     cocotb.regression                  running test.test_usb_ls_device (6/8)
+283860.00ns INFO     cocotb.regression                  running test.test_uart_rx (3/9)
+568040.00ns INFO     cocotb.regression                  test.test_uart_rx passed
+568040.00ns INFO     cocotb.regression                  running test.test_spi_master (4/9)
+790740.00ns INFO     cocotb.regression                  test.test_spi_master passed
+790740.00ns INFO     cocotb.regression                  running test.test_i2c_master (5/9)
+1427520.00ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42
+1746400.00ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42 P S Aa0 W10 S Aa1 Rde Rad R42 P S Nb0 P
+1746400.00ns INFO     cocotb.regression                  test.test_i2c_master passed
+1746400.00ns INFO     cocotb.regression                  running test.test_usb_ls_device (6/9)
                                                             USB low-speed device side in firmware: SETUP+DATA0 -> ACK (and a good record),
-2792940.00ns WARNING  ..otb.task.Test test_usb_ls_device [425984, 256, 3707781120, 2483027968]
-                                                        assert not [425984, 256, 3707781120, 2483027968]
-                                                        Traceback (most recent call last):
-                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 527, in test_usb_ls_device
-                                                            assert await records() == [usbdev.Record(True, req, 16 + 8 * 10)]
-                                                                   ^^^^^^^^^^^^^^^
-                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 516, in records
-                                                            assert not rest, words
-                                                        AssertionError: [425984, 256, 3707781120, 2483027968]
-                                                        assert not [425984, 256, 3707781120, 2483027968]
-2792940.00ns WARNING  cocotb.regression                  test.test_usb_ls_device failed
-2792940.00ns INFO     cocotb.regression                  running test.test_eth10_tx (7/8)
+3058380.00ns INFO     cocotb.regression                  test.test_usb_ls_device passed
+3058380.00ns INFO     cocotb.regression                  running test.test_eth10_tx (7/9)
                                                             10BASE-T TX with FIFO join: a 64-byte frame from one 16-word FIFO burst.
-3129000.01ns WARNING  cocotb.task.Test test_eth10_tx     0x4
-                                                        assert (4, 0) == (8, 8)
-                                                        Traceback (most recent call last):
-                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 561, in test_eth10_tx
-                                                            assert (st & 15, (st >> 4) & 15) == (8, 8), hex(st)   # TXF and RXF (second TX stage) full
-                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                                                        AssertionError: 0x4
-                                                        assert (4, 0) == (8, 8)
-3129000.01ns WARNING  cocotb.regression                  test.test_eth10_tx failed
-3129000.01ns INFO     cocotb.regression                  running test.test_fifo_read_race (8/8)
+3459640.01ns INFO     cocotb.regression                  test.test_eth10_tx passed
+3459640.01ns INFO     cocotb.regression                  running test.test_fifo_read_race (8/9)
                                                             A word the core pushes while the host is reading an empty RXF must not be
-3512180.01ns WARNING  ..tb.task.Test test_fifo_read_race ('0xa0d2', ['0xa0ae', '0xa0ba', '0xa0c6'])
-                                                        assert ([41110, 41122, 41134, 41146, 41158] and 41158 == 41170)
-                                                        Traceback (most recent call last):
-                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 604, in test_fifo_read_race
-                                                            assert got and got[-1] == marker, (hex(marker), [hex(g) for g in got[-3:]])
-                                                        AssertionError: ('0xa0d2', ['0xa0ae', '0xa0ba', '0xa0c6'])
-                                                        assert ([41110, 41122, 41134, 41146, 41158] and 41158 == 41170)
-3512180.01ns WARNING  cocotb.regression                  test.test_fifo_read_race failed
-3512180.01ns INFO     cocotb.regression                  **************************************************************************************
+5669220.01ns INFO     cocotb.regression                  test.test_fifo_read_race passed
+5669220.01ns INFO     cocotb.regression                  running test.test_spi_port_timing (9/9)
+                                                            Host port contract (docs/isa.md §6.1): SCK period >= 8 clk with high and
+7527425.24ns INFO     cocotb.regression                  test.test_spi_port_timing passed
+7527425.24ns INFO     cocotb.regression                  **************************************************************************************
                                                         ** TEST                          STATUS  SIM TIME (ns)  REAL TIME (s)  RATIO (ns/s) **
                                                         **************************************************************************************
-                                                        ** test.test_id                   PASS       66760.00           2.12      31511.91  **
-                                                        ** test.test_uart_tx              PASS      217100.00           7.18      30245.18  **
-                                                        ** test.test_uart_rx              PASS      268820.00           8.13      33050.62  **
-                                                        ** test.test_spi_master           PASS      222700.00           9.26      24041.54  **
-                                                        ** test.test_i2c_master           PASS      955660.00          29.89      31977.00  **
-                                                        ** test.test_usb_ls_device        FAIL     1061900.00          27.15      39108.58  **
-                                                        ** test.test_eth10_tx             FAIL      336060.00           7.77      43227.42  **
-                                                        ** test.test_fifo_read_race       FAIL      383180.00           6.81      56230.73  **
+                                                        ** test.test_id                   PASS       66760.00           1.53      43590.21  **
+                                                        ** test.test_uart_tx              PASS      217100.00           4.91      44213.43  **
+                                                        ** test.test_uart_rx              PASS      284180.00           6.20      45816.12  **
+                                                        ** test.test_spi_master           PASS      222700.00           5.87      37960.16  **
+                                                        ** test.test_i2c_master           PASS      955660.00          22.76      41983.48  **
+                                                        ** test.test_usb_ls_device        PASS     1311980.00          47.83      27427.38  **
+                                                        ** test.test_eth10_tx             PASS      401260.00          12.89      31122.73  **
+                                                        ** test.test_fifo_read_race       PASS     2209580.00          41.67      53023.35  **
+                                                        ** test.test_spi_port_timing      PASS     1858205.23          34.07      54546.60  **
                                                         **************************************************************************************
-                                                        ** TESTS=8 PASS=5 FAIL=3 SKIP=0            3512180.01          98.36      35708.02  **
+                                                        ** TESTS=9 PASS=9 FAIL=0 SKIP=0            7527425.24         177.76      42345.05  **
                                                         **************************************************************************************
 FST info: dumpfile tb.fst opened for output.
-make[1]: *** [[home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb_tools/makefiles/simulators/Makefile.icarus:67: gl.xml] Error 3
 make[1]: Leaving directory '[home directory redacted]/dev/protoemu/test'
-make: *** [[home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb_tools/makefiles/Makefile.inc:17: sim] Error 2

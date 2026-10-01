@@ -85,14 +85,14 @@ make -C formal                                                   # proofs
 
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs; 40 % standard-cell utilization.
-* Run final4 (the RTL before the FIFO read-snapshot fix) signed off with 0
-  routing violations, 0 KLayout DRC, LVS clean, 0 antenna, 50 MHz met at the
-  typical corner (+3.2 ns setup, +0.19 ns hold), and its gate-level simulation
-  passes. With PVT-matched SRAM timing views, fast-corner hold is met
-  (+0.03 ns) and the slow corner reaches about 37 MHz. The remaining electrical
-  exceptions (9 slew, 10 capacitance at typ) are listed in
-  [docs/physical.md](docs/physical.md).
-* Run final5 (current RTL, corrected SRAM corners) is in progress.
+* **Run final5 (the current RTL) signs off clean:** 0 routing violations,
+  0 KLayout DRC, LVS clean, 0 antenna violations. With PVT-matched SRAM
+  timing views, 50 MHz is met at the typical corner (+3.12 ns setup,
+  +0.21 ns hold) and hold is met at the fast corner (+0.05 ns). The slow
+  corner reaches about 37 MHz (−6.9 ns at 50 MHz).
+* All 9 top-level tests pass on the routed netlist (`flow/gl_test.sh`).
+* Remaining electrical exceptions at typ (3 slew, 11 capacitance, mostly the
+  SRAM output pins) are listed in [docs/physical.md](docs/physical.md).
 
 ## Layout
 

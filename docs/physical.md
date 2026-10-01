@@ -73,7 +73,14 @@ Lessons:
 | s2c | 248eae0, 4-deep FIFOs | 0 | 0 | clean | 0 | +2.79 / −7.64 ns* | +0.29 ns | 50 / 44 |
 | final4 | 6a563dc: 8-deep FIFOs, registered CTRL, FIFO join; post-GRT repair, 400 µm max wire | 0 (19 iterations) | 0 | clean | 0 | +3.19 / −4.93 ns* (−7.12 ns with the slow SRAM view) | +0.19 ns | 9 / 10 |
 
-\* Both runs gave every STA corner the typical SRAM timing view (the macro's
+| **final5** | bd2d6d0: + FIFO read snapshot, pe_fifos; PVT-matched SRAM views | 0 | 0 | clean | 0 | **+3.12 / −6.90 ns** | +0.21 ns (fast +0.05) | 3 / 11 |
+
+final5 is the current hardware. Its gate-level simulation passes all 9
+top-level tests. The slow corner allows about 37 MHz. The capacitance
+exceptions are mostly SRAM DOUT pins slightly over the macro's 0.064 pF
+output-load limit.
+
+\* The s2c and final4 runs gave every STA corner the typical SRAM timing view (the macro's
 `lib` map was keyed `nom_*`/`min_*`/`max_*`, and every corner is `nom_*`), so
 their slow and fast numbers are mixed-corner. Re-running STA on final4 with
 PVT-matched views (`flow/signoff.py` now prints the view per corner): typ
