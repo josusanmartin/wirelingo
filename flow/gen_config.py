@@ -103,9 +103,11 @@ def main():
         "instances": {inst(b): {"location": [x, y], "orientation": o} for b, (x, y, o) in pl.items()},
         "gds": [f"{P}/gds/{M}.gds"],
         "lef": [f"{P}/lef/{M}.lef"],
-        "lib": {"nom_*": [f"{P}/lib/{M}_typ_1p20V_25C.lib"],
-                "min_*": [f"{P}/lib/{M}_fast_1p32V_m55C.lib"],
-                "max_*": [f"{P}/lib/{M}_slow_1p08V_125C.lib"]},
+        # keyed by the PVT part of the corner name: every STA corner is nom_* (the
+        # interconnect corner), so nom_*/min_*/max_* keys gave all of them typ SRAM
+        "lib": {"*_typ_*": [f"{P}/lib/{M}_typ_1p20V_25C.lib"],
+                "*_fast_*": [f"{P}/lib/{M}_fast_1p32V_m55C.lib"],   # closest: the SRAM has no -40C view
+                "*_slow_*": [f"{P}/lib/{M}_slow_1p08V_125C.lib"]},
         "nl": [f"dir::macros/{M}.v"],
         "spice": [f"{P}/cdl/{M}.cdl"],
     }}
