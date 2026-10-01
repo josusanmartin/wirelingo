@@ -70,11 +70,20 @@ Lessons:
 
 | Run | RTL | DRT (final) | KLayout DRC | LVS | Antenna | Setup WS typ / slow | Hold WS typ | Max slew / cap viol. (typ) |
 |-----|-----|-------------|-------------|-----|---------|---------------------|-------------|----------------------------|
-| s2c | 248eae0, 4-deep FIFOs | 0 | 0 | clean | 0 | +2.79 / −7.64 ns | +0.29 ns | 50 / 44 |
-| **final4** | 6a563dc: 8-deep FIFOs, registered CTRL, FIFO join; post-GRT repair, 400 µm max wire | 0 (19 iterations) | 0 | clean | 0 | **+3.19 / −4.93 ns** | +0.19 ns | 9 / 10 |
+| s2c | 248eae0, 4-deep FIFOs | 0 | 0 | clean | 0 | +2.79 / −7.64 ns* | +0.29 ns | 50 / 44 |
+| final4 | 6a563dc: 8-deep FIFOs, registered CTRL, FIFO join; post-GRT repair, 400 µm max wire | 0 (19 iterations) | 0 | clean | 0 | +3.19 / −4.93 ns* (−7.12 ns with the slow SRAM view) | +0.19 ns | 9 / 10 |
 
-* The slow corner misses 50 MHz by 7.6 ns (444 endpoints). TT signs off at typ,
-  so 50 MHz at typ (or about 35 MHz at the slow corner) is the stated target.
+\* Both runs gave every STA corner the typical SRAM timing view (the macro's
+`lib` map was keyed `nom_*`/`min_*`/`max_*`, and every corner is `nom_*`), so
+their slow and fast numbers are mixed-corner. Re-running STA on final4 with
+PVT-matched views (`flow/signoff.py` now prints the view per corner): typ
+unchanged; fast hold +0.034 ns, met (the worst hold paths are flop to flop);
+slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
+
+### s2c (historical)
+
+* The slow corner missed 50 MHz by 7.6 ns (444 endpoints). TT signs off at
+  typ, so 50 MHz at typ is the target.
 * **275 of the violators started at the host bus address.** A `CTRL` write
   decoded `restart` combinationally, and `restart` gates `active` → `exec`,
   i.e. the whole execute stage of every core, plus `fetch_addr` into the SRAM
@@ -89,7 +98,9 @@ Lessons:
   wires cause the slew/cap violations, including SRAM input pins above the
   macro's 0.476 ns transition limit.
 
-* final4 (`--post-grt-repair --max-wire 400`): repair after global routing
+### final4
+
+* `--post-grt-repair --max-wire 400`: repair after global routing
   buffered 551 long wires (779 buffers) and cut the typ slew/cap violations
   from 50/44 to 9/10. Every slow-corner violator now starts at an SRAM output
   (fetch → execute; 346 of 369 from the far-left bank). The rest: one

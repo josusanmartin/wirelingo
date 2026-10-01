@@ -496,8 +496,9 @@ addresses read as 0 and ignore writes.
 
 A build may implement fewer than four cores (`NCORES`) and IMEM banks
 (`NBANKS`), and chooses the FIFO depth `D` (4 or 8 words per direction;
-"full" in this document means D entries). The IHP tapeout's values are recorded in `info.yaml` and the
-README. For the parts that don't exist:
+"full" in this document means D entries). The IHP tapeout's values (2 cores,
+2 banks, D = 8) are the defaults in `src/project.v`. For the parts that don't
+exist:
 
 * **Missing core *c*:** its register block reads as 0 and ignores writes
   (including FIFO pushes). `CTRL.enable[c]` and `CTRL.restart[c]` are stored or
