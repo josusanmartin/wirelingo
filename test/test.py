@@ -653,12 +653,18 @@ async def test_spi_port_timing(dut):
     """Host port contract (docs/isa.md §6.1): SCK period >= 8 clk with high and
     low >= 3 clk, CS_n setup/hold >= 3 clk, CS_n high >= 4 clk between
     transactions, at any phase against clk. Swept at the limits and at random
-    points inside them: register writes read back, FIFO pushes and pops count
-    exactly, and a read aborted mid-word pops nothing."""
+    points inside them: register writes read back, FIFO pushes count exactly,
+    and a FIFO read aborted mid-word pops nothing (the next full read gets it)."""
     import random
     rng = random.Random(7)
     await setup(dut)
     T = CLK_NS
+    prog = asm.assemble("""
+        mov isr, r1
+        push block
+        halt
+    """)
+    await Spi(dut).apply(host.load_program(0, prog, 0, clkdiv=1 << 8))
     cases = [dict(period=8 * T, duty=3 / 8), dict(period=8 * T, duty=5 / 8),
              dict(period=8 * T, cs_setup=3 * T, cs_hold=3 * T, cs_gap=4 * T)]
     cases += [dict(period=rng.uniform(8, 20) * T, duty=rng.uniform(0.38, 0.62),
@@ -670,13 +676,18 @@ async def test_spi_port_timing(dut):
         regs = [rng.getrandbits(16) for _ in range(4)]
         await spi.write(sim.core_reg(0, sim.C_R0), regs)
         assert await spi.read(sim.core_reg(0, sim.C_R0), 4) == regs, (n, kw)
-        words = [rng.getrandbits(32) for _ in range(3)]
         await spi.write(sim.A_CTRL, [1 << 16])                     # clear core 0's FIFOs
+        words = [rng.getrandbits(32) for _ in range(3)]
         await spi.write(fifo, words, fixed=True)
         assert (await spi.read(status))[0] & 15 == 3, (n, kw)
-        # the core is stopped, so its TXF is only observable through STATUS;
-        # RXF pops are checked with the read-race program in test_fifo_read_race
+        # the core pushes R1 into its RXF; a read aborted mid-word must not pop it
+        await spi.write(sim.A_CTRL, [1 | (1 << 8)])                # restart + enable core 0
+        await ClockCycles(dut.clk, 20)
+        assert (await spi.read(status))[0] >> 4 & 15 == 1, (n, kw)
         spi.abort_bits = 24 + 16                                  # cmd + addr + half a word
-        await spi.read(status)
+        await spi.read(fifo, fixed=True)
         spi.abort_bits = None
-        assert (await spi.read(status))[0] & 15 == 3, (n, kw)
+        assert (await spi.read(status))[0] >> 4 & 15 == 1, (n, kw)
+        assert await spi.read(fifo, fixed=True) == [regs[1]], (n, kw)
+        assert (await spi.read(status))[0] >> 4 & 15 == 0, (n, kw)
+        await spi.write(sim.A_CTRL, [0])
