@@ -94,7 +94,10 @@ def main():
     c["PL_TARGET_DENSITY_PCT"] = a.density
     c["CLOCK_PERIOD"] = 20
     c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.1
-    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
+    # fast-corner hold isn't repaired (PNR_CORNERS); t3 had one fast violator at -24 ps
+    # whose typ slack was +0.150, so post-GRT hold repair keeps 0.25 ns at typ
+    # (43 endpoints were below that in t3)
+    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.25
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
     c["//clocks"] = "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both"
