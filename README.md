@@ -92,13 +92,13 @@ make -C formal                         # SymbiYosys proofs
     FIFOs and the CRC tap**, at 50 MHz typical (48 MHz for USB).
   * SRAM macros sit in the bottom corners, mirrored with pins up. Placement
     density is matched to utilization (about 30 %).
-  * A full run (2 cores, 4-deep FIFOs) signed off clean: 0 DRT, 0 KLayout DRC,
-    LVS clean, 0 antenna, typ timing met, and the gate-level simulation passes.
-    The current RTL is being hardened (docs/physical.md).
+  * **The current RTL signs off clean** (run final4): 0 DRT, 0 KLayout DRC,
+    LVS clean, 0 antenna, 50 MHz met at typ (+3.2 ns setup). The gate-level
+    simulation of the routed netlist passes all 7 top-level tests, 10BASE-T
+    included.
   * Four cores don't route on this tile's single horizontal routing layer.
     [docs/physical.md](docs/physical.md) has the routability experiments that
     led here.
 * **Next:**
-  * Signoff and gate-level simulation of the current RTL (CTRL pipelining, FIFO join).
   * Bring-up scripts for the demo board.
   * A public repository with the TT GDS action.

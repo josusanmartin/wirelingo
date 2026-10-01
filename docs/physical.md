@@ -103,6 +103,8 @@ Lessons:
   primitives) in the source list.
 * `flow/gl_test.sh <run dir>` copies the netlist and runs `make GATES=yes`
   with the run's core count and FIFO depth.
+* Results: s2c 6/6 and final4 **7/7** (ID, UART TX/RX, SPI, I2C, USB
+  low-speed device, 10BASE-T TX with FIFO join) on the routed netlist.
 
 ## Area reductions applied
 
