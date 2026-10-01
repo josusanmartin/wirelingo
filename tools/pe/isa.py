@@ -15,6 +15,21 @@ R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC, CRC = range(13
 LOC_NAMES = ["r0", "r1", "r2", "r3", "pins", "pindirs", "isr", "osr",
              "null", "status", "flags", "pc", "crc"]
 
+# OUT can write these; OUT to OSR/STATUS/FLAGS would only discard, so the assembler rejects them
+OUT_DSTS = {R0, R1, R2, R3, PINS, PINDIRS, ISR, NULL, PC, CRC}
+
+
+def clkdiv_fields(d):
+    """CLKDIV (INT, FRAC) for a divider d (ticks per tick of clk / d), FRAC in 1/256."""
+    i = int(d)
+    f = int(round((d - i) * 256))
+    if f == 256:                     # 1.999 -> 2.0, not 1 + 0/256
+        i, f = i + 1, 0
+    if not 1 <= i < 65536:
+        raise ValueError(f"clock divider {d} out of range (1 .. 65535.996)")
+    return i, f
+
+
 # JMP conditions
 (C_ALWAYS, C_ZERO, C_NZERO, C_DEC, C_PIN, C_NPIN, C_Z, C_NZ, C_C, C_NC,
  C_T, C_NOSRE, C_TXNE, C_RXF, C_F, C_NF) = range(16)

@@ -4,7 +4,7 @@ Everything here is transport-agnostic: functions return lists of (addr, data)
 register writes that can be sent over SPI (cocotb, RP2350 MicroPython) or
 applied directly to the model.
 """
-from . import sim
+from . import isa, sim
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
 
@@ -20,12 +20,7 @@ def spi_frame(cmd, addr, words=(), nread=0):
 
 def clkdiv_for(f_clk, f_tick):
     """CLKDIV value giving f_tick ticks/s from f_clk."""
-    d = f_clk / f_tick
-    i = int(d)
-    f = int(round((d - i) * 256))
-    if f == 256:
-        i, f = i + 1, 0
-    assert 1 <= i < 65536, "divider out of range"
+    i, f = isa.clkdiv_fields(f_clk / f_tick)
     return (i << 8) | f
 
 

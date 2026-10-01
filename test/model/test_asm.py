@@ -1,5 +1,7 @@
 """Assembler self-test: every mnemonic form encodes to what the disassembler reads back."""
-from pe import asm, isa
+import pytest
+
+from pe import asm, host, isa
 
 CASES = {
     "nop": "mov null, null",
@@ -44,3 +46,30 @@ def test_side_delay():
     op, sd, _ = isa.fields(p.words[0])
     assert sd == (1 << 7) | (2 << 5) | 3  # 5 delay bits, side at [6:5], enable at [7]
     assert isa.fields(p.words[1])[1] == 0
+
+
+def test_clkdiv_rounding_carries():
+    assert asm.assemble(".clkdiv 1.999\nnop").config["clkdiv"] == (2, 0)
+    assert asm.assemble(".clkdiv 2.999\nnop").config["clkdiv"] == (3, 0)
+    assert asm.assemble(".clkdiv 2.5\nnop").config["clkdiv"] == (2, 128)
+    assert host.clkdiv_for(48e6, 48e6 / 1.999) == 2 << 8
+    for bad in ("0.5", "65536"):
+        with pytest.raises(asm.AsmError):
+            asm.assemble(f".clkdiv {bad}\nnop")
+
+
+@pytest.mark.parametrize("src", [
+    "pull blcok",                       # typo used to mean `pull block`
+    "push iffull ifempty",
+    "pull block noblock",
+    "out osr, 8",                       # OUT to OSR only discards (docs/isa.md)
+    "out status, 4",
+    ".shift_out rigth autopull 8\nnop",  # typo used to select left
+    ".shift_in left autopull\nnop",     # autopull belongs to .shift_out
+    ".shift_out right 8 16\nnop",
+    ".shift_out right 33\nnop",
+    ".fifo join_rx\nnop",
+])
+def test_rejects_malformed(src):
+    with pytest.raises(asm.AsmError):
+        asm.assemble(src)

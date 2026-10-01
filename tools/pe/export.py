@@ -4,7 +4,7 @@
 """
 import argparse
 
-from . import asm, host
+from . import asm, host, isa
 
 
 def main():
@@ -32,8 +32,8 @@ def main():
     if a.in_pins is not None:
         kw["in_pins"] = a.in_pins
     if a.clkdiv:
-        i = int(a.clkdiv)
-        kw["clkdiv"] = (i << 8) | int(round((a.clkdiv - i) * 256))
+        i, f = isa.clkdiv_fields(a.clkdiv)
+        kw["clkdiv"] = (i << 8) | f
     c = host.core_config(prog, **kw)
     words = prog.relocate(base)
     wrap = (base + prog.wrap_bottom) | ((base + prog.wrap_top) << 16)

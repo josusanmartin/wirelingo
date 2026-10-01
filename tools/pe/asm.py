@@ -138,19 +138,30 @@ def _assemble_block(name, lines, defs):
                 items.append((lineno, line, raw))
                 pc += 1
             elif d == ".clkdiv":
-                v = float(args[0])
-                prog.config["clkdiv"] = (int(v), int(round((v - int(v)) * 256)) & 0xFF)
+                try:
+                    prog.config["clkdiv"] = isa.clkdiv_fields(float(args[0]))
+                except ValueError as e:
+                    raise AsmError(f"line {lineno}: {e}") from None
             elif d in (".out_pins", ".set_pins"):
                 prog.config[d[1:]] = (_eval(args[0], defs, lineno), _eval(args[1], defs, lineno))
             elif d in (".side_pins", ".in_pins"):
                 prog.config[d[1:]] = _eval(args[0], defs, lineno)
-            elif d == ".fifo" and args == ["join_tx"]:
+            elif d == ".fifo":
+                if args != ["join_tx"]:
+                    raise AsmError(f"line {lineno}: .fifo takes join_tx")
                 prog.config["fjoin"] = True
             elif d in (".shift_out", ".shift_in"):
-                right = args[0] == "right"
-                auto = any(a in ("autopull", "autopush") for a in args[1:])
-                th = [a for a in args[1:] if a not in ("autopull", "autopush")]
-                prog.config[d[1:]] = (right, auto, _eval(th[0], defs, lineno) if th else 32)
+                auto_kw = "autopull" if d == ".shift_out" else "autopush"
+                if not args or args[0] not in ("left", "right"):
+                    raise AsmError(f"line {lineno}: {d} needs left or right")
+                auto = auto_kw in args[1:]
+                th = [a for a in args[1:] if a != auto_kw]
+                if len(th) > 1:
+                    raise AsmError(f"line {lineno}: {d} right|left [{auto_kw}] [threshold]")
+                n = _eval(th[0], defs, lineno) if th else 32
+                if not 1 <= n <= 32:
+                    raise AsmError(f"line {lineno}: threshold must be 1..32")
+                prog.config[d[1:]] = (args[0] == "right", auto, n)
             else:
                 raise AsmError(f"line {lineno}: unknown directive {d}")
             continue
@@ -317,11 +328,18 @@ def _encode(line, prog, defs, lineno):
         op = isa.OP_IN if mn == "in" else isa.OP_OUT
         if len(args) != 2:
             raise err(f"{mn} takes loc, count")
-        x = (loc(args[0]) << 15) | cnt(args[1])
+        where = loc(args[0])
+        if mn == "out" and where not in isa.OUT_DSTS:
+            raise err(f"out can't write {args[0].strip()}")
+        x = (where << 15) | cnt(args[1])
     elif mn in ("push", "pull"):
         op = isa.OP_PUSH if mn == "push" else isa.OP_PULL
         toks = rest.lower().split()
-        q = ("iffull" if mn == "push" else "ifempty") in toks
+        cond_kw = "iffull" if mn == "push" else "ifempty"
+        bad = [t for t in toks if t not in (cond_kw, "block", "noblock")]
+        if bad or ("block" in toks and "noblock" in toks) or len(set(toks)) != len(toks):
+            raise err(f"{mn} [{cond_kw}] [block|noblock]")
+        q = cond_kw in toks
         blk = "noblock" not in toks
         x = (int(q) << 18) | (int(blk) << 17)
     elif mn == "mov":
