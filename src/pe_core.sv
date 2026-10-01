@@ -642,8 +642,9 @@ module pe_core #(
                       commit ? (jump ? jump_target : pc_seq) : pc;
 
   // ---------------------------------------------------------------- bus read
-  // Configuration registers (0x00-0x06) are write-only: their read mux was a
-  // third of the chip's global-routing overflow (docs/physical.md).
+  // Configuration registers (0x00-0x06) and the shift registers (ISR, OSR) are
+  // not readable: their read mux was most of the chip's routing congestion
+  // (docs/physical.md).
   always @(*) begin
     case (bus_off)
       5'h07: bus_rdata = {16'd0, crc};
@@ -653,8 +654,6 @@ module pe_core #(
       5'h0B: bus_rdata = {16'd0, r1};
       5'h0C: bus_rdata = {16'd0, r2};
       5'h0D: bus_rdata = {16'd0, r3};
-      5'h0E: bus_rdata = isr;
-      5'h0F: bus_rdata = osr;
       5'h10: bus_rdata = rd_real ? rd_word : 32'd0;
       default: bus_rdata = 32'd0;
     endcase

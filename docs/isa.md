@@ -608,8 +608,9 @@ duty cycles and CS timing.
 | 0x080F             | LINESTAT     | R      | line unit status (§4.7)                      |
 
 **Configuration registers are write-only** (W: reads return 0); the host
-keeps its own copy of what it wrote. State and status stay readable. Dropping
-the configuration read path took a third of the chip's routing congestion away
+keeps its own copy of what it wrote. PC, STATUS, R0–R3, CRC and the FIFO stay
+readable; ISR and OSR are not (a program can copy them to R0–R3). Dropping
+these read paths removed most of the chip's routing congestion
 (docs/physical.md).
 
 Core block (offset from `0x0400 + 0x20·c`):
@@ -627,8 +628,7 @@ Core block (offset from `0x0400 + 0x20·c`):
 | 0x08 | PC        | RW     | current PC; a write sets it                                            |
 | 0x09 | STATUS    | R      | `[3:0]` TXF lvl, `[7:4]` RXF lvl, `[8]` Z, `[9]` C, `[10]` T, `[12]` stalled, `[13]` halted, `[14]` fault |
 | 0x0A–0x0D | R0–R3 | RW   | registers                                                              |
-| 0x0E | ISR       | R      |                                                                        |
-| 0x0F | OSR       | R      |                                                                        |
+| 0x0E–0x0F | —    | —      | reserved (ISR and OSR are not host-readable; read 0)                   |
 | 0x10 | FIFO      | RW     | W: push TXF (dropped if full); R: pop RXF (0 if empty)                 |
 
 A host write to PIN_OUT or PIN_OE replaces the whole register, ignoring pin

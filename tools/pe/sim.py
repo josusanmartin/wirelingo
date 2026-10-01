@@ -20,7 +20,7 @@ A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT
 A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
-C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
+C_PC, C_STATUS, C_R0, C_FIFO = 8, 9, 0xA, 0x10
 
 
 def core_reg(c, off):
@@ -81,10 +81,6 @@ class Core:
             return self.status()
         if C_R0 <= off < C_R0 + 4:
             return self.r[off - C_R0]
-        if off == C_ISR:
-            return self.isr
-        if off == C_OSR:
-            return self.osr
         if off == C_FIFO:            # the next unread entry: behind the real reservations
             n = sum(self.res)
             return self.rxf[n] if not self.fjoin and n < 2 and len(self.rxf) > n else 0
