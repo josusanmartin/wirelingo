@@ -7,7 +7,9 @@
 #
 # SRC_DIR (default: this repo's src/) supplies pe_core.sv, pe_fifos.sv,
 # pe_fifo.sv and pe_cg.sv. Runs in <parent of this repo>/pe-core-NAME and
-# prints cell area, total global-route wirelength and the Metal2-4 usage.
+# prints cell area, total global-route wirelength, the Metal2-4 usage and the
+# slow-corner setup slack after the flow's timing repair (wire capacitance as
+# measured, SRAM-like delays on instr and fetch_addr).
 # The die (560 x 560 um, density 34 %) and routing layers (Metal2-Metal4,
 # PDN stripes on Metal4) match the tile's conditions, not its shape.
 set -euo pipefail
@@ -19,10 +21,14 @@ rm -rf "$W"; mkdir -p "$W/src"
 cp "$SRC"/{pe_core.sv,pe_fifos.sv,pe_fifo.sv,pe_cg.sv} "$W/src/"
 cp "$REPO/src/protoemu.sdc" "$W/src/" 2>/dev/null || true
 cd "$W"
-cat > src/core.sdc <<'EOF'
+# The fetch loop as in the chip: instr arrives after the SRAM's slow-corner
+# clock->DOUT (5.55 ns) plus wire; fetch_addr needs the bank mux and setup.
+cat > src/core.sdc <<EOF
 create_clock -name clk -period 20 [get_ports clk]
-set_input_delay 4 -clock clk [delete_from_list [all_inputs] [get_ports clk]]
-set_output_delay 4 -clock clk [all_outputs]
+set_input_delay 4 -clock clk [delete_from_list [all_inputs] [get_ports {clk instr*}]]
+set_input_delay ${INSTR_DELAY:-6.5} -clock clk [get_ports instr*]
+set_output_delay 1 -clock clk [delete_from_list [all_outputs] [get_ports fetch_addr*]]
+set_output_delay 2.5 -clock clk [get_ports fetch_addr*]
 EOF
 cat > src/config.json <<'EOF'
 {
@@ -42,7 +48,9 @@ cat > src/config.json <<'EOF'
   "FP_PDN_VWIDTH": 2.1,
   "FP_PDN_VSPACING": 3.52,
   "FP_PDN_VOFFSET": 6.15,
-  "PNR_CORNERS": ["nom_typ_1p20V_25C"],
+  "PNR_CORNERS": ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"],
+  "LAYERS_RC": {"*": {"Metal1": {"res": 8.4375e-4, "cap": 1.42e-4}, "Metal2": {"res": 5.15e-4, "cap": 1.9e-4},
+                      "Metal3": {"res": 5.15e-4, "cap": 1.9e-4}, "Metal4": {"res": 5.15e-4, "cap": 1.9e-4}}},
   "GRT_ALLOW_CONGESTION": 1,
   "GRT_ADJUSTMENT": 0.15,
   "RUN_LINTER": 0,
@@ -60,5 +68,6 @@ python -m librelane --pdk-root "$PDK_ROOT" --docker-no-tty --dockerized --pdk ih
   grep -E "GPL-0019" exp.log | tail -1 || true
   grep -A10 "Final congestion report" exp.log | grep -E "Metal[234] |Total " | tail -4 || true
   grep -E "GRT-0018|Total wirelength" exp.log | tail -1 || true
+  echo "slow setup slack after repair: $(grep -h 'timing__setup__ws__corner:nom_slow' runs/r/*stamidpnr*/*.log 2>/dev/null | tail -1 | grep -oE '[-0-9.]+$')"
 } | tee result.txt
 exit $rc
