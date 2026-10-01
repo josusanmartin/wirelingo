@@ -52,18 +52,23 @@ dend:
     ldi r2, 0x800D
     mov r1, crc
     cmp r1, r2
-    ldi r1, 0x80                   ; trailer status: CRC error
+    ldi r1, 0x80                   ; trailer status: CRC error (no handshake: the host retries)
     jmp !z, trailer
     ldi r1, 0x81                   ; trailer status: good
+    wait 1 pin DM                  ; queue the ACK first, so a full RX FIFO
+    nop                       [31] ; can't make it late
+    nop                       [31]
+    ldi r2, 0xD280                 ; SYNC + ACK
+    mov osr, r2
+    out line, 16
 trailer:
     push block                     ; the last word (bits at the top)
     mov isr, null
     in r1, 16
     in r0, 16                      ; [31:16] = bits, [15:0] = status: autopushed
     cmp r1, 0x81
-    jmp !z, idle                   ; bad CRC: no handshake, the host retries
-    ldi r3, 0xD280                 ; SYNC + ACK
-    jmp send16
+    jmp z, echo                    ; our ACK comes back through the receiver
+    jmp idle
 ; ---------------------------------------------------------------- tokens
 token:
     in line, 16                    ; address, endpoint, CRC5
