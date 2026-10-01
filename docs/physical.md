@@ -72,7 +72,6 @@ Lessons:
 |-----|-----|-------------|-------------|-----|---------|---------------------|-------------|----------------------------|
 | s2c | 248eae0, 4-deep FIFOs | 0 | 0 | clean | 0 | +2.79 / −7.64 ns* | +0.29 ns | 50 / 44 |
 | final4 | 6a563dc: 8-deep FIFOs, registered CTRL, FIFO join; post-GRT repair, 400 µm max wire | 0 (19 iterations) | 0 | clean | 0 | +3.19 / −4.93 ns* (−7.12 ns with the slow SRAM view) | +0.19 ns | 9 / 10 |
-
 | **final5** | bd2d6d0: + FIFO read snapshot, pe_fifos; PVT-matched SRAM views | 0 | 0 | clean | 0 | **+3.12 / −6.90 ns** | +0.21 ns (fast +0.05) | 3 / 11 |
 
 final5 is the current hardware. Its gate-level simulation passes all 9
