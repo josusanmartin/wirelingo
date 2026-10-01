@@ -141,3 +141,7 @@ SRAM models (`make GATES=yes`, as in Tiny Tapeout's CI).
 | flow | LibreLane passes `-threads None` to OpenROAD | investigation of slow runs |
 | USB RX firmware | autopushed words of skipped packets (our own IN responses) leaked into the FIFO | enumeration test (host software desync) |
 | USB RX firmware | a 12-byte packet plus its token overflowed the 4-word FIFO | enumeration test; now only DATA payloads are pushed, without SYNC/PID |
+| golden model | FIFO join: the TXF→RXF move used the join bit after a same-cycle host SHIFTCTRL write (the RTL uses the old value, as §5 says) | lockstep (random FJOIN_TX), first seed with a mid-run SHIFTCTRL write |
+| RTL timing | a CTRL write decoded `restart` combinationally, putting the host address decode in front of every core's execute stage (−7.6 ns at the slow corner) | post-route STA path review; CTRL is now registered (lockstep confirms the model and RTL agree on the new timing; an unregistered-CTRL model mutant fails at once) |
+| test harness | gate-level test used the powered netlist and connected VPWR/VGND; TT simulates `final/nl` for IHP and the cell models need `sg13cmos5l_udp.v` | first GL run |
+| test harness | driver test traced only `ModelHost.step`, missing the clocks of the host's own bus cycles (a 1-tick gap breaks Manchester decoding) | 10BASE-T driver test; trace now hooks `Chip.step` |
