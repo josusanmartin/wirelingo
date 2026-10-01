@@ -8,7 +8,7 @@ import pathlib
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
+from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
 
 from pe import asm, host, sim
 
@@ -603,3 +603,80 @@ async def test_fifo_read_race(dut):
             got += await spi.read(sim.core_reg(0, sim.C_FIFO), 1, fixed=True)
         assert got and got[-1] == marker, (hex(marker), [hex(g) for g in got[-3:]])
     assert got == [0xA000 + n for n in range(150, 520, 12)]
+
+
+
+class TimedSpi(Spi):
+    """SPI master on its own time base: SCK period/duty in ns, a phase offset
+    against clk, CS setup/hold/gap, and an optional abort after `abort_bits`."""
+
+    def __init__(self, dut, period, duty=0.5, phase=0.0, cs_setup=None, cs_hold=None, cs_gap=None):
+        super().__init__(dut)
+        self.hi, self.lo = period * duty, period * (1 - duty)
+        self.phase = phase
+        self.cs_setup = cs_setup if cs_setup is not None else self.lo
+        self.cs_hold = cs_hold if cs_hold is not None else self.lo
+        self.cs_gap = cs_gap if cs_gap is not None else period
+        self.abort_bits = None
+
+    @staticmethod
+    async def wait(ns):
+        await Timer(round(ns * 1000), unit="ps")
+
+    async def xfer(self, data):
+        out = bytearray()
+        await self.wait(self.phase)
+        self._set(self.CS, 0)
+        await self.wait(self.cs_setup)
+        nbits = 0
+        for byte in data:
+            r = 0
+            for i in range(7, -1, -1):
+                if self.abort_bits is not None and nbits == self.abort_bits:
+                    break
+                self._set(self.MOSI, (byte >> i) & 1)
+                await self.wait(self.lo)
+                r = (r << 1) | ((int(self.dut.uo_out.value) >> 7) & 1)
+                self._set(self.SCK, 1)
+                await self.wait(self.hi)
+                self._set(self.SCK, 0)
+                nbits += 1
+            out.append(r)
+        await self.wait(self.cs_hold)
+        self._set(self.CS, 1)
+        await self.wait(self.cs_gap)
+        return bytes(out)
+
+
+@cocotb.test()
+async def test_spi_port_timing(dut):
+    """Host port contract (docs/isa.md §6.1): SCK period >= 8 clk with high and
+    low >= 3 clk, CS_n setup/hold >= 3 clk, CS_n high >= 4 clk between
+    transactions, at any phase against clk. Swept at the limits and at random
+    points inside them: register writes read back, FIFO pushes and pops count
+    exactly, and a read aborted mid-word pops nothing."""
+    import random
+    rng = random.Random(7)
+    await setup(dut)
+    T = CLK_NS
+    cases = [dict(period=8 * T, duty=3 / 8), dict(period=8 * T, duty=5 / 8),
+             dict(period=8 * T, cs_setup=3 * T, cs_hold=3 * T, cs_gap=4 * T)]
+    cases += [dict(period=rng.uniform(8, 20) * T, duty=rng.uniform(0.38, 0.62),
+                   cs_setup=rng.uniform(3, 6) * T, cs_hold=rng.uniform(3, 6) * T, cs_gap=rng.uniform(4, 8) * T)
+              for _ in range(6)]
+    fifo, status = sim.core_reg(0, sim.C_FIFO), sim.core_reg(0, sim.C_STATUS)
+    for n, kw in enumerate(cases):
+        spi = TimedSpi(dut, phase=rng.uniform(0, T), **kw)
+        regs = [rng.getrandbits(16) for _ in range(4)]
+        await spi.write(sim.core_reg(0, sim.C_R0), regs)
+        assert await spi.read(sim.core_reg(0, sim.C_R0), 4) == regs, (n, kw)
+        words = [rng.getrandbits(32) for _ in range(3)]
+        await spi.write(sim.A_CTRL, [1 << 16])                     # clear core 0's FIFOs
+        await spi.write(fifo, words, fixed=True)
+        assert (await spi.read(status))[0] & 15 == 3, (n, kw)
+        # the core is stopped, so its TXF is only observable through STATUS;
+        # RXF pops are checked with the read-race program in test_fifo_read_race
+        spi.abort_bits = 24 + 16                                  # cmd + addr + half a word
+        await spi.read(status)
+        spi.abort_bits = None
+        assert (await spi.read(status))[0] & 15 == 3, (n, kw)

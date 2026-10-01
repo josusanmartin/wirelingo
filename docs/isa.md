@@ -426,8 +426,23 @@ effects combine into the state for cycle *t + 1*.
 ### 6.1 SPI
 
 SPI mode 0 (CPOL = 0, CPHA = 0), MSB first, `CS_n` active low. The slave
-oversamples SCK with the system clock, so SCK must be ≤ clk/8. MISO (uo[7])
-is driven while `CS_n` is low and is 0 otherwise.
+samples SCK, CS_n and MOSI through 2-flop synchronizers on the system clock,
+at any phase. Timing, in system clocks (clk):
+
+| Parameter | Min |
+|---|---|
+| SCK period | 8 |
+| SCK high, SCK low | 3 each |
+| CS_n low to the first SCK rise | 3 |
+| last SCK fall to CS_n high | 3 |
+| CS_n high between transactions | 4 |
+| MOSI setup to SCK rise / hold after it | change it on the SCK fall (mode 0) |
+
+`test_spi_port_timing` checks these limits and random points inside them at
+random phases (2-clock high/low times also pass; the table keeps a clock of
+margin). MISO (uo[7]) changes about 3 clocks after an SCK rise, so it is
+stable for the next rise. It is driven while the synchronized `CS_n` is low
+and is 0 otherwise, so it lags CS_n by about 3 clocks.
 
 Each transaction (CS_n low → high) is `cmd[7:0] addr[15:0] data...`:
 
