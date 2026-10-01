@@ -69,6 +69,11 @@ def test_clkdiv_rounding_carries():
     ".shift_out right 8 16\nnop",
     ".shift_out right 33\nnop",
     ".fifo join_rx\nnop",
+    "ldi r0",                           # missing operands used to raise IndexError
+    "set pins",
+    "pin 3",
+    "flag set",
+    "add r0",
 ])
 def test_rejects_malformed(src):
     with pytest.raises(asm.AsmError):

@@ -196,209 +196,229 @@ def _split_suffix(line, lineno):
     return line, side, delay
 
 
-def _encode(line, prog, defs, lineno):
-    if line.startswith(".word"):
-        return _eval(line[5:], defs, lineno) & 0xFFFFFFFF, False
-    line, side, delay = _split_suffix(line, lineno)
-    E = lambda s: _eval(s, defs, lineno)
-    err = lambda msg: AsmError(f"line {lineno}: {msg}: '{line}'")
+class _Line:
+    """One instruction being encoded: its mnemonic, operands and helpers."""
 
-    # side/delay field
+    def __init__(self, line, defs, lineno):
+        self.line, self.defs, self.lineno = line, defs, lineno
+        parts = line.replace(",", " , ").split()
+        self.mn, self.rest = parts[0].lower(), " ".join(parts[1:])
+        self.args = [a.strip() for a in self.rest.split(",")] if self.rest else []
+
+    def err(self, msg):
+        return AsmError(f"line {self.lineno}: {msg}: '{self.line}'")
+
+    def value(self, s):
+        return _eval(s, self.defs, self.lineno)
+
+    def need(self, n, usage):
+        if len(self.args) != n:
+            raise self.err(usage)
+        return self.args
+
+    def loc(self, s):
+        s = s.strip().lower()
+        if s not in LOCS:
+            raise self.err(f"unknown operand {s}")
+        return LOCS[s]
+
+    def count(self, s):
+        n = self.value(s)
+        if not 1 <= n <= 32:
+            raise self.err("bit count must be 1..32")
+        return n & 31
+
+    def reg(self, s):
+        s = s.strip().lower()
+        if s in ("r0", "r1", "r2", "r3", "x", "y"):
+            return LOCS[s]
+        raise self.err(f"expected register, got {s}")
+
+    def ranged(self, s, lo, hi, what):
+        v = self.value(s)
+        if not lo <= v < hi:
+            raise self.err(f"{what} {lo}..{hi - 1}")
+        return v
+
+
+def _side_delay(prog, side, delay, ln):
+    """The 8-bit side-set/delay field (docs/isa.md §4.3)."""
     dbits = 8 - prog.side_count - prog.side_opt
     sd = 0
     if delay is not None:
-        d = E(delay)
+        d = ln.value(delay)
         if not 0 <= d < (1 << dbits):
-            raise err(f"delay {d} doesn't fit in {dbits} bits")
+            raise ln.err(f"delay {d} doesn't fit in {dbits} bits")
         sd |= d
     if side is not None:
         if prog.side_count == 0:
-            raise err("side-set used without .side_set")
-        v = E(side)
+            raise ln.err("side-set used without .side_set")
+        v = ln.value(side)
         if not 0 <= v < (1 << prog.side_count):
-            raise err("side value too large")
+            raise ln.err("side value too large")
         sd |= v << dbits
         if prog.side_opt:
             sd |= 1 << 7
     elif prog.side_count and not prog.side_opt:
-        raise err("side-set is mandatory (declare .side_set N opt to make it optional)")
+        raise ln.err("side-set is mandatory (declare .side_set N opt to make it optional)")
+    return sd
 
-    parts = line.replace(",", " , ").split()
-    mn, rest = parts[0].lower(), " ".join(parts[1:])
-    args = [a.strip() for a in rest.split(",")] if rest else []
 
-    def loc(s):
-        s = s.strip().lower()
-        if s not in LOCS:
-            raise err(f"unknown operand {s}")
-        return LOCS[s]
+_JMP_SIMPLE = {"z": isa.C_Z, "!z": isa.C_NZ, "c": isa.C_C, "!c": isa.C_NC, "t": isa.C_T,
+               "!osre": isa.C_NOSRE, "txne": isa.C_TXNE, "rxf": isa.C_RXF}
 
-    def cnt(s):
-        n = E(s)
-        if not 1 <= n <= 32:
-            raise err("bit count must be 1..32")
-        return n & 31
 
-    def reg(s):
-        s = s.strip().lower()
-        if s in ("r0", "r1", "r2", "r3", "x", "y"):
-            return LOCS[s]
-        raise err(f"expected register, got {s}")
-
-    op, x = None, 0
-    if mn == "nop":
-        op, x = isa.OP_MOV, (isa.NULL << 15) | (isa.NULL << 9)
-    elif mn == "jmp":
-        op = isa.OP_JMP
-        if len(args) == 1:
-            cond, sel, tgt = isa.C_ALWAYS, 0, args[0]
-        elif len(args) == 2:
-            c_orig, tgt = args[0].split(), args[1]
-            c = [t.lower() for t in c_orig]
-            cs = " ".join(c)
-            m = re.fullmatch(r"(!?)(r[0-3]|x|y)(--)?", cs)
-            if m:
-                sel = reg(m.group(2))
-                cond = isa.C_DEC if m.group(3) else (isa.C_ZERO if m.group(1) else isa.C_NZERO)
-                if m.group(1) and m.group(3):
-                    raise err("can't combine ! and --")
-            elif c[0] in ("pin", "!pin"):
-                cond, sel = (isa.C_NPIN if c[0][0] == "!" else isa.C_PIN), E(" ".join(c_orig[1:]))
-            elif c[0] in ("f", "!f", "flag", "!flag"):
-                cond, sel = (isa.C_NF if c[0][0] == "!" else isa.C_F), E(" ".join(c_orig[1:]))
-                if sel > 7:
-                    raise err("flag index 0..7")
-            else:
-                simple = {"z": isa.C_Z, "!z": isa.C_NZ, "c": isa.C_C, "!c": isa.C_NC, "t": isa.C_T,
-                          "!osre": isa.C_NOSRE, "txne": isa.C_TXNE, "rxf": isa.C_RXF}
-                if cs not in simple:
-                    raise err("unknown jmp condition")
-                cond, sel = simple[cs], 0
-            if not 0 <= sel < 32:
-                raise err("jmp selector out of range")
-        else:
-            raise err("jmp takes [cond,] target")
-        addr = E(tgt)
-        if not 0 <= addr < 1024:
-            raise err("jmp target out of range")
-        x = (cond << 15) | (sel << 10) | addr
-        return isa.enc(op, sd, x), True
-    elif mn == "wait":
-        # wait <1|0> pin p | <1|0> flag k | rise|fall|edge p
-        #      [if pin q == v] [clear] [timeout rN]
-        op = isa.OP_WAIT
-        body = rest.replace(",", " ")
-        to, treg = 0, 3
-        m = re.search(r"\btimeout(?:\s+(r[0-3]|x|y))?\b", body, re.I)
+def _jmp(ln):
+    if len(ln.args) == 1:
+        cond, sel, tgt = isa.C_ALWAYS, 0, ln.args[0]
+    elif len(ln.args) == 2:
+        c_orig, tgt = ln.args[0].split(), ln.args[1]
+        c = [t.lower() for t in c_orig]
+        cs = " ".join(c)
+        m = re.fullmatch(r"(!?)(r[0-3]|x|y)(--)?", cs)
         if m:
-            to = 1
-            treg = reg(m.group(1)) if m.group(1) else 3
-            body = body[: m.start()] + body[m.end():]
-        clr = 0
-        if re.search(r"\bclear\b", body, re.I):
-            clr = 1
-            body = re.sub(r"\bclear\b", "", body, flags=re.I)
-        qen = qpol = qpin = 0
-        m = re.search(r"\bif\s+pin\s+(.+?)\s*==\s*([01])\s*$", body.strip(), re.I)
-        if m:
-            qen, qpin, qpol = 1, E(m.group(1)), int(m.group(2))
-            body = body.strip()[: m.start()]
-            if not 0 <= qpin < 32:
-                raise err("qualifier pin out of range")
-        toks = body.split()
-        kw = [t.lower() for t in toks]
-        if len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] == "pin":
-            kind, idx = (isa.W_PIN1 if toks[0] == "1" else isa.W_PIN0), E(" ".join(toks[2:]))
-        elif len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] in ("flag", "irq"):
-            kind, idx = (isa.W_FLAG1 if toks[0] == "1" else isa.W_FLAG0), E(" ".join(toks[2:]))
-            if idx > 7:
-                raise err("flag index 0..7")
-        elif len(toks) >= 2 and kw[0] in ("rise", "fall", "edge"):
-            kind = {"rise": isa.W_RISE, "fall": isa.W_FALL, "edge": isa.W_EDGE}[kw[0]]
-            idx = E(" ".join(toks[1:]))
+            if m.group(1) and m.group(3):
+                raise ln.err("can't combine ! and --")
+            sel = ln.reg(m.group(2))
+            cond = isa.C_DEC if m.group(3) else (isa.C_ZERO if m.group(1) else isa.C_NZERO)
+        elif c[0] in ("pin", "!pin"):
+            cond, sel = (isa.C_NPIN if c[0][0] == "!" else isa.C_PIN), ln.value(" ".join(c_orig[1:]))
+        elif c[0] in ("f", "!f", "flag", "!flag"):
+            cond, sel = (isa.C_NF if c[0][0] == "!" else isa.C_F), ln.value(" ".join(c_orig[1:]))
+            if sel > 7:
+                raise ln.err("flag index 0..7")
+        elif cs in _JMP_SIMPLE:
+            cond, sel = _JMP_SIMPLE[cs], 0
         else:
-            raise err("bad wait")
-        if clr and kind != isa.W_FLAG1:
-            raise err("'clear' only valid with 'wait 1 flag'")
-        if not 0 <= idx < 32:
-            raise err("pin out of range")
-        x = ((kind << 16) | (idx << 11) | (to << 10) | (treg << 8) | (clr << 7)
-             | (qen << 6) | (qpol << 5) | qpin)
-    elif mn in ("in", "out"):
-        op = isa.OP_IN if mn == "in" else isa.OP_OUT
-        if len(args) != 2:
-            raise err(f"{mn} takes loc, count")
-        where = loc(args[0])
-        if mn == "out" and where not in isa.OUT_DSTS:
-            raise err(f"out can't write {args[0].strip()}")
-        x = (where << 15) | cnt(args[1])
-    elif mn in ("push", "pull"):
-        op = isa.OP_PUSH if mn == "push" else isa.OP_PULL
-        toks = rest.lower().split()
-        cond_kw = "iffull" if mn == "push" else "ifempty"
-        bad = [t for t in toks if t not in (cond_kw, "block", "noblock")]
-        if bad or ("block" in toks and "noblock" in toks) or len(set(toks)) != len(toks):
-            raise err(f"{mn} [{cond_kw}] [block|noblock]")
-        q = cond_kw in toks
-        blk = "noblock" not in toks
-        x = (int(q) << 18) | (int(blk) << 17)
-    elif mn == "mov":
-        op = isa.OP_MOV
-        if len(args) != 2:
-            raise err("mov takes dst, src")
-        s = args[1].strip()
-        mop = isa.M_NONE
-        if s.startswith("::"):
-            mop, s = isa.M_REV, s[2:]
-        elif s[:1] in ("!", "~"):
-            mop, s = isa.M_INV, s[1:]
-        x = (loc(args[0]) << 15) | (mop << 13) | (loc(s) << 9)
-    elif mn == "set":
-        op = isa.OP_SET
-        d = args[0].lower()
-        if d not in ("pins", "pindirs"):
-            raise err("set pins|pindirs, value")
-        v = E(args[1])
-        if not 0 <= v < 32:
-            raise err("set value 0..31")
-        x = (int(d == "pindirs") << 18) | v
-    elif mn == "ldi":
-        op = isa.OP_LDI
-        v = E(args[1])
-        if not 0 <= v < 65536:
-            raise err("ldi immediate 0..65535")
-        x = (reg(args[0]) << 16) | v
-    elif mn in isa.ALU_NAMES:
-        op = isa.OP_ALU
-        aop = isa.ALU_NAMES.index(mn)
-        rd = reg(args[0])
-        s = args[1].strip()
-        if s.lower() in ("r0", "r1", "r2", "r3", "x", "y"):
-            x = (aop << 16) | (rd << 14) | reg(s)
-        else:
-            v = E(s.lstrip("#"))
-            if not 0 <= v < 8192:
-                raise err("alu immediate 0..8191")
-            x = (aop << 16) | (rd << 14) | (1 << 13) | v
-    elif mn == "pin":
-        op = isa.OP_PIN
-        if len(args) != 2 or args[1].lower() not in isa.PIN_ACTIONS:
-            raise err("pin p, lo|hi|toggle|hiz")
-        p = E(args[0])
-        if not 0 <= p < 32:
-            raise err("pin out of range")
-        x = (isa.PIN_ACTIONS.index(args[1].lower()) << 17) | p
-    elif mn == "flag":
-        op = isa.OP_FLAG
-        toks = rest.split()
-        if toks[0].lower() not in ("set", "clr", "clear"):
-            raise err("flag set|clr k")
-        k = E(" ".join(toks[1:]))
-        if not 0 <= k < 8:
-            raise err("flag index 0..7")
-        x = (int(toks[0].lower() != "set") << 18) | k
-    elif mn == "halt":
-        op = isa.OP_HALT
+            raise ln.err("unknown jmp condition")
+        if not 0 <= sel < 32:
+            raise ln.err("jmp selector out of range")
     else:
-        raise err("unknown mnemonic")
-    return isa.enc(op, sd, x), False
+        raise ln.err("jmp takes [cond,] target")
+    addr = ln.ranged(tgt, 0, 1024, "jmp target")
+    return isa.OP_JMP, (cond << 15) | (sel << 10) | addr
+
+
+def _wait(ln):
+    # wait <1|0> pin p | <1|0> flag k | rise|fall|edge p  [if pin q == v] [clear] [timeout rN]
+    body = ln.rest.replace(",", " ")
+    to, treg = 0, 3
+    m = re.search(r"\btimeout(?:\s+(r[0-3]|x|y))?\b", body, re.I)
+    if m:
+        to = 1
+        treg = ln.reg(m.group(1)) if m.group(1) else 3
+        body = body[: m.start()] + body[m.end():]
+    clr = 0
+    if re.search(r"\bclear\b", body, re.I):
+        clr = 1
+        body = re.sub(r"\bclear\b", "", body, flags=re.I)
+    qen = qpol = qpin = 0
+    m = re.search(r"\bif\s+pin\s+(.+?)\s*==\s*([01])\s*$", body.strip(), re.I)
+    if m:
+        qen, qpin, qpol = 1, ln.value(m.group(1)), int(m.group(2))
+        body = body.strip()[: m.start()]
+        if not 0 <= qpin < 32:
+            raise ln.err("qualifier pin out of range")
+    toks = body.split()
+    kw = [t.lower() for t in toks]
+    if len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] == "pin":
+        kind, idx = (isa.W_PIN1 if toks[0] == "1" else isa.W_PIN0), ln.value(" ".join(toks[2:]))
+    elif len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] in ("flag", "irq"):
+        kind, idx = (isa.W_FLAG1 if toks[0] == "1" else isa.W_FLAG0), ln.value(" ".join(toks[2:]))
+        if idx > 7:
+            raise ln.err("flag index 0..7")
+    elif len(toks) >= 2 and kw[0] in ("rise", "fall", "edge"):
+        kind = {"rise": isa.W_RISE, "fall": isa.W_FALL, "edge": isa.W_EDGE}[kw[0]]
+        idx = ln.value(" ".join(toks[1:]))
+    else:
+        raise ln.err("bad wait")
+    if clr and kind != isa.W_FLAG1:
+        raise ln.err("'clear' only valid with 'wait 1 flag'")
+    if not 0 <= idx < 32:
+        raise ln.err("pin out of range")
+    return isa.OP_WAIT, ((kind << 16) | (idx << 11) | (to << 10) | (treg << 8) | (clr << 7)
+                         | (qen << 6) | (qpol << 5) | qpin)
+
+
+def _in_out(ln):
+    where, n = ln.need(2, f"{ln.mn} takes loc, count")
+    where = ln.loc(where)
+    if ln.mn == "out" and where not in isa.OUT_DSTS:
+        raise ln.err(f"out can't write {ln.args[0]}")
+    return (isa.OP_IN if ln.mn == "in" else isa.OP_OUT), (where << 15) | ln.count(n)
+
+
+def _push_pull(ln):
+    toks = ln.rest.lower().split()
+    cond_kw = "iffull" if ln.mn == "push" else "ifempty"
+    bad = [t for t in toks if t not in (cond_kw, "block", "noblock")]
+    if bad or ("block" in toks and "noblock" in toks) or len(set(toks)) != len(toks):
+        raise ln.err(f"{ln.mn} [{cond_kw}] [block|noblock]")
+    x = (int(cond_kw in toks) << 18) | (int("noblock" not in toks) << 17)
+    return (isa.OP_PUSH if ln.mn == "push" else isa.OP_PULL), x
+
+
+def _mov(ln):
+    dst, src = ln.need(2, "mov takes dst, src")
+    mop = isa.M_NONE
+    if src.startswith("::"):
+        mop, src = isa.M_REV, src[2:]
+    elif src[:1] in ("!", "~"):
+        mop, src = isa.M_INV, src[1:]
+    return isa.OP_MOV, (ln.loc(dst) << 15) | (mop << 13) | (ln.loc(src) << 9)
+
+
+def _set(ln):
+    dst, v = ln.need(2, "set pins|pindirs, value")
+    if dst.lower() not in ("pins", "pindirs"):
+        raise ln.err("set pins|pindirs, value")
+    return isa.OP_SET, (int(dst.lower() == "pindirs") << 18) | ln.ranged(v, 0, 32, "set value")
+
+
+def _ldi(ln):
+    rd, v = ln.need(2, "ldi rN, value")
+    return isa.OP_LDI, (ln.reg(rd) << 16) | ln.ranged(v, 0, 65536, "ldi immediate")
+
+
+def _alu(ln):
+    rd, src = ln.need(2, f"{ln.mn} rN, rM|value")
+    x = (isa.ALU_NAMES.index(ln.mn) << 16) | (ln.reg(rd) << 14)
+    if src.lower() in ("r0", "r1", "r2", "r3", "x", "y"):
+        return isa.OP_ALU, x | ln.reg(src)
+    return isa.OP_ALU, x | (1 << 13) | ln.ranged(src.lstrip("#"), 0, 8192, "alu immediate")
+
+
+def _pin(ln):
+    p, action = ln.need(2, "pin p, lo|hi|toggle|hiz")
+    if action.lower() not in isa.PIN_ACTIONS:
+        raise ln.err("pin p, lo|hi|toggle|hiz")
+    return isa.OP_PIN, (isa.PIN_ACTIONS.index(action.lower()) << 17) | ln.ranged(p, 0, 32, "pin")
+
+
+def _flag(ln):
+    toks = ln.rest.split()
+    if len(toks) < 2 or toks[0].lower() not in ("set", "clr", "clear"):
+        raise ln.err("flag set|clr k")
+    return isa.OP_FLAG, (int(toks[0].lower() != "set") << 18) | ln.ranged(" ".join(toks[1:]), 0, 8, "flag index")
+
+
+_ENCODERS = {
+    "nop": lambda ln: (isa.OP_MOV, (isa.NULL << 15) | (isa.NULL << 9)),
+    "jmp": _jmp, "wait": _wait, "in": _in_out, "out": _in_out, "push": _push_pull, "pull": _push_pull,
+    "mov": _mov, "set": _set, "ldi": _ldi, "pin": _pin, "flag": _flag,
+    "halt": lambda ln: (isa.OP_HALT, 0),
+    **{name: _alu for name in isa.ALU_NAMES},
+}
+
+
+def _encode(line, prog, defs, lineno):
+    """(word, is_jump) for one source line; jumps are relocated later."""
+    if line.startswith(".word"):
+        return _eval(line[5:], defs, lineno) & 0xFFFFFFFF, False
+    line, side, delay = _split_suffix(line, lineno)
+    ln = _Line(line, defs, lineno)
+    sd = _side_delay(prog, side, delay, ln)
+    if ln.mn not in _ENCODERS:
+        raise ln.err("unknown mnemonic")
+    op, x = _ENCODERS[ln.mn](ln)
+    return isa.enc(op, sd, x), op == isa.OP_JMP
