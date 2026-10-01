@@ -134,320 +134,336 @@ class Core:
         elif C_R0 <= off < C_R0 + 4:
             self.r[off - C_R0] = v & M16
 
+    # ------------------------------------------------------------ one cycle
     def step(self, chip, pins_in, flags):
         """Advance one enabled cycle. Mutates own non-FIFO state; returns effects."""
-        fx = dict(out={}, oe={}, side_out={}, side_oe={}, fset=0, fclr=0,
-                  txpop=False, rxpush=None)
-        instr = chip.fetch(self.pc)
-        op, sd, x = isa.fields(instr)
-        pin_of = lambda p: (pins_in >> (p & 31)) & 1
-        pull_th = self.pull_thresh or 32
-        push_th = self.push_thresh or 32
-        pullq = self.rxf if self.fjoin else self.txf
-        rx_full = self.fjoin or len(self.rxf) >= chip.fifo_depth
-
-        # -- divider
-        tick = self.cnt == 0
-        if tick:
-            s = self.facc + self.div_frac
-            self.facc = s & 0xFF
-            self.cnt = (self.div_int - 1 + (s >> 8)) & M16
-        else:
-            self.cnt = (self.cnt - 1) & M16
-
-        # -- WAIT edge tracker (runs every enabled cycle while a WAIT is in progress)
-        kind = isa.bits(x, 18, 16)
-        wpin = pin_of(isa.bits(x, 15, 11))
-        qen, qpol, qpin = isa.bits(x, 6, 6), isa.bits(x, 5, 5), isa.bits(x, 4, 0)
-        qual = (not qen) or pin_of(qpin) == qpol
-        if kind == isa.W_RISE:
-            trans = (not self.wprev) and wpin
-        elif kind == isa.W_FALL:
-            trans = self.wprev and not wpin
-        else:
-            trans = self.wprev != wpin
-        ev = bool(trans and qual)
-        edge_done = bool(self.wevent or ev)
-        if self.in_wait and qen and trans and not qual and kind in (isa.W_RISE, isa.W_FALL, isa.W_EDGE):
-            chip.cover("wait:qualifier_blocked_edge")
-        if self.in_wait:
-            self.wevent = int(edge_done)
-            self.wprev = wpin
-
+        op, sd, x = isa.fields(chip.fetch(self.pc))
+        e = _Exec(self, chip, pins_in, flags, x)
+        tick = self._divider()
+        self._track_wait(e)
         if not tick or self.halted or self.fault:
-            return fx
+            return e.fx
         if self.dcnt:
             self.dcnt -= 1
-            return fx
+            return e.fx
         if chip.bank_owner[self.pc >> 8] != self.idx:
             self.fault = self.halted = 1
             self.stalled = 0
             chip.cover("core:bank_fault")
-            return fx
+            return e.fx
+        delay = self._side_set(sd, e.fx)
+        name = isa.OPNAMES.get(op, "rsvd")
+        chip.cover(f"attempt:{name}")
+        handler = _OPS.get(op)
+        if handler:
+            handler(self, e)            # reserved opcodes complete as NOP
+        chip.cover(("done:" if e.complete else "stall:") + name)
+        if e.jump is not None:
+            chip.cover("jump")
+        self.stalled = int(not e.complete and op != isa.OP_HALT)
+        self.in_wait = e.new_wait
+        if e.complete:
+            self.dcnt = delay
+            if e.jump is not None:
+                self.pc = e.jump
+            elif self.pc == self.wrap_top:
+                self.pc = self.wrap_bottom
+            else:
+                self.pc = (self.pc + 1) & 1023
+        return e.fx
 
-        # -- side-set / delay split
+    def _divider(self):
+        """Fractional clock divider: True on a tick."""
+        if self.cnt == 0:
+            s = self.facc + self.div_frac
+            self.facc = s & 0xFF
+            self.cnt = (self.div_int - 1 + (s >> 8)) & M16
+            return True
+        self.cnt = (self.cnt - 1) & M16
+        return False
+
+    def _track_wait(self, e):
+        """WAIT edge tracker: runs every enabled cycle while a WAIT is in progress."""
+        x = e.x
+        e.kind = isa.bits(x, 18, 16)
+        e.wpin = e.pin(isa.bits(x, 15, 11))
+        qen, qpol, qpin = isa.bits(x, 6, 6), isa.bits(x, 5, 5), isa.bits(x, 4, 0)
+        e.qual = (not qen) or e.pin(qpin) == qpol
+        if e.kind == isa.W_RISE:
+            trans = (not self.wprev) and e.wpin
+        elif e.kind == isa.W_FALL:
+            trans = self.wprev and not e.wpin
+        else:
+            trans = self.wprev != e.wpin
+        e.ev = bool(trans and e.qual)
+        e.edge_done = bool(self.wevent or e.ev)
+        if self.in_wait and qen and trans and not e.qual and e.kind in _EDGE_WAITS:
+            e.chip.cover("wait:qualifier_blocked_edge")
+        if self.in_wait:
+            self.wevent = int(e.edge_done)
+            self.wprev = e.wpin
+
+    def _side_set(self, sd, fx):
+        """Drive the side-set pins; returns the delay."""
         sc = min(self.side_count, 4)
         dbits = 8 - sc - self.side_opt
-        delay = sd & mask(dbits)
         side_en = ((sd >> 7) & 1) if self.side_opt else 1
         if sc and side_en:
             sv = (sd >> dbits) & mask(sc)
             tgt = fx["side_oe"] if self.side_pindir else fx["side_out"]
             for i in range(sc):
                 tgt[(self.side_base + i) & 31] = (sv >> i) & 1
+        return sd & mask(dbits)
 
-        out_count = min(self.out_count, 32)
+    # ------------------------------------------------------------ helpers for the ops
+    def _write_pins(self, e, v, oe):
+        tgt = e.fx["oe"] if oe else e.fx["out"]
+        for i in range(min(self.out_count, 32)):
+            tgt[(self.out_base + i) & 31] = (v >> i) & 1
 
-        def write_pins(v, oe):
-            tgt = fx["oe"] if oe else fx["out"]
-            for i in range(out_count):
-                tgt[(self.out_base + i) & 31] = (v >> i) & 1
+    def _src(self, e, code):
+        if code < 4:
+            return self.r[code]
+        return {PINS: rotr32(e.pins_in, self.in_base), ISR: self.isr, OSR: self.osr,
+                STATUS: self.status() & 0x7FF, FLAGS: e.flags, PC: self.pc, CRC: self.crc}.get(code, 0)
 
-        def src_val(code):
-            if code < 4:
-                return self.r[code]
-            return {PINS: rotr32(pins_in, self.in_base), ISR: self.isr, OSR: self.osr,
-                    STATUS: self.status() & 0x7FF, FLAGS: flags, PC: self.pc, CRC: self.crc}.get(code, 0)
+    def _crc_mask(self):
+        return mask(self.crc_w + 1)
 
-        crc_mask = mask(self.crc_w + 1)
+    def _crc_feed(self, b):
+        fb = ((self.crc >> self.crc_w) & 1) ^ b
+        m = self._crc_mask()
+        self.crc = ((self.crc << 1) & m) ^ ((self.crc_poly & m) if fb else 0)
 
-        def crc_feed(b):
-            fb = ((self.crc >> self.crc_w) & 1) ^ b
-            self.crc = ((self.crc << 1) & crc_mask) ^ ((self.crc_poly & crc_mask) if fb else 0)
+    def _write_dst(self, e, dst, v, isr_count):
+        """MOV/OUT destination write (OSR is MOV-only: OUT never passes it)."""
+        if dst < 4:
+            self.r[dst] = v & M16
+        elif dst == PINS:
+            self._write_pins(e, v, False)
+        elif dst == PINDIRS:
+            self._write_pins(e, v, True)
+        elif dst == ISR:
+            self.isr, self.isr_cnt = v, isr_count
+        elif dst == OSR:
+            self.osr, self.osr_cnt = v, 0
+        elif dst == PC:
+            e.jump = v & 1023
+        elif dst == CRC:
+            self.crc = v & self._crc_mask()
 
-        jump = None
-        complete = True
-        new_wait = 0
-        chip.stats[f"attempt:{isa.OPNAMES.get(op, 'rsvd')}"] = chip.stats.get(f"attempt:{isa.OPNAMES.get(op, 'rsvd')}", 0) + 1
+    # ------------------------------------------------------------ the ops (docs/isa.md §5)
+    def _op_jmp(self, e):
+        x = e.x
+        cond, sel, addr = isa.bits(x, 18, 15), isa.bits(x, 14, 10), isa.bits(x, 9, 0)
+        rs = sel & 3
+        rv = self.r[rs]
+        ok = [
+            True, rv == 0, rv != 0, rv != 0,
+            e.pin(sel) == 1, e.pin(sel) == 0,
+            self.z == 1, self.z == 0, self.c == 1, self.c == 0, self.t == 1,
+            self.osr_cnt < e.pull_th, len(e.pullq) > 0, e.rx_full,
+            (e.flags >> (sel & 7)) & 1 == 1, (e.flags >> (sel & 7)) & 1 == 0,
+        ][cond]
+        if cond == isa.C_DEC:
+            self.r[rs] = (rv - 1) & M16
+        if ok:
+            e.jump = addr
 
-        if op == isa.OP_JMP:
-            cond, sel, addr = isa.bits(x, 18, 15), isa.bits(x, 14, 10), isa.bits(x, 9, 0)
-            rs = sel & 3
-            rv = self.r[rs]
-            ok = [
-                True, rv == 0, rv != 0, rv != 0,
-                pin_of(sel) == 1, pin_of(sel) == 0,
-                self.z == 1, self.z == 0, self.c == 1, self.c == 0, self.t == 1,
-                self.osr_cnt < pull_th, len(pullq) > 0, rx_full,
-                (flags >> (sel & 7)) & 1 == 1, (flags >> (sel & 7)) & 1 == 0,
-            ][cond]
-            if cond == isa.C_DEC:
-                self.r[rs] = (rv - 1) & M16
-            if ok:
-                jump = addr
+    def _op_wait(self, e):
+        x, kind = e.x, e.kind
+        idx = isa.bits(x, 15, 11)
+        to, treg, clr = isa.bits(x, 10, 10), isa.bits(x, 9, 8), isa.bits(x, 7, 7)
+        first = not self.in_wait
+        f = (e.flags >> (idx & 7)) & 1
+        if kind == isa.W_PIN1:
+            done = e.wpin == 1 and e.qual
+        elif kind == isa.W_PIN0:
+            done = e.wpin == 0 and e.qual
+        elif kind in _EDGE_WAITS:
+            done = (not first) and e.edge_done
+        elif kind == isa.W_FLAG1:
+            done = f == 1 and e.qual
+        elif kind == isa.W_FLAG0:
+            done = f == 0 and e.qual
+        else:
+            done = True
+        if done:
+            if kind in _EDGE_WAITS and not e.ev:
+                e.chip.cover("wait:edge_caught_between_ticks")
+            if to:
+                self.t = 0
+            if kind == isa.W_FLAG1 and clr:
+                e.fx["fclr"] |= 1 << (idx & 7)
+        elif to and self.r[treg] == 0:
+            self.t = 1
+            e.chip.cover("wait:timeout")
+        else:
+            if to:
+                self.r[treg] = (self.r[treg] - 1) & M16
+            e.complete = False
+            e.new_wait = 1
+            if first:
+                self.wprev, self.wevent = e.wpin, 0
 
-        elif op == isa.OP_WAIT:
-            idx = isa.bits(x, 15, 11)
-            to, treg, clr = isa.bits(x, 10, 10), isa.bits(x, 9, 8), isa.bits(x, 7, 7)
-            first = not self.in_wait
-            f = (flags >> (idx & 7)) & 1
-            if kind == isa.W_PIN1:
-                done = wpin == 1 and qual
-            elif kind == isa.W_PIN0:
-                done = wpin == 0 and qual
-            elif kind in (isa.W_RISE, isa.W_FALL, isa.W_EDGE):
-                done = (not first) and edge_done
-            elif kind == isa.W_FLAG1:
-                done = f == 1 and qual
-            elif kind == isa.W_FLAG0:
-                done = f == 0 and qual
+    def _op_in(self, e):
+        src, n = isa.bits(e.x, 18, 15), isa.bits(e.x, 4, 0) or 32
+        b = self._src(e, src) & mask(n)
+        if n == 32:
+            nisr = b
+        elif self.in_shr:
+            nisr = ((self.isr >> n) | (b << (32 - n))) & M32
+        else:
+            nisr = ((self.isr << n) | b) & M32
+        ncnt = min(32, self.isr_cnt + n)
+        if self.autopush and ncnt >= e.push_th:
+            if e.rx_full:
+                e.complete = False
             else:
-                done = True
-            if done:
-                if kind in (isa.W_RISE, isa.W_FALL, isa.W_EDGE) and not ev:
-                    chip.cover("wait:edge_caught_between_ticks")
-                if to:
-                    self.t = 0
-                if kind == isa.W_FLAG1 and clr:
-                    fx["fclr"] |= 1 << (idx & 7)
-            elif to and self.r[treg] == 0:
-                self.t = 1
-                chip.cover("wait:timeout")
-            else:
-                if to:
-                    self.r[treg] = (self.r[treg] - 1) & M16
-                complete = False
-                new_wait = 1
-                if first:
-                    self.wprev, self.wevent = wpin, 0
-
-        elif op == isa.OP_IN:
-            src, n = isa.bits(x, 18, 15), isa.bits(x, 4, 0) or 32
-            b = src_val(src) & mask(n)
-            if n == 32:
-                nisr = b
-            elif self.in_shr:
-                nisr = ((self.isr >> n) | (b << (32 - n))) & M32
-            else:
-                nisr = ((self.isr << n) | b) & M32
-            ncnt = min(32, self.isr_cnt + n)
-            if self.autopush and ncnt >= push_th:
-                if rx_full:
-                    complete = False
-                else:
-                    fx["rxpush"] = nisr
-                    chip.cover("shift:autopush")
-                    self.isr, self.isr_cnt = 0, 0
-            else:
-                self.isr, self.isr_cnt = nisr, ncnt
-            if complete and n == 1 and self.in_tap:
-                crc_feed(b & 1)
-
-        elif op == isa.OP_OUT:
-            dst, n = isa.bits(x, 18, 15), isa.bits(x, 4, 0) or 32
-            osr0, cnt0 = self.osr, self.osr_cnt
-            if self.autopull and self.osr_cnt >= pull_th:
-                if not pullq:
-                    complete = False
-                else:
-                    osr0, cnt0 = pullq[0], 0
-                    fx["txpop"] = True
-                    chip.cover("shift:autopull")
-            if complete:
-                if self.out_shr:
-                    data = osr0 & mask(n)
-                    nosr = 0 if n == 32 else osr0 >> n
-                else:
-                    data = osr0 >> (32 - n)
-                    nosr = 0 if n == 32 else (osr0 << n) & M32
-                self.osr, self.osr_cnt = nosr, min(32, cnt0 + n)
-                if n == 1 and self.out_tap:
-                    crc_feed(data & 1)
-                if dst < 4:
-                    self.r[dst] = data & M16
-                elif dst == PINS:
-                    write_pins(data, False)
-                elif dst == PINDIRS:
-                    write_pins(data, True)
-                elif dst == ISR:
-                    self.isr, self.isr_cnt = data, n
-                elif dst == PC:
-                    jump = data & 1023
-                elif dst == CRC:
-                    self.crc = data & crc_mask
-
-        elif op == isa.OP_PUSH:
-            iff, blk = isa.bits(x, 18, 18), isa.bits(x, 17, 17)
-            if iff and self.isr_cnt < push_th:
-                pass
-            elif rx_full:
-                if blk:
-                    complete = False
-                else:
-                    self.isr, self.isr_cnt = 0, 0
-            else:
-                fx["rxpush"] = self.isr
+                e.fx["rxpush"] = nisr
+                e.chip.cover("shift:autopush")
                 self.isr, self.isr_cnt = 0, 0
+        else:
+            self.isr, self.isr_cnt = nisr, ncnt
+        if e.complete and n == 1 and self.in_tap:
+            self._crc_feed(b & 1)
 
-        elif op == isa.OP_PULL:
-            ife, blk = isa.bits(x, 18, 18), isa.bits(x, 17, 17)
-            if ife and self.osr_cnt < pull_th:
-                pass
-            elif not pullq:
-                if blk:
-                    complete = False
-                else:
-                    self.osr, self.osr_cnt = self.r[0], 0
+    def _op_out(self, e):
+        dst, n = isa.bits(e.x, 18, 15), isa.bits(e.x, 4, 0) or 32
+        osr0, cnt0 = self.osr, self.osr_cnt
+        if self.autopull and self.osr_cnt >= e.pull_th:
+            if not e.pullq:
+                e.complete = False
+                return
+            osr0, cnt0 = e.pullq[0], 0
+            e.fx["txpop"] = True
+            e.chip.cover("shift:autopull")
+        if self.out_shr:
+            data = osr0 & mask(n)
+            nosr = 0 if n == 32 else osr0 >> n
+        else:
+            data = osr0 >> (32 - n)
+            nosr = 0 if n == 32 else (osr0 << n) & M32
+        self.osr, self.osr_cnt = nosr, min(32, cnt0 + n)
+        if n == 1 and self.out_tap:
+            self._crc_feed(data & 1)
+        if dst != OSR:                  # OUT to OSR only shifts (docs/isa.md §5)
+            self._write_dst(e, dst, data, n)
+
+    def _op_push(self, e):
+        iff, blk = isa.bits(e.x, 18, 18), isa.bits(e.x, 17, 17)
+        if iff and self.isr_cnt < e.push_th:
+            return
+        if e.rx_full:
+            if blk:
+                e.complete = False
             else:
-                self.osr, self.osr_cnt = pullq[0], 0
-                fx["txpop"] = True
+                self.isr, self.isr_cnt = 0, 0
+        else:
+            e.fx["rxpush"] = self.isr
+            self.isr, self.isr_cnt = 0, 0
 
-        elif op == isa.OP_MOV:
-            dst, mop, src = isa.bits(x, 18, 15), isa.bits(x, 14, 13), isa.bits(x, 12, 9)
-            v = src_val(src)
-            if mop == isa.M_INV:
-                v = ~v & M32
-            elif mop == isa.M_REV:
-                v = rev32(v)
-            if dst < 4:
-                self.r[dst] = v & M16
-            elif dst == PINS:
-                write_pins(v, False)
-            elif dst == PINDIRS:
-                write_pins(v, True)
-            elif dst == ISR:
-                self.isr, self.isr_cnt = v, 0
-            elif dst == OSR:
-                self.osr, self.osr_cnt = v, 0
-            elif dst == PC:
-                jump = v & 1023
-            elif dst == CRC:
-                self.crc = v & crc_mask
-
-        elif op == isa.OP_SET:
-            tgt = fx["oe"] if isa.bits(x, 18, 18) else fx["out"]
-            v = isa.bits(x, 4, 0)
-            for i in range(min(self.set_count, 5)):
-                tgt[(self.set_base + i) & 31] = (v >> i) & 1
-
-        elif op == isa.OP_LDI:
-            self.r[isa.bits(x, 17, 16)] = isa.bits(x, 15, 0)
-
-        elif op == isa.OP_ALU:
-            aop, rd, imm = isa.bits(x, 18, 16), isa.bits(x, 15, 14), isa.bits(x, 13, 13)
-            s = isa.bits(x, 12, 0) if imm else self.r[isa.bits(x, 1, 0)]
-            a = self.r[rd]
-            c = 0
-            if aop == isa.A_ADD:
-                res = a + s
-                c = res >> 16
-            elif aop in (isa.A_SUB, isa.A_CMP):
-                res = a - s
-                c = int(a < s)
-            elif aop == isa.A_AND:
-                res = a & s
-            elif aop == isa.A_OR:
-                res = a | s
-            elif aop == isa.A_XOR:
-                res = a ^ s
-            elif aop == isa.A_SHL:
-                res = a << (s & 15)
+    def _op_pull(self, e):
+        ife, blk = isa.bits(e.x, 18, 18), isa.bits(e.x, 17, 17)
+        if ife and self.osr_cnt < e.pull_th:
+            return
+        if not e.pullq:
+            if blk:
+                e.complete = False
             else:
-                res = a >> (s & 15)
-            res &= M16
-            self.z, self.c = int(res == 0), c
-            if aop != isa.A_CMP:
-                self.r[rd] = res
+                self.osr, self.osr_cnt = self.r[0], 0
+        else:
+            self.osr, self.osr_cnt = e.pullq[0], 0
+            e.fx["txpop"] = True
 
-        elif op == isa.OP_PIN:
-            act, p = isa.bits(x, 18, 17), isa.bits(x, 4, 0)
-            if act == isa.P_LO:
-                fx["out"][p], fx["oe"][p] = 0, 1
-            elif act == isa.P_HI:
-                fx["out"][p], fx["oe"][p] = 1, 1
-            elif act == isa.P_TOGGLE:
-                fx["out"][p] = ((chip.pin_out >> p) & 1) ^ 1
-            else:
-                fx["oe"][p] = 0
+    def _op_mov(self, e):
+        dst, mop, src = isa.bits(e.x, 18, 15), isa.bits(e.x, 14, 13), isa.bits(e.x, 12, 9)
+        v = self._src(e, src)
+        if mop == isa.M_INV:
+            v = ~v & M32
+        elif mop == isa.M_REV:
+            v = rev32(v)
+        self._write_dst(e, dst, v, 0)
 
-        elif op == isa.OP_FLAG:
-            b = 1 << isa.bits(x, 2, 0)
-            if isa.bits(x, 18, 18):
-                fx["fclr"] |= b
-            else:
-                fx["fset"] |= b
+    def _op_set(self, e):
+        tgt = e.fx["oe"] if isa.bits(e.x, 18, 18) else e.fx["out"]
+        v = isa.bits(e.x, 4, 0)
+        for i in range(min(self.set_count, 5)):
+            tgt[(self.set_base + i) & 31] = (v >> i) & 1
 
-        elif op == isa.OP_HALT:
-            self.halted = 1
-            complete = False
+    def _op_ldi(self, e):
+        self.r[isa.bits(e.x, 17, 16)] = isa.bits(e.x, 15, 0)
 
-        # reserved opcodes complete as NOP
+    def _op_alu(self, e):
+        x = e.x
+        aop, rd, imm = isa.bits(x, 18, 16), isa.bits(x, 15, 14), isa.bits(x, 13, 13)
+        s = isa.bits(x, 12, 0) if imm else self.r[isa.bits(x, 1, 0)]
+        a = self.r[rd]
+        c = 0
+        if aop == isa.A_ADD:
+            res = a + s
+            c = res >> 16
+        elif aop in (isa.A_SUB, isa.A_CMP):
+            res = a - s
+            c = int(a < s)
+        elif aop == isa.A_AND:
+            res = a & s
+        elif aop == isa.A_OR:
+            res = a | s
+        elif aop == isa.A_XOR:
+            res = a ^ s
+        elif aop == isa.A_SHL:
+            res = a << (s & 15)
+        else:
+            res = a >> (s & 15)
+        res &= M16
+        self.z, self.c = int(res == 0), c
+        if aop != isa.A_CMP:
+            self.r[rd] = res
 
-        key = ("done:" if complete else "stall:") + isa.OPNAMES.get(op, "rsvd")
-        chip.stats[key] = chip.stats.get(key, 0) + 1
-        if jump is not None:
-            chip.stats["jump"] = chip.stats.get("jump", 0) + 1
-        self.stalled = int(not complete and op != isa.OP_HALT)
-        self.in_wait = new_wait
-        if complete:
-            self.dcnt = delay
-            if jump is not None:
-                self.pc = jump
-            elif self.pc == self.wrap_top:
-                self.pc = self.wrap_bottom
-            else:
-                self.pc = (self.pc + 1) & 1023
-        return fx
+    def _op_pin(self, e):
+        act, p = isa.bits(e.x, 18, 17), isa.bits(e.x, 4, 0)
+        fx = e.fx
+        if act == isa.P_LO:
+            fx["out"][p], fx["oe"][p] = 0, 1
+        elif act == isa.P_HI:
+            fx["out"][p], fx["oe"][p] = 1, 1
+        elif act == isa.P_TOGGLE:
+            fx["out"][p] = ((e.chip.pin_out >> p) & 1) ^ 1
+        else:
+            fx["oe"][p] = 0
+
+    def _op_flag(self, e):
+        b = 1 << isa.bits(e.x, 2, 0)
+        e.fx["fclr" if isa.bits(e.x, 18, 18) else "fset"] |= b
+
+    def _op_halt(self, e):
+        self.halted = 1
+        e.complete = False
+
+
+_EDGE_WAITS = (isa.W_RISE, isa.W_FALL, isa.W_EDGE)
+_OPS = {isa.OP_JMP: Core._op_jmp, isa.OP_WAIT: Core._op_wait, isa.OP_IN: Core._op_in,
+        isa.OP_OUT: Core._op_out, isa.OP_PUSH: Core._op_push, isa.OP_PULL: Core._op_pull,
+        isa.OP_MOV: Core._op_mov, isa.OP_SET: Core._op_set, isa.OP_LDI: Core._op_ldi,
+        isa.OP_ALU: Core._op_alu, isa.OP_PIN: Core._op_pin, isa.OP_FLAG: Core._op_flag,
+        isa.OP_HALT: Core._op_halt}
+
+
+class _Exec:
+    """The inputs and effects of one core cycle."""
+
+    def __init__(self, core, chip, pins_in, flags, x):
+        self.chip, self.pins_in, self.flags, self.x = chip, pins_in, flags, x
+        self.fx = dict(out={}, oe={}, side_out={}, side_oe={}, fset=0, fclr=0, txpop=False, rxpush=None)
+        self.pull_th = core.pull_thresh or 32
+        self.push_th = core.push_thresh or 32
+        self.pullq = core.rxf if core.fjoin else core.txf
+        self.rx_full = core.fjoin or len(core.rxf) >= chip.fifo_depth
+        self.jump, self.complete, self.new_wait = None, True, 0
+
+    def pin(self, p):
+        return (self.pins_in >> (p & 31)) & 1
 
 
 class Chip:

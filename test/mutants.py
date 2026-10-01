@@ -31,7 +31,7 @@ def pytest(spec):
 # name: (file, original text, mutated text, test command)
 MUTANTS = {
     "model-alu-borrow": ("tools/pe/sim.py", "c = int(a < s)", "c = int(a <= s)", LOCKSTEP),
-    "model-wait-not-sticky": ("tools/pe/sim.py", "self.wevent = int(edge_done)", "self.wevent = int(ev)", LOCKSTEP),
+    "model-wait-not-sticky": ("tools/pe/sim.py", "self.wevent = int(e.edge_done)", "self.wevent = int(e.ev)", LOCKSTEP),
     "model-join-early-full": ("tools/pe/sim.py", "if core.txf and len(core.rxf) < self.fifo_depth:",
                               "if core.txf and len(core.rxf) < self.fifo_depth - 1:", LOCKSTEP),
     "rtl-wait-not-sticky": ("src/pe_core.sv", "wire        edge_done = wevent || (trans && qual);",
