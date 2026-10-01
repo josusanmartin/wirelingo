@@ -27,6 +27,9 @@ protocols kept asking for:
   **FIFO join** (RXF as a second TX stage) for line rates above what the SPI
   host port can stream.
 
+**Reviewers:** [docs/guide.md](docs/guide.md) maps each claim to its evidence
+and the command that reproduces it.
+
 [docs/isa.md](docs/isa.md) is the normative spec. The RTL, the golden model
 and the assembler implement it, and are checked against each other
 ([docs/verification.md](docs/verification.md)).
