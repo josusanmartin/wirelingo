@@ -40,7 +40,7 @@ against the RTL.
 
 | Firmware | What it does | Limits | Verified on |
 |---|---|---|---|
-| `uart_tx`, `uart_rx` | 8N1; RX start edge caught at clock resolution | | RTL |
+| `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error | RTL; ±3 % and back-to-back on the model |
 | `spi_master` | mode 0, MSB first, 8-bit frames, f_SCK = f_tick / 4 | chip select by the host or a wrapper | RTL |
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | endpoint 0; the host software does the requests and data toggles | RTL (SETUP/ACK, foreign address, NAK, IN data); **enumeration**, lost ACK, ±2.5 % bit rate on the model |

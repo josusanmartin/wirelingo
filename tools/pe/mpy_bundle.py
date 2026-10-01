@@ -4,7 +4,7 @@ for the demo board, ready for ProtoEmu.load(**PROGRAM).
     python -m pe.mpy_bundle            # from tools/
 
 Default pin map (logical pins, docs/isa.md §2):
-    UART:  TX = uo0 (P8), RX = ui0 (P16)
+    UART:  TX = uo0 (P8), RX = ui0 (P16); *_V24: both on virtual pin 24 (no wiring)
     SPI:   SCK = uio2, MOSI = uio3, MISO = uio4
     I2C:   SDA = uio0, SCL = uio1 (open drain: set OD_MASK and PIN_OUT first)
     WS2812: DOUT = uo1 (P9)
@@ -36,6 +36,11 @@ def main():
                         clkdiv=host.clkdiv_for(F_CLK, 8 * 115200)),
         "UART_RX": prog("uart_rx", 1, {"RX": 16}, in_pins=16,
                         clkdiv=host.clkdiv_for(F_CLK, 8 * 115200)),
+        # internal loopback for bring-up: TX on virtual pin 24 (a wire between cores)
+        "UART_TX_V24": prog("uart_tx", 0, out_pins=(24, 1), side_pins=24,
+                            clkdiv=host.clkdiv_for(F_CLK, 8 * 115200)),
+        "UART_RX_V24": prog("uart_rx", 1, {"RX": 24}, in_pins=24,
+                            clkdiv=host.clkdiv_for(F_CLK, 8 * 115200)),
         "SPI_MASTER": prog("spi_master", 0, out_pins=(3, 1), side_pins=2, in_pins=4,
                            clkdiv=host.clkdiv_for(F_CLK, 4 * 1e6)),
         "I2C_MASTER": prog("i2c_master", 0, {"SDA": 0, "SCL": 1}, out_pins=(0, 1), in_pins=0,

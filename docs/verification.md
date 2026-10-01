@@ -129,6 +129,8 @@ the RTL through the **real SPI host port** (`test/test.py`).
   the chip between transactions, also with random 100–3000-cycle stalls;
   the address filter follows SET_ADDRESS; a lost ACK makes the software
   re-stage the same packet with the same toggle.
+* UART: 64 back-to-back bytes from a sender at ±3 % with the fractional
+  115200-baud divider; the on-chip TX→RX pair over a virtual pin.
 * I2C: SCL held low at every one of the 19 releases (and before START) times
   out, replies 0x100 and recovers; the SCL waveform is 4 + 4 ticks.
 * 10BASE-T: frames streamed at the SPI port's maximum rate up to the 128-byte
@@ -174,3 +176,4 @@ checks the mapped logic, not delays; timing is covered by STA.
 | RTL timing | a CTRL write decoded `restart` combinationally, putting the host address decode in front of every core's execute stage (−7.6 ns at the slow corner) | post-route STA path review; CTRL is now registered (lockstep confirms the model and RTL agree on the new timing; an unregistered-CTRL model mutant fails at once) |
 | test harness | gate-level test used the powered netlist and connected VPWR/VGND; TT simulates `final/nl` for IHP and the cell models need `sg13cmos5l_udp.v` | first GL run |
 | test harness | driver test traced only `ModelHost.step`, missing the clocks of the host's own bus cycles (a 1-tick gap breaks Manchester decoding) | 10BASE-T driver test; trace now hooks `Chip.step` |
+| UART RX firmware | back-to-back bytes: the program returned to its start-bit edge WAIT exactly at the end of the stop bit, and with a fractional divider the next start edge could fall on that tick and be missed; also too little margin for a 3 %-fast sender | the board bring-up loopback (driver on the model); now a level WAIT, the byte pushed during the stop bit, and test_uart (±3 %, back to back) |

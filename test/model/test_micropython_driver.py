@@ -9,6 +9,7 @@ from pe.modelhost import ModelHost
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "micropython"))
 import protoemu  # noqa: E402
 import protoemu_fw  # noqa: E402
+import bringup  # noqa: E402
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -155,3 +156,21 @@ def test_driver_eth10_frame():
     sent = body + bytes(60 - len(body))
     sent += zlib.crc32(sent).to_bytes(4, "little")
     eth.check(trace, mark, sent)
+
+
+def test_bringup_uart_loopback_and_errors():
+    """bringup.py's board-independent steps on the model: the internal UART
+    loopback over virtual pin 24, and push() reporting a halted core instead of
+    spinning on a full FIFO."""
+    import pytest
+    mh = ModelHost()
+    pe = protoemu.ProtoEmu(FakeTT(mh))
+    assert pe.read(protoemu.A_ID) == bringup.ID
+    assert bringup.uart_loopback(pe, b"Hi!") == b"Hi!"
+    halt = {"core": 0, "base": 0, "words": [12 << 27], "clkdiv": 1 << 8, "pinctrl0": 0,
+            "pinctrl1": 0, "shiftctrl": 0, "wrap": 0}
+    bringup.load(pe, halt)
+    for i in range(8):
+        pe.push(0, i)
+    with pytest.raises(RuntimeError, match="halted"):
+        pe.push(0, 8)

@@ -18,8 +18,9 @@ prints the words and register values to paste here.
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
 A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE = range(0x800, 0x80B)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
-C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP = 0, 1, 2, 3, 4, 5
+C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = range(8)
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
+ST_HALTED, ST_FAULT = 1 << 13, 1 << 14   # STATUS bits
 
 MOSI, SCK, CS = 5, 6, 7
 
@@ -86,20 +87,47 @@ class ProtoEmu:
         self.write(r(C_CLKDIV), [clkdiv, pinctrl0, pinctrl1, shiftctrl, base, wrap])
 
     def start(self, mask):
+        """Restart the cores in mask (PC = ENTRY) and enable them."""
         en = self.read(A_CTRL) & 15
         self.write(A_CTRL, en | mask | (mask << 8))
 
     def stop(self, mask):
+        """Disable the cores in mask; their state is frozen (enable() resumes)."""
         en = self.read(A_CTRL) & 15
         self.write(A_CTRL, en & ~mask)
+
+    def enable(self, mask):
+        """Resume the cores in mask where they stopped (no restart)."""
+        self.write(A_CTRL, (self.read(A_CTRL) & 15) | mask)
+
+    def clear_fifos(self, mask):
+        """Empty both FIFOs of the cores in mask."""
+        self.write(A_CTRL, (self.read(A_CTRL) & 15) | (mask << 16))
+
+    def own_pins(self, core, pins):
+        """Give logical pins (docs/isa.md §2) to core: only the owner drives them."""
+        lo, hi = self.read(A_POWN_LO, 2)
+        for p in pins:
+            if p < 16:
+                lo = (lo & ~(3 << 2 * p)) | (core << 2 * p)
+            else:
+                hi = (hi & ~(3 << 2 * (p - 16))) | (core << 2 * (p - 16))
+        self.write(A_POWN_LO, [lo, hi])
 
     def status(self, core):
         return self.read(self.core_reg(core, C_STATUS))
 
-    def push(self, core, word):
-        while self.status(core) & 15 >= self.depth:
-            pass
-        self.write(self.core_reg(core, C_FIFO), word, fixed=True)
+    def push(self, core, word, tries=10000):
+        """Push one TX FIFO word, waiting for room. Raises if the core halts or
+        faults, or if the FIFO stays full for `tries` polls."""
+        for _ in range(tries):
+            st = self.status(core)
+            if st & 15 < self.depth:
+                self.write(self.core_reg(core, C_FIFO), word, fixed=True)
+                return
+            if st & (ST_HALTED | ST_FAULT):
+                raise RuntimeError("core %d %s, TX FIFO full" % (core, "faulted" if st & ST_FAULT else "halted"))
+        raise RuntimeError("core %d TX FIFO still full" % core)
 
     def pop(self, core):
         """Return one RX FIFO word, or None if empty."""
