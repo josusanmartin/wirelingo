@@ -396,8 +396,11 @@ effects combine into the state for cycle *t + 1*.
 * A host write to R0–R3 or PC overrides the core's own write to that register
   in the same cycle. A host PC write also cancels any pending delay and any
   in-progress WAIT.
-* A restart or FIFO clear in cycle *t* overrides everything that core (or
-  that FIFO) would do in *t*.
+* A `CTRL` write is the exception: it is registered first, so a write in
+  cycle *t* acts in cycle *t + 1*. Its restart or FIFO clear overrides
+  everything that core (or that FIFO) would do in *t + 1*, and its enable
+  takes effect for *t + 2*. (This keeps the host address decode out of the
+  cores' execute path. The SPI host cannot observe the extra cycle.)
 * FIFO full/empty are evaluated at the start of the cycle. A host push to a
   full TXF is dropped even if the core pops in the same cycle, and a core
   can't pull a word the host pushes in the same cycle.

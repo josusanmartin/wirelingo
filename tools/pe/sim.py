@@ -448,6 +448,7 @@ class Chip:
         self.imem = [0] * (4 * bank_words)
         self.cores = [Core(i) for i in range(NCORES)]
         self.enable = 0
+        self.ctrl_pend = None  # CTRL write data from the previous cycle (acts one cycle late)
         self.flags = 0
         self.bank_owner = [0, 1, 2, 3]
         self.pin_owner = [0] * 32
@@ -503,8 +504,9 @@ class Chip:
         pins_in = self.pins_in()
         flags = self.flags
         restart = fclear = 0
-        if we and addr == A_CTRL:
-            restart, fclear = (wdata >> 8) & 15, (wdata >> 16) & 15
+        ctrl = self.ctrl_pend
+        if ctrl is not None:
+            restart, fclear = (ctrl >> 8) & 15, (ctrl >> 16) & 15
 
         fset = fclr = 0
         new_out, new_oe = self.pin_out, self.pin_oe
@@ -548,7 +550,7 @@ class Chip:
                 else:
                     self.cores[c].write_reg(off, wdata)
             elif addr == A_CTRL:
-                self.enable = wdata & 15
+                pass  # registered: applied next cycle (ctrl_pend)
             elif addr == A_FSET:
                 fset |= wdata & 0xFF
             elif addr == A_FCLR:
@@ -588,6 +590,9 @@ class Chip:
             if (restart >> c) & 1:
                 self.cores[c].restart()
 
+        if ctrl is not None:
+            self.enable = ctrl & 15
+        self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None
         self.flags = ((flags & ~fclr) | fset) & 0xFF
         self.pin_out, self.pin_oe = new_out & M32, new_oe & M32
         self.sync2 = self.sync1

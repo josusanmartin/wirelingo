@@ -48,8 +48,13 @@ module pe_chip #(
   wire [1:0]  core_idx = bus_addr[6:5];
   wire [3:0]  goff = bus_addr[3:0];
   wire        ctrl_w = bus_we && sel_glob && goff == 4'h1;
-  wire [3:0]  restart = ctrl_w ? bus_wdata[11:8] : 4'd0;
-  wire [3:0]  fclear  = ctrl_w ? bus_wdata[19:16] : 4'd0;
+  // CTRL writes act one cycle late (docs/isa.md §5): restart gates every
+  // core's execute stage, so it must come straight from a flop. The data
+  // flops need no hold mux: they are only used while ctrl_pend is set.
+  reg         ctrl_pend;
+  reg  [11:0] ctrl_data;                  // {fclear, restart, enable}
+  wire [3:0]  restart = ctrl_pend ? ctrl_data[7:4] : 4'd0;
+  wire [3:0]  fclear  = ctrl_pend ? ctrl_data[11:8] : 4'd0;
 
   // ---------------------------------------------------------------- IMEM
   wire [39:0]  fetch_addr;
@@ -176,6 +181,8 @@ module pe_chip #(
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       enable <= 4'd0;
+      ctrl_pend <= 1'b0;
+      ctrl_data <= 12'd0;
       flags <= 8'd0;
       pin_out <= 32'd0;
       pin_oe <= 32'd0;
@@ -187,12 +194,9 @@ module pe_chip #(
       pin_out <= (bus_we && sel_glob && goff == 4'h9) ? bus_wdata : pin_out_n;
       pin_oe <= (bus_we && sel_glob && goff == 4'hA) ? bus_wdata : pin_oe_n;
       flags <= (flags & ~all_clr) | all_set;
-      if (bus_we && sel_glob) begin
-        case (goff)
-          4'h1: enable <= bus_wdata[3:0];
-          default: ;
-        endcase
-      end
+      ctrl_pend <= ctrl_w;
+      ctrl_data <= {bus_wdata[19:16], bus_wdata[11:8], bus_wdata[3:0]};
+      if (ctrl_pend) enable <= ctrl_data[3:0];
     end
   end
 endmodule
