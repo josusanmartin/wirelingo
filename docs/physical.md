@@ -101,6 +101,26 @@ Lessons:
 A third core needs about 30 % less horizontal wiring at chip level; the best
 cuts found are worth 4 %.
 
+### The line unit and host port: back under the limit (2026-10-01)
+
+Adding the line unit and the quad host port (+54K µm² synthesized, +21 %)
+grew global-route wire 44 % (2.31M → 3.33M µm) and left 1091 overflows after
+global routing (t1); post-GRT repair then spent hours re-routing. Placement
+density (46 %) and the wire-capacitance setting changed nothing. What did:
+
+| Build (short GRT, 5 iterations) | Metal3 | Overflow |
+|---------------------------------|--------|----------|
+| as t1 | 77.6 % | 951 |
+| 4-deep FIFOs | 76.0 % | 525 |
+| configuration registers write-only | 72.8 % | 336 |
+| + ISR/OSR not readable | 71.5 % | 57 |
+
+Short-GRT overflow is noisy (write-only + 4-deep FIFOs gave 657), so the
+verdict is a full run. **t3, configuration registers write-only:** 13
+overflows after global routing (final5: 12), Metal3 71.3 %, 2.50M µm of wire
+(−25 %), post-GRT repair in 4 minutes. The read path of the configuration
+registers, through each core's and the chip's read mux, was the congestion.
+
 ### Where a core's wiring goes
 
 `flow/core_route.sh` places and globally routes one core (pe_core + FIFOs,
