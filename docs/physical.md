@@ -118,7 +118,8 @@ density (46 %) and the wire-capacitance setting changed nothing. What did:
 Short-GRT overflow is noisy (write-only + 4-deep FIFOs gave 657), so the
 verdict is a full run. **t3, configuration registers write-only:** 13
 overflows after global routing (final5: 12), Metal3 71.3 %, 2.50M µm of wire
-(−25 %), post-GRT repair in 4 minutes. The read path of the configuration
+(−25 %), post-GRT repair in 4 minutes. Also hiding ISR/OSR (t4) gave 20 overflows and
+2.55M µm: no better, so they stay readable. The read path of the configuration
 registers, through each core's and the chip's read mux, was the congestion.
 
 ### Where a core's wiring goes
