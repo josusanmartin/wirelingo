@@ -8,7 +8,7 @@
 # default 2) sets PE_NCORES and the number of SRAM banks. Writes exp.log and
 # result.txt (exit status, commit, signoff summary) in the worktree and exits
 # with the flow's status. Needs .venv-flow (tt-support-tools requirements) and
-# PDK_ROOT (default ~/ttpdk). STOP=grt stops after global routing (~45 min) for
+# PDK_ROOT (default ~/ttpdk). FIFO_LOG2=2|3 overrides the FIFO depth. STOP=grt stops after global routing (~45 min) for
 # routability experiments; result.txt then has the congestion report.
 set -euo pipefail
 NAME=${1:?usage: flow/harden.sh NAME [NCORES] [-- gen_config options]}
@@ -32,6 +32,10 @@ cp -r "$REPO/tt" .
 python3 flow/gen_config.py --banks "$NC" "$@"
 sed -i "s/^\`define PE_NCORES [0-9]\$/\`define PE_NCORES $NC/" src/project.v
 grep -q "^\`define PE_NCORES $NC\$" src/project.v || { echo "could not set PE_NCORES in src/project.v"; exit 2; }
+if [ -n "${FIFO_LOG2:-}" ]; then                 # optional: FIFO depth 2**FIFO_LOG2
+  sed -i "s/^\`define PE_FIFO_LOG2 [0-9]\$/\`define PE_FIFO_LOG2 $FIFO_LOG2/" src/project.v
+  grep -q "^\`define PE_FIFO_LOG2 $FIFO_LOG2\$" src/project.v || { echo "could not set PE_FIFO_LOG2"; exit 2; }
+fi
 
 export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp-sg13cmos5l
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null
