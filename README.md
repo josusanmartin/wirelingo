@@ -83,6 +83,10 @@ make -C formal                         # SymbiYosys proofs
   | I2C sniffer | passive; START = `wait fall SDA if pin SCL == 1` | model (runs alongside the I2C master on another core) |
 
   "model" means the cycle-accurate model, which is lockstep-verified against the RTL.
+  10BASE-T RX is not attempted. At 40–50 MHz with a 2-flop input synchronizer,
+  edge-timed Manchester sampling leaves 0–1 clocks between the bit-boundary
+  edge and the sample point, below the ±13.5 ns jitter 802.3 allows. A robust
+  receiver needs oversampling hardware.
 * **Physical design (IHP SG13CMOS5L, 6x4 tiles):**
   * The tapeout configuration is **2 cores, 2 × 256-word SRAM banks, 8-deep
     FIFOs and the CRC tap**, at 50 MHz typical (48 MHz for USB).
