@@ -40,29 +40,45 @@ The full specification is in `docs/isa.md` in the repository.
 
 ## How to test
 
-The host talks to the chip over SPI mode 0 (SCK ≤ clk/8):
+The host talks to the chip over SPI mode 0:
 
 * `ui[7]` = CS_n, `ui[6]` = SCK, `ui[5]` = MOSI, `uo[7]` = MISO.
-* Transaction: `cmd addr[15:0] data…` with commands 0x02 write, 0x03 read,
+* Timing: SCK period ≥ 8 project clocks, high and low ≥ 3 each.
+* Transaction: `cmd addr[15:0] data…`. The commands are 0x02 write, 0x03 read,
   0x0A write-fixed and 0x0B read-fixed. Data is 32-bit big-endian words.
 * Reading address 0x0800 returns the ID `0x50450002`.
 
-On the demo board, `tools/micropython/protoemu.py` provides the driver.
-Assemble a program on a PC with `tools/pe/asm.py`, export it with
-`python -m pe.export`, load it into a core, start the core and exchange data
-through its FIFO. For example, a UART transmitter on `uo[0]`:
+On the demo board, copy `tools/micropython/protoemu.py`, `protoemu_fw.py` and
+`bringup.py` to the RP2350, then:
 
 ```
-pe.load(core=0, base=0, words=[...], clkdiv=..., pinctrl0=..., pinctrl1=..., shiftctrl=..., wrap=...)
-pe.start(1)
-pe.push(0, ord('A'))
+import bringup
+pe = bringup.setup()            # select the project, 48 MHz clock, reset, check the ID
+bringup.uart_loopback(pe)       # no wiring: core 0 UART TX -> internal pin -> core 1 UART RX
+bringup.uart_tx(pe, b"hi\r\n")  # 115200 8N1 on uo[0]
 ```
+
+`protoemu_fw.py` holds assembled programs (UART, SPI, I2C, WS2812, 10BASE-T TX)
+ready for `pe.load(**PROGRAM)`. Assemble your own with `tools/pe/asm.py`.
+Clock per demo: 48 MHz for UART/I2C/SPI/USB, 40 MHz for 10BASE-T
+(`bringup.setup(40_000_000)`, then `pe.eth10_send(core, frame)`).
 
 ## External hardware
 
-None is required for the loopback and UART demos. Protocol demos connect to
-the respective devices, for example a USB low-speed connector (D+ on `uio[0]`,
-D- on `uio[1]` with a 1.5 kΩ pull-up on D-, 48 MHz clock) or an SWD target.
-10BASE-T TX drives TD+/TD- (`uo[0]`/`uo[1]`) through the usual series
-resistors into an RJ45 jack with magnetics, with a 40 MHz clock. CAN needs a
-transceiver.
+None for the loopback and UART demos. For the others (3.3 V I/O; values are
+derived from the specifications, not yet validated on silicon):
+
+* **USB low-speed device:** D+ on `uio[0]`, D- on `uio[1]`, each through 27 Ω
+  to the connector; 1.5 kΩ from D- to 3.3 V (marks a low-speed device);
+  48 MHz project clock. The host software is in `test/model/test_usb_enum.py`
+  (`DeviceSoftware`).
+* **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
+  magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
+  pins swing ±3.3 V differentially, so use about 15–20 Ω in series per leg
+  (counting the pad's own output resistance), and AC-couple if the magnetics'
+  centre tap is not floating. 40 MHz project clock.
+* **I2C:** SDA `uio[0]`, SCL `uio[1]`, open drain (set `OD_MASK`), 4.7 kΩ
+  pull-ups to 3.3 V.
+* **CAN:** a 3.3 V transceiver (for example SN65HVD230); TXD from an output
+  pin, RXD to an input pin.
+* **SWD / JTAG:** direct to the target's debug header at 3.3 V.
