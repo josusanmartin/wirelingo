@@ -13,8 +13,9 @@ tt/
 src/user_config.json
 src/config_merged.json
 harden.log
-formal/fifo_*/
+formal/fifos_*/
 formal/spi_*/
 formal/core_*/
+formal/*/status.sqlite
 test/gate_level_netlist.v
 test/*.fst.hier

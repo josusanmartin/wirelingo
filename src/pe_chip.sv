@@ -25,6 +25,7 @@ module pe_chip #(
     input  wire        bus_we,
     input  wire [31:0] bus_wdata,
     input  wire        bus_commit,
+    input  wire        bus_snap,     // bus_rdata captured for a read word (precedes its commit)
     output reg  [31:0] bus_rdata
 );
   localparam [31:0] ID_VALUE = 32'h5045_0002;
@@ -106,6 +107,7 @@ module pe_chip #(
             .bus_we(bus_we),
             .bus_wdata(bus_wdata),
             .bus_commit(bus_commit),
+            .bus_snap(bus_snap),
             .bus_rdata(c_rdata[32*c +: 32]));
       end else begin : g_off
         assign fetch_addr[10*c +: 10] = 10'd0;

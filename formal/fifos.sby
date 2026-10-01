@@ -1,0 +1,28 @@
+[tasks]
+prove4
+prove8
+cover8
+
+[options]
+multiclock on
+prove4: mode prove
+prove8: mode prove
+cover8: mode cover
+depth 12
+cover8: depth 44
+
+[engines]
+smtbmc yices
+
+[script]
+read_verilog -sv -formal pe_fifo.sv pe_fifos.sv pe_cg.sv fifos_props.sv
+prove4: chparam -set LOG2 2 fifos_props
+prove8: chparam -set LOG2 3 fifos_props
+cover8: chparam -set LOG2 3 fifos_props
+prep -top fifos_props
+
+[files]
+../src/pe_fifo.sv
+../src/pe_fifos.sv
+../src/pe_cg.sv
+fifos_props.sv

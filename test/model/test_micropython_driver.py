@@ -54,14 +54,14 @@ class SpiPortModel:
                 w = int.from_bytes(bytes(self.bytes_in[-4:]), "big")
                 self.mh.write(self.addr, w)
             else:
-                self.mh.read(self.addr, pop=True)          # commit (FIFO pop)
+                self.mh.commit(self.addr)                   # end of a read word (FIFO pop)
             if not self.cmd & 0x08:
                 self.addr += 1
             if self.cmd in (0x03, 0x0B):
                 self.load_word()
 
     def load_word(self):
-        w = self.mh.chip.read(self.addr)
+        w = self.mh.snap(self.addr)
         self.tx = [(w >> (31 - i)) & 1 for i in range(32)]
 
 

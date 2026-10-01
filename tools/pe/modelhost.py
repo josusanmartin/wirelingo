@@ -22,9 +22,20 @@ class ModelHost:
     def write(self, addr, data):
         self.chip.step(self.ui, self.bus_uio(), we=True, addr=addr, wdata=data)
 
-    def read(self, addr, pop=False):
+    def snap(self, addr):
+        """Capture read data for addr, as the SPI port does at the start of a word."""
         v = self.chip.read(addr)
-        self.chip.step(self.ui, self.bus_uio(), addr=addr, commit=pop)
+        self.chip.step(self.ui, self.bus_uio(), addr=addr, snap=True)
+        return v
+
+    def commit(self, addr):
+        """End of a read word: its side effect (a FIFO pop, if the word was real)."""
+        self.chip.step(self.ui, self.bus_uio(), addr=addr, commit=True)
+
+    def read(self, addr, pop=False):
+        v = self.snap(addr)
+        if pop:
+            self.commit(addr)
         return v
 
     def apply(self, writes):

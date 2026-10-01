@@ -18,6 +18,7 @@ module pe_spi_slave (
     output reg         bus_we,
     output reg  [31:0] bus_wdata,
     output reg         bus_commit,
+    output wire        bus_snap,     // bus_rdata is captured for the next read word
     input  wire [31:0] bus_rdata
 `ifdef FORMAL
     ,
@@ -56,6 +57,7 @@ module pe_spi_slave (
   wire inc      = !cmd[3];
 
   assign miso = active && sh_out[31];
+  assign bus_snap = load;
 
   wire [31:0] sh_in_n = {sh_in[30:0], din};
 

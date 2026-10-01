@@ -1,4 +1,4 @@
-read_verilog -sv -Isrc -DPE_BANK_AW=4 src/project.v src/pe_chip.sv src/pe_core.sv src/pe_fifo.sv src/pe_imem.sv src/pe_spi_slave.sv
+read_verilog -sv -Isrc -DPE_BANK_AW=4 src/project.v src/pe_chip.sv src/pe_core.sv src/pe_fifos.sv src/pe_fifo.sv src/pe_cg.sv src/pe_imem.sv src/pe_spi_slave.sv
 synth -top tt_um_josusanmartin_protoemu -flatten
 dfflibmap -liberty syn/sg13cmos5l_stdcell_typ_1p20V_25C.lib
 abc -liberty syn/sg13cmos5l_stdcell_typ_1p20V_25C.lib

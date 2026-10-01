@@ -38,6 +38,7 @@ module pe_core #(
     input  wire        bus_we,
     input  wire [31:0] bus_wdata,
     input  wire        bus_commit,
+    input  wire        bus_snap,
     output reg  [31:0] bus_rdata
 );
 
@@ -81,33 +82,28 @@ module pe_core #(
 
   // ---------------------------------------------------------------- FIFOs
   wire        host_push = bus_sel && bus_we && bus_off == 5'h10;
-  wire        host_pop  = bus_sel && bus_commit && bus_off == 5'h10;
-  wire [31:0] txf_head, rxf_head;
+  // A FIFO read pops only if the word the host was given was a real entry: a
+  // word that arrives during a read of an empty RXF stays for the next read.
+  reg         snap_valid;
+  wire        host_pop  = bus_sel && bus_commit && bus_off == 5'h10 && snap_valid;
+  wire [31:0] txf_head, rxf_head, pq_head;
   wire [3:0]  txf_level, rxf_level;
-  wire        txf_empty = txf_level == 4'd0;
+  wire        pq_empty, rx_block;            // what PULL/autopull see; PUSH/autopush stall
   wire        rxf_empty = rxf_level == 4'd0;
-  wire        rxf_full  = rxf_level[FIFO_LOG2];
   reg         core_txpop, core_rxpush;   // decoded; qualified by exec below
   reg  [31:0] core_rxdata;
   wire        exec;
 
-  // SHIFTCTRL.FJOIN_TX: RXF becomes a second TX stage (TXF -> RXF -> OSR), for
-  // 2*D words of TX buffering. The core pulls from RXF; its pushes block and
-  // host FIFO reads return 0 without popping.
-  wire        xfer     = fjoin && !txf_empty && !rxf_full;
-  wire [31:0] pq_head  = fjoin ? rxf_head : txf_head;    // what PULL / autopull take
-  wire        pq_empty = fjoin ? rxf_empty : txf_empty;
-  wire        rx_block = fjoin || rxf_full;              // PUSH / autopush stall
+  pe_fifos #(.LOG2(FIFO_LOG2)) u_fifos (
+      .clk(clk), .rst_n(rst_n), .clear(fifo_clear), .fjoin(fjoin),
+      .host_push(host_push), .host_data(bus_wdata), .host_pop(host_pop),
+      .core_pop(exec && core_txpop), .core_push(exec && core_rxpush), .core_data(core_rxdata),
+      .txf_head(txf_head), .rxf_head(rxf_head), .txf_level(txf_level), .rxf_level(rxf_level),
+      .pq_head(pq_head), .pq_empty(pq_empty), .rx_block(rx_block));
 
-  pe_fifo #(.LOG2(FIFO_LOG2)) txf (
-      .clk(clk), .rst_n(rst_n), .clear(fifo_clear),
-      .push(host_push), .push_data(bus_wdata),
-      .pop(fjoin ? xfer : exec && core_txpop), .head(txf_head), .level(txf_level));
-
-  pe_fifo #(.LOG2(FIFO_LOG2)) rxf (
-      .clk(clk), .rst_n(rst_n), .clear(fifo_clear),
-      .push(fjoin ? xfer : exec && core_rxpush), .push_data(fjoin ? txf_head : core_rxdata),
-      .pop(fjoin ? exec && core_txpop : host_pop), .head(rxf_head), .level(rxf_level));
+  always @(posedge clk or negedge rst_n)
+    if (!rst_n) snap_valid <= 1'b0;
+    else if (bus_snap) snap_valid <= !rxf_empty;
 
   // ---------------------------------------------------------------- helpers
   function automatic [31:0] rotl32(input [31:0] v, input [4:0] s);

@@ -52,6 +52,7 @@ class Core:
         self.crc = 0
         self.r = [0, 0, 0, 0]
         self.txf, self.rxf = [], []
+        self.snap_valid = 0  # RXF was non-empty at the last read snapshot (reset only)
         self.restart()
 
     def restart(self):
@@ -502,12 +503,15 @@ class Chip:
             A_POE: self.pin_oe,
         }.get(addr, 0)
 
-    def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False):
+    def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False):
         """One clock edge. `we`: bus write of wdata to addr this cycle.
-        `commit`: read side effect (FIFO pop) for addr this cycle."""
+        `snap`: the host captures read data (read(addr)) for a word it will send.
+        `commit`: that word's read side effect (FIFO pop) for addr this cycle;
+        it pops only if RXF was non-empty at the last snap."""
         pins_in = self.pins_in()
         flags = self.flags
         fjoin = [core.fjoin for core in self.cores]  # start of cycle: a host write lands at the edge
+        rx_nonempty = [bool(core.rxf) for core in self.cores]
         restart = fclear = 0
         ctrl = self.ctrl_pend
         if ctrl is not None:
@@ -543,7 +547,7 @@ class Chip:
             we = False if addr >= CORE_BASE else we
         if in_cores:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
-            if commit and off == C_FIFO:
+            if commit and off == C_FIFO and self.cores[c].snap_valid:
                 host_pop[c] = True
         if we:
             if addr < IMEM_WORDS:
@@ -603,6 +607,9 @@ class Chip:
             if (restart >> c) & 1:
                 self.cores[c].restart()
 
+        if snap:
+            for c, core in enumerate(self.cores):
+                core.snap_valid = int(rx_nonempty[c])
         if ctrl is not None:
             self.enable = ctrl & 15
         self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None

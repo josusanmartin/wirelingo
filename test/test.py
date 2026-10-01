@@ -572,3 +572,31 @@ async def test_eth10_tx(dut):
             break
     task.cancel()
     eth.check(trace, 0, fr)
+
+
+@cocotb.test()
+async def test_fifo_read_race(dut):
+    """A word the core pushes while the host is reading an empty RXF must not be
+    lost: the read returns 0 and the word stays for the next read (the SPI port
+    pops only if the word it sent was a real entry). The push time is swept
+    across the read transfer."""
+    spi = await setup(dut)
+    prog = asm.assemble("""
+    loop:
+        jmp r0--, loop
+        mov isr, r1
+        push block
+        halt
+    """)
+    await spi.apply(host.load_program(0, prog, 0, clkdiv=1 << 8))
+    got = []
+    for n in range(150, 520, 12):                  # push lands anywhere in the read word
+        marker = 0xA000 + n
+        await spi.write(sim.core_reg(0, sim.C_R0), [n, marker])
+        await spi.write(sim.A_CTRL, [1 | (1 << 8)])    # restart + enable
+        got += [w for w in await spi.read(sim.core_reg(0, sim.C_FIFO), 1, fixed=True) if w]
+        await ClockCycles(dut.clk, 600)
+        while (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0] >> 4 & 15:
+            got += await spi.read(sim.core_reg(0, sim.C_FIFO), 1, fixed=True)
+        assert got and got[-1] == marker, (hex(marker), [hex(g) for g in got[-3:]])
+    assert got == [0xA000 + n for n in range(150, 520, 12)]

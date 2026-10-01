@@ -50,7 +50,7 @@ module tt_um_josusanmartin_protoemu (
   wire rstn = rst_s[1];
 
   wire [15:0] bus_addr;
-  wire        bus_we, bus_commit;
+  wire        bus_we, bus_commit, bus_snap;
   wire [31:0] bus_wdata, bus_rdata;
   wire        miso;
 
@@ -65,6 +65,7 @@ module tt_um_josusanmartin_protoemu (
       .bus_we(bus_we),
       .bus_wdata(bus_wdata),
       .bus_commit(bus_commit),
+      .bus_snap(bus_snap),
       .bus_rdata(bus_rdata));
 
   pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS), .FIFO_LOG2(`PE_FIFO_LOG2)) u_chip (
@@ -79,6 +80,7 @@ module tt_um_josusanmartin_protoemu (
       .bus_we(bus_we),
       .bus_wdata(bus_wdata),
       .bus_commit(bus_commit),
+      .bus_snap(bus_snap),
       .bus_rdata(bus_rdata));
 
   assign uo_out[7] = miso;

@@ -1,5 +1,5 @@
 /*
- * 4-deep FIFO. Full/empty are judged on start-of-cycle state (docs/isa.md §5.3):
+ * FIFO of depth 2**LOG2. Full/empty are judged on start-of-cycle state (docs/isa.md §5):
  * a push while full is dropped even if a pop happens in the same cycle.
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,7 +19,7 @@ module pe_fifo #(
     output wire [3:0]   level
 `ifdef FORMAL
     ,
-    output wire [(1<<LOG2)*W-1:0] f_mem,  // storage and read pointer, for formal/fifo.sby
+    output wire [(1<<LOG2)*W-1:0] f_mem,  // storage and read pointer, for formal/fifos.sby
     output wire [LOG2-1:0]        f_rd
 `endif
 );
@@ -33,8 +33,8 @@ module pe_fifo #(
   // storage: one register per entry. Normally each entry has its own clock
   // gate instead of a hold mux per bit (IHP flops have no enable input).
   // PE_FIFO_NO_CG selects functionally identical enable flops; the core proof
-  // (formal/core.sby) uses it to stay single-clock, while formal/fifo.sby
-  // proves the clock-gated version equal to a reference queue.
+  // (formal/core.sby) uses it to stay single-clock, while formal/fifos.sby
+  // proves the clock-gated version against reference queues.
   wire [W-1:0] ent[0:DEPTH-1];
   genvar e;
   generate
@@ -85,7 +85,7 @@ module pe_fifo #(
     end
   endgenerate
   assign f_rd = rd;
-  // Internal invariants (used by formal/fifo.sby for induction).
+  // Internal invariants (used by formal/fifos.sby for induction).
   always @(*) begin
     if (rst_n) begin
       assert (cnt <= DEPTH);

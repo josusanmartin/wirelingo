@@ -22,6 +22,7 @@ module tb_chip ();
   reg         bus_we;
   reg  [31:0] bus_wdata;
   reg         bus_commit;
+  reg         bus_snap;
   wire [31:0] bus_rdata;
 
 `ifndef PE_NCORES
@@ -45,5 +46,6 @@ module tb_chip ();
       .bus_we(bus_we),
       .bus_wdata(bus_wdata),
       .bus_commit(bus_commit),
+      .bus_snap(bus_snap),
       .bus_rdata(bus_rdata));
 endmodule
