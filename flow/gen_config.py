@@ -38,6 +38,13 @@ def placements(nbanks, layout="top"):
            inward, starting at the bottom (bank 0 right, 1 left, 2 right, 3 left);
            the top band stays free for the I/O pins (all at the top-left).
     The top-left corner, where all the TT I/O pins are, stays free either way."""
+    if layout == "row":
+        # side by side along the bottom edge, centred, mirrored (pins up): the
+        # logic sits in one block above them, close to every bank's pins
+        gap = 6 * SITE
+        width = nbanks * W + (nbanks - 1) * gap
+        x0 = snap((CORE_X1 + 2.88 - width) / 2, SITE)
+        return {b: (snap(x0 + b * (W + gap), SITE), 3.78, "FS") for b in range(nbanks)}
     if layout == "corners":
         # bottom corners, mirrored (pins up), banks 2-3 above them if needed
         x_r = snap(CORE_X1 - W - 3 * SITE, SITE)
@@ -67,7 +74,7 @@ def main():
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
                     help="extra SRAM array stripe pairs (prism's setting)")
-    ap.add_argument("--layout", choices=["top", "sides", "corners"], default="corners")
+    ap.add_argument("--layout", choices=["top", "sides", "corners", "row"], default="corners")
     ap.add_argument("--post-grt-repair", action=argparse.BooleanOptionalAction, default=True,
                     help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
     ap.add_argument("--max-wire", type=int, default=400, help="buffer wires longer than this (um, 0 = off)")
