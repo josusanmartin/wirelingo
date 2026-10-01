@@ -3,7 +3,7 @@ project:
   title:        "protoemu: programmable protocol emulator"
   author:       "Josu San Martin"
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "Four PIO-style bit-banging cores with timeouts, edge waits, ALU and banked IMEM for UART/SPI/I2C and beyond"
+  description:  "PIO-style bit-banging cores with timeouts, edge waits, ALU, CRC tap and SRAM IMEM: UART/SPI/I2C, USB-LS, 10BASE-T TX, CAN"
   language:     "SystemVerilog"
   clock_hz:     50000000
 

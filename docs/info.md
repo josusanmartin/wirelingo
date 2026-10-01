@@ -12,7 +12,9 @@ logic. Each core executes one 32-bit instruction per tick and has:
 * registers R0–R3 with a 16-bit ALU;
 * input and output shift registers with auto-push/pull;
 * a configurable CRC tap fed by the shift registers;
-* 4-word FIFOs to the host.
+* 8-word FIFOs to the host, which can be joined into one 16-word TX FIFO.
+
+This tapeout has two cores.
 
 Programs live in on-chip SRAM, with 256 instructions per bank, and banks can be
 reassigned between cores.
@@ -30,7 +32,9 @@ real protocols fit:
 
 The firmware verified in simulation covers UART TX/RX, SPI master, I2C master
 (with clock stretching), a low-speed USB device (up to full enumeration, with
-the CRC16 checked by the CRC tap), an SWD debug probe and a JTAG engine.
+the CRC16 checked by the CRC tap), a 10BASE-T transmitter (at 40 MHz, with
+link pulses), CAN 2.0A TX/RX, an SWD debug probe, a JTAG engine, 1-Wire,
+PS/2, WS2812 and an I2C sniffer.
 
 The full specification is in `docs/isa.md` in the repository.
 
@@ -59,3 +63,6 @@ pe.push(0, ord('A'))
 None is required for the loopback and UART demos. Protocol demos connect to
 the respective devices, for example a USB low-speed connector (D+ on `uio[0]`,
 D- on `uio[1]` with a 1.5 kΩ pull-up on D-, 48 MHz clock) or an SWD target.
+10BASE-T TX drives TD+/TD- (`uo[0]`/`uo[1]`) through the usual series
+resistors into an RJ45 jack with magnetics, with a 40 MHz clock. CAN needs a
+transceiver.
