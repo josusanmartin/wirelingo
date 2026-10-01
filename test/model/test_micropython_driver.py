@@ -10,6 +10,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "
 import protoemu  # noqa: E402
 import protoemu_fw  # noqa: E402
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 
 class SpiPortModel:
     """Byte-accurate model of pe_spi_slave on top of ModelHost (one bus op per SPI word)."""
@@ -125,3 +127,31 @@ def test_driver_uart_tx_bundle():
         else:
             i += 1
     assert bytes(out) == msg, out
+
+
+def test_driver_eth10_frame():
+    """eth10_send(): FCS, R0 and the 16-word FIFO fill done by the driver; the
+    waveform is decoded by the 10BASE-T model test's decoder."""
+    import zlib
+    import test_eth10 as eth
+    mh = ModelHost()
+    trace = []
+    chip_step = mh.chip.step
+
+    def step(*args, **kw):              # every clock, including the host's bus cycles
+        chip_step(*args, **kw)
+        trace.append((mh.chip.pin_out >> 8) & 3)
+    mh.chip.step = step
+    tt = FakeTT(mh)
+    pe = protoemu.ProtoEmu(tt)
+    pe.load(**protoemu_fw.ETH10_TX)
+    pe.start(1)
+    body = bytes.fromhex("ffffffffffff020000c0ffee88b5") + b"hello from protoemu"
+    assert protoemu._crc32(body) == zlib.crc32(body)
+    mark = len(trace)
+    pe.eth10_send(0, body)
+    while pe.eth10_busy():
+        mh.step(100)
+    sent = body + bytes(60 - len(body))
+    sent += zlib.crc32(sent).to_bytes(4, "little")
+    eth.check(trace, mark, sent)

@@ -106,3 +106,33 @@ class ProtoEmu:
         if (self.status(core) >> 4) & 15 == 0:
             return None
         return self.read(self.core_reg(core, C_FIFO), fixed=True)
+
+    # -- 10BASE-T (firmware/eth10_tx.pasm, 40 MHz clock)
+    def eth10_send(self, core, frame, flag=0):
+        """Send one Ethernet frame: destination MAC .. payload, at most 60 bytes
+        (padded to 60; the FCS is appended here). 64 bytes fit the joined FIFO,
+        so this needs no streaming. Returns at once; see eth10_busy()."""
+        frame = bytes(frame)
+        assert len(frame) <= 60
+        frame += bytes(60 - len(frame))
+        frame += _crc32(frame).to_bytes(4, "little")
+        self.write(self.core_reg(core, C_R0), 8 * len(frame) - 1)
+        for i in range(0, len(frame), 4):
+            self.push(core, int.from_bytes(frame[i:i + 4], "little"))
+        self.write(A_FSET, 1 << flag)
+
+    def eth10_busy(self, flag=0):
+        return (self.read(A_FSET) >> flag) & 1
+
+
+def _crc32(data):
+    try:
+        import binascii
+        return binascii.crc32(data) & 0xFFFFFFFF
+    except (ImportError, AttributeError):
+        c = 0xFFFFFFFF
+        for b in data:
+            c ^= b
+            for _ in range(8):
+                c = (c >> 1) ^ (0xEDB88320 & -(c & 1))
+        return c ^ 0xFFFFFFFF
