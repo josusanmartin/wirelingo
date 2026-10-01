@@ -174,3 +174,16 @@ def test_bringup_uart_loopback_and_errors():
         pe.push(0, i)
     with pytest.raises(RuntimeError, match="halted"):
         pe.push(0, 8)
+
+
+def test_driver_register_map_matches_the_model():
+    """The MicroPython driver keeps its own copy of the register map (it can't
+    import tools/pe on the board); every constant must match the model's."""
+    from pe import host
+    names = [n for n in dir(protoemu) if n.startswith(("A_", "C_", "CORE_"))]
+    assert len(names) > 20
+    for n in names:
+        assert getattr(protoemu, n) == getattr(sim, n), n
+    for n in ("CMD_WRITE", "CMD_READ", "CMD_WRITE_FIXED", "CMD_READ_FIXED"):
+        assert getattr(protoemu, n) == getattr(host, n), n
+    assert bringup.ID == sim.ID_VALUE
