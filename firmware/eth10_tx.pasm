@@ -14,11 +14,10 @@
 ;   2. push the frame bytes little-endian, 4 per word (bytes go out LSB first);
 ;   3. set flag F_GO. The core sends preamble + SFD + frame and clears F_GO when
 ;      the line is idle again.
-; Length limit: a 64-byte (minimum) frame fits in the FIFOs. The line takes a
-; word every 3.2 us; the SPI port gives at most one per 6.4 us (back-to-back
-; WRITE_FIXED at SCK = clk/8), so streaming covers frames up to 128 bytes (FCS
-; included; test_eth10). The firmware doesn't check: a longer frame underruns
-; and the half bit in progress stretches.
+; Streaming: a 64-byte (minimum) frame fits in the FIFOs. The line takes a word
+; every 128 clocks; the host port gives one every 32 SCK in 1-bit mode (8 in
+; quad), so with SCK >= clk/4 any frame streams, up to 1518 bytes (test_eth10).
+; A host that falls behind underruns: the half bit in progress stretches.
 ;
 ; Each data bit is one 4-instruction block (`zero` or `one`): check for the
 ; last bit, count, fetch the next bit, branch. The wrap closes the loop for free.

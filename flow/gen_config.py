@@ -84,7 +84,10 @@ def main():
     c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
-    c["CLOCK_PORT"] = "clk"
+    c["//clocks"] = "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both"
+    c["CLOCK_PORT"] = ["clk", "ui_in[6]"]
+    c["PNR_SDC_FILE"] = "dir::protoemu.sdc"
+    c["SIGNOFF_SDC_FILE"] = "dir::protoemu.sdc"
     c["//threads"] = "LibreLane 3.1.0.dev3 passes '-threads None' to OpenROAD when this is unset (single-threaded)"
     c["OPENROAD_THREADS"] = a.threads
     c["//corners"] = "Optimise for typ (TT signoff) and slow; fast-corner hold fixing alone added ~3200 buffers"

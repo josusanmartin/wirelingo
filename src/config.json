@@ -13,7 +13,13 @@
   "GRT_RESIZER_HOLD_SLACK_MARGIN": 0.05,
   "RUN_LINTER": 1,
   "LINTER_INCLUDE_PDK_MODELS": 1,
-  "CLOCK_PORT": "clk",
+  "//clocks": "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both",
+  "CLOCK_PORT": [
+    "clk",
+    "ui_in[6]"
+  ],
+  "PNR_SDC_FILE": "dir::protoemu.sdc",
+  "SIGNOFF_SDC_FILE": "dir::protoemu.sdc",
   "//threads": "LibreLane 3.1.0.dev3 passes '-threads None' to OpenROAD when this is unset (single-threaded)",
   "OPENROAD_THREADS": 8,
   "//corners": "Optimise for typ (TT signoff) and slow; fast-corner hold fixing alone added ~3200 buffers",

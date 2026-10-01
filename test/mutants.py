@@ -38,7 +38,7 @@ MUTANTS = {
                             "wire        edge_done = (trans && qual);", LOCKSTEP),
     "rtl-join-ignores-full": ("src/pe_fifos.sv", "wire xfer      = fjoin && !txf_empty && !rxf_full;",
                               "wire xfer      = fjoin && !txf_empty;", LOCKSTEP),
-    "rtl-pop-without-snapshot": ("src/pe_core.sv", "bus_off == 5'h10 && snap_valid;", "bus_off == 5'h10;",
+    "rtl-pop-without-snapshot": ("src/pe_core.sv", "bus_commit && res_n != 2'd0 && res_v[0];", "bus_commit && res_n != 2'd0;",
                                  top("test_fifo_read_race")),
     "fw-usb-no-token-filter": ("firmware/usb_ls_rx.pasm",
                                "    jmp !z, eop_skip               ; another address or endpoint, or a bad CRC5",

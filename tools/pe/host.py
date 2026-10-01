@@ -7,14 +7,18 @@ applied directly to the model.
 from . import isa, sim
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
+QUAD = 0x40        # cmd | QUAD: address and data 4 bits per SCK (HOSTCFG.QUAD_EN)
+READ_DUMMY = 1     # dummy bytes (8 SCK) between a read's address and its data (1-bit)
 
 
 def spi_frame(cmd, addr, words=(), nread=0):
-    """Bytes for one SPI transaction. For reads, pad with 4*nread zero bytes."""
+    """Bytes for one 1-bit SPI transaction. Reads get the dummy byte and
+    4*nread zero bytes; their data starts at byte 3 + READ_DUMMY."""
     b = bytearray([cmd, (addr >> 8) & 0xFF, addr & 0xFF])
     for w in words:
         b += w.to_bytes(4, "big")
-    b += bytes(4 * nread)
+    if cmd & 1:
+        b += bytes(READ_DUMMY + 4 * nread)
     return bytes(b)
 
 

@@ -32,10 +32,16 @@ class ModelHost:
         """End of a read word: its side effect (a FIFO pop, if the word was real)."""
         self.chip.step(self.ui, self.bus_uio(), addr=addr, commit=True)
 
+    def cancel(self):
+        """End of a read transaction: unsent snapshots are dropped."""
+        self.chip.step(self.ui, self.bus_uio(), cancel=True)
+
     def read(self, addr, pop=False):
+        """A one-word read transaction (pop: let it complete, popping a FIFO word)."""
         v = self.snap(addr)
         if pop:
             self.commit(addr)
+        self.cancel()
         return v
 
     def apply(self, writes):

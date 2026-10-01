@@ -423,44 +423,79 @@ effects combine into the state for cycle *t + 1*.
 
 ## 6. Host interface
 
-### 6.1 SPI
+### 6.1 Host port (SPI, 1-bit or quad)
 
-SPI mode 0 (CPOL = 0, CPHA = 0), MSB first, `CS_n` active low. The slave
-samples SCK, CS_n and MOSI through 2-flop synchronizers on the system clock,
-at any phase. Timing, in system clocks (clk):
+SPI mode 0 (CPOL = 0, CPHA = 0), MSB first, `CS_n` active low.
+**Source-synchronous:** SCK clocks the port's shift registers directly, so SCK
+can run at up to the system clock: about 50 Mbit/s in 1-bit mode and
+200 Mbit/s in quad mode at 50 MHz (`test_host_port_fast` measures 193 Mbit/s
+for a quad burst).
+
+| Line | 1-bit | Quad |
+|---|---|---|
+| `ui[7]` | CS_n | CS_n |
+| `ui[6]` | SCK | SCK |
+| `ui[5]` | MOSI | IO3 (MSB of each nibble, and the command bit) |
+| `ui[4:2]` | protocol inputs | IO2..IO0 (host to chip) |
+| `uo[7]` | MISO | IO3 |
+| `uo[6:4]` | protocol outputs | IO2..IO0 during a quad read's data, else the cores' |
+
+The host samples on SCK rises and changes its outputs on SCK falls; so does
+the chip. Each transaction (CS_n low → high) is:
+
+```
+cmd[7:0]  addr[15:0]  [8 dummy SCK, reads only]  32-bit words...
+```
+
+The command byte is always sent 1-bit on IO3. After a quad command, the
+address and data move 4 bits per SCK (IO3 = MSB).
+
+| cmd  | Quad cmd | Name          | Data                                              |
+|------|----------|---------------|---------------------------------------------------|
+| 0x02 | 0x42 | WRITE         | 32-bit words; addr increments after each              |
+| 0x0A | 0x4A | WRITE_FIXED   | 32-bit words, all to addr (FIFO bursts)               |
+| 0x03 | 0x43 | READ          | after 8 dummy SCK, 32-bit words; addr increments      |
+| 0x0B | 0x4B | READ_FIXED    | after 8 dummy SCK, 32-bit words, all from addr        |
+
+* **Quad commands** are accepted only while `HOSTCFG.QUAD_EN` = 1, which a
+  1-bit write sets; otherwise they are ignored like unknown commands. Change
+  `QUAD_EN` only between transactions. The pins it borrows
+  (`ui[4:2]`, `uo[6:4]`) are the board designer's to give up.
+* **Writes** happen when the last bit of each word has been received.
+* **Reads:** the 8 dummy SCK let the port fetch the first word, and it keeps
+  one word ahead after that. Read data is captured (a *snapshot*) before the
+  word is sent. A word's side effect (a FIFO pop) happens only once its last
+  bit has been clocked out. Ending the transaction (or aborting mid-word)
+  cancels the words fetched ahead. So FIFO reads lose nothing. On the
+  internal host bus this is three operations, at most one per cycle and at
+  most two words outstanding:
+  * `snap` captures the data at an address. At a core's FIFO address it
+    reserves the next unread RXF entry (the head, or the one after a real
+    reservation) and records whether it was a real entry; an empty or joined
+    FIFO reads 0.
+  * `commit` marks the oldest snapped word as sent, and pops it if it was real.
+  * `cancel` (the transaction ended) drops all reservations; so does a FIFO
+    clear.
+
+  A word the core pushes while the host reads an empty RXF (and gets 0)
+  stays for the next read.
+* **Unknown commands** are ignored until CS_n goes high.
+
+Timing, in system clocks (clk), at any phase between SCK and clk:
 
 | Parameter | Min |
 |---|---|
-| SCK period | 8 |
-| SCK high, SCK low | 3 each |
-| CS_n low to the first SCK rise | 3 |
-| last SCK fall to CS_n high | 3 |
+| SCK period | 1 (SCK ≤ clk) |
+| CS_n low to the first SCK rise | 1 |
+| last SCK fall to CS_n high | 1 |
 | CS_n high between transactions | 4 |
-| MOSI setup to SCK rise / hold after it | change it on the SCK fall (mode 0) |
 
-`test_spi_port_timing` checks these limits and random points inside them at
-random phases (2-clock high/low times also pass; the table keeps a clock of
-margin). MISO (uo[7]) changes about 3 clocks after an SCK rise, so it is
-stable for the next rise. It is driven while the synchronized `CS_n` is low
-and is 0 otherwise, so it lags CS_n by about 3 clocks.
-
-Each transaction (CS_n low → high) is `cmd[7:0] addr[15:0] data...`:
-
-| cmd  | Name          | Data                                                     |
-|------|---------------|----------------------------------------------------------|
-| 0x02 | WRITE         | 32-bit big-endian words; addr increments after each      |
-| 0x0A | WRITE_FIXED   | 32-bit words, all to addr (FIFO bursts)                  |
-| 0x03 | READ          | 32-bit words out on MISO; addr increments after each     |
-| 0x0B | READ_FIXED    | 32-bit words, all from addr                              |
-
-* **Writes** happen when the 32nd bit of each word has been received.
-* **Reads:** MISO carries the first word's MSB right after the last address
-  bit. A word's read data is captured (the *snapshot*) when its first bit is
-  due. Its side effect (a FIFO pop) happens only once all 32 bits have been
-  clocked out, so aborting a read mid-word loses nothing. The pop happens only
-  if RXF was non-empty at the snapshot. A word the core pushes while the host
-  is reading an empty RXF (and receiving 0) stays for the next read.
-* **Unknown commands** are ignored until CS_n goes high.
+Words cross from the SCK domain to clk through 2-flop synchronizers, and their
+data is held for at least 8 SCK, longer than the crossing. MISO/IO outputs
+change on the SCK fall, so at SCK = clk the host gets half a period, less the
+pad and board delays, to sample them. `test_host_port_fast` runs both modes at
+SCK = clk and clk/2 at random phases. `test_spi_port_timing` sweeps slower SCK,
+duty cycles and CS timing.
 
 ### 6.2 Register map (32-bit word addresses)
 
@@ -479,6 +514,7 @@ Each transaction (CS_n low → high) is `cmd[7:0] addr[15:0] data...`:
 | 0x0808             | PINS         | R      | `pins_in[31:0]`                              |
 | 0x0809             | PIN_OUT      | RW     | `pin_out[31:0]`; a write replaces it (see below) |
 | 0x080A             | PIN_OE       | RW     | `pin_oe[31:0]`; a write replaces it          |
+| 0x080B             | HOSTCFG      | RW     | `[0]` QUAD_EN: accept quad commands (§6.1)   |
 
 Core block (offset from `0x0400 + 0x20·c`):
 

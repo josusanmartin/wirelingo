@@ -25,6 +25,7 @@ module pe_fifos #(
     input  wire [W-1:0] core_data,
     output wire [W-1:0] txf_head,
     output wire [W-1:0] rxf_head,
+    output wire [W-1:0] rxf_head2,
     output wire [3:0]   txf_level,
     output wire [3:0]   rxf_level,
     output wire [W-1:0] pq_head,     // the word PULL / autopull take
@@ -48,7 +49,9 @@ module pe_fifos #(
   pe_fifo #(.W(W), .LOG2(LOG2)) txf (
       .clk(clk), .rst_n(rst_n), .clear(clear),
       .push(host_push), .push_data(host_data),
-      .pop(fjoin ? xfer : core_pop), .head(txf_head), .level(txf_level)
+      /* verilator lint_off PINCONNECTEMPTY */  // TXF needs no read-ahead
+      .pop(fjoin ? xfer : core_pop), .head(txf_head), .head2(), .level(txf_level)
+      /* verilator lint_on PINCONNECTEMPTY */
 `ifdef FORMAL
       , .f_mem(f_tmem), .f_rd(f_trd)
 `endif
@@ -57,7 +60,7 @@ module pe_fifos #(
   pe_fifo #(.W(W), .LOG2(LOG2)) rxf (
       .clk(clk), .rst_n(rst_n), .clear(clear),
       .push(fjoin ? xfer : core_push), .push_data(fjoin ? txf_head : core_data),
-      .pop(fjoin ? core_pop : host_pop), .head(rxf_head), .level(rxf_level)
+      .pop(fjoin ? core_pop : host_pop), .head(rxf_head), .head2(rxf_head2), .level(rxf_level)
 `ifdef FORMAL
       , .f_mem(f_rmem), .f_rd(f_rrd)
 `endif

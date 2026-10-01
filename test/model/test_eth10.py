@@ -12,7 +12,7 @@ FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 TDP = 8           # uo0 = TD+, uo1 = TD-
 F_GO = 0
 IDLE, H, L = 0, 1, 2
-SPI_WORD_TICKS = 256  # one 32-bit FIFO word per 6.4 us: WRITE_FIXED burst at SCK = clk/8
+SPI_WORD_TICKS = 64   # one 32-bit FIFO word per 64 clocks: 1-bit WRITE_FIXED burst at SCK = clk/2
 
 
 def frame(payload_len, seed=1):
@@ -127,23 +127,14 @@ def test_streamed_long_frame_and_back_to_back():
     check(ln.trace, ln.send(fr3), fr3)
 
 
-def test_streaming_bound():
-    """128 bytes is the longest frame a host streaming at the SPI port's maximum
-    rate can send (16 words preloaded, then one per 6.4 us against one per 3.2 us
-    on the line); 132 bytes underruns. Documented in eth10_tx.pasm."""
+def test_max_frame_streamed():
+    """A maximum-size (1518-byte) frame streamed through the host port: 1-bit at
+    SCK = clk/2 gives a word every 64 clocks, the line takes one every 128."""
     ln = Line()
     ln.step(100)
-    fr = frame(128 - 18)
+    fr = frame(1500)
+    assert len(fr) == 1518
     check(ln.trace, ln.send(fr, stream=True), fr)
-    ln = Line()
-    ln.step(100)
-    fr = frame(132 - 18)
-    start = ln.send(fr, stream=True)
-    try:
-        check(ln.trace, start, fr)
-    except AssertionError:
-        return
-    raise AssertionError("132 bytes should underrun at SPI speed")
 
 
 def test_link_pulses():

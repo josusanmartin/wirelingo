@@ -32,6 +32,9 @@
 `define PE_FIFO_LOG2 3
 `endif
 
+// Two intentional sync/async uses: the reset synchroniser, and CS_n (ui[7]),
+// which resets the host port's SCK domain and is synchronised in clk.
+/* verilator lint_off SYNCASYNCNET */
 module tt_um_josusanmartin_protoemu (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
@@ -51,22 +54,28 @@ module tt_um_josusanmartin_protoemu (
   wire rstn = rst_s[1];
 
   wire [15:0] bus_addr;
-  wire        bus_we, bus_commit, bus_snap;
+  wire        bus_we, bus_commit, bus_snap, bus_cancel;
   wire [31:0] bus_wdata, bus_rdata;
-  wire        miso;
+  wire [3:0]  io_out;
+  wire        io_oe, quad_en;
+  wire [6:0]  chip_uo;
 
-  pe_spi_slave u_spi (
+  // host port: SCK = ui[6], CS_n = ui[7], IO[3:0] in = ui[5:2], out = uo[7:4]
+  pe_hostport u_host (
       .clk(clk),
       .rst_n(rstn),
       .sck(ui_in[6]),
       .cs_n(ui_in[7]),
-      .mosi(ui_in[5]),
-      .miso(miso),
+      .io_in(ui_in[5:2]),
+      .io_out(io_out),
+      .io_oe(io_oe),
+      .quad_en(quad_en),
       .bus_addr(bus_addr),
       .bus_we(bus_we),
       .bus_wdata(bus_wdata),
-      .bus_commit(bus_commit),
       .bus_snap(bus_snap),
+      .bus_commit(bus_commit),
+      .bus_cancel(bus_cancel),
       .bus_rdata(bus_rdata));
 
   pe_chip #(.BANK_AW(`PE_BANK_AW), .NCORES(`PE_NCORES), .NBANKS(`PE_NBANKS), .FIFO_LOG2(`PE_FIFO_LOG2)) u_chip (
@@ -74,7 +83,7 @@ module tt_um_josusanmartin_protoemu (
       .rst_n(rstn),
       .ui_in(ui_in[4:0]),
       .uio_in(uio_in),
-      .uo_out(uo_out[6:0]),
+      .uo_out(chip_uo),
       .uio_out(uio_out),
       .uio_oe(uio_oe),
       .bus_addr(bus_addr),
@@ -82,9 +91,13 @@ module tt_um_josusanmartin_protoemu (
       .bus_wdata(bus_wdata),
       .bus_commit(bus_commit),
       .bus_snap(bus_snap),
-      .bus_rdata(bus_rdata));
+      .bus_cancel(bus_cancel),
+      .bus_rdata(bus_rdata),
+      .quad_en(quad_en));
 
-  assign uo_out[7] = miso;
+  assign uo_out[7]   = io_out[3];                       // MISO / IO3
+  assign uo_out[6:4] = io_oe ? io_out[2:0] : chip_uo[6:4];  // IO2..0 during quad read data
+  assign uo_out[3:0] = chip_uo[3:0];
 
   wire _unused = &{ena, 1'b0};
 endmodule

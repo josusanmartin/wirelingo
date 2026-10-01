@@ -26,6 +26,11 @@ def v(sig):
     return int(sig.value)
 
 
+def reservations(n, real):
+    """Host read reservations: their number and, for each, whether it was real."""
+    return n, real & ((1 << n) - 1)
+
+
 def core_state_rtl(core):
     return dict(
         pc=v(core.pc), r0=v(core.r0), r1=v(core.r1), r2=v(core.r2), r3=v(core.r3),
@@ -34,7 +39,7 @@ def core_state_rtl(core):
         halted=v(core.halted), fault=v(core.fault), stalled=v(core.stalled),
         cnt=v(core.cnt), facc=v(core.facc),
         txl=v(core.u_fifos.txf.cnt), rxl=v(core.u_fifos.rxf.cnt), crc=v(core.crc),
-        wprev=v(core.wprev), wevent=v(core.wevent), snap_valid=v(core.snap_valid),
+        wprev=v(core.wprev), wevent=v(core.wevent), res=reservations(v(core.res_n), v(core.res_v)),
         # FIFO heads (when occupied): every entry is compared as it reaches the head
         txh=v(core.txf_head) if v(core.u_fifos.txf.cnt) else None,
         rxh=v(core.rxf_head) if v(core.u_fifos.rxf.cnt) else None,
@@ -48,7 +53,7 @@ def core_state_model(m):
         z=m.z, c=m.c, t=m.t, dcnt=m.dcnt, in_wait=m.in_wait,
         halted=m.halted, fault=m.fault, stalled=m.stalled,
         cnt=m.cnt, facc=m.facc, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
-        wprev=m.wprev, wevent=m.wevent, snap_valid=m.snap_valid,
+        wprev=m.wprev, wevent=m.wevent, res=reservations(len(m.res), sum(b << i for i, b in enumerate(m.res))),
         txh=m.txf[0] if m.txf else None, rxh=m.rxf[0] if m.rxf else None,
     )
 
@@ -73,6 +78,7 @@ class Harness:
         d.bus_wdata.value = 0
         d.bus_commit.value = 0
         d.bus_snap.value = 0
+        d.bus_cancel.value = 0
         for _ in range(3):
             await RisingEdge(d.clk)
         await FallingEdge(d.clk)
@@ -107,7 +113,7 @@ class Harness:
             lines.append(f"  core{i} pc={mc.pc} instr={isa.disasm(self.model.fetch(mc.pc))}")
         raise AssertionError("\n".join(lines))
 
-    async def cycle_step(self, ui=0, uio=0, we=False, addr=0, wdata=0, commit=False, snap=False):
+    async def cycle_step(self, ui=0, uio=0, we=False, addr=0, wdata=0, commit=False, snap=False, cancel=False):
         """Apply one cycle of inputs to both RTL and model, then compare."""
         d = self.dut
         d.ui_in.value = ui
@@ -117,6 +123,7 @@ class Harness:
         d.bus_wdata.value = wdata
         d.bus_commit.value = int(commit)
         d.bus_snap.value = int(snap)
+        d.bus_cancel.value = int(cancel)
         await Timer(1, unit="ps")
         rd_rtl, rd_model = v(d.bus_rdata), self.model.read(addr)
         if rd_rtl != rd_model:
@@ -124,7 +131,7 @@ class Harness:
         if we or commit:
             self.trace.append((self.cycle, f"{'W' if we else 'R'} {addr:#06x} {wdata:#010x}"))
         await RisingEdge(d.clk)
-        self.model.step(ui_in=ui, uio_in=uio, we=we, addr=addr, wdata=wdata, commit=commit, snap=snap)
+        self.model.step(ui_in=ui, uio_in=uio, we=we, addr=addr, wdata=wdata, commit=commit, snap=snap, cancel=cancel)
         self.cycle += 1
         await FallingEdge(d.clk)
         errs = self.compare()
@@ -207,11 +214,12 @@ async def test_random_lockstep(dut):
             if op < 0.06:
                 await h.cycle_step(ui, uio, we=True, addr=sim.core_reg(c, sim.C_FIFO), wdata=rng.getrandbits(32))
             elif op < 0.12:
-                # FIFO read: the SPI port snapshots a word, then commits it 32 SCK later;
-                # random snaps/commits (rarely both at once) cover every interleaving
+                # FIFO reads: the host port snapshots words ahead, commits each once
+                # it is sent, and cancels the rest at the end of a transaction;
+                # random snaps/commits/cancels (rarely together) cover every interleaving
                 k = rng.random()
-                await h.cycle_step(ui, uio, snap=k < 0.45 or k >= 0.9, commit=k >= 0.45,
-                                   addr=sim.core_reg(c, sim.C_FIFO))
+                await h.cycle_step(ui, uio, snap=k < 0.45 or k >= 0.9, commit=0.45 <= k < 0.85 or k >= 0.9,
+                                   cancel=0.85 <= k < 0.9, addr=sim.core_reg(c, sim.C_FIFO))
             elif op < 0.14:
                 await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_FSET, sim.A_FCLR]),
                                    wdata=rng.getrandbits(8))
@@ -226,7 +234,7 @@ async def test_random_lockstep(dut):
                 await h.cycle_step(ui, uio, we=True, addr=sim.core_reg(c, rng.choice([0, 1, 2, 3, 4, 5, 6, 7])),
                                    wdata=rng.getrandbits(32))
             elif op < 0.155:
-                await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD,
+                await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_HOSTCFG,
                                                                    sim.A_POUT, sim.A_POE]),
                                    wdata=rng.getrandbits(32))
             else:

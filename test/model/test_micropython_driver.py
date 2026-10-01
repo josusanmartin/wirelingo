@@ -15,7 +15,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 
 class SpiPortModel:
-    """Byte-accurate model of pe_spi_slave on top of ModelHost (one bus op per SPI word)."""
+    """Byte-level model of pe_hostport (1-bit) on top of ModelHost: writes land
+    per word; reads snapshot two words ahead once the address is in, send them
+    after the dummy byte, commit each fully sent word, cancel the rest at CS high."""
 
     def __init__(self, mh):
         self.mh = mh
@@ -25,11 +27,17 @@ class SpiPortModel:
         self.miso = 0
         self.tx = []            # bits to shift out
         self.bytes_in = []
+        self.ahead = []         # snapshotted read words not yet sent
+        self.reading = False
+        self.cmd = None
 
     def pins(self, ui):
         cs, sck, mosi = (ui >> 7) & 1, (ui >> 6) & 1, (ui >> 5) & 1
         if cs:
-            self.cs, self.bytes_in, self.bitcount, self.tx = 1, [], 0, []
+            if not self.cs and self.reading:
+                self.mh.cancel()
+            self.cs, self.bytes_in, self.bitcount, self.tx, self.ahead, self.reading = 1, [], 0, [], [], False
+            self.cmd = None
         elif self.cs:
             self.cs = 0
         elif sck and not self.sck:          # rising edge: sample, then shift MISO
@@ -43,27 +51,37 @@ class SpiPortModel:
         self.miso = self.tx[0] if self.tx and not self.cs else 0
         self.mh.step(8)                     # the SPI clock is slow compared to clk
 
+    def snap(self):
+        self.ahead.append(self.mh.snap(self.snap_addr))
+        if not self.cmd & 0x08:
+            self.snap_addr += 1
+
+    def load_word(self):
+        w = self.ahead[0]
+        self.tx = [(w >> (31 - i)) & 1 for i in range(32)]
+
     def byte(self, b):
         self.bytes_in.append(b)
         n = len(self.bytes_in)
         if n == 3:
             self.cmd, self.addr = self.bytes_in[0], (self.bytes_in[1] << 8) | self.bytes_in[2]
             if self.cmd in (0x03, 0x0B):
-                self.load_word()
-        elif n > 3 and (n - 3) % 4 == 0:
-            if self.cmd in (0x02, 0x0A):
-                w = int.from_bytes(bytes(self.bytes_in[-4:]), "big")
-                self.mh.write(self.addr, w)
-            else:
-                self.mh.commit(self.addr)                   # end of a read word (FIFO pop)
+                self.reading, self.snap_addr = True, self.addr
+                self.snap()
+                self.snap()
+        elif self.cmd in (0x02, 0x0A) and n > 3 and (n - 3) % 4 == 0:
+            self.mh.write(self.addr, int.from_bytes(bytes(self.bytes_in[-4:]), "big"))
             if not self.cmd & 0x08:
                 self.addr += 1
-            if self.cmd in (0x03, 0x0B):
-                self.load_word()
-
-    def load_word(self):
-        w = self.mh.snap(self.addr)
-        self.tx = [(w >> (31 - i)) & 1 for i in range(32)]
+        elif self.reading and n == 4:       # dummy byte done: first word out
+            self.load_word()
+        elif self.reading and n > 4 and (n - 4) % 4 == 0:
+            self.mh.commit(self.addr)       # the oldest word is fully sent
+            if not self.cmd & 0x08:
+                self.addr += 1
+            self.ahead.pop(0)
+            self.snap()
+            self.load_word()
 
 
 class FakeTT:

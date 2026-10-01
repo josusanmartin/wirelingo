@@ -15,7 +15,8 @@ CAD Suite).
 * **A CRC tap** fed by the shift registers checks USB CRC16, CAN CRC15 and PS/2
   parity in firmware.
 * **FIFO join** (from PIO) plus in-core preamble generation make 10BASE-T TX
-  fit through a 5 Mbit/s SPI host port.
+  fit through the host port; the port itself is source-synchronous (SCK up to
+  the core clock) with a quad mode: 193 Mbit/s measured.
 * **Verification as part of the design:**
   * a cycle-accurate model is checked against the RTL every cycle on random
     programs, with required coverage goals;
@@ -30,11 +31,12 @@ CAD Suite).
 | The RTL matches the spec's model cycle for cycle | random programs, pins and host traffic; registers, WAIT trackers, FIFO levels and heads compared every cycle; coverage goals required | `cd test && LOCKSTEP_SEEDS=60 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 make TB=chip` |
 | The tests catch bugs | 12 one-line bugs in the model, RTL, firmware and assembler, each killed | `python3 test/mutants.py` |
 | FIFOs (incl. join) are correct for all input sequences | k-induction against reference queues, depths 4 and 8 | `make -C formal fifos` |
+| The host port is fast and safe | 193 Mbit/s quad at SCK = clk, 1-bit and quad at random phases, aborts lose nothing; bus-side safety proven for any SCK behaviour | `cd test && make TESTCASE=test_host_port_fast`; `make -C formal hostport` |
 | Protocols work through the real host port | top-level cocotb: UART, SPI, I2C, USB device, 10BASE-T, FIFO read race, SPI timing sweep | `cd test && make` |
 | … and on the routed netlist | the same tests on `final/nl` with the PDK cell and SRAM models | `flow/gl_test.sh <run>` |
 | USB low-speed device enumerates | cycle-level host + device software (also with random service stalls); address filter, lost ACK, bad packets | `pytest test/model/test_usb_enum.py test/model/test_usb_model.py` |
 | I2C can't hang | SCL stuck low at every one of 19 releases, plus before START | `pytest test/model/test_i2c_timeout.py` |
-| 10BASE-T TX, with its limit | waveform decoded (Manchester, FCS, TP_IDL, link pulses); 128-byte streaming bound | `pytest test/model/test_eth10.py` |
+| 10BASE-T TX | waveform decoded (Manchester, FCS, TP_IDL, link pulses); a 1518-byte frame streamed | `pytest test/model/test_eth10.py` |
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model | `pytest test/model/test_micropython_driver.py` |
 | It fits and closes timing | DRC/LVS/antenna clean, timing per corner, SRAM view per corner | `python3 flow/signoff.py <run>/runs/wokwi` (docs/physical.md) |
 
@@ -44,8 +46,7 @@ CAD Suite).
 
 * Two cores on silicon (four don't route on this tile). 50 MHz at the typical
   corner; about 37 MHz at the slow corner.
-* 10BASE-T: TX only, frames ≤ 128 bytes (64 without streaming); no RX
-  (README explains why).
+* 10BASE-T: TX only; no RX (README explains why).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
 * CAN: frames with stuffing, CRC, arbitration, ACK and stuff-error detection;
   not a full controller (no error counters or bus-off).

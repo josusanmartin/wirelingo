@@ -16,7 +16,7 @@ module pe_chip #(
 
     input  wire [4:0]  ui_in,     // ui[4:0] (ui[7:5] are the host port)
     input  wire [7:0]  uio_in,
-    output wire [6:0]  uo_out,    // uo[6:0] (uo[7] is MISO)
+    output wire [6:0]  uo_out,    // uo[6:0] (uo[7] is the host port's; uo[6:4] too in quad reads)
     output wire [7:0]  uio_out,
     output wire [7:0]  uio_oe,
 
@@ -26,12 +26,16 @@ module pe_chip #(
     input  wire [31:0] bus_wdata,
     input  wire        bus_commit,
     input  wire        bus_snap,     // bus_rdata captured for a read word (precedes its commit)
-    output reg  [31:0] bus_rdata
+    input  wire        bus_cancel,   // transaction over: drop snapped, uncommitted reads
+    output reg  [31:0] bus_rdata,
+    output wire        quad_en       // HOSTCFG.QUAD_EN
 );
   localparam [31:0] ID_VALUE = 32'h5045_0002;
 
   // ---------------------------------------------------------------- global state
   reg [3:0]  enable;
+  reg        hostcfg;                    // HOSTCFG.QUAD_EN
+  assign quad_en = hostcfg;
   reg [7:0]  flags;
   reg [7:0]  bank_owner;
   reg [31:0] pin_owner_lo, pin_owner_hi;
@@ -108,6 +112,7 @@ module pe_chip #(
             .bus_wdata(bus_wdata),
             .bus_commit(bus_commit),
             .bus_snap(bus_snap),
+            .bus_cancel(bus_cancel),
             .bus_rdata(c_rdata[32*c +: 32]));
       end else begin : g_off
         assign fetch_addr[10*c +: 10] = 10'd0;
@@ -160,6 +165,7 @@ module pe_chip #(
         4'h8: bus_rdata = pins_in;
         4'h9: bus_rdata = pin_out;
         4'hA: bus_rdata = pin_oe;
+        4'hB: bus_rdata = {31'd0, hostcfg};
         default: bus_rdata = 32'd0;
       endcase
     end
@@ -188,6 +194,7 @@ module pe_chip #(
       flags <= 8'd0;
       pin_out <= 32'd0;
       pin_oe <= 32'd0;
+      hostcfg <= 1'b0;
       sync1 <= 13'd0;
       sync2 <= 13'd0;
     end else begin
@@ -195,6 +202,7 @@ module pe_chip #(
       sync2 <= sync1;
       pin_out <= (bus_we && sel_glob && goff == 4'h9) ? bus_wdata : pin_out_n;
       pin_oe <= (bus_we && sel_glob && goff == 4'hA) ? bus_wdata : pin_oe_n;
+      if (bus_we && sel_glob && goff == 4'hB) hostcfg <= bus_wdata[0];
       flags <= (flags & ~all_clr) | all_set;
       ctrl_pend <= ctrl_w;
       ctrl_data <= {bus_wdata[19:16], bus_wdata[11:8], bus_wdata[3:0]};

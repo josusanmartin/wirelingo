@@ -14,7 +14,7 @@ src/user_config.json
 src/config_merged.json
 harden.log
 formal/fifos_*/
-formal/spi_*/
+formal/hostport_*/
 formal/core_*/
 formal/*/status.sqlite
 test/gate_level_netlist.v

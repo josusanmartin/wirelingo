@@ -2,7 +2,7 @@
 
 The chip's host port is SPI mode 0 on ui[5]=MOSI, ui[6]=SCK, ui[7]=CS_n, uo[7]=MISO
 (docs/isa.md §6.1). This driver bit-bangs it through the demo board's `tt` object,
-so it needs no particular pin mux; SCK must stay <= clk/8.
+so it needs no particular pin mux (and is slow: a PIO host gets the port's full rate, docs/isa.md §6.1).
 
     from protoemu import ProtoEmu
     pe = ProtoEmu(tt)
@@ -16,7 +16,7 @@ prints the words and register values to paste here.
 """
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
-A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE = range(0x800, 0x80B)
+A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = range(8)
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
@@ -69,7 +69,7 @@ class ProtoEmu:
         self.xfer(frame)
 
     def read(self, addr, n=1, fixed=False):
-        r = self.xfer(bytes([CMD_READ_FIXED if fixed else CMD_READ, addr >> 8, addr & 0xFF]), 4 * n)[3:]
+        r = self.xfer(bytes([CMD_READ_FIXED if fixed else CMD_READ, addr >> 8, addr & 0xFF, 0]), 4 * n)[4:]  # 0: dummy byte
         words = [int.from_bytes(r[4 * i:4 * i + 4], "big") for i in range(n)]
         return words[0] if n == 1 else words
 

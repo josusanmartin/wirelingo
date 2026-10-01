@@ -39,6 +39,7 @@ module pe_core #(
     input  wire [31:0] bus_wdata,
     input  wire        bus_commit,
     input  wire        bus_snap,
+    input  wire        bus_cancel,
     output reg  [31:0] bus_rdata
 );
 
@@ -82,14 +83,19 @@ module pe_core #(
 
   // ---------------------------------------------------------------- FIFOs
   wire        host_push = bus_sel && bus_we && bus_off == 5'h10;
-  // A FIFO read pops only if the word the host was given was a real entry: a
-  // word that arrives during a read of an empty RXF stays for the next read.
-  reg         snap_valid;
-  wire        host_pop  = bus_sel && bus_commit && bus_off == 5'h10 && snap_valid;
-  wire [31:0] txf_head, rxf_head, pq_head;
+  // Host FIFO reads (docs/isa.md §6.1): a snapshot reserves the next unread
+  // RXF entry (head, or head+1 behind one reservation); a commit pops the
+  // oldest reservation if it was a real entry; a cancel (transaction end) or a
+  // FIFO clear drops them. So a word arriving during a read of an empty RXF
+  // stays for the next read, and an aborted read loses nothing.
+  wire        fifo_sel  = bus_sel && bus_off == 5'h10;
+  reg  [1:0]  res_n;                         // reservations, 0..2
+  reg  [1:0]  res_v;                         // [0] oldest: was a real entry
+  wire [1:0]  res_real  = (res_n != 2'd0 && res_v[0]) + (res_n == 2'd2 && res_v[1]);
+  wire        host_pop  = fifo_sel && bus_commit && res_n != 2'd0 && res_v[0];
+  wire [31:0] txf_head, rxf_head, rxf_head2, pq_head;
   wire [3:0]  txf_level, rxf_level;
   wire        pq_empty, rx_block;            // what PULL/autopull see; PUSH/autopush stall
-  wire        rxf_empty = rxf_level == 4'd0;
   reg         core_txpop, core_rxpush;   // decoded; qualified by exec below
   reg  [31:0] core_rxdata;
   wire        exec;
@@ -98,12 +104,26 @@ module pe_core #(
       .clk(clk), .rst_n(rst_n), .clear(fifo_clear), .fjoin(fjoin),
       .host_push(host_push), .host_data(bus_wdata), .host_pop(host_pop),
       .core_pop(exec && core_txpop), .core_push(exec && core_rxpush), .core_data(core_rxdata),
-      .txf_head(txf_head), .rxf_head(rxf_head), .txf_level(txf_level), .rxf_level(rxf_level),
+      .txf_head(txf_head), .rxf_head(rxf_head), .rxf_head2(rxf_head2), .txf_level(txf_level), .rxf_level(rxf_level),
       .pq_head(pq_head), .pq_empty(pq_empty), .rx_block(rx_block));
 
+  wire        rd_real   = !fjoin && res_real != 2'd2 && rxf_level > {2'd0, res_real};
+  wire [31:0] rd_word   = res_real == 2'd0 ? rxf_head : rxf_head2;
+
   always @(posedge clk or negedge rst_n)
-    if (!rst_n) snap_valid <= 1'b0;
-    else if (bus_snap) snap_valid <= !rxf_empty;
+    if (!rst_n) begin
+      res_n <= 2'd0;
+      res_v <= 2'd0;
+    end else if (bus_cancel || fifo_clear) begin
+      res_n <= 2'd0;
+    end else if (fifo_sel && bus_commit && res_n != 2'd0) begin
+      res_n <= res_n - 2'd1;
+      res_v <= {1'b0, res_v[1]};
+    end else if (fifo_sel && bus_snap && res_n != 2'd2) begin
+      res_n <= res_n + 2'd1;
+      if (res_n == 2'd0) res_v[0] <= rd_real;
+      else res_v[1] <= rd_real;
+    end
 
   // ---------------------------------------------------------------- helpers
   function automatic [31:0] rotl32(input [31:0] v, input [4:0] s);
@@ -603,7 +623,7 @@ module pe_core #(
       5'h0D: bus_rdata = {16'd0, r3};
       5'h0E: bus_rdata = isr;
       5'h0F: bus_rdata = osr;
-      5'h10: bus_rdata = (!rxf_empty && !fjoin) ? rxf_head : 32'd0;
+      5'h10: bus_rdata = rd_real ? rd_word : 32'd0;
       default: bus_rdata = 32'd0;
     endcase
   end

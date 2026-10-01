@@ -43,7 +43,9 @@ The full specification is in `docs/isa.md` in the repository.
 The host talks to the chip over SPI mode 0:
 
 * `ui[7]` = CS_n, `ui[6]` = SCK, `ui[5]` = MOSI, `uo[7]` = MISO.
-* Timing: SCK period ≥ 8 project clocks, high and low ≥ 3 each.
+* SCK up to the project clock (about 50 Mbit/s); an optional quad mode moves
+  4 bits per SCK (about 200 Mbit/s) on ui[5:2] / uo[7:4] (docs/isa.md §6.1).
+  Reads have 8 dummy SCK (one byte) after the address.
 * Transaction: `cmd addr[15:0] data…`. The commands are 0x02 write, 0x03 read,
   0x0A write-fixed and 0x0B read-fixed. Data is 32-bit big-endian words.
 * Reading address 0x0800 returns the ID `0x50450002`.

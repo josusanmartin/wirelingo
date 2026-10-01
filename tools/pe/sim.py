@@ -15,7 +15,7 @@ ID_VALUE = 0x50450002
 IMEM_WORDS = 1024
 
 # Register map
-A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE = range(0x800, 0x80B)
+A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
@@ -52,7 +52,7 @@ class Core:
         self.crc = 0
         self.r = [0, 0, 0, 0]
         self.txf, self.rxf = [], []
-        self.snap_valid = 0  # RXF was non-empty at the last read snapshot (reset only)
+        self.res = []  # host read reservations, oldest first: True if a real RXF entry (<= 2)
         self.restart()
 
     def restart(self):
@@ -98,8 +98,9 @@ class Core:
             return self.isr
         if off == C_OSR:
             return self.osr
-        if off == C_FIFO:
-            return self.rxf[0] if self.rxf and not self.fjoin else 0
+        if off == C_FIFO:            # the next unread entry: behind the real reservations
+            n = sum(self.res)
+            return self.rxf[n] if not self.fjoin and n < 2 and len(self.rxf) > n else 0
         return 0
 
     def write_reg(self, off, v):
@@ -483,6 +484,7 @@ class Chip:
         self.pin_owner = [0] * 32
         self.od_mask = 0
         self.pin_out = self.pin_oe = 0
+        self.hostcfg = 0  # QUAD_EN: only the host port uses it
         self.sync1 = self.sync2 = 0  # {ui[4:0], uio[7:0]}
         self.cycle = 0
         self.stats = {}
@@ -529,17 +531,18 @@ class Chip:
             A_PINS: self.pins_in(),
             A_POUT: self.pin_out,
             A_POE: self.pin_oe,
+            A_HOSTCFG: self.hostcfg,
         }.get(addr, 0)
 
-    def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False):
-        """One clock edge. `we`: bus write of wdata to addr this cycle.
-        `snap`: the host captures read data (read(addr)) for a word it will send.
-        `commit`: that word's read side effect (FIFO pop) for addr this cycle;
-        it pops only if RXF was non-empty at the last snap."""
+    def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False, cancel=False):
+        """One clock edge. `we`: bus write of wdata to addr this cycle. Reads
+        (docs/isa.md §6.1): `snap` captures read(addr) for a word the host will
+        send, reserving the next unread RXF entry at a FIFO address; `commit`
+        says the oldest snapped word was sent (pops it if it was a real entry);
+        `cancel` ends the transaction and drops the reservations."""
         pins_in = self.pins_in()
         flags = self.flags
         fjoin = [core.fjoin for core in self.cores]  # start of cycle: a host write lands at the edge
-        rx_nonempty = [bool(core.rxf) for core in self.cores]
         restart = fclear = 0
         ctrl = self.ctrl_pend
         if ctrl is not None:
@@ -578,10 +581,18 @@ class Chip:
             we = False if addr >= CORE_BASE else we
         if in_cores:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
-            if commit and off == C_FIFO and self.cores[c].snap_valid:
-                host_pop[c] = True
-            elif commit and off == C_FIFO and self.cores[c].rxf:
-                self.cover("fifo:pop_suppressed_by_snapshot")
+        res_op = None                # this cycle's reservation change: (core, op, real)
+        if in_cores and off == C_FIFO:
+            core = self.cores[c]
+            if commit and core.res:
+                if core.res[0]:
+                    host_pop[c] = True
+                elif core.rxf:
+                    self.cover("fifo:pop_suppressed_by_snapshot")
+                res_op = (c, "commit", None)
+            elif snap and len(core.res) < 2:
+                n = sum(core.res)
+                res_op = (c, "snap", not fjoin[c] and n < 2 and len(core.rxf) > n)
         if we:
             if addr < IMEM_WORDS:
                 if (addr >> 8) < self.nbanks:
@@ -611,6 +622,8 @@ class Chip:
                 new_out = wdata & M32
             elif addr == A_POE:
                 new_oe = wdata & M32
+            elif addr == A_HOSTCFG:
+                self.hostcfg = wdata & 1
 
         for c, core in enumerate(self.cores):
             if (fclear >> c) & 1:
@@ -649,9 +662,15 @@ class Chip:
                     self.cover("ctrl:restart_mid_instruction")
                 self.cores[c].restart()
 
-        if snap:
-            for c, core in enumerate(self.cores):
-                core.snap_valid = int(rx_nonempty[c])
+        if res_op:
+            c, op, real = res_op
+            if op == "commit":
+                self.cores[c].res.pop(0)
+            else:
+                self.cores[c].res.append(real)
+        for c, core in enumerate(self.cores):   # a cancel or FIFO clear drops them all
+            if cancel or (fclear >> c) & 1:
+                core.res = []
         if ctrl is not None:
             self.enable = ctrl & 15
         self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None

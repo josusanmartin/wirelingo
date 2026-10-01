@@ -17,7 +17,7 @@ BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
 core = lambda i: i % NCORES  # tests spread over the cores that exist
 CLK_NS = 20  # 50 MHz
-SCK_HALF = 4  # SPI SCK half period in clk cycles (SCK = clk/8)
+SCK_HALF = 4  # SPI SCK half period in clk cycles: clk/8 (the port allows up to clk; test_host_port_fast)
 
 # logical pins (docs/isa.md §2)
 UIO = lambda i: i
@@ -70,7 +70,7 @@ class Spi:
 
     async def read(self, addr, n=1, fixed=False):
         r = await self.xfer(host.spi_frame(host.CMD_READ_FIXED if fixed else host.CMD_READ, addr, nread=n))
-        r = r[3:]
+        r = r[3 + host.READ_DUMMY:]
         return [int.from_bytes(r[4 * i:4 * i + 4], "big") for i in range(n)]
 
     async def apply(self, writes):
@@ -621,7 +621,8 @@ class TimedSpi(Spi):
 
     @staticmethod
     async def wait(ns):
-        await Timer(round(ns * 1000), unit="ps")
+        if round(ns * 1000) > 0:
+            await Timer(round(ns * 1000), unit="ps")
 
     async def xfer(self, data):
         out = bytearray()
@@ -691,3 +692,100 @@ async def test_spi_port_timing(dut):
         assert await spi.read(fifo, fixed=True) == [regs[1]], (n, kw)
         assert (await spi.read(status))[0] >> 4 & 15 == 0, (n, kw)
         await spi.write(sim.A_CTRL, [0])
+
+
+class QuadSpi(TimedSpi):
+    """TimedSpi with quad commands: the command byte on IO3 (ui[5]), then the
+    address and data on IO[3:0] = ui[5:2] in, uo[7:4] out, 4 bits per SCK."""
+    IO = 2      # ui[5:2]
+
+    async def qxfer(self, cmd, addr, words=(), nread=0):
+        out = []
+        await self.wait(self.phase)
+        self._set(self.CS, 0)
+        await self.wait(self.cs_setup)
+
+        async def clock(nib):
+            self.ui = (self.ui & ~(0xF << self.IO)) | ((nib & 0xF) << self.IO)
+            self.dut.ui_in.value = self.ui
+            await self.wait(self.lo)
+            r = (int(self.dut.uo_out.value) >> 4) & 0xF
+            self._set(self.SCK, 1)
+            await self.wait(self.hi)
+            self._set(self.SCK, 0)
+            return r
+        for i in range(7, -1, -1):                      # command: 1-bit on IO3
+            await clock(((cmd >> i) & 1) << 3)
+        for i in range(3, -1, -1):
+            await clock(addr >> (4 * i))
+        for w in words:
+            for i in range(7, -1, -1):
+                await clock(w >> (4 * i))
+        if nread:
+            for _ in range(8):                          # dummy
+                await clock(0)
+            for _ in range(nread):
+                w = 0
+                for _ in range(8):
+                    w = (w << 4) | await clock(0)
+                out.append(w)
+        await self.wait(self.cs_hold)
+        self._set(self.CS, 1)
+        await self.wait(self.cs_gap)
+        return out
+
+
+@cocotb.test()
+async def test_host_port_fast(dut):
+    """The host port at SCK = clk and clk/2, 1-bit and quad, at random phases:
+    register round trips, FIFO bursts both ways, an aborted read losing
+    nothing, quad commands ignored until HOSTCFG.QUAD_EN, uo[6:4] taken only
+    during quad read data, and the throughput."""
+    import random
+    rng = random.Random(11)
+    await setup(dut)
+    T = CLK_NS
+    prog = asm.assemble("""
+    loop:
+        pull block
+        mov isr, osr
+        push block
+        jmp loop
+    """)                                                  # echo: TX FIFO -> RX FIFO
+    await Spi(dut).apply(host.load_program(0, prog, 0, clkdiv=1 << 8))
+    await Spi(dut).write(sim.A_CTRL, [1 | (1 << 8)])
+    fifo = sim.core_reg(0, sim.C_FIFO)
+    for period in (T, 2 * T):
+        spi = QuadSpi(dut, period=period, phase=rng.uniform(0, T), cs_setup=T, cs_hold=T, cs_gap=4 * T)
+        regs = [rng.getrandbits(16) for _ in range(4)]
+        await spi.write(sim.core_reg(1, sim.C_R0), regs)
+        assert await spi.read(sim.core_reg(1, sim.C_R0), 4) == regs, period
+        words = [rng.getrandbits(32) for _ in range(8)]
+        await spi.write(fifo, words, fixed=True)        # echoed back by core 0
+        await ClockCycles(dut.clk, 50)
+        assert await spi.read(fifo, 8, fixed=True) == words, period
+        # quad: ignored while QUAD_EN = 0, then works
+        assert await spi.qxfer(0x43, sim.A_ID, nread=1) == [0]
+        await spi.write(sim.A_HOSTCFG, [1])
+        assert await spi.qxfer(0x43, sim.A_ID, nread=1) == [sim.ID_VALUE]
+        await spi.qxfer(0x42, sim.core_reg(1, sim.C_R0), regs[::-1])
+        assert await spi.qxfer(0x43, sim.core_reg(1, sim.C_R0), nread=4) == regs[::-1], period
+        await spi.qxfer(0x4A, fifo, words)
+        await ClockCycles(dut.clk, 50)
+        # abort a quad FIFO read after two words: nothing beyond them is lost
+        abort = QuadSpi(dut, period=period, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+        assert await abort.qxfer(0x4B, fifo, nread=2) == words[:2]
+        assert await spi.qxfer(0x4B, fifo, nread=6) == words[2:], period
+        await spi.write(sim.A_HOSTCFG, [0])
+    # uo[6:4] belong to the cores except during quad read data
+    await Spi(dut).write(sim.A_POUT, [0x7F00])          # uo[6:0] high
+    assert (int(dut.uo_out.value) >> 4) & 7 == 7
+    # throughput: 64 words pushed with one quad WRITE_FIXED at SCK = clk
+    spi = QuadSpi(dut, period=T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    await spi.write(sim.A_HOSTCFG, [1])
+    await spi.write(sim.A_CTRL, [0])                    # stop the echo
+    t0 = cocotb.utils.get_sim_time("ns")
+    await spi.qxfer(0x4A, sim.core_reg(1, sim.C_R0), [rng.getrandbits(32) for _ in range(64)])
+    ns = cocotb.utils.get_sim_time("ns") - t0
+    dut._log.info(f"quad write: {64 * 32 / ns * 1e3:.0f} Mbit/s at SCK = clk ({1e3 / T:.0f} MHz)")
+    assert 64 * 32 / ns * 1e3 > 150

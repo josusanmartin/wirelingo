@@ -16,6 +16,7 @@ module pe_fifo #(
     input  wire [W-1:0] push_data,
     input  wire         pop,
     output wire [W-1:0] head,
+    output wire [W-1:0] head2,       // the entry after the head (host read-ahead)
     output wire [3:0]   level
 `ifdef FORMAL
     ,
@@ -53,6 +54,7 @@ module pe_fifo #(
   endgenerate
 
   assign head  = ent[rd];
+  assign head2 = ent[rd + 1'b1];
   generate
     if (LOG2 == 3) begin : g_lvl8
       assign level = cnt;

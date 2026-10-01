@@ -82,12 +82,13 @@ lost when pushed 210 clocks into the read).
   Joined: one queue in order across RXF then TXF, with the stage levels the
   spec defines. Covers reach 2·D words buffered, with a push and a pop in the
   same cycle.
-* **`pe_spi_slave`:**
-  * at most one bus operation per cycle, each a single-cycle pulse;
-  * MISO idle while deselected;
-  * any aborted transaction returns to idle.
-
-  Covers reach a complete write and a complete read.
+* **`pe_hostport`**, with SCK, CS_n, the IO lines and the clock relationship
+  unconstrained (multiclock): at most one bus operation per cycle; at most two
+  read words outstanding; a snapshot only with room, a commit only of a word
+  that was snapped, a cancel clears them; uo[6:4] taken only inside a
+  transaction. Covers reach a write, a commit with two outstanding, a cancel.
+  Data integrity at speed is checked by `test_host_port_fast` and
+  `test_spi_port_timing`.
 * **`pe_core`**, with a completely unconstrained instruction stream, pins,
   flags and host:
   * no side effects (pins, flags, FIFOs) unless executing on a tick;
@@ -133,8 +134,8 @@ the RTL through the **real SPI host port** (`test/test.py`).
   115200-baud divider; the on-chip TX→RX pair over a virtual pin.
 * I2C: SCL held low at every one of the 19 releases (and before START) times
   out, replies 0x100 and recovers; the SCL waveform is 4 + 4 ticks.
-* 10BASE-T: frames streamed at the SPI port's maximum rate up to the 128-byte
-  bound (132 bytes must underrun); link pulses 100 ns wide, 16 ms apart.
+* 10BASE-T: a 1518-byte frame streamed through the host port; link pulses
+  100 ns wide, 16 ms apart.
 * CAN 2.0A: a transmitter model at ±1 % bit rate, a corrupted frame (no ACK),
   a stuff error (status 2, error flag, the next frame received), an on-chip
   TX→RX loopback between two cores on a wired-AND bus, and arbitration loss
