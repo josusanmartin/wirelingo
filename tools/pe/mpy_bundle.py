@@ -38,8 +38,8 @@ def main():
                         clkdiv=host.clkdiv_for(F_CLK, 8 * 115200)),
         "SPI_MASTER": prog("spi_master", 0, out_pins=(3, 1), side_pins=2, in_pins=4,
                            clkdiv=host.clkdiv_for(F_CLK, 4 * 1e6)),
-        "I2C_MASTER": prog("i2c_master", 1, {"SDA": 0, "SCL": 1}, out_pins=(0, 1), in_pins=0,
-                           clkdiv=host.clkdiv_for(F_CLK, 4 * 100e3)),
+        "I2C_MASTER": prog("i2c_master", 0, {"SDA": 0, "SCL": 1}, out_pins=(0, 1), in_pins=0,
+                           clkdiv=host.clkdiv_for(F_CLK, 8 * 100e3)),   # 8 ticks per SCL period
         "WS2812": prog("ws2812", 0, side_pins=9, clkdiv=host.clkdiv_for(F_CLK, 8e6)),
         # needs a 40 MHz project clock: 4 clocks per bit; TD+ = uo0, TD- = uo1
         "ETH10_TX": prog("eth10_tx", 0, {"F_GO": 0}, side_pins=8, clkdiv=1 << 8),
