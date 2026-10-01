@@ -35,13 +35,13 @@ module tb ();
     end
   endgenerate
 
-`ifdef GL_TEST
+`ifdef USE_POWER_PINS  // the IHP gate-level netlist (TT uses final/nl) has no power ports
   wire VPWR = 1'b1;
   wire VGND = 1'b0;
 `endif
 
   tt_um_josusanmartin_protoemu user_project (
-`ifdef GL_TEST
+`ifdef USE_POWER_PINS
       .VPWR(VPWR),
       .VGND(VGND),
 `endif

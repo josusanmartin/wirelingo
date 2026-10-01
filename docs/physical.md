@@ -62,6 +62,32 @@ Lessons:
 * **LibreLane 3.1.0.dev3 runs OpenROAD single-threaded** unless
   `OPENROAD_THREADS` is set (it passes `-threads None`).
 
+## Signoff runs
+
+| Run | RTL | DRT (final) | KLayout DRC | LVS | Antenna | Setup WS typ / slow | Hold WS typ | Max slew / cap viol. (typ) |
+|-----|-----|-------------|-------------|-----|---------|---------------------|-------------|----------------------------|
+| s2c | 248eae0, 4-deep FIFOs | 0 | 0 | clean | 0 | +2.79 / −7.64 ns | +0.29 ns | 50 / 44 |
+
+* The slow corner misses 50 MHz by 7.6 ns (444 endpoints). TT signs off at typ,
+  so 50 MHz at typ (or about 35 MHz at the slow corner) is the stated target.
+* The worst slow path is long logic plus **weak cells driving long wires**,
+  e.g. a `nor2b_1` driving 0.33 pF with a 4.2 ns slew. Post-placement repair
+  sizes cells from estimated wire loads, and the Classic flow does not repair
+  again after global routing (`RUN_POST_GRT_DESIGN_REPAIR` is off). The same
+  wires cause the slew/cap violations, including SRAM input pins above the
+  macro's 0.476 ns transition limit.
+
+## Gate-level simulation
+
+* TT simulates `runs/wokwi/final/nl/*.nl.v` for IHP (`tt/tech.py`:
+  `netlist_type = "nl"`), with no power ports. The IHP cell models have no
+  power pins either, so the testbench connects `VPWR`/`VGND` only under
+  `USE_POWER_PINS`.
+* `sg13cmos5l_stdcell.v` needs `sg13cmos5l_udp.v` (the `ihp_mux2`/`ihp_mux4`
+  primitives) in the source list.
+* `flow/gl_test.sh <run dir>` copies the netlist and runs `make GATES=yes`
+  with the run's core count and FIFO depth.
+
 ## Area reductions applied
 
 * Clock-gated FIFO storage (one `lgcp` per entry instead of a hold mux per bit):

@@ -16,3 +16,5 @@ harden.log
 formal/fifo_*/
 formal/spi_*/
 formal/core_*/
+test/gate_level_netlist.v
+test/*.fst.hier

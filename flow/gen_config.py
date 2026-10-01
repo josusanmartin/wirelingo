@@ -67,6 +67,9 @@ def main():
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action="store_true", help="extra SRAM array stripe pairs (prism's setting)")
     ap.add_argument("--layout", choices=["top", "sides", "corners"], default="corners")
+    ap.add_argument("--post-grt-repair", action="store_true",
+                    help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
+    ap.add_argument("--max-wire", type=int, default=0, help="buffer wires longer than this (um, 0 = off)")
     a = ap.parse_args()
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
@@ -85,6 +88,13 @@ def main():
     c["OPENROAD_THREADS"] = a.threads
     c["//corners"] = "Optimise for typ (TT signoff) and slow; fast-corner hold fixing alone added ~3200 buffers"
     c["PNR_CORNERS"] = ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"]
+    if a.post_grt_repair:
+        c["//repair"] = ("Post-placement repair alone left ~3 ns slews on long nets and SRAM-pin slews "
+                         "above the macro's 0.476 ns limit")
+        c["RUN_POST_GRT_DESIGN_REPAIR"] = 1
+    if a.max_wire:
+        c["DESIGN_REPAIR_MAX_WIRE_LENGTH"] = a.max_wire
+        c["GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH"] = a.max_wire
     if a.grt_adjust is not None:
         c["GRT_ADJUSTMENT"] = a.grt_adjust
     pl = placements(a.banks, a.layout)

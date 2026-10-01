@@ -1,5 +1,6 @@
 #!/bin/bash
-# Full SRAM-build hardening experiment. Usage: flow/exp_sram.sh NAME NCORES DENSITY [GRT_ADJ]
+# Full SRAM-build hardening experiment.
+# Usage: flow/exp_sram.sh NAME NCORES DENSITY [GRT_ADJ] [LAYOUT] ["EXTRA gen_config ARGS"]
 set -e
 NAME=$1; NC=$2; DEN=$3; ADJ=${4:-0.15}; LAYOUT=${5:-top}; EXTRA=${6:-}
 W=$HOME/dev/protoemu-exp-$NAME
