@@ -105,8 +105,11 @@ Per-core architectural state:
 | OSR          | 32    | 0                                |
 | OSR_CNT      | 6     | 32 (bits shifted out; 32 = empty) |
 | Z, C, T      | 1 each| 0                                |
-| TXF          | D×32  | empty (host → core)              |
-| RXF          | D×32  | empty (core → host)              |
+| TXF          | D×32  | empty at reset; kept on restart (host → core) |
+| RXF          | D×32  | empty at reset; kept on restart (core → host) |
+
+Restart keeps both FIFOs, so the host can queue data before starting a core.
+A `CTRL` FIFO-clear bit (`[19:16]`, §6.2) empties them.
 
 ### 4.1 Ticks, clock divider
 
@@ -264,7 +267,7 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 4    | PINS     | `rotr(pins_in, IN_BASE)`                   | `OUT_COUNT` pins from `OUT_BASE` → `pin_out` |
 | 5    | PINDIRS  | 0                                          | `OUT_COUNT` pins from `OUT_BASE` → `pin_oe`  |
 | 6    | ISR      | ISR                                        | ISR (and `ISR_CNT = 0`)                      |
-| 7    | OSR      | OSR                                        | OSR (and `OSR_CNT = 0`)                      |
+| 7    | OSR      | OSR                                        | OSR (and `OSR_CNT = 0`); not an OUT destination |
 | 8    | NULL     | 0                                          | discard                                      |
 | 9    | STATUS   | `[3:0]` TXF level, `[7:4]` RXF level, `[8]` Z, `[9]` C, `[10]` T | discard            |
 | 10   | FLAGS    | `{24'b0, F7..F0}`                          | discard                                      |
@@ -345,7 +348,8 @@ followed by `wait … timeout r3` gives up after N + 1 unsuccessful ticks.
 
 **OUT dst, n.** Shift *n* bits out of OSR (§4.4) and write `data` to `dst`
 (§5.1). A PC destination jumps. An ISR destination sets ISR and
-`ISR_CNT = n`.
+`ISR_CNT = n`. OSR, STATUS and FLAGS are not OUT destinations: the shift
+happens and `data` is discarded, as for NULL. The assembler rejects them.
 
 **PUSH [iffull] [block|noblock]** (default `block`):
 
@@ -435,8 +439,11 @@ Each transaction (CS_n low → high) is `cmd[7:0] addr[15:0] data...`:
 
 * **Writes** happen when the 32nd bit of each word has been received.
 * **Reads:** MISO carries the first word's MSB right after the last address
-  bit. A word's read side effect (a FIFO pop) happens only once all 32 of its
-  bits have been clocked out, so aborting a read mid-word loses nothing.
+  bit. A word's read data is captured (the *snapshot*) when its first bit is
+  due. Its side effect (a FIFO pop) happens only once all 32 bits have been
+  clocked out, so aborting a read mid-word loses nothing. The pop happens only
+  if RXF was non-empty at the snapshot. A word the core pushes while the host
+  is reading an empty RXF (and receiving 0) stays for the next read.
 * **Unknown commands** are ignored until CS_n goes high.
 
 ### 6.2 Register map (32-bit word addresses)
