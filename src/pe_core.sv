@@ -40,7 +40,20 @@ module pe_core #(
     input  wire        bus_commit,
     input  wire        bus_snap,
     input  wire        bus_cancel,
-    output reg  [31:0] bus_rdata
+    output reg  [31:0] bus_rdata,
+    // line unit (core 0 only, docs/isa.md §4.7)
+    input  wire        line_room,
+    input  wire        line_ok,
+    input  wire [5:0]  line_k,
+    input  wire        line_t,
+    input  wire [31:0] line_val,
+    output wire        line_push,
+    output wire [31:0] line_push_data,
+    output wire [5:0]  line_push_n,
+    output wire        line_push_msb,
+    output wire [5:0]  line_in_n,
+    output wire        line_in_shr,
+    output wire        line_take
 );
 
   // ---------------------------------------------------------------- opcodes
@@ -49,7 +62,7 @@ module pe_core #(
   localparam OP_PIN = 5'd10, OP_FLAG = 5'd11, OP_HALT = 5'd12;
 
   localparam L_PINS = 4'd4, L_PINDIRS = 4'd5, L_ISR = 4'd6, L_OSR = 4'd7;
-  localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12;
+  localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12, L_LINE = 4'd13;
 
   localparam W_PIN1 = 3'd0, W_PIN0 = 3'd1, W_RISE = 3'd2, W_FALL = 3'd3, W_EDGE = 3'd4;
   localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6;
@@ -97,6 +110,7 @@ module pe_core #(
   wire [3:0]  txf_level, rxf_level;
   wire        pq_empty, rx_block;            // what PULL/autopull see; PUSH/autopush stall
   reg         core_txpop, core_rxpush;   // decoded; qualified by exec below
+  reg         line_push_d, line_take_d;  // ditto, for the line unit
   reg  [31:0] core_rxdata;
   wire        exec;
 
@@ -219,6 +233,10 @@ module pe_core #(
 
   // shift amounts (count field 0 means 32)
   wire [5:0]  n = (x[4:0] == 5'd0) ? 6'd32 : {1'b0, x[4:0]};
+  // IN/OUT LINE (core 0): IN shifts by the k bits the line unit gives
+  wire        at_line = IDX == 2'd0 && x[18:15] == L_LINE;
+  wire        in_line = op == OP_IN && at_line;
+  wire [5:0]  n_in = in_line ? line_k : n;
 
   // Shared 64-bit funnel shifter for IN and OUT (only one runs per tick):
   //   IN  right: {src_n, isr} >> n        -> low        = new ISR
@@ -226,19 +244,20 @@ module pe_core #(
   //   OUT left : {osr0, 0} >> (32-n)      -> low = new OSR, high = data
   //   OUT right: {0, osr0} >> n           -> low = new OSR, data = osr0 & mask(n)
   wire [31:0] nmask = lowmask(n);
-  wire [31:0] in_bits = src_val & nmask;
+  wire [31:0] in_bits = in_line ? line_val : (src_val & nmask);
   wire        out_refill = autopull && osr_cnt >= pull_th;
   wire [31:0] osr0 = out_refill ? pq_head : osr;
   wire        is_in = op == OP_IN;
   wire        shr = is_in ? in_shr : out_shr;
   wire [31:0] fs_hi = is_in ? (in_shr ? in_bits : isr) : (out_shr ? 32'd0 : osr0);
   wire [31:0] fs_lo = is_in ? (in_shr ? isr : 32'd0) : (out_shr ? osr0 : 32'd0);
-  wire [5:0]  fs_amt = shr ? n : (6'd32 - n);
+  wire [5:0]  n_sh = is_in ? n_in : n;
+  wire [5:0]  fs_amt = shr ? n_sh : (6'd32 - n_sh);
   wire [63:0] fs = {fs_hi, fs_lo} >> fs_amt;
 
   // IN
   wire [31:0] in_isr = in_shr ? fs[31:0] : (fs[31:0] | in_bits);
-  wire [6:0]  in_cnt_sum = {1'b0, isr_cnt} + {1'b0, n};
+  wire [6:0]  in_cnt_sum = {1'b0, isr_cnt} + {1'b0, n_in};
   wire [5:0]  in_cnt = (in_cnt_sum > 7'd32) ? 6'd32 : in_cnt_sum[5:0];
   wire        in_autopush = autopush && in_cnt >= push_th;
 
@@ -369,6 +388,8 @@ module pe_core #(
     fclr = 8'd0;
     core_txpop = 1'b0;
     core_rxpush = 1'b0;
+    line_push_d = 1'b0;
+    line_take_d = 1'b0;
     core_rxdata = isr;
     crc_feed = 1'b0;
     crc_bit = 1'b0;
@@ -407,7 +428,8 @@ module pe_core #(
       end
 
       OP_IN: begin
-        if (in_autopush) begin
+        if (in_line && !line_ok) complete = 1'b0;               // no line bits yet
+        else if (in_autopush) begin
           if (rx_block) complete = 1'b0;
           else begin
             core_rxpush = 1'b1;
@@ -421,16 +443,23 @@ module pe_core #(
           isr_nv = in_isr;
           isr_cnt_nv = in_cnt;
         end
-        if (in_tap && n == 6'd1 && !(in_autopush && rx_block)) begin
+        if (in_line && line_ok && !(in_autopush && rx_block)) begin
+          line_take_d = 1'b1;
+          t_we = 1'b1;
+          t_nv = line_t;
+        end
+        if (in_tap && n == 6'd1 && n_in == 6'd1 && !(in_line && !line_ok) && !(in_autopush && rx_block)) begin
           crc_feed = 1'b1;
           crc_bit = in_bits[0];
         end
       end
 
       OP_OUT: begin
-        if (out_refill && pq_empty) complete = 1'b0;
+        if (at_line && !line_room) complete = 1'b0;             // line TX queue full
+        else if (out_refill && pq_empty) complete = 1'b0;
         else begin
           core_txpop = out_refill;
+          line_push_d = at_line;
           osr_we = 1'b1;
           osr_nv = out_osr;
           osr_cnt_nv = out_cnt;
@@ -591,6 +620,14 @@ module pe_core #(
   assign wr_out_val = side_to_out ? ((side_val & s_mask) | (pw_val_out & ~s_mask)) : pw_val_out;
   assign wr_oe_en   = m_oe | (side_to_oe ? s_mask : 32'd0);
   assign wr_oe_val  = side_to_oe ? ((side_val & s_mask) | (pw_val_oe & ~s_mask)) : pw_val_oe;
+
+  assign line_push      = exec && line_push_d;
+  assign line_push_data = out_data;
+  assign line_push_n    = n;
+  assign line_push_msb  = !out_shr;
+  assign line_in_n      = n;
+  assign line_in_shr    = in_shr;
+  assign line_take      = exec && line_take_d;
 
   assign flag_set = exec ? fset : 8'd0;
   assign flag_clr = exec ? fclr : 8'd0;

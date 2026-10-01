@@ -44,7 +44,11 @@ module pe_chip #(
   reg [31:0] pin_out, pin_oe;
   reg [12:0] sync1, sync2;
 
-  wire [31:0] pins_in = {pin_out[31:24], 3'd0, sync2[12:8], 1'b0, pin_out[14:8], sync2[7:0]};
+  // pins as driven: the registers, with the line unit's transmit pins over them
+  wire [31:0] line_mask, line_val_o;
+  wire [31:0] eff_out = (pin_out & ~line_mask) | (line_val_o & line_mask);
+  wire [31:0] eff_oe  = pin_oe | line_mask;
+  wire [31:0] pins_in = {eff_out[31:24], 3'd0, sync2[12:8], 1'b0, eff_out[14:8], sync2[7:0]};
 
   // ---------------------------------------------------------------- bus decode
   wire        sel_imem = bus_addr[15:10] == 6'd0;
@@ -79,6 +83,14 @@ module pe_chip #(
   wire [31:0]  c_fset, c_fclr;
 
   genvar c;
+  // line unit <-> core 0 (the other cores' line outputs are unused)
+  wire        line_room, line_ok, line_t;
+  wire [5:0]  line_k;
+  wire [31:0] line_val, line_r_cfg, line_r_div, line_r_pins, line_r_stat;
+  wire [3:0]  lp_push, lp_msb, lp_in_shr, lp_take;
+  wire [127:0] lp_data;
+  wire [23:0] lp_n, lp_in_n;
+
   generate
     for (c = 0; c < 4; c = c + 1) begin : g_core
       if (c < NCORES) begin : g_on
@@ -113,7 +125,19 @@ module pe_chip #(
             .bus_commit(bus_commit),
             .bus_snap(bus_snap),
             .bus_cancel(bus_cancel),
-            .bus_rdata(c_rdata[32*c +: 32]));
+            .bus_rdata(c_rdata[32*c +: 32]),
+            .line_room(c == 0 && line_room),
+            .line_ok(c == 0 && line_ok),
+            .line_k(c == 0 ? line_k : 6'd0),
+            .line_t(c == 0 && line_t),
+            .line_val(c == 0 ? line_val : 32'd0),
+            .line_push(lp_push[c]),
+            .line_push_data(lp_data[32*c +: 32]),
+            .line_push_n(lp_n[6*c +: 6]),
+            .line_push_msb(lp_msb[c]),
+            .line_in_n(lp_in_n[6*c +: 6]),
+            .line_in_shr(lp_in_shr[c]),
+            .line_take(lp_take[c]));
       end else begin : g_off
         assign fetch_addr[10*c +: 10] = 10'd0;
         assign w_out_en[32*c +: 32] = 32'd0;
@@ -123,9 +147,26 @@ module pe_chip #(
         assign c_fset[8*c +: 8] = 8'd0;
         assign c_fclr[8*c +: 8] = 8'd0;
         assign c_rdata[32*c +: 32] = 32'd0;
+        assign {lp_push[c], lp_msb[c], lp_in_shr[c], lp_take[c]} = 4'd0;
+        assign lp_data[32*c +: 32] = 32'd0;
+        assign lp_n[6*c +: 6] = 6'd0;
+        assign lp_in_n[6*c +: 6] = 6'd0;
       end
     end
   endgenerate
+
+  // ---------------------------------------------------------------- line unit (core 0)
+  pe_line u_line (
+      .clk(clk), .rst_n(rst_n),
+      .cfg_we(bus_we && sel_glob && goff == 4'hC),
+      .div_we(bus_we && sel_glob && goff == 4'hD),
+      .pins_we(bus_we && sel_glob && goff == 4'hE),
+      .wdata(bus_wdata),
+      .r_cfg(line_r_cfg), .r_div(line_r_div), .r_pins(line_r_pins), .r_stat(line_r_stat),
+      .pins_in(pins_in), .drv_mask(line_mask), .drv_val(line_val_o),
+      .room(line_room), .push(lp_push[0]), .push_data(lp_data[31:0]), .push_n(lp_n[5:0]),
+      .push_msb(lp_msb[0]), .in_n(lp_in_n[5:0]), .in_shr(lp_in_shr[0]),
+      .in_ok(line_ok), .in_k(line_k), .in_t(line_t), .in_val(line_val), .take(lp_take[0]));
 
   // ---------------------------------------------------------------- pins
   reg [31:0] pin_out_n, pin_oe_n;
@@ -139,9 +180,9 @@ module pe_chip #(
     end
   end
 
-  assign uo_out  = pin_out[14:8];
-  assign uio_out = pin_out[7:0] & ~od_mask;
-  assign uio_oe  = (pin_oe[7:0] & ~od_mask) | (~pin_out[7:0] & od_mask);
+  assign uo_out  = eff_out[14:8];
+  assign uio_out = eff_out[7:0] & ~od_mask;
+  assign uio_oe  = (eff_oe[7:0] & ~od_mask) | (~eff_out[7:0] & od_mask);
 
   // ---------------------------------------------------------------- flags
   wire [7:0] host_fset = (bus_we && sel_glob && goff == 4'h2) ? bus_wdata[7:0] : 8'd0;
@@ -166,6 +207,10 @@ module pe_chip #(
         4'h9: bus_rdata = pin_out;
         4'hA: bus_rdata = pin_oe;
         4'hB: bus_rdata = {31'd0, hostcfg};
+        4'hC: bus_rdata = line_r_cfg;
+        4'hD: bus_rdata = line_r_div;
+        4'hE: bus_rdata = line_r_pins;
+        4'hF: bus_rdata = line_r_stat;
         default: bus_rdata = 32'd0;
       endcase
     end

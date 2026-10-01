@@ -47,7 +47,7 @@ jobs:
       - name: Lockstep RTL vs model, 4-core flop build
         run: |
           cd test
-          LOCKSTEP_SEEDS=10 LOCKSTEP_CYCLES=600 make TB=chip IMEM=flop COCOTB_RESULTS_FILE=lockstep_4core.xml
+          LOCKSTEP_GOALS=core LOCKSTEP_SEEDS=10 LOCKSTEP_CYCLES=600 make TB=chip IMEM=flop COCOTB_RESULTS_FILE=lockstep_4core.xml
           python3 check_results.py lockstep_4core.xml 3
 
       - name: Test Summary

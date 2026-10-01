@@ -526,7 +526,7 @@ class Chip:
         self.od_mask = 0
         self.pin_out = self.pin_oe = 0
         self.hostcfg = 0  # QUAD_EN: only the host port uses it
-        self.line = Line()
+        self.line = Line(self.cover)
         self.sync1 = self.sync2 = 0  # {ui[4:0], uio[7:0]}
         self.cycle = 0
         self.stats = {}

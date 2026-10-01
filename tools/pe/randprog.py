@@ -61,6 +61,8 @@ def random_instr(rng, bank, bank_words, owners, profile="mixed"):
     elif op == isa.OP_OUT and rng.random() < 0.1:
         # computed jump: keep it mostly in range by using small counts
         x = (isa.PC << 15) | rng.randrange(32)
+    elif op in (isa.OP_IN, isa.OP_OUT) and rng.random() < 0.15:
+        x = (isa.LINE << 15) | rng.randrange(1, 9)   # the line unit (core 0), small counts
     elif op in (isa.OP_IN, isa.OP_OUT) and rng.random() < 0.4:
         x = (rng.randrange(13) << 15) | 1  # 1-bit shifts feed the CRC tap
     elif op == isa.OP_MOV and rng.random() < 0.2:
@@ -85,7 +87,7 @@ def random_config_writes(rng, bank_words, owners):
     w = []
     for c in range(4):
         base = lambda o: sim.core_reg(c, o)
-        if rng.random() < 0.6:
+        if rng.random() < 0.4:                      # slower ticks: WAIT edges between ticks
             div = (1 << 8)
         else:
             div = (rng.randrange(1, 4) << 8) | (rng.getrandbits(8) if rng.random() < 0.5 else 0)

@@ -10,8 +10,9 @@ NRZ, NRZI, MANCH = 0, 1, 2
 
 
 class Line:
-    def __init__(self):
+    def __init__(self, cover=lambda event: None):
         self.cfg = self.div = self.pins = 0
+        self.cover = cover               # coverage counter (Chip.cover)
         self.reset()
 
     def reset(self):
@@ -118,6 +119,7 @@ class Line:
 
     def consume(self, k, t):
         """IN LINE completed: k bits taken; T = 1 also clears the pending end."""
+        self.cover("line:in_frame_end" if t else "line:in_bits")
         self._take = k
         self._clear_end = bool(t)
 
@@ -146,12 +148,15 @@ class Line:
         if self._new_rx is not None:
             if start_len < 32:
                 self.rq.append(self._new_rx)
+                self.cover("line:rx_bit")
             else:
                 self.ovf = 1
+                self.cover("line:rx_overflow")
         if self._new_end:
             self.end_pend = 1
         if self._push is not None:
             self.entries.append(self._push)
+            self.cover("line:out_entry")
         self._push, self._take, self._clear_end = None, 0, False
 
     # -- transmitter
@@ -166,19 +171,22 @@ class Line:
     def _next_bit(self):
         k = self.stuff_k
         if k and self.trun == k:
+            self.cover("line:tx_stuff")
             b = 0 if self.stuff_ones else 1 - self.trunbit
             if self.stuff_ones:
                 self.trun = 0
             else:
                 self.trun, self.trunbit = 1, b
         elif self._entries_left():
+            self.cover("line:tx_bit")
             b = self._pop_bit()
             if self.stuff_ones:
-                self.trun = self.trun + 1 if b else 0
+                self.trun = min(self.trun + 1, 7) if b else 0      # 3-bit, saturating
             else:
-                self.trun = self.trun + 1 if b == self.trunbit else 1
+                self.trun = min(self.trun + 1, 7) if b == self.trunbit else 1
                 self.trunbit = b
         else:                                    # nothing left: end the frame
+            self.cover("line:tx_frame_end")
             if self.end_bits == 0 or self.end == 0:
                 self.tx_on = 0
                 return
@@ -238,6 +246,7 @@ class Line:
                 else:
                     self.tx_on = 0
         elif self.code == MANCH and self.half == 0:
+            self.cover("line:tx_manchester_half")
             self.half = 1
             self.level = self.bit
             self.txn = 1 - self.level
@@ -283,17 +292,18 @@ class Line:
         if self.diff and rx == 0 and rxn == 0:
             self._end()
             return
-        self.quiet += 1
+        self.quiet = min(self.quiet + 1, 15)                  # 4-bit, saturating
         if self.quiet >= (self.stuff_k + 2 if self.stuff_k else 8):
             self._end()
             return
-        b = rx if self.code == NRZ else int(rx == self.rlast)
+        b = int(rx == self.rlast) if self.code == NRZI else rx       # CODE 3 (reserved) = NRZ
         self.rlast = rx
         self._deliver(b)
 
     def _deliver(self, b):
         k = self.stuff_k
         if k and self.rrun == k:                       # a stuff bit
+            self.cover("line:rx_stuff")
             expect = 0 if self.stuff_ones else 1 - self.rrunbit
             if b != expect:
                 self._end()
@@ -304,12 +314,13 @@ class Line:
                 self.rrun, self.rrunbit = 1, b
             return
         if self.stuff_ones:
-            self.rrun = self.rrun + 1 if b else 0
+            self.rrun = min(self.rrun + 1, 7) if b else 0
         else:
-            self.rrun = self.rrun + 1 if b == self.rrunbit else 1
+            self.rrun = min(self.rrun + 1, 7) if b == self.rrunbit else 1
             self.rrunbit = b
         self._new_rx = b
 
     def _end(self):
+        self.cover("line:rx_frame_end")
         self.rx_on = 0
         self._new_end = True

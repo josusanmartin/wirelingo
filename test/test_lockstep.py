@@ -31,6 +31,24 @@ def reservations(n, real):
     return n, real & ((1 << n) - 1)
 
 
+def line_state_rtl(u):
+    return dict(
+        tx_on=v(u.tx_on), level=v(u.level), txn=v(u.txn), half=v(u.half), ending=v(u.ending),
+        eop=v(u.eop_idle), tcnt=v(u.tcnt), tfacc=v(u.tfacc), trun=v(u.trun), entries=v(u.e_cnt),
+        rx_on=v(u.rx_on), rq=v(u.rq) & ((1 << v(u.rcount)) - 1), rcount=v(u.rcount), rcnt=v(u.rcnt),
+        mt=v(u.mt), quiet=v(u.quiet), rrun=v(u.rrun), end_pend=v(u.end_pend), ovf=v(u.ovf), rprev=v(u.rprev),
+    )
+
+
+def line_state_model(l):
+    return dict(
+        tx_on=l.tx_on, level=l.level, txn=l.txn, half=l.half, ending=l.ending, eop=l.eop_idle,
+        tcnt=l.tcnt, tfacc=l.tfacc, trun=l.trun, entries=len(l.entries),
+        rx_on=l.rx_on, rq=sum(b << i for i, b in enumerate(l.rq)), rcount=len(l.rq), rcnt=l.rcnt,
+        mt=l.mt, quiet=l.quiet, rrun=l.rrun, end_pend=l.end_pend, ovf=l.ovf, rprev=l.rprev,
+    )
+
+
 def core_state_rtl(core):
     return dict(
         pc=v(core.pc), r0=v(core.r0), r1=v(core.r1), r2=v(core.r2), r3=v(core.r3),
@@ -98,6 +116,10 @@ class Harness:
                              ("flags", v(self.chip.flags), m.flags)):
             if rv != mv:
                 errs.append(f"{name}: rtl={rv:#x} model={mv:#x}")
+        a, b = line_state_rtl(self.chip.u_line), line_state_model(m.line)
+        for k in a:
+            if a[k] != b[k]:
+                errs.append(f"line.{k}: rtl={a[k]:#x} model={b[k]:#x}")
         uo, uo_io, uo_oe = m.outputs()
         for name, rv, mv in (("uo_out", v(self.dut.uo_out), uo), ("uio_out", v(self.dut.uio_out), uo_io),
                              ("uio_oe", v(self.dut.uio_oe), uo_oe)):
@@ -192,6 +214,8 @@ async def test_random_lockstep(dut):
                 await h.write((b << 8) | w, word)
         for addr, data in random_config_writes(rng, BANK_WORDS, owners):
             await h.write(addr, data)
+        for addr, data in random_line_writes(rng):
+            await h.write(addr, data)
         await h.write(sim.A_CTRL, 15 if rng.random() < 0.7 else rng.randrange(1, 16))
         # run
         ui = rng.getrandbits(5)
@@ -235,6 +259,7 @@ async def test_random_lockstep(dut):
                                    wdata=rng.getrandbits(32))
             elif op < 0.155:
                 await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_HOSTCFG,
+                                                                   sim.A_LINECFG,
                                                                    sim.A_POUT, sim.A_POE]),
                                    wdata=rng.getrandbits(32))
             else:
@@ -245,8 +270,30 @@ async def test_random_lockstep(dut):
         h.stats[k] = h.stats.get(k, 0) + n
     dut._log.info(f"{nseeds} seeds x {ncycles} cycles OK ({h.cycle} total cycles)")
     dut._log.info("coverage: " + ", ".join(f"{k}={n}" for k, n in sorted(h.stats.items())))
-    missing = [g for g in coverage_goals() if not h.stats.get(g)]
+    # LOCKSTEP_GOALS=core skips the line-unit goals: a build with 16-word banks
+    # rarely gives core 0 a line program; the tapeout-config run requires them
+    goals = coverage_goals()
+    if os.environ.get("LOCKSTEP_GOALS") == "core":
+        goals = [g for g in goals if not g.startswith("line:")]
+    missing = [g for g in goals if not h.stats.get(g)]
     assert not missing, f"coverage goals not reached (run longer or fix the generator): {missing}"
+
+
+def random_line_writes(rng):
+    """The line unit: sane timing most of the time, pins among the stimulated and
+    internal ones (so its TX can loop back to its RX), enabled half the time."""
+    live = [*range(8), *range(16, 21), 24, 25, 26]
+    txp, rxp = rng.choice(live), rng.choice(live)
+    if rng.random() < 0.5:
+        rxp = txp                                   # hear its own transmission
+    tx_int = rng.randrange(2, 7) if rng.random() < 0.9 else rng.randrange(256)
+    rx_p = rng.randrange(4, 17) if rng.random() < 0.9 else rng.getrandbits(16)
+    cfg = (rng.getrandbits(15) & ~0b110) | (rng.randrange(3) << 1)    # NRZ / NRZI / Manchester
+    if rng.random() < 0.5:
+        cfg |= 1 | (1 << 14)                        # EN and RX_EN
+    return [(sim.A_LINEDIV, (rx_p << 16) | (tx_int << 8) | rng.getrandbits(8)),
+            (sim.A_LINEPINS, txp | (rxp << 8)),
+            (sim.A_LINECFG, cfg)]
 
 
 def coverage_goals():
@@ -261,6 +308,9 @@ def coverage_goals():
         "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
         "fifo:clear_nonempty", "fifo:join_move",
         "ctrl:restart_mid_instruction", "core:bank_fault",
+        "line:out_entry", "line:tx_bit", "line:tx_stuff", "line:tx_manchester_half", "line:tx_frame_end",
+        "line:rx_bit", "line:rx_stuff", "line:rx_frame_end", "line:in_bits", "line:in_frame_end",
+        "line:rx_overflow",
     ])
 
 
