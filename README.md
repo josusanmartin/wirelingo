@@ -45,7 +45,7 @@ against the RTL.
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | endpoint 0; the host software does the requests and data toggles | RTL (SETUP/ACK, foreign address, NAK, IN data); **enumeration**, lost ACK, ±2.5 % bit rate on the model |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | frames ≤ 128 bytes (64 without streaming), set by the SPI port's bandwidth | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model |
-| `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync | frames, not a full controller (no error confinement) | model, incl. a TX→RX link between the two cores |
+| `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores |
 | `swd_probe` | ARM SWD engine: request parity, ACK, DPIDR, register writes | | model |
 | `jtag` | IEEE 1149.1 shift engine (IDCODE via Shift-DR) | | model |
 | `onewire` | 1-Wire master: reset/presence via WAIT timeout, READ ROM | | model |

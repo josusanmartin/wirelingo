@@ -87,11 +87,26 @@ def setup():
     return mh
 
 
+def records(words):
+    """can_rx records: data words, then a status word ([31] = 1). Returns
+    [(status, data words)] and checks nothing is left over."""
+    out, start = [], 0
+    for i, w in enumerate(words):
+        if w >> 31:
+            out.append((w & 0xFFFF, words[start:i]))
+            start = i + 1
+    assert start == len(words), [hex(w) for w in words]
+    return out
+
+
 def unpack(words, nbits):
+    """Destuffed bits from data words: 24 per word in [23:0], MSB first; the last
+    word holds the rest, right-aligned."""
     bits = []
-    full, rem = divmod(nbits, 32)
+    full, rem = divmod(nbits, 24)
     for w in words[:full]:
-        bits += [(w >> (31 - i)) & 1 for i in range(32)]
+        assert w >> 24 == 0
+        bits += [(w >> (23 - i)) & 1 for i in range(24)]
     if rem:
         w = words[full]
         bits += [(w >> (rem - 1 - i)) & 1 for i in range(rem)]
@@ -111,15 +126,47 @@ def test_can_rx_frames(ppm):
         mh.step(3000)
         words = RXQ + mh.pop_all(0)
         RXQ.clear()
-        assert words[-1] == 1, [hex(w) for w in words]
-        assert unpack(words[:-1], len(bits)) == bits
+        [(status, data)] = records(words)
+        assert status == 1 and unpack(data, len(bits)) == bits
     # a corrupted frame: no ACK, CRC error status
     bits = frame_bits(0x321, bytes([1, 2, 3]))
     assert send(mh, bits, corrupt=30) is False
     mh.step(3000)
     words = RXQ + mh.pop_all(0)
     RXQ.clear()
-    assert words[-1] == 0
+    assert [st for st, _ in records(words)] == [0]
+
+
+def test_can_rx_stuff_error():
+    """A stuff bit equal to the five before it: status 2, an error flag on TX,
+    and the next frame is received normally."""
+    RXQ.clear()
+    mh = setup()
+    bits = frame_bits(0x0F0, bytes([0x00, 0xFF, 0x0F]))
+    wire = stuff(bits)
+    k = next(i for i in range(5, len(wire)) if len(set(wire[i - 5:i])) == 1 and wire[i] != wire[i - 1])
+    flag = []
+    step0 = mh.step
+
+    def step(n=1):
+        for _ in range(n):
+            step0()
+            flag.append((mh.chip.pin_out >> TX) & 1)
+    mh.step = step
+    send(mh, bits, corrupt=k)                       # the stuff bit made equal: 6 in a row
+    mh.step(3000)
+    words = RXQ + mh.pop_all(0)
+    RXQ.clear()
+    assert [st for st, _ in records(words)] == [2]
+    lows = max(len(r) for r in "".join(map(str, flag)).split("1"))
+    assert lows >= 6 * TPB - 2, lows                # error flag: 6 dominant bits
+    bits = frame_bits(0x123, bytes([0xDE, 0xAD]))
+    assert send(mh, bits) is True
+    mh.step(3000)
+    words = RXQ + mh.pop_all(0)
+    RXQ.clear()
+    [(status, data)] = records(words)
+    assert status == 1 and unpack(data, len(bits)) == bits
 
 
 # ---------------------------------------------------------------- transmitter
@@ -174,8 +221,8 @@ def test_can_loopback_tx_to_rx():
         status, rx_words = run_bus(mh, 400 * TPB)
         assert status == [0], f"TX status {status} for {ident:#x}"      # ACKed by core 1
         rx_words += mh.pop_all(1)
-        assert rx_words[-1] == 1                                         # core 1: CRC ok
-        assert unpack(rx_words[:-1], len(bits)) == bits
+        [(st, data)] = records(rx_words)
+        assert st == 1 and unpack(data, len(bits)) == bits               # core 1: CRC ok
 
 
 def test_can_arbitration_lost():

@@ -9,21 +9,25 @@
 ;   covers the drift over the up-to-10-bit gaps between edges. (With a later
 ;   sample point the edge can come before the WAIT is armed; a fast
 ;   transmitter then loses every later resync and drifts off.)
-; * Destuffing: the bit after five identical bits is dropped.
+; * Destuffing: the bit after five identical bits is dropped. If it equals them
+;   (a stuff error), the frame is abandoned: status 2, a 6-bit error flag
+;   (dominant) on TX, then wait for 11 recessive bits (bus idle).
 ; * CRC15 via the CRC tap (CRCCTRL = 0x4599 | 14<<16 | IN_TAP). SOF..CRC all feed
 ;   it, so a good frame leaves 0.
 ; * After 19 destuffed bits the DLC and RTR are read from the ISR to size the rest.
 ; * The ACK slot is driven dominant when the CRC is good.
 ;
-; RX FIFO per frame: destuffed bits SOF..CRC, MSB first, 32 per word (the last
-; word holds the remaining 19+8n+15 mod 32 bits right-aligned), then a status
-; word: 1 = CRC ok (ACKed), 0 = CRC error.
+; RX FIFO per frame (autopush 24, so data words have [31:24] = 0): destuffed
+; bits SOF..CRC, MSB first, 24 per word in [23:0]; the last word holds the
+; remaining bits right-aligned (19+8n+15 bits in all for a data frame); then a
+; status word with [31] = 1 (only status words have it): [1:0] = 1 CRC ok
+; (ACKed), 0 CRC error, 2 stuff error (the frame was abandoned).
 ;
 ; r0 = bit counter: 0..19 in the header, then 64 + bits still to come;
 ; r1 = run length; r2 = sampled bit / scratch / timeout budget; r3 = last bit.
 ; S below = tick of the `sample` instruction.
 .program can_rx
-.shift_in left autopush 32
+.shift_in left autopush 24
 idle:
     pin TX, hi
     wait fall RX                      ; SOF edge at D
@@ -66,10 +70,12 @@ hdr:
     ldi r2, 29                        ; S+15
     jmp nextbit                       ; S+16
 stuffbit:                             ; the stuff bit starts a new run
-    ldi r1, 1                         ; S+4
-    mov r3, r2                        ; S+5
-    ldi r2, 38                        ; S+6   (W = S+8, timeout at S+46)
-    jmp nextbit                       ; S+7
+    cmp r2, r3                        ; S+4
+    jmp z, stuff_error                ; S+5   six identical bits
+    ldi r1, 1                         ; S+6
+    mov r3, r2                        ; S+7
+    ldi r2, 36                        ; S+8   (W = S+10, timeout at S+46)
+    jmp nextbit                       ; S+9
 parse:                                ; 19 bits in: ISR[6] = RTR, ISR[3:0] = DLC
     mov r2, isr                       ; S+15
     and r2, 0x40                      ; S+16
@@ -104,8 +110,26 @@ bad:
     ldi r3, 0
 tail:
     push block                        ; remaining bits (right-aligned)
-    mov isr, r3
-    push block                        ; status
+    ldi r1, 0x8000
+    mov isr, r1
+    in r3, 16                         ; ISR = 0x8000_0000 | status ([31]: a status word)
+    push block
     nop                       [255]   ; ACK delimiter, EOF, intermission (> 10 bits)
     nop                       [255]
     jmp idle
+stuff_error:
+    pin TX, lo                [255]   ; error flag: 6 dominant bits (288 ticks)
+    nop                       [31]
+    pin TX, hi
+    push block
+    ldi r1, 0x8000
+    mov isr, r1
+    ldi r3, 2
+    in r3, 16                         ; status 2: stuff error
+    push block
+bus_idle:                             ; 11 recessive bits before listening again
+    wait 1 pin RX
+    ldi r2, 527                       ; 11 x 48 - 1 ticks
+    wait 0 pin RX timeout r2
+    jmp t, idle                       ; timed out: idle long enough
+    jmp bus_idle                      ; dominant bit: still busy

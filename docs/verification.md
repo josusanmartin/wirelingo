@@ -134,8 +134,9 @@ the RTL through the **real SPI host port** (`test/test.py`).
 * 10BASE-T: frames streamed at the SPI port's maximum rate up to the 128-byte
   bound (132 bytes must underrun); link pulses 100 ns wide, 16 ms apart.
 * CAN 2.0A: a transmitter model at ±1 % bit rate, a corrupted frame (no ACK),
-  an on-chip TX→RX loopback between two cores on a wired-AND bus, and
-  arbitration loss against a higher-priority node.
+  a stuff error (status 2, error flag, the next frame received), an on-chip
+  TX→RX loopback between two cores on a wired-AND bus, and arbitration loss
+  against a higher-priority node.
 * SWD (ARM DP model), JTAG (IEEE 1149.1 TAP), 1-Wire (slave model), PS/2
   (host model checking parity), WS2812 (datasheet timing windows), and the I2C
   sniffer running beside the I2C master.
