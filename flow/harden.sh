@@ -37,6 +37,7 @@ export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null
 rc=0
 if [ "${STOP:-}" = grt ]; then
+  mkdir -p runs/wokwi
   python -m librelane --pdk-root "$PDK_ROOT" --docker-no-tty --dockerized --pdk ihp-sg13cmos5l --manual-pdk \
     --run-tag wokwi --force-run-dir runs/wokwi --to OpenROAD.GlobalRouting src/config_merged.json > exp.log 2>&1 || rc=$?
 else
