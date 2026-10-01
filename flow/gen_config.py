@@ -65,11 +65,12 @@ def main():
     ap.add_argument("--density", type=int, default=34)
     ap.add_argument("--grt-adjust", type=float, default=0.15)
     ap.add_argument("--threads", type=int, default=8)
-    ap.add_argument("--every-other", action="store_true", help="extra SRAM array stripe pairs (prism's setting)")
+    ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
+                    help="extra SRAM array stripe pairs (prism's setting)")
     ap.add_argument("--layout", choices=["top", "sides", "corners"], default="corners")
-    ap.add_argument("--post-grt-repair", action="store_true",
+    ap.add_argument("--post-grt-repair", action=argparse.BooleanOptionalAction, default=True,
                     help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
-    ap.add_argument("--max-wire", type=int, default=0, help="buffer wires longer than this (um, 0 = off)")
+    ap.add_argument("--max-wire", type=int, default=400, help="buffer wires longer than this (um, 0 = off)")
     a = ap.parse_args()
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {

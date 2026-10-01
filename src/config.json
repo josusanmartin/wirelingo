@@ -21,6 +21,10 @@
     "nom_typ_1p20V_25C",
     "nom_slow_1p08V_125C"
   ],
+  "//repair": "Post-placement repair alone left ~3 ns slews on long nets and SRAM-pin slews above the macro's 0.476 ns limit",
+  "RUN_POST_GRT_DESIGN_REPAIR": 1,
+  "DESIGN_REPAIR_MAX_WIRE_LENGTH": 400,
+  "GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH": 400,
   "GRT_ADJUSTMENT": 0.15,
   "MACROS": {
     "RM_IHPSG13_1P_256x32_c2_bm_bist": {
