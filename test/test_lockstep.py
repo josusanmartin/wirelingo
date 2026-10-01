@@ -13,7 +13,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, RisingEdge, Timer
 
 from pe import isa, sim
-from pe.randprog import random_program, random_config_writes
+from pe.randprog import random_profile, random_program, random_config_writes
 
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
@@ -179,8 +179,9 @@ async def test_random_lockstep(dut):
         owners = [rng.randrange(4) for _ in range(4)] if rng.random() < 0.3 else [0, 1, 2, 3]
         await h.write(sim.A_BANK, sum(o << (2 * b) for b, o in enumerate(owners)))
         for b in range(4):
+            profile = random_profile(rng)
             for w in range(BANK_WORDS):
-                word = random_program(rng, b, BANK_WORDS, owners)
+                word = random_program(rng, b, BANK_WORDS, owners, profile)
                 await h.write((b << 8) | w, word)
         for addr, data in random_config_writes(rng, BANK_WORDS, owners):
             await h.write(addr, data)
@@ -189,6 +190,7 @@ async def test_random_lockstep(dut):
         ui = rng.getrandbits(5)
         uio = rng.getrandbits(8)
         toggle_p = rng.choice([0.02, 0.1, 0.4])
+        push_p = 0.06 if rng.random() < 0.7 else 0.3   # some seeds keep the TX FIFOs busy
         for _ in range(ncycles):
             for bit in range(5):
                 if rng.random() < toggle_p:
@@ -198,6 +200,10 @@ async def test_random_lockstep(dut):
                     uio ^= 1 << bit
             op = rng.random()
             c = rng.randrange(4)
+            if op < push_p:
+                op = 0.0
+            else:
+                op = 0.06 + (op - push_p) / (1 - push_p) * 0.94
             if op < 0.06:
                 await h.cycle_step(ui, uio, we=True, addr=sim.core_reg(c, sim.C_FIFO), wdata=rng.getrandbits(32))
             elif op < 0.12:
@@ -231,3 +237,59 @@ async def test_random_lockstep(dut):
         h.stats[k] = h.stats.get(k, 0) + n
     dut._log.info(f"{nseeds} seeds x {ncycles} cycles OK ({h.cycle} total cycles)")
     dut._log.info("coverage: " + ", ".join(f"{k}={n}" for k, n in sorted(h.stats.items())))
+    missing = [g for g in coverage_goals() if not h.stats.get(g)]
+    assert not missing, f"coverage goals not reached (run longer or fix the generator): {missing}"
+
+
+def coverage_goals():
+    """Events every lockstep run must exercise: each opcode completing, the
+    blocking ones also stalling, and the spec's corner cases (tools/pe/sim.py
+    counts them with Chip.cover)."""
+    ops = ["jmp", "wait", "in", "out", "push", "pull", "mov", "set", "ldi", "alu", "pin", "flag"]
+    return ([f"done:{op}" for op in ops] + ["stall:wait", "stall:push", "stall:pull", "stall:out", "jump"] + [
+        "wait:timeout", "wait:edge_caught_between_ticks", "wait:qualifier_blocked_edge",
+        "shift:autopush", "shift:autopull",
+        "pins:side_set_over_out", "pins:write_to_unowned_pin",
+        "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
+        "fifo:clear_nonempty", "fifo:join_move",
+        "ctrl:restart_mid_instruction", "core:bank_fault",
+    ])
+
+
+@cocotb.test()
+async def test_fifo_races(dut):
+    """Directed, still compared every cycle: a core loops pull/push while the
+    host pushes and reads at full rate, so host pushes meet core pops in the
+    same cycle, and reads race the core's pushes (with and without FIFO join)."""
+    from pe import asm
+    h = await start(dut)
+    prog = asm.assemble("""
+    loop:
+        pull block
+        mov isr, osr
+        push block
+        jmp loop
+    """)
+    for join in (0, 1):
+        h.model.stats.clear()
+        for i, w in enumerate(prog.words):
+            await h.write(i, w)
+        await h.write(sim.core_reg(0, sim.C_SHIFTCTRL), join << 4)
+        await h.write(sim.core_reg(0, sim.C_ENTRY), 0)
+        await h.write(sim.A_CTRL, 1 | (1 << 8) | (1 << 16))   # restart + clear FIFOs core 0
+        rng = random.Random(join)
+        fifo = sim.core_reg(0, sim.C_FIFO)
+        for cyc in range(3000):
+            k = rng.random()
+            draining = (cyc // 150) % 2          # alternate: push-heavy, then reads only
+            if k < 0.5 and not draining:
+                await h.cycle_step(we=True, addr=fifo, wdata=rng.getrandbits(32))
+            elif k < 0.8:
+                await h.cycle_step(snap=rng.random() < 0.5, commit=rng.random() < 0.5, addr=fifo)
+            else:
+                await h.cycle_step(addr=sim.core_reg(0, sim.C_STATUS))
+        want = ["fifo:host_push_to_full_dropped"] + (["fifo:join_move"] if join else
+                                                       ["fifo:host_push_and_core_pop", "fifo:pop_suppressed_by_snapshot"])
+        missing = [e for e in want if not h.model.stats.get(e)]
+        assert not missing, (join, missing)
+        await h.write(sim.A_CTRL, 0)

@@ -168,6 +168,8 @@ class Core:
             trans = self.wprev != wpin
         ev = bool(trans and qual)
         edge_done = bool(self.wevent or ev)
+        if self.in_wait and qen and trans and not qual and kind in (isa.W_RISE, isa.W_FALL, isa.W_EDGE):
+            chip.cover("wait:qualifier_blocked_edge")
         if self.in_wait:
             self.wevent = int(edge_done)
             self.wprev = wpin
@@ -180,6 +182,7 @@ class Core:
         if chip.bank_owner[self.pc >> 8] != self.idx:
             self.fault = self.halted = 1
             self.stalled = 0
+            chip.cover("core:bank_fault")
             return fx
 
         # -- side-set / delay split
@@ -251,12 +254,15 @@ class Core:
             else:
                 done = True
             if done:
+                if kind in (isa.W_RISE, isa.W_FALL, isa.W_EDGE) and not ev:
+                    chip.cover("wait:edge_caught_between_ticks")
                 if to:
                     self.t = 0
                 if kind == isa.W_FLAG1 and clr:
                     fx["fclr"] |= 1 << (idx & 7)
             elif to and self.r[treg] == 0:
                 self.t = 1
+                chip.cover("wait:timeout")
             else:
                 if to:
                     self.r[treg] = (self.r[treg] - 1) & M16
@@ -280,6 +286,7 @@ class Core:
                     complete = False
                 else:
                     fx["rxpush"] = nisr
+                    chip.cover("shift:autopush")
                     self.isr, self.isr_cnt = 0, 0
             else:
                 self.isr, self.isr_cnt = nisr, ncnt
@@ -295,6 +302,7 @@ class Core:
                 else:
                     osr0, cnt0 = pullq[0], 0
                     fx["txpop"] = True
+                    chip.cover("shift:autopull")
             if complete:
                 if self.out_shr:
                     data = osr0 & mask(n)
@@ -463,6 +471,10 @@ class Chip:
         self.cycle = 0
         self.stats = {}
 
+    def cover(self, event):
+        """Count a coverage event (test_lockstep requires each goal to be hit)."""
+        self.stats[event] = self.stats.get(event, 0) + 1
+
     def _imem_index(self, addr):
         return (addr >> 8) * self.bank_words + (addr & (self.bank_words - 1))
 
@@ -530,9 +542,12 @@ class Chip:
             fifo_ops.append((fx["txpop"], fx["rxpush"]))
             for kind in ("out", "oe"):
                 w = dict(fx[kind])
+                if w.keys() & fx["side_" + kind].keys():
+                    self.cover("pins:side_set_over_out")
                 w.update(fx["side_" + kind])  # side-set wins
                 for p, v in w.items():
                     if self.pin_owner[p] != c:
+                        self.cover("pins:write_to_unowned_pin")
                         continue
                     if kind == "out":
                         new_out = (new_out & ~(1 << p)) | (v << p)
@@ -549,6 +564,8 @@ class Chip:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
             if commit and off == C_FIFO and self.cores[c].snap_valid:
                 host_pop[c] = True
+            elif commit and off == C_FIFO and self.cores[c].rxf:
+                self.cover("fifo:pop_suppressed_by_snapshot")
         if we:
             if addr < IMEM_WORDS:
                 if (addr >> 8) < self.nbanks:
@@ -581,6 +598,8 @@ class Chip:
 
         for c, core in enumerate(self.cores):
             if (fclear >> c) & 1:
+                if core.txf or core.rxf:
+                    self.cover("fifo:clear_nonempty")
                 core.txf, core.rxf = [], []
                 continue
             txpop, rxpush = fifo_ops[c]
@@ -592,6 +611,7 @@ class Chip:
                 if core.txf and len(core.rxf) < self.fifo_depth:
                     tx = tx[1:]
                     rx.append(core.txf[0])
+                    self.cover("fifo:join_move")
             else:
                 if txpop:
                     tx = tx[1:]
@@ -601,10 +621,16 @@ class Chip:
                     rx.append(rxpush)
             if host_push[c] is not None and len(core.txf) < self.fifo_depth:
                 tx.append(host_push[c])
+                if txpop and not fjoin[c]:
+                    self.cover("fifo:host_push_and_core_pop")
+            elif host_push[c] is not None:
+                self.cover("fifo:host_push_to_full_dropped")
             core.txf, core.rxf = tx, rx
 
         for c in range(NCORES):
             if (restart >> c) & 1:
+                if self.cores[c].in_wait or self.cores[c].dcnt:
+                    self.cover("ctrl:restart_mid_instruction")
                 self.cores[c].restart()
 
         if snap:

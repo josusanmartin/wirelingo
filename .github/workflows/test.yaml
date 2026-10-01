@@ -42,13 +42,13 @@ jobs:
           cd test
           LOCKSTEP_SEEDS=20 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 \
             make TB=chip COCOTB_RESULTS_FILE=lockstep_tapeout.xml
-          python3 check_results.py lockstep_tapeout.xml 2
+          python3 check_results.py lockstep_tapeout.xml 3
 
       - name: Lockstep RTL vs model, 4-core flop build
         run: |
           cd test
           LOCKSTEP_SEEDS=10 LOCKSTEP_CYCLES=600 make TB=chip IMEM=flop COCOTB_RESULTS_FILE=lockstep_4core.xml
-          python3 check_results.py lockstep_4core.xml 2
+          python3 check_results.py lockstep_4core.xml 3
 
       - name: Test Summary
         uses: test-summary/action@v2.4

@@ -12,6 +12,11 @@ def _target(rng, bank, bank_words, owners):
     return (b << 8) | rng.randrange(bank_words)
 
 
+def _live_pin(rng):
+    """A pin the lockstep stimulus toggles: uio 0-7 or ui 16-20."""
+    return rng.choice([*range(8), *range(16, 21)])
+
+
 def _sd(rng):
     """Side/delay field. The split depends on the core's side-set config, so keep
     the upper bits mostly clear (otherwise they can become huge delays)."""
@@ -23,11 +28,25 @@ def _sd(rng):
     return rng.getrandbits(8)
 
 
-def random_instr(rng, bank, bank_words, owners):
+# Opcode weights per program profile. "fifo" keeps the FIFOs moving (pulls and
+# pushes racing the host); "wait" exercises edge WAITs, qualifiers and timeouts.
+PROFILES = {
+    #         JMP WAIT IN OUT PUSH PULL MOV SET LDI ALU PIN FLAG HALT rsvd
+    "mixed": [14, 8, 10, 10, 5, 5, 10, 6, 6, 12, 6, 4, 0.5, 1],
+    "fifo":  [10, 3, 12, 14, 14, 14, 6, 3, 4, 6, 3, 2, 0.2, 0.5],
+    "wait":  [12, 30, 6, 6, 3, 3, 6, 4, 6, 8, 6, 4, 0.2, 0.5],
+}
+
+
+def random_profile(rng):
+    return rng.choices(list(PROFILES), weights=[6, 2, 2])[0]
+
+
+def random_instr(rng, bank, bank_words, owners, profile="mixed"):
     op = rng.choices(
         [isa.OP_JMP, isa.OP_WAIT, isa.OP_IN, isa.OP_OUT, isa.OP_PUSH, isa.OP_PULL, isa.OP_MOV,
          isa.OP_SET, isa.OP_LDI, isa.OP_ALU, isa.OP_PIN, isa.OP_FLAG, isa.OP_HALT, 13 + rng.randrange(19)],
-        weights=[14, 8, 10, 10, 5, 5, 10, 6, 6, 12, 6, 4, 0.5, 1])[0]
+        weights=PROFILES[profile])[0]
     sd = _sd(rng)
     if op == isa.OP_JMP:
         x = (rng.randrange(16) << 15) | (rng.randrange(32) << 10) | _target(rng, bank, bank_words, owners)
@@ -35,6 +54,10 @@ def random_instr(rng, bank, bank_words, owners):
         x = rng.getrandbits(19)
         if rng.random() < 0.7:
             x |= 1 << 10  # usually with timeout so programs keep moving
+        if rng.random() < 0.7:  # mostly pins the stimulus toggles (uio 0-7, ui 16-20)
+            x = (x & ~(31 << 11)) | (_live_pin(rng) << 11)
+        if rng.random() < 0.7:
+            x = (x & ~31) | _live_pin(rng)
     elif op == isa.OP_OUT and rng.random() < 0.1:
         # computed jump: keep it mostly in range by using small counts
         x = (isa.PC << 15) | rng.randrange(32)
@@ -50,10 +73,11 @@ def random_instr(rng, bank, bank_words, owners):
     return isa.enc(op, sd, x)
 
 
-def random_program(rng, bank, bank_words, owners):
+def random_program(rng, bank, bank_words, owners, profile="mixed"):
+    """One random instruction word for `bank` (call once per word)."""
     if rng.random() < 0.02:
         return rng.getrandbits(32)  # completely random word
-    return random_instr(rng, bank, bank_words, owners)
+    return random_instr(rng, bank, bank_words, owners, profile)
 
 
 def random_config_writes(rng, bank_words, owners):
