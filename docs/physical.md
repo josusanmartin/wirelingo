@@ -1,7 +1,11 @@
 # Physical design notes (IHP SG13CMOS5L, Tiny Tapeout 6x4)
 
 A running log of what the flow taught us. The numbers come from local LibreLane
-3.1.0.dev3 runs (`flow/exp.sh` for routability experiments).
+3.1.0.dev3 runs. `flow/harden.sh NAME` hardens HEAD in its own worktree and
+writes a signoff summary (`flow/signoff.py`); `flow/gl_test.sh` runs the
+gate-level tests on the result. The routability experiments below used a
+flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
+bd07aa5; see git history).
 
 ## The tile
 

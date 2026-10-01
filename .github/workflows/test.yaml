@@ -23,29 +23,40 @@ jobs:
         shell: bash
         run: pip install -r test/requirements.txt
 
-      - name: Run tests
+      # Each suite writes its own results file; check_results.py fails on a
+      # missing file, a wrong test count, or any failure, error or skip.
+      - name: Top-level tests through the SPI port (tapeout config, SRAM model)
         run: |
           cd test
           make clean
-          make
-          # make will return success even if the test fails, so check for failure in the results.xml
-          ! grep failure results.xml
+          make COCOTB_RESULTS_FILE=top.xml
+          python3 check_results.py top.xml 8
 
-      - name: Firmware tests on the model, assembler tests
+      - name: Firmware tests on the model, assembler and driver tests
         run: |
           pip install pytest
           PYTHONPATH=tools python -m pytest -q test/model
 
-      - name: Lockstep RTL vs model (short)
+      - name: Lockstep RTL vs model, tapeout config (2 cores, 2 SRAM banks, 8-deep FIFOs)
         run: |
           cd test
-          LOCKSTEP_SEEDS=10 LOCKSTEP_CYCLES=600 make TB=chip IMEM=flop
-          ! grep failure results.xml
+          LOCKSTEP_SEEDS=20 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 \
+            make TB=chip COCOTB_RESULTS_FILE=lockstep_tapeout.xml
+          python3 check_results.py lockstep_tapeout.xml 2
+
+      - name: Lockstep RTL vs model, 4-core flop build
+        run: |
+          cd test
+          LOCKSTEP_SEEDS=10 LOCKSTEP_CYCLES=600 make TB=chip IMEM=flop COCOTB_RESULTS_FILE=lockstep_4core.xml
+          python3 check_results.py lockstep_4core.xml 2
 
       - name: Test Summary
         uses: test-summary/action@v2.4
         with:
-          paths: "test/results.xml"
+          paths: |
+            test/top.xml
+            test/lockstep_tapeout.xml
+            test/lockstep_4core.xml
         if: always()
 
       - name: upload waveform and test results
@@ -55,5 +66,5 @@ jobs:
           name: test-results
           path: |
             test/tb.fst
-            test/results.xml
+            test/*.xml
             test/output/*

@@ -1,0 +1,146 @@
+rm -f gl.xml
+"make" -f Makefile gl.xml
+make[1]: Entering directory '[home directory redacted]/dev/protoemu/test'
+mkdir -p sim_build/gl
+[home directory redacted]/tools/oss-cad-suite/bin/iverilog -o sim_build/gl/sim.vvp -s tb -g2012 -DGL_TEST -DFUNCTIONAL -DSIM -g2012 -I[home directory redacted]/dev/protoemu/test/../src -f sim_build/gl/cmds.f  [home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v [home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_udp.v [home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v [home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/verilog/RM_IHPSG13_1P_core_behavioral_bm_bist.v [home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/verilog/RM_IHPSG13_1P_256x32_c2_bm_bist.v [home directory redacted]/dev/protoemu/test/gate_level_netlist.v [home directory redacted]/dev/protoemu/test/tb.v
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:42: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:44: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:50: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:52: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:66: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:68: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:103: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:105: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:111: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:113: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:127: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:129: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:177: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:179: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:227: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:229: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:274: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:276: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:290: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:292: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:306: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:308: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:322: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:324: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:346: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:348: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:385: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:387: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:393: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:395: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:405: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:407: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:417: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:419: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1786: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1788: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1830: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1832: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1881: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1883: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1901: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:1903: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2487: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2489: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2733: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2735: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2743: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2745: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2802: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2804: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2811: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2813: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2866: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2868: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2875: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2877: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2932: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2934: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2990: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:2992: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3199: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3201: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3211: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3213: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3250: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3252: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3262: sorry: ifnone with an edge-sensitive path is not supported.
+[home directory redacted]/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v:3264: sorry: ifnone with an edge-sensitive path is not supported.
+rm -f gl.xml
+COCOTB_TEST_MODULES=test COCOTB_TESTCASE= COCOTB_TEST_FILTER= COCOTB_TOPLEVEL=tb TOPLEVEL_LANG=verilog \
+         [home directory redacted]/tools/oss-cad-suite/bin/vvp -M [home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs -m libcocotbvpi_icarus   sim_build/gl/sim.vvp -fst   
+     -.--ns INFO     gpi                                ../gpi/GpiCommon.cpp:216  in gpi_load_users                  Running entry func 'initialize' from loaded library '[home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs/libcocotb.so'
+     -.--ns INFO     gpi                                ..mbed/gpi_embed.cpp:96   in initialize                      Using Python 3.11.6 interpreter at [home directory redacted]/tools/oss-cad-suite/bin/tabbypy3
+     0.00ns INFO     cocotb                             Running on Icarus Verilog version 14.0 (devel)
+     0.00ns INFO     cocotb                             Seeding Python random module with 1790828660
+     0.00ns INFO     cocotb                             Initialized cocotb v2.1.0.dev0+41564633 from [home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb
+     0.00ns INFO     cocotb                             Running tests
+     0.00ns INFO     cocotb.regression                  running test.test_id (1/8)
+ 66760.00ns INFO     cocotb.regression                  test.test_id passed
+ 66760.00ns INFO     cocotb.regression                  running test.test_uart_tx (2/8)
+283860.00ns INFO     cocotb.regression                  test.test_uart_tx passed
+283860.00ns INFO     cocotb.regression                  running test.test_uart_rx (3/8)
+552680.00ns INFO     cocotb.regression                  test.test_uart_rx passed
+552680.00ns INFO     cocotb.regression                  running test.test_spi_master (4/8)
+775380.00ns INFO     cocotb.regression                  test.test_spi_master passed
+775380.00ns INFO     cocotb.regression                  running test.test_i2c_master (5/8)
+1412160.00ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42
+1731040.00ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42 P S Aa0 W10 S Aa1 Rde Rad R42 P S Nb0 P
+1731040.00ns INFO     cocotb.regression                  test.test_i2c_master passed
+1731040.00ns INFO     cocotb.regression                  running test.test_usb_ls_device (6/8)
+                                                            USB low-speed device side in firmware: SETUP+DATA0 -> ACK (and a good record),
+2792940.00ns WARNING  ..otb.task.Test test_usb_ls_device [425984, 256, 3707781120, 2483027968]
+                                                        assert not [425984, 256, 3707781120, 2483027968]
+                                                        Traceback (most recent call last):
+                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 527, in test_usb_ls_device
+                                                            assert await records() == [usbdev.Record(True, req, 16 + 8 * 10)]
+                                                                   ^^^^^^^^^^^^^^^
+                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 516, in records
+                                                            assert not rest, words
+                                                        AssertionError: [425984, 256, 3707781120, 2483027968]
+                                                        assert not [425984, 256, 3707781120, 2483027968]
+2792940.00ns WARNING  cocotb.regression                  test.test_usb_ls_device failed
+2792940.00ns INFO     cocotb.regression                  running test.test_eth10_tx (7/8)
+                                                            10BASE-T TX with FIFO join: a 64-byte frame from one 16-word FIFO burst.
+3129000.01ns WARNING  cocotb.task.Test test_eth10_tx     0x4
+                                                        assert (4, 0) == (8, 8)
+                                                        Traceback (most recent call last):
+                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 561, in test_eth10_tx
+                                                            assert (st & 15, (st >> 4) & 15) == (8, 8), hex(st)   # TXF and RXF (second TX stage) full
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                        AssertionError: 0x4
+                                                        assert (4, 0) == (8, 8)
+3129000.01ns WARNING  cocotb.regression                  test.test_eth10_tx failed
+3129000.01ns INFO     cocotb.regression                  running test.test_fifo_read_race (8/8)
+                                                            A word the core pushes while the host is reading an empty RXF must not be
+3512180.01ns WARNING  ..tb.task.Test test_fifo_read_race ('0xa0d2', ['0xa0ae', '0xa0ba', '0xa0c6'])
+                                                        assert ([41110, 41122, 41134, 41146, 41158] and 41158 == 41170)
+                                                        Traceback (most recent call last):
+                                                          File "[home directory redacted]/dev/protoemu/test/test.py", line 604, in test_fifo_read_race
+                                                            assert got and got[-1] == marker, (hex(marker), [hex(g) for g in got[-3:]])
+                                                        AssertionError: ('0xa0d2', ['0xa0ae', '0xa0ba', '0xa0c6'])
+                                                        assert ([41110, 41122, 41134, 41146, 41158] and 41158 == 41170)
+3512180.01ns WARNING  cocotb.regression                  test.test_fifo_read_race failed
+3512180.01ns INFO     cocotb.regression                  **************************************************************************************
+                                                        ** TEST                          STATUS  SIM TIME (ns)  REAL TIME (s)  RATIO (ns/s) **
+                                                        **************************************************************************************
+                                                        ** test.test_id                   PASS       66760.00           2.12      31511.91  **
+                                                        ** test.test_uart_tx              PASS      217100.00           7.18      30245.18  **
+                                                        ** test.test_uart_rx              PASS      268820.00           8.13      33050.62  **
+                                                        ** test.test_spi_master           PASS      222700.00           9.26      24041.54  **
+                                                        ** test.test_i2c_master           PASS      955660.00          29.89      31977.00  **
+                                                        ** test.test_usb_ls_device        FAIL     1061900.00          27.15      39108.58  **
+                                                        ** test.test_eth10_tx             FAIL      336060.00           7.77      43227.42  **
+                                                        ** test.test_fifo_read_race       FAIL      383180.00           6.81      56230.73  **
+                                                        **************************************************************************************
+                                                        ** TESTS=8 PASS=5 FAIL=3 SKIP=0            3512180.01          98.36      35708.02  **
+                                                        **************************************************************************************
+FST info: dumpfile tb.fst opened for output.
+make[1]: *** [[home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb_tools/makefiles/simulators/Makefile.icarus:67: gl.xml] Error 3
+make[1]: Leaving directory '[home directory redacted]/dev/protoemu/test'
+make: *** [[home directory redacted]/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb_tools/makefiles/Makefile.inc:17: sim] Error 2
