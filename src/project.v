@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Pins: ui[5]=MOSI ui[6]=SCK ui[7]=CS_n uo[7]=MISO (host SPI port);
- * everything else belongs to the four protocol cores (docs/isa.md §2).
+ * everything else belongs to the protocol cores (docs/isa.md §2; NCORES = 2
+ * on the IHP tapeout, up to 4 in the RTL).
  */
 `default_nettype none
 // IMEM: SRAM macros (256 words/bank) by default. Define PE_FLOP_IMEM (and

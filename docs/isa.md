@@ -27,9 +27,10 @@ limitations:
 | no direct single-pin control             | `PIN p, hi/lo/toggle/hiz` on any absolute pin        |
 | SMs sync only via IRQ flags              | flags + 8 virtual pins (internal wires between cores)|
 
-Planned for v0.3 (reserved opcodes): a composable serial bit pipeline
-(bit stuffing, NRZI / Manchester line coding, configurable CRC) between the
-shift registers and the pins, for low-speed USB, 10BASE-T and CAN.
+Beyond PIO there is also a CRC tap fed by the shift registers (§4.5) and
+FIFO join (§4.4). Bit stuffing and NRZI/Manchester line coding stay in
+firmware (the USB, CAN and 10BASE-T programs); a hardware line-coding stage is
+not planned for this tapeout.
 
 ## 2. Pins
 

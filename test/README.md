@@ -1,47 +1,18 @@
-# Sample testbench for a Tiny Tapeout project
+# protoemu tests
 
-This is a sample testbench for a Tiny Tapeout project. It uses [cocotb](https://docs.cocotb.org/en/stable/) to drive the DUT and check the outputs.
-See below to get started or for more information, check the [website](https://tinytapeout.com/hdl/testing/).
-
-## Setting up
-
-1. Edit [Makefile](Makefile) and modify `PROJECT_SOURCES` to point to your Verilog files.
-2. Edit [tb.v](tb.v) and replace `tt_um_example` with your module name.
-
-## How to run
-
-To run the RTL simulation:
+* `test.py`: top-level cocotb tests through the real SPI host port (UART, SPI,
+  I2C, USB low-speed device, 10BASE-T TX, FIFO read race), on the SRAM build.
+* `test_lockstep.py`: RTL vs the golden model (`tools/pe/sim.py`) on random
+  programs, pins and host traffic, compared every cycle (`TB=chip`).
+* `model/`: firmware on the cycle-accurate model, assembler and driver tests (pytest).
 
 ```sh
-make -B
+make                                   # top-level tests (2 cores, 2 SRAM banks, 8-deep FIFOs)
+LOCKSTEP_SEEDS=200 make TB=chip PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3   # tapeout config
+make TB=chip IMEM=flop                 # 4-core flop build (faster)
+make GATES=yes                         # gate level: copy runs/wokwi/final/nl/*.nl.v to
+                                       # gate_level_netlist.v first (flow/gl_test.sh does this)
+cd .. && PYTHONPATH=tools python -m pytest test/model
 ```
 
-To run gatelevel simulation, first harden your project and copy `../runs/wokwi/results/final/verilog/gl/{your_module_name}.v` to `gate_level_netlist.v`.
-
-Then run:
-
-```sh
-make -B GATES=yes
-```
-
-If you wish to save the waveform in VCD format instead of FST format, edit tb.v to use `$dumpfile("tb.vcd");` and then run:
-
-```sh
-make -B FST=
-```
-
-This will generate `tb.vcd` instead of `tb.fst`.
-
-## How to view the waveform file
-
-Using GTKWave
-
-```sh
-gtkwave tb.fst tb.gtkw
-```
-
-Using Surfer
-
-```sh
-surfer tb.fst
-```
+Waveforms: `tb.fst` (`gtkwave tb.fst` or `surfer tb.fst`).

@@ -127,6 +127,25 @@ def test_streamed_long_frame_and_back_to_back():
     check(ln.trace, ln.send(fr3), fr3)
 
 
+def test_streaming_bound():
+    """128 bytes is the longest frame a host streaming at the SPI port's maximum
+    rate can send (16 words preloaded, then one per 6.4 us against one per 3.2 us
+    on the line); 132 bytes underruns. Documented in eth10_tx.pasm."""
+    ln = Line()
+    ln.step(100)
+    fr = frame(128 - 18)
+    check(ln.trace, ln.send(fr, stream=True), fr)
+    ln = Line()
+    ln.step(100)
+    fr = frame(132 - 18)
+    start = ln.send(fr, stream=True)
+    try:
+        check(ln.trace, start, fr)
+    except AssertionError:
+        return
+    raise AssertionError("132 bytes should underrun at SPI speed")
+
+
 def test_link_pulses():
     ln = Line()
     ln.step(2 * 640_000 + 2000)

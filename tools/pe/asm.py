@@ -1,7 +1,7 @@
 """Assembler for protoemu programs (.pasm). Syntax documented in docs/asm.md.
 
     prog = assemble(open("uart_tx.pasm").read())
-    prog.words            # list of 24-bit ints, relative to address 0
+    prog.words            # list of 32-bit instruction words, relative to address 0
     prog.relocate(base)   # words with JMP targets offset by base
 """
 import re

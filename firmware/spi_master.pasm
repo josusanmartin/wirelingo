@@ -1,7 +1,7 @@
 ; SPI master, mode 0 (CPOL=0, CPHA=0), MSB first, 8-bit frames.
 ; SCK = side-set pin, MOSI = OUT pin, MISO = IN pin. Two ticks per SCK phase:
 ; f_SCK = f_tick / 4. Push bytes in TX FIFO bits [31:24]; received bytes appear in RXF [7:0].
-; (Chip select is left to the host or another program: see spi_master_cs.)
+; Chip select is left to the host (PIN_OUT) or a PIN instruction in a wrapper program.
 .program spi_master
 .side_set 1
 .shift_out left autopull 8
