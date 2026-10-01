@@ -44,10 +44,13 @@ per via). With the LEF values the slow corner showed +1.95 ns after CTS and
 found 573 violating endpoints after CTS and brought the slow corner from
 −7.9 to −0.48 ns (+0.8 % area); −1.18 ns after global routing.
 
-The core's own instruction → next-fetch-address logic is 13.9 ns at the slow
-corner (standalone, before repair). Computed jumps (MOV/OUT to PC) put the
-source mux and the funnel shifter on it; fetching their target a cycle later
-(docs/isa.md §4.2) makes it 11.6 ns.
+The core's own instruction → next-fetch-address logic, standalone at the slow
+corner with timing repair (`INSTR_DELAY=11 flow/core_route.sh`), is a wall of
+near-equal paths of about 7.5 ns. Shortening the worst ones in RTL doesn't
+move it: fetching computed jumps' targets a cycle later (13.9 → 11.6 ns before
+repair) and a register-side autopush compare both end within 0.1 ns of the
+original after repair. Unrepaired path delays mislead here, since the
+resizer buffers the high-fanout decode nets that dominate them.
 
 
 * 50 MHz at the typical corner is comfortable. The flop build has +8.9 ns setup
