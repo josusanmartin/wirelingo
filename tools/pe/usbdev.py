@@ -1,13 +1,16 @@
 """Host-side helpers for the USB low-speed device firmware (usb_ls_rx + usb_ls_tx).
 
-The RX core pushes one record per DATA packet received after a SETUP/OUT to
-us (firmware/usb_ls_rx.pasm): payload+CRC16 bits 24 per word in [31:8], a
-partial last word, then a trailer with [7] = 1. The TX core sends a staged
-packet when the host has pushed it and set F_STAGED.
+Two firmware variants share this host protocol: usb_ls_rx + usb_ls_tx (two
+cores, all in firmware) and usb_ls_dev (one core, with the line unit). The RX
+side pushes one record per DATA packet received after a SETUP/OUT to us:
+payload+CRC16 bits 24 per word in [31:8], a partial last word, then a trailer
+with [7] = 1. A staged packet is sent when the host has pushed it and set
+F_STAGED. DeviceSoftware is the reference device software (control requests,
+re-staging after a lost ACK, the address filter after SET_ADDRESS).
 """
 from dataclasses import dataclass
 
-from . import usb
+from . import sim, usb
 
 FLAGS = dict(F_IN=0, F_ACK=1, F_EXP=2, F_SETUP=3, F_STAGED=4, F_GOTACK=5)
 F_SETUP, F_STAGED, F_GOTACK = (1 << FLAGS[k] for k in ("F_SETUP", "F_STAGED", "F_GOTACK"))
@@ -62,3 +65,88 @@ def filter_write(rx_prog, rx_base, addr, endp=0):
     a = rx_base + rx_prog.labels["filter"]
     word = rx_prog.relocate(rx_base)[rx_prog.labels["filter"]]
     return a, (word & ~0xFFFF) | usb.token_filter(addr, endp)
+
+
+class DeviceSoftware:
+    """What the RP2350 would run: read RX records over SPI, answer control requests.
+    It only gets a turn between host transactions (via UsbHost.idle), and each
+    turn is slow, so the chip's automatic NAKs cover the gap."""
+
+    def __init__(self, mh, rx_prog, descriptors, rx_core=0, tx_core=1, rx_base=0):
+        """rx_core == tx_core: the one-core firmware (usb_ls_dev), which drops a
+        stale staged packet itself when a SETUP comes."""
+        self.mh, self.rx_prog, self.descriptors = mh, rx_prog, descriptors
+        self.rx, self.tx, self.rx_base = rx_core, tx_core, rx_base
+        self.words = []
+        self.pending = []      # 8-byte chunks still to send for the current request
+        self.toggle = 1
+        self.unacked = None    # (pid, payload) staged or sent, not yet acknowledged
+        self.new_address = None
+        self.address = 0
+        self.requests = []
+        self.restaged = 0
+
+    def records(self):
+        self.words += self.mh.pop_all(self.rx)
+        recs, self.words = parse_records(self.words)
+        return [r for r in recs if r.ok]       # bad packets were not ACKed: the host retries
+
+    def stage(self, pid, payload):
+        mh = self.mh
+        mh.write(sim.A_FCLR, F_GOTACK)
+        for w in stage_words(pid, payload):
+            mh.push(self.tx, w)
+        mh.write(sim.A_FSET, F_STAGED)
+        self.unacked = (pid, payload)
+
+    def set_address(self, addr):
+        """Move the RX token filter (its core briefly disabled: docs/isa.md §3)."""
+        mh = self.mh
+        en = mh.chip.read(sim.A_CTRL)
+        mh.write(sim.A_CTRL, en & ~(1 << self.rx))
+        mh.write(*filter_write(self.rx_prog, self.rx_base, addr))
+        mh.write(sim.A_CTRL, en)
+        self.address = addr
+
+    def service(self, mh):
+        flags = mh.read(sim.A_FSET)
+        for r in self.records():
+            if flags & F_SETUP and len(r.data) == 8:
+                mh.write(sim.A_FCLR, F_SETUP)
+                self.requests.append(r.data.hex())
+                self.handle(r.data)
+                flags = mh.read(sim.A_FSET)
+        if self.unacked and not flags & F_STAGED:      # the TX core sent it
+            if flags & F_GOTACK:
+                mh.write(sim.A_FCLR, F_GOTACK)
+                self.unacked = None
+                if self.new_address is not None and not self.pending:
+                    self.set_address(self.new_address)      # after the status stage
+                    self.new_address = None
+            else:                                           # lost ACK: same packet again
+                self.stage(*self.unacked)
+                self.restaged += 1
+        if not self.unacked and self.pending:
+            chunk = self.pending.pop(0)
+            self.stage(usb.PID_DATA1 if self.toggle else usb.PID_DATA0, chunk)
+            self.toggle ^= 1
+
+    def handle(self, req):
+        bm, breq, wval, wlen = req[0], req[1], req[2] | req[3] << 8, req[6] | req[7] << 8
+        self.toggle = 1
+        if self.unacked:                       # a new SETUP abandons the old transfer
+            self.mh.write(sim.A_FCLR, F_STAGED | F_GOTACK)
+            if self.tx != self.rx:             # (the one-core firmware flushes its TX FIFO itself)
+                en = self.mh.chip.read(sim.A_CTRL)
+                self.mh.write(sim.A_CTRL, en | (1 << (16 + self.tx)))   # clear the TX core's FIFOs
+            self.unacked = None
+        if bm == 0x80 and breq == 6:           # GET_DESCRIPTOR
+            desc = self.descriptors.get(wval >> 8, b"")[:wlen]
+            self.pending = [desc[i:i + 8] for i in range(0, len(desc), 8)]
+            if len(desc) % 8 == 0:
+                self.pending.append(b"")       # terminate with a zero-length packet
+        elif bm == 0x00 and breq == 5:         # SET_ADDRESS (status stage is a zero-length IN)
+            self.new_address = wval
+            self.pending = [b""]
+        elif bm == 0x00 and breq == 9:         # SET_CONFIGURATION
+            self.pending = [b""]
