@@ -302,8 +302,8 @@ NRZ/NRZI: a transition sets the sample counter to P/2;
           sample: with DIFF, RXP = RXN = 0 (SE0) ends the frame;
                   bit = rx (NRZ), or 1 if rx equals the last sample (NRZI)
           without a transition for STUFF_K + 2 bits (8 if STUFF_K = 0): end
-Manchester: after a mid-bit transition, transitions in the next 3P/4 are bit
-          boundaries; the first one after that is the next mid-bit
+Manchester: after a mid-bit transition, transitions in the next 3P/4 cycles
+          (rounded: (3P + 2) / 4) are bit boundaries; the first one after that is the next mid-bit
           transition: bit = rx after it. The frame's first transition counts
           as mid-bit, so a frame must start with a bit whose first half is the
           idle level (a 1 after a low line, as the 10BASE-T preamble does).

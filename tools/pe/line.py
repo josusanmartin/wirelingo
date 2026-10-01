@@ -272,7 +272,7 @@ class Line:
                     self.rcnt = ((p >> 1) - 1) & M16
         elif self.code == MANCH:
             self.mt = (self.mt + 1) & M16
-            if trans and self.mt >= (3 * p) >> 2:
+            if trans and self.mt >= (3 * p + 2) >> 2:      # 3P/4, rounded
                 self.mt = 0
                 self._deliver(rx)
             elif self.mt >= (3 * p) >> 1:

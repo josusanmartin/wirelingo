@@ -54,7 +54,7 @@ MUTANTS = {
     "asm-clkdiv-no-carry": ("tools/pe/isa.py", "    if f == 256:", "    if f == 257:", pytest("test/model/test_asm.py")),
     "rtl-line-no-tx-stuff": ("src/pe_line.sv", "        if (k != 3'd0 && n_trun == k) begin                      // stuff bit",
                              "        if (1'b0) begin                                          // stuff bit", LOCKSTEP),
-    "model-line-manchester-window": ("tools/pe/line.py", "if trans and self.mt >= (3 * p) >> 2:",
+    "model-line-manchester-window": ("tools/pe/line.py", "if trans and self.mt >= (3 * p + 2) >> 2:      # 3P/4, rounded",
                                      "if trans and self.mt >= p >> 1:", LOCKSTEP),
     "fw-usb-record-no-marker": ("firmware/usb_ls_rx.pasm", "    ldi r1, 0x81                   ; trailer status: good",
                                 "    ldi r1, 0x01                   ; trailer status: good",

@@ -111,6 +111,7 @@ module pe_line (
   wire       rxn = pins_in[rxp + 5'd1];
   wire       trans = rx != rprev;
   wire [17:0] p3 = {2'd0, p} * 18'd3;
+  wire [17:0] p3r = p3 + 18'd2;                                  // 3P/4 rounded: (3P + 2) / 4
 
   reg        n_tx_on, n_eop, n_half, n_bit, n_level, n_txn, n_trunbit, n_trunv;
   reg [3:0]  n_ending;
@@ -257,7 +258,7 @@ module pe_line (
         end
       end else if (manch) begin
         n_mt = mt + 16'd1;
-        if (trans && {2'd0, n_mt} >= {2'd0, p3[17:2]}) begin
+        if (trans && {2'd0, n_mt} >= {2'd0, p3r[17:2]}) begin
           n_mt = 16'd0;
           deliver(rx);
         end else if ({2'd0, n_mt} >= {1'b0, p3[17:1]}) begin
