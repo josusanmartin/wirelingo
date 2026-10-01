@@ -86,7 +86,7 @@ module pe_chip #(
   // line unit <-> core 0 (the other cores' line outputs are unused)
   wire        line_room, line_ok, line_t;
   wire [5:0]  line_k;
-  wire [31:0] line_val, line_r_cfg, line_r_div, line_r_pins, line_r_stat;
+  wire [31:0] line_val, line_r_stat;
   wire [3:0]  lp_push, lp_msb, lp_in_shr, lp_take;
   wire [127:0] lp_data;
   wire [23:0] lp_n, lp_in_n;
@@ -162,7 +162,7 @@ module pe_chip #(
       .div_we(bus_we && sel_glob && goff == 4'hD),
       .pins_we(bus_we && sel_glob && goff == 4'hE),
       .wdata(bus_wdata),
-      .r_cfg(line_r_cfg), .r_div(line_r_div), .r_pins(line_r_pins), .r_stat(line_r_stat),
+      .r_stat(line_r_stat),
       .pins_in(pins_in), .drv_mask(line_mask), .drv_val(line_val_o),
       .room(line_room), .push(lp_push[0]), .push_data(lp_data[31:0]), .push_n(lp_n[5:0]),
       .push_msb(lp_msb[0]), .in_n(lp_in_n[5:0]), .in_shr(lp_in_shr[0]),
@@ -199,17 +199,9 @@ module pe_chip #(
         4'h0: bus_rdata = ID_VALUE;
         4'h1: bus_rdata = {28'd0, enable};
         4'h2, 4'h3: bus_rdata = {24'd0, flags};
-        4'h4: bus_rdata = {24'd0, bank_owner};
-        4'h5: bus_rdata = pin_owner[31:0];
-        4'h6: bus_rdata = pin_owner[63:32];
-        4'h7: bus_rdata = {24'd0, od_mask};
         4'h8: bus_rdata = pins_in;
         4'h9: bus_rdata = pin_out;
         4'hA: bus_rdata = pin_oe;
-        4'hB: bus_rdata = {31'd0, hostcfg};
-        4'hC: bus_rdata = line_r_cfg;
-        4'hD: bus_rdata = line_r_div;
-        4'hE: bus_rdata = line_r_pins;
         4'hF: bus_rdata = line_r_stat;
         default: bus_rdata = 32'd0;
       endcase

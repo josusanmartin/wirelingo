@@ -52,6 +52,8 @@ MUTANTS = {
     "fw-eth10-short-tp-idl": ("firmware/eth10_tx.pasm", "    nop                       side 1 [9]",
                               "    nop                       side 1 [5]", pytest("test/model/test_eth10.py -k min_frame")),
     "asm-clkdiv-no-carry": ("tools/pe/isa.py", "    if f == 256:", "    if f == 257:", pytest("test/model/test_asm.py")),
+    "rtl-config-in-base-field": ("src/pe_core.sv", "bus_wdata[12], bus_wdata[13], bus_wdata[20:16]}",
+                                 "bus_wdata[12], bus_wdata[13], bus_wdata[21:17]}", LOCKSTEP),
     "rtl-line-no-tx-stuff": ("src/pe_line.sv", "        if (k != 3'd0 && n_trun == k) begin                      // stuff bit",
                              "        if (1'b0) begin                                          // stuff bit", LOCKSTEP),
     "model-line-manchester-window": ("tools/pe/line.py", "if trans and self.mt >= (3 * p + 2) >> 2:      # 3P/4, rounded",

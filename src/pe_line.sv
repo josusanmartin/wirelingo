@@ -13,7 +13,7 @@ module pe_line (
     // host registers (0x080C LINECFG, 0x080D LINEDIV, 0x080E LINEPINS)
     input  wire        cfg_we, div_we, pins_we,
     input  wire [31:0] wdata,
-    output wire [31:0] r_cfg, r_div, r_pins, r_stat,
+    output wire [31:0] r_stat,
     // pins
     input  wire [31:0] pins_in,
     output wire [31:0] drv_mask,      // pins the transmitter drives this cycle
@@ -363,8 +363,5 @@ module pe_line (
     end
   end
 
-  assign r_cfg  = {17'd0, cfg};
-  assign r_div  = div;
-  assign r_pins = {19'd0, rxp, 3'd0, txp};
   assign r_stat = {12'd0, ovf, end_pend, rx_on, tx_on, 2'd0, rcount, 6'd0, e_cnt};
 endmodule

@@ -49,6 +49,9 @@ def line_state_model(l):
     )
 
 
+CONFIG = ["div_int", "div_frac", "out_base", "out_count", "set_base", "set_count", "side_base", "side_count", "side_opt", "side_pindir", "in_base", "out_shr", "in_shr", "autopull", "autopush", "fjoin", "pull_thresh", "push_thresh", "entry", "wrap_bottom", "wrap_top", "crc_poly", "crc_w", "in_tap", "out_tap"]
+
+
 def core_state_rtl(core):
     return dict(
         pc=v(core.pc), r0=v(core.r0), r1=v(core.r1), r2=v(core.r2), r3=v(core.r3),
@@ -61,6 +64,8 @@ def core_state_rtl(core):
         # FIFO heads (when occupied): every entry is compared as it reaches the head
         txh=v(core.txf_head) if v(core.u_fifos.txf.cnt) else None,
         rxh=v(core.rxf_head) if v(core.u_fifos.rxf.cnt) else None,
+        # configuration (write-only on the bus, so compared here)
+        **{k: v(getattr(core, k)) for k in CONFIG},
     )
 
 
@@ -73,6 +78,7 @@ def core_state_model(m):
         cnt=m.cnt, facc=m.facc, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
         wprev=m.wprev, wevent=m.wevent, res=reservations(len(m.res), sum(b << i for i, b in enumerate(m.res))),
         txh=m.txf[0] if m.txf else None, rxh=m.rxf[0] if m.rxf else None,
+        **{k: getattr(m, k) for k in CONFIG},
     )
 
 
@@ -111,9 +117,18 @@ class Harness:
             for k in a:
                 if a[k] != b[k]:
                     errs.append(f"core{i}.{k}: rtl={a[k]:#x} model={b[k]:#x}")
+        u = self.chip.u_line
         for name, rv, mv in (("pin_out", v(self.chip.pin_out), m.pin_out),
                              ("pin_oe", v(self.chip.pin_oe), m.pin_oe),
-                             ("flags", v(self.chip.flags), m.flags)):
+                             ("flags", v(self.chip.flags), m.flags),
+                             # configuration (write-only on the bus, so compared here)
+                             ("bank_owner", v(self.chip.bank_owner), sum(o << 2 * i for i, o in enumerate(m.bank_owner))),
+                             ("pin_owner", v(self.chip.pin_owner_lo) | v(self.chip.pin_owner_hi) << 32,
+                              sum(o << 2 * i for i, o in enumerate(m.pin_owner))),
+                             ("od_mask", v(self.chip.od_mask), m.od_mask),
+                             ("hostcfg", v(self.chip.hostcfg), m.hostcfg),
+                             ("line.cfg", v(u.cfg), m.line.cfg), ("line.div", v(u.div), m.line.div),
+                             ("line.txp", v(u.txp), m.line.txp), ("line.rxp", v(u.rxp), m.line.rxp)):
             if rv != mv:
                 errs.append(f"{name}: rtl={rv:#x} model={mv:#x}")
         a, b = line_state_rtl(self.chip.u_line), line_state_model(m.line)

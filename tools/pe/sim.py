@@ -72,22 +72,7 @@ class Core:
                 | (self.t << 10) | (self.stalled << 12) | (self.halted << 13) | (self.fault << 14))
 
     def read_reg(self, off):
-        if off == C_CLKDIV:
-            return (self.div_int << 8) | self.div_frac
-        if off == C_PINCTRL0:
-            return self.out_base | (self.out_count << 8) | (self.set_base << 16) | (self.set_count << 24)
-        if off == C_PINCTRL1:
-            return (self.side_base | (self.side_count << 8) | (self.side_opt << 12)
-                    | (self.side_pindir << 13) | (self.in_base << 16))
-        if off == C_SHIFTCTRL:
-            return (self.out_shr | (self.in_shr << 1) | (self.autopull << 2) | (self.autopush << 3)
-                    | (self.fjoin << 4) | (self.pull_thresh << 8) | (self.push_thresh << 16))
-        if off == C_ENTRY:
-            return self.entry
-        if off == C_WRAP:
-            return self.wrap_bottom | (self.wrap_top << 16)
-        if off == C_CRCCTRL:
-            return self.crc_poly | (self.crc_w << 16) | (self.in_tap << 20) | (self.out_tap << 21)
+        # configuration registers (CLKDIV .. CRCCTRL) are write-only: read 0
         if off == C_CRC:
             return self.crc
         if off == C_PC:
@@ -577,16 +562,11 @@ class Chip:
             A_CTRL: self.enable,
             A_FSET: self.flags,
             A_FCLR: self.flags,
-            A_BANK: sum(o << (2 * b) for b, o in enumerate(self.bank_owner)),
-            A_POWN_LO: sum(self.pin_owner[i] << (2 * i) for i in range(16)),
-            A_POWN_HI: sum(self.pin_owner[16 + i] << (2 * i) for i in range(16)),
-            A_OD: self.od_mask,
             A_PINS: self.pins_in(),
             A_POUT: self.pin_out,
             A_POE: self.pin_oe,
-            A_HOSTCFG: self.hostcfg,
-            **{a: self.line.read(a - A_LINECFG) for a in (A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT)},
-        }.get(addr, 0)
+            A_LINESTAT: self.line.status(),
+        }.get(addr, 0)      # configuration registers are write-only: read 0
 
     def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False, cancel=False):
         """One clock edge. `we`: bus write of wdata to addr this cycle. Reads

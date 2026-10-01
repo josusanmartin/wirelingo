@@ -78,17 +78,10 @@ class Line:
         elif off == 2:
             self.pins = v & 0x1F1F
 
-    def read(self, off):
-        if off == 0:
-            return self.cfg
-        if off == 1:
-            return self.div
-        if off == 2:
-            return self.pins
-        if off == 3:
-            return (len(self.entries) | (len(self.rq) << 8) | (self.tx_on << 16)
-                    | (self.rx_on << 17) | (self.end_pend << 18) | (self.ovf << 19))
-        return 0
+    def status(self):
+        """LINESTAT (LINECFG/LINEDIV/LINEPINS are write-only)."""
+        return (len(self.entries) | (len(self.rq) << 8) | (self.tx_on << 16)
+                | (self.rx_on << 17) | (self.end_pend << 18) | (self.ovf << 19))
 
     # -- pins: what the transmitter drives this cycle (from its registered state)
     def drive(self):

@@ -594,30 +594,35 @@ duty cycles and CS timing.
 | 0x0801             | CTRL         | RW     | `[3:0]` enable; write-only, self-clearing: `[11:8]` restart, `[19:16]` FIFO clear |
 | 0x0802             | FLAGS_SET    | RW     | R: flags; W: set bits where 1                |
 | 0x0803             | FLAGS_CLR    | RW     | R: flags; W: clear bits where 1              |
-| 0x0804             | BANK_OWNER   | RW     | `[2b+1:2b]` owner core of bank b (reset 0xE4) |
-| 0x0805             | PIN_OWNER_LO | RW     | `[2i+1:2i]` owner of pin i (0–15)            |
-| 0x0806             | PIN_OWNER_HI | RW     | owner of pin 16+i                            |
-| 0x0807             | OD_MASK      | RW     | `[7:0]` open-drain enable for P0–P7          |
+| 0x0804             | BANK_OWNER   | W      | `[2b+1:2b]` owner core of bank b (reset 0xE4) |
+| 0x0805             | PIN_OWNER_LO | W      | `[2i+1:2i]` owner of pin i (0–15)            |
+| 0x0806             | PIN_OWNER_HI | W      | owner of pin 16+i                            |
+| 0x0807             | OD_MASK      | W      | `[7:0]` open-drain enable for P0–P7          |
 | 0x0808             | PINS         | R      | `pins_in[31:0]`                              |
 | 0x0809             | PIN_OUT      | RW     | `pin_out[31:0]`; a write replaces it (see below) |
 | 0x080A             | PIN_OE       | RW     | `pin_oe[31:0]`; a write replaces it          |
-| 0x080B             | HOSTCFG      | RW     | `[0]` QUAD_EN: accept quad commands (§6.1)   |
-| 0x080C             | LINECFG      | RW     | line unit configuration (§4.7)               |
-| 0x080D             | LINEDIV      | RW     | line unit TX/RX timing (§4.7)                |
-| 0x080E             | LINEPINS     | RW     | line unit pins (§4.7)                        |
+| 0x080B             | HOSTCFG      | W      | `[0]` QUAD_EN: accept quad commands (§6.1)   |
+| 0x080C             | LINECFG      | W      | line unit configuration (§4.7)               |
+| 0x080D             | LINEDIV      | W      | line unit TX/RX timing (§4.7)                |
+| 0x080E             | LINEPINS     | W      | line unit pins (§4.7)                        |
 | 0x080F             | LINESTAT     | R      | line unit status (§4.7)                      |
+
+**Configuration registers are write-only** (W: reads return 0); the host
+keeps its own copy of what it wrote. State and status stay readable. Dropping
+the configuration read path took a third of the chip's routing congestion away
+(docs/physical.md).
 
 Core block (offset from `0x0400 + 0x20·c`):
 
 | Off  | Name      | Access | Fields                                                                 |
 |------|-----------|--------|------------------------------------------------------------------------|
-| 0x00 | CLKDIV    | RW     | `[23:8]` INT, `[7:0]` FRAC (reset INT = 1)                              |
-| 0x01 | PINCTRL0  | RW     | `[4:0]` OUT_BASE, `[13:8]` OUT_COUNT, `[20:16]` SET_BASE, `[26:24]` SET_COUNT |
-| 0x02 | PINCTRL1  | RW     | `[4:0]` SIDE_BASE, `[10:8]` SIDE_COUNT, `[12]` SIDE_OPT, `[13]` SIDE_PINDIR, `[20:16]` IN_BASE |
-| 0x03 | SHIFTCTRL | RW     | `[0]` OUT_SHIFT_RIGHT, `[1]` IN_SHIFT_RIGHT, `[2]` AUTOPULL, `[3]` AUTOPUSH, `[4]` FJOIN_TX (§4.4), `[12:8]` PULL_THRESH, `[20:16]` PUSH_THRESH |
-| 0x04 | ENTRY     | RW     | `[9:0]` restart PC (reset 256·c)                                       |
-| 0x05 | WRAP      | RW     | `[9:0]` WRAP_BOTTOM (reset 0), `[25:16]` WRAP_TOP (reset 1023)         |
-| 0x06 | CRCCTRL   | RW     | `[15:0]` POLY, `[19:16]` CRC_W (width − 1), `[20]` IN_TAP, `[21]` OUT_TAP |
+| 0x00 | CLKDIV    | W      | `[23:8]` INT, `[7:0]` FRAC (reset INT = 1)                              |
+| 0x01 | PINCTRL0  | W      | `[4:0]` OUT_BASE, `[13:8]` OUT_COUNT, `[20:16]` SET_BASE, `[26:24]` SET_COUNT |
+| 0x02 | PINCTRL1  | W      | `[4:0]` SIDE_BASE, `[10:8]` SIDE_COUNT, `[12]` SIDE_OPT, `[13]` SIDE_PINDIR, `[20:16]` IN_BASE |
+| 0x03 | SHIFTCTRL | W      | `[0]` OUT_SHIFT_RIGHT, `[1]` IN_SHIFT_RIGHT, `[2]` AUTOPULL, `[3]` AUTOPUSH, `[4]` FJOIN_TX (§4.4), `[12:8]` PULL_THRESH, `[20:16]` PUSH_THRESH |
+| 0x04 | ENTRY     | W      | `[9:0]` restart PC (reset 256·c)                                       |
+| 0x05 | WRAP      | W      | `[9:0]` WRAP_BOTTOM (reset 0), `[25:16]` WRAP_TOP (reset 1023)         |
+| 0x06 | CRCCTRL   | W      | `[15:0]` POLY, `[19:16]` CRC_W (width − 1), `[20]` IN_TAP, `[21]` OUT_TAP |
 | 0x07 | CRC       | RW     | `[15:0]` CRC register                                                  |
 | 0x08 | PC        | RW     | current PC; a write sets it                                            |
 | 0x09 | STATUS    | R      | `[3:0]` TXF lvl, `[7:4]` RXF lvl, `[8]` Z, `[9]` C, `[10]` T, `[12]` stalled, `[13]` halted, `[14]` fault |
