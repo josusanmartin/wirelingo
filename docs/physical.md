@@ -70,6 +70,13 @@ Lessons:
 
 * The slow corner misses 50 MHz by 7.6 ns (444 endpoints). TT signs off at typ,
   so 50 MHz at typ (or about 35 MHz at the slow corner) is the stated target.
+* **275 of the violators started at the host bus address.** A `CTRL` write
+  decoded `restart` combinationally, and `restart` gates `active` → `exec`,
+  i.e. the whole execute stage of every core, plus `fetch_addr` into the SRAM
+  address pins. Since eb70fee the CTRL write goes through flops first
+  (docs/isa.md §5; 13 flops, invisible to the SPI host). The remaining
+  violators start at the SRAM outputs (fetch → decode → execute in one cycle,
+  worst −5.5 ns, all from the far-left bank).
 * The worst slow path is long logic plus **weak cells driving long wires**,
   e.g. a `nor2b_1` driving 0.33 pF with a 4.2 ns slew. Post-placement repair
   sizes cells from estimated wire loads, and the Classic flow does not repair
