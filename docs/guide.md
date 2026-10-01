@@ -14,6 +14,9 @@ CAD Suite).
   detector in one instruction (`i2c_sniff`).
 * **A CRC tap** fed by the shift registers checks USB CRC16, CAN CRC15 and PS/2
   parity in firmware.
+* **A line unit** does line coding (NRZ, NRZI, Manchester), bit stuffing and
+  clock recovery for core 0: USB low-speed fits on one core, and 10BASE-T
+  receive works.
 * **FIFO join** (from PIO) plus in-core preamble generation make 10BASE-T TX
   fit through the host port; the port itself is source-synchronous (SCK up to
   the core clock) with a quad mode: 193 Mbit/s measured.
@@ -34,9 +37,9 @@ CAD Suite).
 | The host port is fast and safe | 193 Mbit/s quad at SCK = clk, 1-bit and quad at random phases, aborts lose nothing; bus-side safety proven for any SCK behaviour | `cd test && make TESTCASE=test_host_port_fast`; `make -C formal hostport` |
 | Protocols work through the real host port | top-level cocotb: UART, SPI, I2C, USB device, 10BASE-T, FIFO read race, SPI timing sweep | `cd test && make` |
 | … and on the routed netlist | the same tests on `final/nl` with the PDK cell and SRAM models | `flow/gl_test.sh <run>` |
-| USB low-speed device enumerates | cycle-level host + device software (also with random service stalls); address filter, lost ACK, bad packets | `pytest test/model/test_usb_enum.py test/model/test_usb_model.py` |
+| USB low-speed device enumerates, on two cores or one | cycle-level host + device software (also with random service stalls); address filter, lost ACK, bad packets; both firmware variants | `pytest test/model/test_usb_enum.py test/model/test_usb_model.py` |
 | I2C can't hang | SCL stuck low at every one of 19 releases, plus before START | `pytest test/model/test_i2c_timeout.py` |
-| 10BASE-T TX | waveform decoded (Manchester, FCS, TP_IDL, link pulses); a 1518-byte frame streamed | `pytest test/model/test_eth10.py` |
+| 10BASE-T TX and RX | TX waveform decoded (Manchester, FCS, TP_IDL, link pulses), a 1518-byte frame streamed; RX from core 1's TX and from an external sender with jitter | `pytest test/model/test_eth10.py` |
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model | `pytest test/model/test_micropython_driver.py` |
 | It fits and closes timing | DRC/LVS/antenna clean, timing per corner, SRAM view per corner | `python3 flow/signoff.py <run>/runs/wokwi` (docs/physical.md) |
 
@@ -46,7 +49,7 @@ CAD Suite).
 
 * Two cores on silicon (four don't route on this tile). 50 MHz at the typical
   corner; about 37 MHz at the slow corner.
-* 10BASE-T: TX only; no RX (README explains why).
+* 10BASE-T RX tolerates about ±5 ns of edge jitter at 50 MHz, not 802.3's ±13.5 ns (README).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
 * CAN: frames with stuffing, CRC, arbitration, ACK and stuff-error detection;
   not a full controller (no error counters or bus-off).

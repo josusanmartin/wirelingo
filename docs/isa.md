@@ -602,6 +602,10 @@ duty cycles and CS timing.
 | 0x0809             | PIN_OUT      | RW     | `pin_out[31:0]`; a write replaces it (see below) |
 | 0x080A             | PIN_OE       | RW     | `pin_oe[31:0]`; a write replaces it          |
 | 0x080B             | HOSTCFG      | RW     | `[0]` QUAD_EN: accept quad commands (§6.1)   |
+| 0x080C             | LINECFG      | RW     | line unit configuration (§4.7)               |
+| 0x080D             | LINEDIV      | RW     | line unit TX/RX timing (§4.7)                |
+| 0x080E             | LINEPINS     | RW     | line unit pins (§4.7)                        |
+| 0x080F             | LINESTAT     | R      | line unit status (§4.7)                      |
 
 Core block (offset from `0x0400 + 0x20·c`):
 

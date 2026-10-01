@@ -67,6 +67,12 @@ opcode: attempted, completed, stalled) are printed. The regression runs on the
 tapeout configuration (2 cores, 2 SRAM banks, 8-deep FIFOs) and on the full
 4-core flop build.
 
+**The line unit** (§4.7) is in the lockstep too: random LINECFG/LINEDIV/
+LINEPINS (pins chosen so its TX often loops back to its RX), random IN/OUT LINE
+on core 0, and its whole state compared every cycle. The tapeout-config run
+must reach its coverage goals as well: bits sent and received, stuff bits both
+ways, Manchester halves, frame ends, full and partial IN LINE, RX overflow.
+
 **Mutation checks.** A deliberate bug in the model or the RTL must make a test
 fail. Recorded cases: an ALU mutation (lockstep, ~1K cycles), a CRC-tap
 mutation (~3.9K cycles; it showed CRC width 5 was rare, so a directed test was
@@ -130,6 +136,15 @@ the RTL through the **real SPI host port** (`test/test.py`).
   the chip between transactions, also with random 100–3000-cycle stalls;
   the address filter follows SET_ADDRESS; a lost ACK makes the software
   re-stage the same packet with the same toggle.
+* Line unit: USB-style (NRZI, stuffing, SE0 end; the waveform also decoded
+  by the USB reference), Manchester and CAN-style (NRZ stuffing) loopbacks.
+* USB on one core (`usb_ls_dev`, line unit): enumeration with fixed and random
+  service stalls, the address filter, the lost ACK, the same tests as the
+  two-core firmware.
+* 10BASE-T RX (`eth10_rx`, line unit): `eth10_tx` on core 1 to `eth10_rx` on
+  core 0 at 40 MHz; an external sender at 50 MHz with random phase, 100 ppm
+  offset and ±4 ns jitter. A jitter sweep: 10/10 frames at ±5 ns, 3/10 at
+  ±10 ns (edges are quantized to a clock).
 * UART: 64 back-to-back bytes from a sender at ±3 % with the fractional
   115200-baud divider; the on-chip TX→RX pair over a virtual pin.
 * I2C: SCL held low at every one of the 19 releases (and before START) times
