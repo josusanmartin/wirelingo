@@ -3,11 +3,14 @@
 ; OUT pins: D+ (base) and D- (count 2): value 2 = J, 1 = K, 0 = SE0.
 ;
 ; Triggers (global flags, set by usb_ls_rx or the host):
-;   F_IN  : an IN token arrived -> send the staged packet from the TX FIFO, or NAK if none
+;   F_IN  : an IN token arrived -> send the staged packet, or NAK if none
 ;   F_ACK : a DATA packet after SETUP/OUT arrived -> send ACK
-; A staged packet in the TX FIFO is: word 0 = number of bits (including the SYNC
-; byte), then the bytes packed little-endian, 4 per word (at most 3 data words:
-; SYNC + PID + 8 data bytes + CRC16).
+; Staging: the host pushes the packet into the TX FIFO, then sets F_STAGED (so a
+; packet is never sent half-pushed). The packet is: word 0 = number of bits
+; (including the SYNC byte), then the bytes packed little-endian, 4 per word
+; (at most 3 data words: SYNC + PID + 8 data bytes + CRC16). F_STAGED is
+; cleared when the packet is taken; usb_ls_rx sets F_GOTACK when the host
+; acknowledges it, so the host software can re-stage it if that never comes.
 ;
 ; Each data bit takes exactly 32 ticks; a transition always lands 4 ticks into
 ; its bit cell, whichever path is taken (see the tick comments).
@@ -18,11 +21,12 @@ idle:
     jmp f F_ACK, send_ack
     jmp !f F_IN, idle
     flag clr F_IN
-    jmp txne, staged
+    jmp f F_STAGED, staged
 send_nak:
     ldi r3, 0x5A80                 ; SYNC + NAK PID
     jmp const16
 staged:
+    flag clr F_STAGED
     pull block                     ; header: bit count
     mov r0, osr
     out null, 32                   ; empty the OSR: the data words autopull

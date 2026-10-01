@@ -51,6 +51,14 @@ def token(pid, addr, endp):
     return bytes([pid_byte(pid), v & 0xFF, v >> 8])
 
 
+def token_filter(addr, endp):
+    """The usb_ls_rx `filter` immediate for tokens to (addr, endp): the 16 bits
+    after the PID (address, endpoint, CRC5) as the firmware sees them, bit-reversed."""
+    v = addr | (endp << 7)
+    v |= crc5(v) << 11
+    return int(f"{v:016b}"[::-1], 2)
+
+
 def data_packet(pid, payload):
     return bytes([pid_byte(pid)]) + bytes(payload) + crc16(payload)
 

@@ -5,15 +5,28 @@
 ;   * no edge shortly after the expected boundary -> a 1 bit
 ; Stuffed bits (a 0 after six 1s) are dropped; SE0 (both lines low) ends the packet.
 ;
-; Output (RX FIFO, ISR shifts right, autopush 32): only DATA packets that follow
-; a SETUP/OUT token are pushed, without SYNC and PID: the payload + CRC16 bytes
-; packed little-endian 4 per word, then the partial last word, then a word with
-; the number of bits received including SYNC and PID (so payload+CRC bits =
-; count - 16). An 8-byte SETUP payload is exactly 4 words, which fits the FIFO.
-; Tokens and handshakes only raise flags; F_SETUP marks that the pushed packet
-; was a SETUP's data stage (the host clears it). Once the PID is in (bit 16),
-; anything other than an expected DATA packet is skipped to its end, so nothing
-; of it (not even autopushed words) reaches the FIFO.
+; Received after the PID: tokens (always) and DATA packets that follow a SETUP
+; or OUT to us (F_EXP). Everything else (handshakes, our own transmissions,
+; unexpected DATA) is skipped to its end without touching the FIFO.
+;
+; Tokens are filtered: the 16 bits after the PID (address, endpoint, CRC5) must
+; equal the immediate at label `filter` (bit-reversed, see pe.usb.token_filter).
+; The host software writes that word (address 0 at first, the new address
+; after SET_ADDRESS), so the device ignores other addresses, other endpoints
+; and tokens with a bad CRC5. Then:
+;   IN          -> set F_IN (usb_ls_tx sends the staged packet or NAK)
+;   SETUP / OUT -> set F_EXP (a DATA packet follows); SETUP also sets F_SETUP
+; An ACK from the host (after our DATA packet) sets F_GOTACK.
+;
+; DATA records (RX FIFO, ISR shifts right, autopush 24): every DATA packet
+; received while F_EXP is set gives one record, CRC good or bad:
+;   payload + CRC16 bits, 24 per word in bits [31:8] (low byte 0), the first
+;   received bit lowest; then the partial last word (its bits at the top; an
+;   all-zero word if none); then a trailer: [31:16] = bits received including
+;   SYNC and PID, [7] = 1 (marks the trailer: payload words have [7:0] = 0),
+;   [0] = 1 if the CRC16 checked out (and an ACK is sent).
+; F_SETUP marks a SETUP's data stage (the host clears it). The largest record
+; (8 data bytes) is 5 words, so the host must keep 5 entries free.
 ;
 ; Timing: D is the tick a WAIT completes. The next WAIT's first attempt is at
 ; D+w, and its timeout N = target - w. The "no edge" decision is taken 10 ticks
@@ -25,20 +38,17 @@
 ; same whichever branch is taken (the once-per-packet PID grab takes 3 ticks more).
 ;
 ;
-; Token handling (so the TX core can answer within the bus turnaround time):
-; after 16 bits, r3 = bit-reverse of the ISR, i.e. r3[15:8] = rev(SYNC) = 0x01 and
-; r3[7:0] = rev(PID). At the end of a 32-bit packet:
-;   IN          -> set F_IN (usb_ls_tx sends the staged packet or NAK)
-;   SETUP / OUT -> set F_EXP (a DATA packet follows)
-; At the end of a DATA packet while F_EXP is set -> clear F_EXP, and set F_ACK
-; if the CRC16 checks out. The CRC tap (CRCCTRL: poly 0x8005, 16 bits, IN_TAP)
-; sees every received bit; it is preset after the PID so that at EOP it holds
-; the residue 0x800D for a correct packet.
+; After 16 bits, r3 = bit-reverse of the ISR, i.e. r3[15:8] = rev(SYNC) = 0x01 and
+; r3[7:0] = rev(PID). Token PIDs end in binary 01, so a token has
+; r3 & 0xC0 == 0x80. At the end of a DATA packet while F_EXP is set: clear
+; F_EXP, and set F_ACK if the CRC16 checks out. The CRC tap (CRCCTRL: poly
+; 0x8005, 16 bits, IN_TAP) sees every received bit; it is preset after the PID
+; so that at EOP it holds the residue 0x800D for a correct packet.
 ;
 ; Registers: r0 = bit count, r1 = consecutive 1s, r2 = timeout budget, r3 = PID.
 ; OSR = all ones.
 .program usb_ls_rx
-.shift_in right autopush 32
+.shift_in right autopush 24
 start:
     mov osr, ~null                 ; source of 1 bits for "in osr, 1"
 idle:
@@ -50,6 +60,17 @@ idle:
     add r0, 1                      ; D+2
     ldi r2, 37                     ; D+3   (W = D+5, target 42)
     jmp wait_bit                   ; D+4
+; -- after SYNC + PID, ending in a 1 bit. The tightest path: a 2.5 % fast host
+; needs the next WAIT armed by D+18 (one tick later loses edges), so this falls
+; into wait_bit. Expected DATA (F_EXP) presets the CRC; a token doesn't need it.
+o_grab:
+    mov r3, ::isr                  ; D+10  SYNC + PID
+    mov isr, null                  ; D+11  drop SYNC + PID from the output
+    jmp f F_EXP, o_data            ; D+12
+    mov r2, r3                     ; D+13
+    and r2, 0x40                   ; D+14  0: a token (PID ends in binary 01)
+    jmp r2, rx_skip                ; D+15  anything else: skip it
+    ldi r2, 15                     ; D+16  (W = D+17, target 32)
 wait_bit:
     wait edge DM timeout r2
     jmp t, one                     ; D+1
@@ -72,10 +93,16 @@ zero:
     jmp wait_bit                   ; D+13
 z_grab:                            ; once per packet, after SYNC + PID
     mov r3, ::isr                  ; D+12  SYNC + PID
-    mov crc, ~null                 ; D+13  CRC16 covers what follows the PID
-    mov isr, null                  ; D+14  drop SYNC + PID from the output
-    jmp !f F_EXP, rx_skip          ; D+15  not an expected DATA packet
-    ldi r2, 24                     ; D+16  (W = D+18, same decision time)
+    mov isr, null                  ; D+13  drop SYNC + PID from the output
+    jmp f F_EXP, z_data            ; D+14
+    mov r2, r3                     ; D+15
+    and r2, 0x40                   ; D+16  0: a token
+    jmp r2, rx_skip                ; D+17
+    ldi r2, 22                     ; D+18  (W = D+20, same decision time)
+    jmp wait_bit                   ; D+19
+z_data:
+    mov crc, ~null                 ; D+15  CRC16 covers what follows the PID
+    ldi r2, 24                     ; D+16  (W = D+18)
     jmp wait_bit                   ; D+17
 stuffed:
     ldi r2, 32                     ; D+8   (W = D+10, target 42)
@@ -96,52 +123,60 @@ one_ok:
     jmp z, o_grab                  ; D+9
     ldi r2, 20                     ; D+10  (W = D+12, target 32)
     jmp wait_bit                   ; D+11
-o_grab:
-    mov r3, ::isr                  ; D+10
-    mov crc, ~null                 ; D+11
-    mov isr, null                  ; D+12
-    jmp !f F_EXP, rx_skip          ; D+13
-    ldi r2, 16                     ; D+14  (W = D+16, same decision time)
+o_data:
+    mov crc, ~null                 ; D+13  CRC16 covers what follows the PID
+    ldi r2, 16                     ; D+14  (W = D+16)
     jmp wait_bit                   ; D+15
-; -- tokens, handshakes and our own transmissions: nothing to receive, just find
-; the end of the packet. One qualified WAIT detects SE0 (D+ low while D- is low);
-; it must still be there 8 ticks later, which rejects glitches during J/K edges.
+; -- handshakes, our own transmissions, unexpected DATA: nothing to receive,
+; just find the end of the packet. One qualified WAIT detects SE0 (D+ low while
+; D- is low); it must still be there 8 ticks later, which rejects glitches
+; during J/K edges.
 rx_skip:
     wait 0 pin DP if pin DM == 0
     nop                       [7]
     jmp pin DP, rx_skip
     jmp pin DM, rx_skip
-    cmp r3, 0x196                  ; SYNC + IN
-    jmp z, got_in
-    cmp r3, 0x1B4                  ; SYNC + SETUP
-    jmp z, got_setup
-    cmp r3, 0x187                  ; SYNC + OUT
-    jmp z, got_out
+    cmp r3, 0x14B                  ; SYNC + ACK: the host took our DATA packet
+    jmp !z, eop_skip
+    flag set F_GOTACK
     jmp eop_skip
 ; -- end of packet: raise the response flags first (the TX core must answer
 ; within the bus turnaround), then push the tail words (may wait for the host)
 eop:
+    mov r2, r3
+    and r2, 0x40
+    jmp r2, eop_data               ; not a token
     cmp r0, 32
-    jmp !z, eop_data
+    jmp !z, eop_skip               ; malformed token
+    mov r1, ::isr                  ; address, endpoint, CRC5 (bit-reversed)
+filter:
+    ldi r2, TOKEN_FILTER           ; written by the host software
+    cmp r1, r2
+    jmp !z, eop_skip               ; another address or endpoint, or a bad CRC5
     cmp r3, 0x196                  ; SYNC + IN
     jmp z, got_in
     cmp r3, 0x1B4                  ; SYNC + SETUP
     jmp z, got_setup
     cmp r3, 0x187                  ; SYNC + OUT
     jmp z, got_out
-eop_data:                          ; DATA (a zero-length DATA is also 32 bits) or handshake
+    jmp eop_skip                   ; another token (SOF, PING)
+eop_data:                          ; DATA or handshake
     cmp r0, 16
     jmp z, eop_skip                ; handshake
-    jmp !f F_EXP, eop_skip         ; not after SETUP/OUT (e.g. our own IN response)
+    jmp !f F_EXP, eop_skip         ; not after SETUP/OUT
     flag clr F_EXP
     ldi r2, 0x800D                 ; CRC16 residue of a correct packet
     mov r1, crc
     cmp r1, r2
-    jmp !z, eop_skip               ; bad CRC: stay silent, the host retries
+    ldi r1, 0x80                   ; trailer status: CRC error (no ACK; the host retries)
+    jmp !z, trailer
     flag set F_ACK
-    push block                     ; partial last word (bytes in the top bits)
-    mov isr, r0
-    push block                     ; bit count
+    ldi r1, 0x81                   ; trailer status: good
+trailer:
+    push block                     ; partial last word (bits at the top)
+    mov isr, null
+    in r1, 16                      ; [15:0] = status
+    in r0, 16                      ; [31:16] = bit count; ISR_CNT = 32: autopushed
     jmp idle
 got_in:
     flag set F_IN

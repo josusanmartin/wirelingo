@@ -4,14 +4,14 @@ import random
 
 import pytest
 
-from pe import asm, host, sim, usb
+from pe import asm, host, sim, usb, usbdev
 from pe.modelhost import ModelHost
 
 FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 DP, DM = 0, 1  # uio0, uio1
 LINE = {usb.J: (0, 1), usb.K: (1, 0), usb.SE0: (0, 0)}
-USB_DEFS = {"DP": DP, "DM": DM, "F_IN": 0, "F_ACK": 1, "F_EXP": 2, "F_SETUP": 3}
-USB_CRCCTRL = 0x8005 | (15 << 16) | (1 << 20)  # CRC16, IN tap
+USB_DEFS = usbdev.defines(addr=0, endp=0)
+USB_CRCCTRL = usbdev.CRCCTRL
 
 
 def rx_setup():
@@ -39,48 +39,73 @@ def drive(mh, states, ticks_per_bit=32.0, phase=0.0):
     mh.step(200)
 
 
-def rx_packet(mh):
-    """Words for one pushed DATA packet: full words..., the partial word, then the
-    bit count (including SYNC + PID). Returns payload + CRC16 bytes."""
-    words = mh.pop_all(0)
-    if not words:
-        return None
-    nbits, body = words[-1] - 16, words[:-1]
-    nfull, rem = divmod(nbits, 32)
-    assert len(body) == nfull + 1, (nbits, [hex(w) for w in words])
-    data = b"".join(w.to_bytes(4, "little") for w in body[:nfull])
-    if rem:
-        data += (body[nfull] >> (32 - rem)).to_bytes(4, "little")[: rem // 8]
-    assert rem % 8 == 0, f"{nbits} bits"
-    return data
+def rx_record(mh):
+    """The one record (or None) the RX core pushed for the last packet."""
+    recs, rest = usbdev.parse_records(mh.pop_all(0))
+    assert not rest and len(recs) <= 1, (recs, rest)
+    return recs[0] if recs else None
 
 
 @pytest.mark.parametrize("ppm", [0, 15000, -15000, 25000, -25000])
 def test_usb_rx_packets(ppm):
-    """Tokens/handshakes only raise flags; DATA after SETUP/OUT is pushed (payload+CRC)."""
+    """Tokens/handshakes only raise flags; DATA after SETUP/OUT gives a record."""
     mh = rx_setup()
     rng = random.Random(ppm)
     tpb = 32 * (1 + ppm / 1e6)
     setup = bytes([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00])
     drive(mh, usb.encode(usb.token(usb.PID_SETUP, 0, 0)), tpb, rng.random())
-    assert rx_packet(mh) is None and mh.chip.flags & 0b1100 == 0b1100  # F_EXP, F_SETUP
+    assert rx_record(mh) is None and mh.chip.flags & 0b1100 == 0b1100  # F_EXP, F_SETUP
     drive(mh, usb.encode(usb.data_packet(usb.PID_DATA0, setup)), tpb, rng.random())
-    assert rx_packet(mh) == setup + usb.crc16(setup)
+    assert rx_record(mh) == usbdev.Record(True, setup, 16 + 8 * 10)
     assert mh.chip.flags & 0b0110 == 0b0010  # F_ACK set, F_EXP cleared
     drive(mh, usb.encode(usb.handshake(usb.PID_ACK)), tpb, rng.random())
-    assert rx_packet(mh) is None
+    assert rx_record(mh) is None and mh.chip.flags & usbdev.F_GOTACK
     drive(mh, usb.encode(usb.token(usb.PID_OUT, 0, 0)), tpb, rng.random())
     ones = bytes([0xFF] * 8)  # lots of stuffing
     drive(mh, usb.encode(usb.data_packet(usb.PID_DATA1, ones)), tpb, rng.random())
-    assert rx_packet(mh) == ones + usb.crc16(ones)
-    drive(mh, usb.encode(usb.token(usb.PID_IN, 0x15, 0xE)), tpb, rng.random())
-    assert rx_packet(mh) is None and mh.chip.flags & 1
+    assert rx_record(mh).data == ones
+    for i in range(1, 9):     # every payload length, including zero
+        drive(mh, usb.encode(usb.token(usb.PID_OUT, 0, 0)), tpb, rng.random())
+        p = bytes(range(i - 1))
+        drive(mh, usb.encode(usb.data_packet(usb.PID_DATA0, p)), tpb, rng.random())
+        assert rx_record(mh) == usbdev.Record(True, p, 16 + 8 * (len(p) + 2))
+    drive(mh, usb.encode(usb.token(usb.PID_IN, 0, 0)), tpb, rng.random())
+    assert rx_record(mh) is None and mh.chip.flags & 1
+
+
+@pytest.mark.parametrize("tok", [
+    usb.token(usb.PID_IN, 0x15, 0),             # another address
+    usb.token(usb.PID_IN, 0, 1),                # another endpoint
+    usb.token(usb.PID_SETUP, 0x15, 0xE),
+    usb.token(usb.PID_IN, 0, 0)[:2] + bytes([usb.token(usb.PID_IN, 0, 0)[2] ^ 0x80]),  # bad CRC5
+])
+def test_usb_tokens_for_others_ignored(tok):
+    mh = rx_setup()
+    drive(mh, usb.encode(tok))
+    assert mh.chip.flags == 0 and rx_record(mh) is None
+
+
+def test_usb_bad_data_gives_a_bad_record_then_retry_parses():
+    """A DATA packet with a bad CRC still gives one complete record (marked bad),
+    so the next good packet parses cleanly."""
+    mh = rx_setup()
+    setup = bytes([0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00])
+    good = usb.data_packet(usb.PID_DATA0, setup)
+    bad = good[:-1] + bytes([good[-1] ^ 0x10])
+    words = []
+    for pkt in (bad, good):
+        drive(mh, usb.encode(usb.token(usb.PID_SETUP, 0, 0)))
+        drive(mh, usb.encode(pkt))
+        words += mh.pop_all(0)
+    recs, rest = usbdev.parse_records(words)
+    assert [r.ok for r in recs] == [False, True] and not rest
+    assert recs[1].data == setup
 
 
 # ---------------------------------------------------------------- transactions
 
 def device_setup():
-    """RX on core 0, TX on core 1 (owns D+/D-), 48 MHz, CLKDIV 1."""
+    """RX on core 0, TX on core 1 (owns D+/D-), 48 MHz, CLKDIV 1, address 0."""
     mh = ModelHost()
     rx = asm.assemble((FW / "usb_ls_rx.pasm").read_text(), USB_DEFS)
     tx = asm.assemble((FW / "usb_ls_tx.pasm").read_text(), USB_DEFS)
@@ -146,11 +171,14 @@ def test_usb_in_nak_then_data():
     assert resp == usb.handshake(usb.PID_NAK), resp
     # stage the first 8 bytes of a device descriptor
     desc = bytes([0x12, 0x01, 0x10, 0x01, 0x00, 0x00, 0x00, 0x08])
-    pkt = bytes([0x80]) + usb.data_packet(usb.PID_DATA1, desc)
-    words = [int.from_bytes(pkt[i:i + 4].ljust(4, b"\0"), "little") for i in range(0, len(pkt), 4)]
-    mh.push(1, 8 * len(pkt))
-    for w in words:
+    words = usbdev.stage_words(usb.PID_DATA1, desc)
+    for w in words[:2]:                # half-staged: still NAK
         mh.push(1, w)
+    resp, _ = host_send_then_listen(mh, usb.token(usb.PID_IN, 0, 0))
+    assert resp == usb.handshake(usb.PID_NAK), resp
+    for w in words[2:]:
+        mh.push(1, w)
+    mh.write(sim.A_FSET, usbdev.F_STAGED)
     resp, turnaround = host_send_then_listen(mh, usb.token(usb.PID_IN, 0, 0))
     assert resp == usb.data_packet(usb.PID_DATA1, desc), resp
     assert turnaround < 7.5 * 32
