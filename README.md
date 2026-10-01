@@ -89,15 +89,15 @@ make -C formal                                                   # proofs
 ## Physical design (IHP SG13CMOS5L, 6x4 tiles)
 
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
-  8-deep FIFOs; 40 % standard-cell utilization.
-* **Run final5 (the current RTL) signs off clean:** 0 routing violations,
-  0 KLayout DRC, LVS clean, 0 antenna violations. With PVT-matched SRAM
-  timing views, 50 MHz is met at the typical corner (+3.12 ns setup,
-  +0.21 ns hold) and hold is met at the fast corner (+0.05 ns). The slow
-  corner reaches about 37 MHz (−6.9 ns at 50 MHz).
-* All 9 top-level tests pass on the routed netlist (`flow/gl_test.sh`).
-* Remaining electrical exceptions at typ (3 slew, 11 capacitance, mostly the
-  SRAM output pins) are listed in [docs/physical.md](docs/physical.md).
+  8-deep FIFOs, the line unit and the quad host port; 52 % standard-cell
+  utilization.
+* **Run t5 (the current RTL) signs off clean:** 0 routing violations,
+  0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the
+  typical corner (+4.77 ns setup, +0.32 ns hold) and hold is met at the fast
+  corner (+0.12 ns). The slow corner reaches about 41 MHz (−4.1 ns at 50 MHz).
+* All 10 top-level tests pass on the routed netlist (`flow/gl_test.sh`).
+* Remaining electrical exceptions at typ (1 slew, 2 capacitance) are listed in
+  [docs/physical.md](docs/physical.md).
 
 ## Layout
 
