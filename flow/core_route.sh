@@ -4,6 +4,7 @@
 # (~10 min). For comparing datapath changes without hardening the chip.
 #
 #   flow/core_route.sh NAME [SRC_DIR]
+#   TOP=pe_line flow/core_route.sh NAME [SRC_DIR]     # another block alone
 #
 # SRC_DIR (default: this repo's src/) supplies pe_core.sv, pe_fifos.sv,
 # pe_fifo.sv and pe_cg.sv. Runs in <parent of this repo>/pe-core-NAME and
@@ -18,29 +19,39 @@ REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 SRC=$(realpath "${2:-$REPO/src}")
 W=$(dirname "$REPO")/pe-core-$NAME
 rm -rf "$W"; mkdir -p "$W/src"
-cp "$SRC"/{pe_core.sv,pe_fifos.sv,pe_fifo.sv,pe_cg.sv} "$W/src/"
+TOP=${TOP:-pe_core}
+case $TOP in
+  pe_core) FILES="pe_core.sv pe_fifos.sv pe_fifo.sv pe_cg.sv"; PARAMS='"IDX=0", "FIFO_LOG2=3"'; DIE=560 ;;
+  pe_line) FILES="pe_line.sv"; PARAMS=''; DIE=330 ;;
+  pe_hostport) FILES="pe_hostport.sv"; PARAMS=''; DIE=300 ;;
+  *) echo "unknown TOP $TOP"; exit 2 ;;
+esac
+for f in $FILES; do cp "$SRC/$f" "$W/src/"; done
+VFILES=$(for f in $FILES; do printf '"dir::%s", ' $f; done); VFILES=${VFILES%, }
 cp "$REPO/src/protoemu.sdc" "$W/src/" 2>/dev/null || true
 cd "$W"
 # The fetch loop as in the chip: instr arrives after the SRAM's slow-corner
 # clock->DOUT (5.55 ns) plus wire; fetch_addr needs the bank mux and setup.
 cat > src/core.sdc <<EOF
 create_clock -name clk -period 20 [get_ports clk]
-set_input_delay 4 -clock clk [delete_from_list [all_inputs] [get_ports {clk instr*}]]
-set_input_delay ${INSTR_DELAY:-6.5} -clock clk [get_ports instr*]
+$( [ $TOP = pe_hostport ] && echo 'create_clock -name sck -period 20 [get_ports sck]
+set_clock_groups -asynchronous -group clk -group sck' )
+set_input_delay 4 -clock clk [delete_from_list [all_inputs] [get_ports {clk sck instr*}]]
 set_output_delay 1 -clock clk [delete_from_list [all_outputs] [get_ports fetch_addr*]]
-set_output_delay 2.5 -clock clk [get_ports fetch_addr*]
+$( [ $TOP = pe_core ] && echo "set_input_delay ${INSTR_DELAY:-6.5} -clock clk [get_ports instr*]
+set_output_delay 2.5 -clock clk [get_ports fetch_addr*]" )
 EOF
-cat > src/config.json <<'EOF'
+cat > src/config.json <<EOF
 {
-  "DESIGN_NAME": "pe_core",
-  "VERILOG_FILES": ["dir::pe_core.sv", "dir::pe_fifos.sv", "dir::pe_fifo.sv", "dir::pe_cg.sv"],
-  "SYNTH_PARAMETERS": ["IDX=0", "FIFO_LOG2=3"],
+  "DESIGN_NAME": "$TOP",
+  "VERILOG_FILES": [$VFILES],
+  "SYNTH_PARAMETERS": [$PARAMS],
   "CLOCK_PORT": "clk",
   "CLOCK_PERIOD": 20,
   "PNR_SDC_FILE": "dir::core.sdc",
   "SIGNOFF_SDC_FILE": "dir::core.sdc",
   "FP_SIZING": "absolute",
-  "DIE_AREA": [0, 0, 560, 560],
+  "DIE_AREA": [0, 0, $DIE, $DIE],
   "PL_TARGET_DENSITY_PCT": 34,
   "RT_MAX_LAYER": "Metal4",
   "FP_PDN_MULTILAYER": 0,
