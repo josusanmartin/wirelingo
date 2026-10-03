@@ -15,5 +15,5 @@ core:
 line:
 	$(SBY) -f line.sby
 clean:
-	rm -rf fifos_* hostport_* core_* line_prove fifos hostport core line
+	rm -rf fifos_cover8 fifos_prove4 fifos_prove8 hostport_prove hostport_cover core_prove line_prove
 .PHONY: all fifos hostport core line clean
