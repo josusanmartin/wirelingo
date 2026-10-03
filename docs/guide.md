@@ -51,6 +51,13 @@ CAD Suite).
   corner; about 41 MHz at the slow corner.
 * 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
+* Host link: 193 Mbit/s (quad SPI, SDR, SCK = clk = 50 MHz, 96.5 % of the
+  wire rate). DDR was evaluated and left out: words would arrive every 4 SCK,
+  but the clock side needs about 6 cycles to commit a sent word and fetch the
+  next, and it reads 2 words ahead, so full-rate DDR reads need a third read
+  reservation per core (another FIFO read port: the kind of mux that cost 4 %
+  of a core's wiring). Without it DDR reads run at about SCK = 33 MHz, 264
+  Mbit/s, with half the timing window on TT's pads.
 * CAN: frames with stuffing, CRC, arbitration, ACK and stuff-error detection;
   not a full controller (no error counters or bus-off).
 * Protocol timing is checked in clock cycles against behavioural device models,
