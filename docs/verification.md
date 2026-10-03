@@ -103,6 +103,13 @@ lost when pushed 210 clocks into the read).
   * the PC changes only on a completed instruction, a restart or a host write;
   * a disabled core's state is frozen;
   * shift counts never exceed 32.
+* **`pe_line`**, with every input free except core 0's contract (pushes only
+  with room, takes only what `IN LINE` may, counts 1–32), including LINECFG,
+  LINEDIV and LINEPINS rewritten at any time: TX queue ≤ 2 entries, RX queue
+  ≤ 32 bits, and the Manchester receiver's phase stays in [−720720, 262208]
+  for any period up to 4095, with every 21-bit operation equal to the same
+  computation at 23 bits (it never wraps). Tightening either bound breaks the
+  induction.
 
 These are safety properties of the pieces. Functional equivalence of the
 whole core is covered by lockstep, not by formal.

@@ -389,4 +389,30 @@ module pe_line (
   end
 
   assign r_stat = {12'd0, ovf, end_pend, rx_on, tx_on, 2'd0, rcount, 6'd0, e_cnt};
+`ifdef FORMAL
+  // Safety properties, checked by formal/line.sby with every input free
+  // except core 0's contract (line_props.sv): pushes only with room, takes
+  // only what IN LINE may take, counts 1..32. Any LINECFG/LINEDIV/LINEPINS
+  // writes, any pins, any rx_mid.
+  // Manchester phase bounds for any P <= 4095, even if LINEDIV changes in a
+  // frame (docs/isa.md §4.7): q >= age - 128P - 48P (an accepted early edge),
+  // q < 64P + 128 (half a bit late ends the frame); both fit 21 bits.
+  localparam signed [22:0] Q_LO = -23'sd720720, Q_HI = 23'sd262208;
+  wire signed [22:0] w_q = $signed({{2{q[20]}}, q}) + 23'sd128;
+  wire signed [22:0] w_e = w_q - $signed({{2{m_age[20]}}, m_age});
+  wire signed [22:0] w_r = (w_e + (23'sd1 <<< (m_g - 3'd1))) >>> m_g;
+  wire signed [22:0] w_acc = w_q - $signed({{2{m_bit[20]}}, m_bit}) - w_r;
+  always @(*) begin
+    if (rst_n) begin
+      assert (e_cnt <= 2'd2);
+      assert (rcount <= 6'd32);
+      assert (mn <= 6'd32);
+      assert ($signed({{2{q[20]}}, q}) >= Q_LO && $signed({{2{q[20]}}, q}) <= Q_HI);
+      // the 21-bit arithmetic never wraps: same results as 23-bit
+      assert ($signed({{2{m_q[20]}}, m_q}) == w_q);
+      assert ($signed({{2{m_e[20]}}, m_e}) == w_e);
+      if (m_in) assert ($signed({{2{m_r[20]}}, m_r}) == w_r && w_acc >= Q_LO && w_acc <= Q_HI);
+    end
+  end
+`endif
 endmodule

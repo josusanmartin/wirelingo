@@ -1,0 +1,17 @@
+[tasks]
+prove
+
+[options]
+mode prove
+depth 4
+
+[engines]
+smtbmc yices
+
+[script]
+read_verilog -sv -formal pe_line.sv line_props.sv
+prep -top line_props
+
+[files]
+../src/pe_line.sv
+line_props.sv

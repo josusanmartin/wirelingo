@@ -16,6 +16,7 @@ harden.log
 formal/fifos_*/
 formal/hostport_*/
 formal/core_*/
+formal/line_prove/
 formal/*/status.sqlite
 test/gate_level_netlist.v
 test/*.fst.hier
