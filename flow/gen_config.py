@@ -45,12 +45,16 @@ def placements(nbanks, layout="top"):
         width = nbanks * W + (nbanks - 1) * gap
         x0 = snap((CORE_X1 + 2.88 - width) / 2, SITE)
         return {b: (snap(x0 + b * (W + gap), SITE), 3.78, "FS") for b in range(nbanks)}
-    if layout == "corners":
-        # bottom corners, mirrored (pins up), banks 2-3 above them if needed
+    if layout in ("corners", "corners-swap"):
+        # bottom corners, mirrored (pins up), banks 2-3 above them if needed;
+        # corners-swap puts bank 0 on the left, near core 0's logic, which the
+        # line unit and the I/O pins (top left) pull to that side
         x_r = snap(CORE_X1 - W - 3 * SITE, SITE)
         x_l = snap(2.88 + 3 * SITE, SITE)
         y2 = snap(3.78 + H + 30 * ROW, ROW)
         spots = [(x_r, 3.78, "FS"), (x_l, 3.78, "FS"), (x_r, y2, "FS"), (x_l, y2, "FS")]
+        if layout == "corners-swap":
+            spots = [spots[1], spots[0], spots[3], spots[2]]
         return {b: spots[b] for b in range(nbanks)}
     if layout == "sides":
         x_r = snap(CORE_X1 - H - 3 * SITE, SITE)
@@ -74,7 +78,7 @@ def main():
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
                     help="extra SRAM array stripe pairs (prism's setting)")
-    ap.add_argument("--layout", choices=["top", "sides", "corners", "row"], default="corners")
+    ap.add_argument("--layout", choices=["top", "sides", "corners", "corners-swap", "row"], default="corners")
     ap.add_argument("--post-grt-repair", action=argparse.BooleanOptionalAction, default=True,
                     help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
     ap.add_argument("--max-wire", type=int, default=400, help="buffer wires longer than this (um, 0 = off)")
