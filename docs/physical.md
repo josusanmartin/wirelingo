@@ -122,6 +122,17 @@ overflows after global routing (final5: 12), Metal3 71.3 %, 2.50M µm of wire
 2.55M µm: no better, so they stay readable. The read path of the configuration
 registers, through each core's and the chip's read mux, was the congestion.
 
+### Floorplan: bank placement (2026-10-03)
+
+t5's slow-corner violators start at bank 0 (−4.10 ns) far more than bank 1
+(−0.89 ns): core 0's logic sits on the left (the line unit and the I/O pins
+pull it there) while bank 0 is in the bottom-right corner. Swapping the banks
+(`--layout corners-swap`, run fsw) improved the mid-flow estimate (−0.41 vs
+−1.2 ns after global routing) but not signoff: slow −4.72 ns, typ +4.46 ns,
+with 58 overflows after global routing instead of 8 (it still routed clean).
+Both banks side by side at the bottom centre (`row`) stayed congested in
+global routing. The corners layout stays.
+
 ### Where a core's wiring goes
 
 `flow/core_route.sh` places and globally routes one core (pe_core + FIFOs,
