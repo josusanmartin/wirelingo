@@ -232,37 +232,67 @@ def test_tx_core1_to_rx_core0():
     assert [frame_from_bits(b) for b in frames] == [frame(46), frame(100, seed=5)]
 
 
-@pytest.mark.parametrize("seed", range(3))
-def test_rx_external_50mhz_with_jitter(seed):
-    """A Manchester frame from an external sender at 10 Mbit/s with a random
-    phase, a 100 ppm frequency offset and +-4 ns of edge jitter, received at
-    50 MHz (5 clocks per bit; the edges land between clock edges)."""
+def receive_external(seed, jitter, extreme=False, ppm=100, nbytes=60):
+    """One Manchester frame from an external sender at 10 Mbit/s: random phase,
+    a frequency offset, edge jitter up to +-jitter (uniform, or every edge at
+    +-jitter when extreme), received on ui0 at 50 MHz (5 clocks per bit). The
+    pad is sampled at both clock edges, as the chip does. Returns the frame
+    received (or None)."""
     rng = random.Random(seed)
     mh = ModelHost()
     rx_setup(mh, 5, 16)                            # RD on ui0
     mh.start(1)
-    fr = frame(60, seed=seed)
+    fr = frame(nbytes, seed=seed)
     line = [b for x in wire_bits(fr) for b in (1 - x, x)]   # half-bit levels, 802.3 polarity
     clk = 20e-9
-    half = 50e-9 * (1 + 100e-6)
-    t, edges = rng.random() * clk + 200e-9, []
+    half = 50e-9 * (1 + ppm * 1e-6)
+    t, edges, prev = rng.random() * clk + 200e-9, [], 0
     for lv in line:
-        edges.append((t + rng.uniform(-4e-9, 4e-9), lv))
+        if lv != prev:
+            j = (jitter if rng.random() < 0.5 else -jitter) if extreme else rng.uniform(-jitter, jitter)
+            edges.append((t + j, lv))
+        prev = lv
         t += half
-    edges.append((t, 0))                           # TP_IDL then silence (stays low)
+    if prev:
+        edges.append((t + 2 * half * 2, 0))       # TP_IDL: high for 200 ns, then silence (low)
+
+    def level(time):
+        lv = 0
+        for te, v in edges:
+            if te > time:
+                break
+            lv = v
+        return lv
     # drive RD from the chip's own cycle count, so the host's bus cycles (FIFO
-    # reads) don't stall the waveform
-    step0, k = mh.chip.step, [0]
+    # reads) don't stall the waveform; ui_mid is the pad at the falling edge
+    step0 = mh.chip.step
 
     def step(ui_in=0, *a, **kw):
-        while k[0] < len(edges) and edges[k[0]][0] <= mh.chip.cycle * clk:
-            mh.ui = edges[k[0]][1]
-            k[0] += 1
-        step0(mh.ui, *a, **kw)
+        c = mh.chip.cycle
+        step0(level(c * clk), *a, ui_mid=level((c - 0.5) * clk), **kw)
     mh.chip.step = step
     got = []
     while mh.chip.cycle * clk < t + 2e-6:
         mh.step()
         got += mh.pop_all(0)
-    [bits] = [b for b in rx_bits(got) if len(b) > 64]
-    assert frame_from_bits(bits) == fr
+    frames = [b for b in rx_bits(got) if len(b) > 64]
+    if len(frames) != 1:
+        return None
+    try:
+        return frame_from_bits(frames[0]), fr
+    except AssertionError:
+        return None
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_rx_external_50mhz_with_jitter(seed):
+    """802.3's receive jitter tolerance: +-13.5 ns of edge jitter, 100 ppm."""
+    got = receive_external(seed, 13.5e-9)
+    assert got and got[0] == got[1]
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_rx_external_extreme_jitter(seed):
+    """Every edge at +-13.5 ns (the worst case for the receiver's loop), 200 ppm."""
+    got = receive_external(seed + 10, 13.5e-9, extreme=True, ppm=-200)
+    assert got and got[0] == got[1]

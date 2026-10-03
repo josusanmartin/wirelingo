@@ -493,6 +493,12 @@ class _Exec:
         return (self.pins_in >> (p & 31)) & 1
 
 
+def _pad_bit(p):
+    """Bit of logical pin p in the {ui[4:0], uio[7:0]} pad vector, or None if
+    it isn't a pad input (docs/isa.md §2)."""
+    return p if p < 8 else p - 8 if 16 <= p <= 20 else None
+
+
 class Chip:
     def __init__(self, bank_words=256, ncores=NCORES, nbanks=4, fifo_depth=FIFO_DEPTH):
         """ncores/nbanks < 4 model a reduced build: missing cores never run and their
@@ -513,6 +519,10 @@ class Chip:
         self.hostcfg = 0  # QUAD_EN: only the host port uses it
         self.line = Line(self.cover)
         self.sync1 = self.sync2 = 0  # {ui[4:0], uio[7:0]}
+        # the line unit's RX pin, also sampled on the falling clock edge (pe_chip
+        # rx_hq, rx_h2): half a clock older than its sync2 sample
+        self.rx_hq = self.rx_h2 = 0
+        self.pads_prev = 0           # last cycle's pads: the default mid-cycle value
         self.cycle = 0
         self.stats = {}
 
@@ -568,8 +578,11 @@ class Chip:
             A_LINESTAT: self.line.status(),
         }.get(addr, 0)      # configuration registers are write-only: read 0
 
-    def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False, cancel=False):
-        """One clock edge. `we`: bus write of wdata to addr this cycle. Reads
+    def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=False, cancel=False,
+             ui_mid=None, uio_mid=None):
+        """One clock edge. ui_in/uio_in: the pads at this rising edge; ui_mid/
+        uio_mid: at the falling edge before it (default: the previous cycle's
+        values, i.e. the pads change just after a falling edge). `we`: bus write of wdata to addr this cycle. Reads
         (docs/isa.md §6.1): `snap` captures read(addr) for a word the host will
         send, reserving the next unread RXF entry at a FIFO address; `commit`
         says the oldest snapped word was sent (pops it if it was a real entry);
@@ -710,7 +723,9 @@ class Chip:
                 core.res = []
         if ctrl is not None:
             self.enable = ctrl & 15
-        self.line.step(pins_in)          # after the cores: they used its start-of-cycle state
+        rxp = self.line.rxp
+        rx_mid = self.rx_h2 if _pad_bit(rxp) is not None else (pins_in >> rxp) & 1
+        self.line.step(pins_in, rx_mid)  # after the cores: they used its start-of-cycle state
         self.line.commit()
         if line_write:
             self.line.write(*line_write)
@@ -718,5 +733,10 @@ class Chip:
         self.flags = ((flags & ~fclr) | fset) & 0xFF
         self.pin_out, self.pin_oe = new_out & M32, new_oe & M32
         self.sync2 = self.sync1
-        self.sync1 = (uio_in & 0xFF) | ((ui_in & 0x1F) << 8)
+        pads = (uio_in & 0xFF) | ((ui_in & 0x1F) << 8)
+        mid = self.pads_prev if ui_mid is None and uio_mid is None else \
+            ((uio_in if uio_mid is None else uio_mid) & 0xFF) | (((ui_in if ui_mid is None else ui_mid) & 0x1F) << 8)
+        bit = _pad_bit(rxp)              # the RX pin chosen at that falling edge
+        self.rx_h2, self.rx_hq = self.rx_hq, (mid >> bit) & 1 if bit is not None else 0
+        self.sync1 = self.pads_prev = pads
         self.cycle += 1

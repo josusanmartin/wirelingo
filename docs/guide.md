@@ -49,7 +49,7 @@ CAD Suite).
 
 * Two cores on silicon (four don't route on this tile). 50 MHz at the typical
   corner; about 41 MHz at the slow corner.
-* 10BASE-T RX tolerates about ±5 ns of edge jitter at 50 MHz, not 802.3's ±13.5 ns (README).
+* 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
 * CAN: frames with stuffing, CRC, arbitration, ACK and stuff-error detection;
   not a full controller (no error counters or bus-off).

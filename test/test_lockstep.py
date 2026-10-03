@@ -5,6 +5,7 @@ both; all architectural state is compared every clock cycle.
 
 Env knobs: LOCKSTEP_SEEDS (number of random programs), LOCKSTEP_CYCLES, LOCKSTEP_SEED0.
 """
+import bisect
 import os
 import random
 
@@ -36,7 +37,7 @@ def line_state_rtl(u):
         tx_on=v(u.tx_on), level=v(u.level), txn=v(u.txn), half=v(u.half), ending=v(u.ending),
         eop=v(u.eop_idle), tcnt=v(u.tcnt), tfacc=v(u.tfacc), trun=v(u.trun), entries=v(u.e_cnt),
         rx_on=v(u.rx_on), rq=v(u.rq) & ((1 << v(u.rcount)) - 1), rcount=v(u.rcount), rcnt=v(u.rcnt),
-        mt=v(u.mt), quiet=v(u.quiet), rrun=v(u.rrun), end_pend=v(u.end_pend), ovf=v(u.ovf), rprev=v(u.rprev),
+        q=v(u.q) - ((v(u.q) >> 20) << 21), n=v(u.mn), quiet=v(u.quiet), rrun=v(u.rrun), end_pend=v(u.end_pend), ovf=v(u.ovf), rprev=v(u.rprev),
     )
 
 
@@ -45,7 +46,7 @@ def line_state_model(l):
         tx_on=l.tx_on, level=l.level, txn=l.txn, half=l.half, ending=l.ending, eop=l.eop_idle,
         tcnt=l.tcnt, tfacc=l.tfacc, trun=l.trun, entries=len(l.entries),
         rx_on=l.rx_on, rq=sum(b << i for i, b in enumerate(l.rq)), rcount=len(l.rq), rcnt=l.rcnt,
-        mt=l.mt, quiet=l.quiet, rrun=l.rrun, end_pend=l.end_pend, ovf=l.ovf, rprev=l.rprev,
+        q=l.q, n=l.n, quiet=l.quiet, rrun=l.rrun, end_pend=l.end_pend, ovf=l.ovf, rprev=l.rprev,
     )
 
 
@@ -94,6 +95,7 @@ class Harness:
 
     async def reset(self):
         d = self.dut
+        self.mid, self.next_mid = (0, 0), None
         d.rst_n.value = 0
         d.ui_in.value = 0
         d.uio_in.value = 0
@@ -168,8 +170,15 @@ class Harness:
         if we or commit:
             self.trace.append((self.cycle, f"{'W' if we else 'R'} {addr:#06x} {wdata:#010x}"))
         await RisingEdge(d.clk)
-        self.model.step(ui_in=ui, uio_in=uio, we=we, addr=addr, wdata=wdata, commit=commit, snap=snap, cancel=cancel)
+        self.model.step(ui_in=ui, uio_in=uio, we=we, addr=addr, wdata=wdata, commit=commit, snap=snap, cancel=cancel,
+                        ui_mid=self.mid[0], uio_mid=self.mid[1])
         self.cycle += 1
+        # the pads at the next falling edge (pe_chip samples the line unit's RX
+        # pin there): unchanged, or some already at next cycle's value
+        self.mid = self.next_mid or (ui, uio)
+        self.next_mid = None
+        await Timer(1, unit="ps")
+        d.ui_in.value, d.uio_in.value = self.mid
         await FallingEdge(d.clk)
         errs = self.compare()
         if errs:
@@ -233,17 +242,23 @@ async def test_random_lockstep(dut):
             await h.write(addr, data)
         await h.write(sim.A_CTRL, 15 if rng.random() < 0.7 else rng.randrange(1, 16))
         # run
-        ui = rng.getrandbits(5)
-        uio = rng.getrandbits(8)
+        mrng = random.Random(seed + 0x5EED)            # own stream: the rest of the stimulus is unchanged
+        nui = rng.getrandbits(5)
+        nuio = rng.getrandbits(8)
         toggle_p = rng.choice([0.02, 0.1, 0.4])
         push_p = 0.06 if rng.random() < 0.7 else 0.3   # some seeds keep the TX FIFOs busy
         for _ in range(ncycles):
+            ui, uio = nui, nuio
             for bit in range(5):
                 if rng.random() < toggle_p:
-                    ui ^= 1 << bit
+                    nui ^= 1 << bit
             for bit in range(8):
                 if rng.random() < toggle_p:
-                    uio ^= 1 << bit
+                    nuio ^= 1 << bit
+            # at the falling edge before the next rising edge, each pin that is
+            # about to change already shows its new value half the time
+            early_ui, early_uio = mrng.getrandbits(5), mrng.getrandbits(8)
+            h.next_mid = ((ui & ~early_ui) | (nui & early_ui), (uio & ~early_uio) | (nuio & early_uio))
             op = rng.random()
             c = rng.randrange(4)
             if op < push_p:
@@ -325,7 +340,8 @@ def coverage_goals():
         "ctrl:restart_mid_instruction", "core:bank_fault",
         "line:out_entry", "line:tx_bit", "line:tx_stuff", "line:tx_manchester_half", "line:tx_frame_end",
         "line:rx_bit", "line:rx_stuff", "line:rx_frame_end", "line:in_bits", "line:in_frame_end",
-        "line:rx_overflow",
+        "line:rx_overflow", "line:rx_edge_first_half", "line:rx_edge_second_half",
+        "line:rx_edge_outside_window",                                   # rx_locked: test_line_rx_jitter
     ])
 
 
@@ -366,3 +382,50 @@ async def test_fifo_races(dut):
         missing = [e for e in want if not h.model.stats.get(e)]
         assert not missing, (join, missing)
         await h.write(sim.A_CTRL, 0)
+
+
+@cocotb.test()
+async def test_line_rx_jitter(dut):
+    """Directed, compared every cycle: a 10BASE-T frame with +-13.5 ns of edge
+    jitter on ui0, sampled at both clock edges (the falling-edge sample planned
+    a cycle ahead), received by eth10_rx through the line unit while the host
+    reads the FIFO. Reaches the receiver's locked state and both edge halves."""
+    from pe import asm, host
+    import pathlib
+    h = await start(dut)
+    prog = asm.assemble((pathlib.Path(__file__).resolve().parents[1] / "firmware/eth10_rx.pasm").read_text())
+    for addr, data in host.load_program(0, prog, 0, clkdiv=1 << 8):
+        await h.write(addr, data)
+    await h.write(sim.A_LINEDIV, 5 << 16)                      # 5 clocks per bit: 50 MHz
+    await h.write(sim.A_LINEPINS, 16 << 8)                     # RX on P16 = ui0
+    await h.write(sim.A_LINECFG, 1 | (2 << 1) | (1 << 14))     # EN, Manchester, RX_EN
+    await h.write(sim.A_CTRL, 1)
+    rng = random.Random(5)
+    bits = [1, 0] * 31 + [1, 1] + [rng.getrandbits(1) for _ in range(400)]
+    clk, half = 20.0, 50.0 * (1 - 150e-6)
+    t, edges, prev = 300.0, [], 0
+    for lv in (v for b in bits for v in (1 - b, b)):
+        if lv != prev:
+            j = rng.choice([-13.5, 13.5]) if rng.random() < 0.5 else rng.uniform(-13.5, 13.5)
+            edges.append((t + j, lv))
+        prev = lv
+        t += half
+    edges.append((t + 200.0, 0))                                # TP_IDL, then idle low
+
+    times = [te for te, _ in edges]
+
+    def level(time):
+        i = bisect.bisect_right(times, time)
+        return edges[i - 1][1] if i else 0
+    fifo = sim.core_reg(0, sim.C_FIFO)
+    c0 = h.model.cycle
+    for _ in range(int((t + 1000) / clk)):
+        c = h.model.cycle - c0
+        h.next_mid = (level((c + 0.5) * clk), 0)               # the pad at the next falling edge
+        if rng.random() < 0.3:
+            await h.cycle_step(level(c * clk), 0, addr=fifo, snap=rng.random() < 0.6, commit=rng.random() < 0.6)
+        else:
+            await h.cycle_step(level(c * clk), 0)
+    missing = [g for g in ("line:rx_locked", "line:rx_edge_first_half", "line:rx_edge_second_half",
+                           "line:rx_frame_end") if not h.model.stats.get(g)]
+    assert not missing, missing

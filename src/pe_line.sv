@@ -16,6 +16,8 @@ module pe_line (
     output wire [31:0] r_stat,
     // pins
     input  wire [31:0] pins_in,
+    input  wire        rx_mid,        // the RX pin half a clock before pins_in[rxp] (pe_chip)
+    output wire [4:0]  rx_pin,
     output wire [31:0] drv_mask,      // pins the transmitter drives this cycle
     output wire [31:0] drv_val,
     // core 0
@@ -66,7 +68,11 @@ module pe_line (
   reg [31:0] rq;              // oldest bit at [0]
   reg [5:0]  rcount;
   reg        rx_on, rlast, rprev, end_pend, ovf;
-  reg [15:0] rcnt, mt;
+  reg [15:0] rcnt;
+  // Manchester: q = time from the expected next mid-bit edge, in 1/64
+  // half-cycles; mn = mid-bit edges accepted (saturates at 32)
+  reg signed [20:0] q;
+  reg [5:0]  mn;
   reg [3:0]  quiet;
   reg [2:0]  rrun;
   reg        rrunbit, rrunv;
@@ -107,11 +113,27 @@ module pe_line (
   // ---------------------------------------------------------------- next state
   wire [5:0] head_idx = e_msb0 ? e_n0 - 6'd1 - e_pos : e_pos;   // 0..31
   wire       head_bit = e_data0[head_idx[4:0]];
+  assign rx_pin = rxp;
   wire       rx  = pins_in[rxp];
   wire       rxn = pins_in[rxp + 5'd1];
   wire       trans = rx != rprev;
-  wire [17:0] p3 = {2'd0, p} * 18'd3;
-  wire [17:0] p3r = p3 + 18'd2;                                  // 3P/4 rounded: (3P + 2) / 4
+  // Manchester timing (1/64 half-cycle units, P <= 4095): a bit, the windows
+  // (a quarter bit, 3/8 while locking) and the frame end (half a bit late)
+  wire [11:0] p12 = p[11:0];
+  wire signed [20:0] m_bit  = {2'd0, p12, 7'd0};
+  wire signed [20:0] m_win  = {4'd0, p12, 5'd0};
+  wire signed [20:0] m_wide = {4'd0, p12, 5'd0} + {5'd0, p12, 4'd0};
+  wire signed [20:0] m_end  = {3'd0, p12, 6'd0};
+  // where this cycle's edge fell: before the mid-cycle sample (1.5 half-cycles
+  // ago) or after it (0.5)
+  wire       edge1 = rx_mid != rprev;
+  wire       edge2 = rx != rx_mid;
+  wire signed [20:0] m_age = edge1 ? 21'sd96 : 21'sd32;
+  wire signed [20:0] m_q = q + 21'sd128;                         // one clock later
+  wire signed [20:0] m_e = m_q - m_age;                          // the edge, from its expected time
+  wire       m_in = (edge1 || edge2) && m_e >= -(mn < 6'd32 ? m_wide : m_win);
+  wire [2:0] m_g = mn < 6'd6 ? 3'd1 : mn < 6'd12 ? 3'd2 : mn < 6'd18 ? 3'd3 : mn < 6'd24 ? 3'd4 : 3'd5;
+  wire signed [20:0] m_r = (m_e + (21'sd1 <<< (m_g - 3'd1))) >>> m_g;   // loop correction, rounded
 
   reg        n_tx_on, n_eop, n_half, n_bit, n_level, n_txn, n_trunbit, n_trunv;
   reg [3:0]  n_ending;
@@ -120,7 +142,9 @@ module pe_line (
   reg [2:0]  n_trun;
   reg        pop, do_next, got, b;
   reg        n_rx_on, n_rlast, n_rrunbit, n_rrunv, new_v, new_b, new_end;
-  reg [15:0] n_rcnt, n_mt;
+  reg [15:0] n_rcnt;
+  reg signed [20:0] n_q;
+  reg [5:0]  n_mn;
   reg [3:0]  n_quiet;
   reg [2:0]  n_rrun;
   reg [8:0]  fs;
@@ -238,7 +262,7 @@ module pe_line (
     end
 
     // ---- receiver
-    n_rx_on = rx_on; n_rlast = rlast; n_rcnt = rcnt; n_mt = mt; n_quiet = quiet;
+    n_rx_on = rx_on; n_rlast = rlast; n_rcnt = rcnt; n_q = q; n_mn = mn; n_quiet = quiet;
     n_rrun = rrun; n_rrunbit = rrunbit; n_rrunv = rrunv;
     new_v = 1'b0; new_b = 1'b0; new_end = 1'b0;
     if (en && rx_en) begin
@@ -249,7 +273,8 @@ module pe_line (
           n_rrunv = 1'b0;
           n_quiet = 4'd0;
           if (manch) begin
-            n_mt = 16'd0;
+            n_q = m_age - m_bit;                                 // the first edge is a mid-bit edge
+            n_mn = 6'd0;
             deliver(rx);
           end else begin
             n_rlast = rprev;
@@ -257,14 +282,14 @@ module pe_line (
           end
         end
       end else if (manch) begin
-        n_mt = mt + 16'd1;
-        if (trans && {2'd0, n_mt} >= {2'd0, p3r[17:2]}) begin
-          n_mt = 16'd0;
+        if (m_in) begin
+          n_q = m_q - m_bit - m_r;
+          n_mn = (mn == 6'd32) ? 6'd32 : mn + 6'd1;
           deliver(rx);
-        end else if ({2'd0, n_mt} >= {1'b0, p3[17:1]}) begin
+        end else if (m_q >= m_end) begin
           n_rx_on = 1'b0;
           new_end = 1'b1;
-        end
+        end else n_q = m_q;
       end else begin
         if (trans) begin
           n_rcnt = {1'b0, p[15:1]} - 16'd1;
@@ -320,7 +345,7 @@ module pe_line (
         tx_on <= 1'b0; eop_idle <= 1'b0; half <= 1'b0; bit_q <= 1'b0; level <= 1'b0; txn <= 1'b0;
         ending <= 4'd0; tcnt <= 16'd0; tfacc <= 8'd0; trun <= 3'd0; trunbit <= 1'b0; trunv <= 1'b0;
         rq <= 32'd0; rcount <= 6'd0; rx_on <= 1'b0; rlast <= 1'b0; rprev <= 1'b0;
-        end_pend <= 1'b0; ovf <= 1'b0; rcnt <= 16'd0; mt <= 16'd0; quiet <= 4'd0;
+        end_pend <= 1'b0; ovf <= 1'b0; rcnt <= 16'd0; q <= 21'sd0; mn <= 6'd0; quiet <= 4'd0;
         rrun <= 3'd0; rrunbit <= 1'b0; rrunv <= 1'b0;
     end else if (cfg_we && !wdata[0]) begin
         e_data0 <= 32'd0; e_data1 <= 32'd0; e_n0 <= 6'd0; e_n1 <= 6'd0; e_pos <= 6'd0;
@@ -328,7 +353,7 @@ module pe_line (
         tx_on <= 1'b0; eop_idle <= 1'b0; half <= 1'b0; bit_q <= 1'b0; level <= 1'b0; txn <= 1'b0;
         ending <= 4'd0; tcnt <= 16'd0; tfacc <= 8'd0; trun <= 3'd0; trunbit <= 1'b0; trunv <= 1'b0;
         rq <= 32'd0; rcount <= 6'd0; rx_on <= 1'b0; rlast <= 1'b0; rprev <= 1'b0;
-        end_pend <= 1'b0; ovf <= 1'b0; rcnt <= 16'd0; mt <= 16'd0; quiet <= 4'd0;
+        end_pend <= 1'b0; ovf <= 1'b0; rcnt <= 16'd0; q <= 21'sd0; mn <= 6'd0; quiet <= 4'd0;
         rrun <= 3'd0; rrunbit <= 1'b0; rrunv <= 1'b0;
     end else if (en) begin
       // transmitter
@@ -347,7 +372,7 @@ module pe_line (
       end
       e_cnt <= e_cnt1 + {1'b0, push};
       // receiver
-      rx_on <= n_rx_on; rlast <= n_rlast; rcnt <= n_rcnt; mt <= n_mt; quiet <= n_quiet;
+      rx_on <= n_rx_on; rlast <= n_rlast; rcnt <= n_rcnt; q <= n_q; mn <= n_mn; quiet <= n_quiet;
       rrun <= n_rrun; rrunbit <= n_rrunbit; rrunv <= n_rrunv;
       rprev <= rx;
       if (new_v && rcount < 6'd32) begin

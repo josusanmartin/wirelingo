@@ -48,7 +48,7 @@ against the RTL.
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | endpoint 0; the host software does the requests and data toggles | RTL (SETUP/ACK, foreign address, NAK, IN data); **enumeration**, lost ACK, ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | **enumeration**, address filter, lost ACK on the model (lockstep-checked line unit) |
-| `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | ±5 ns edge jitter at 50 MHz (see below) | model: on-chip TX→RX at 40 MHz, external sender at 50 MHz with 100 ppm offset and jitter |
+| `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | model: on-chip TX→RX at 40 MHz, external sender at 50 MHz with 100 ppm offset and jitter |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores |
 | `swd_probe` | ARM SWD engine: request parity, ACK, DPIDR, register writes | | model |
@@ -59,11 +59,12 @@ against the RTL.
 | `i2c_sniff` | passive I2C monitor (START/STOP/bytes), beside the master on the other core | | model |
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
-sender with up to about ±5 ns of edge jitter at 50 MHz (test_eth10's sweep:
-10/10 frames at ±5 ns, 3/10 at ±10 ns). 802.3 allows ±13.5 ns: the unit
-samples the line once per clock, so an edge time is quantized to 20 ns.
-Sampling on both clock edges would bring the worst case inside the spec; that
-is the next step.
+sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
+the worst case where every edge sits at ±13.5 ns (test_eth10's sweep: 30/30
+frames at ±15 ns, 9/30 at ±18 ns). The unit samples the RX pin at both clock
+edges and tracks the sender's phase with a digital loop (docs/isa.md §4.7).
+The first version measured each edge against the previous one at one sample
+per clock and managed ±5 ns.
 
 ## Verification in one paragraph
 

@@ -9,6 +9,11 @@ M16 = 0xFFFF
 NRZ, NRZI, MANCH = 0, 1, 2
 
 
+def _bit(p):
+    """One Manchester bit in 1/64 half-cycles (P <= 4095 clocks; higher bits ignored)."""
+    return 128 * (p & 0xFFF)
+
+
 class Line:
     def __init__(self, cover=lambda event: None):
         self.cfg = self.div = self.pins = 0
@@ -31,7 +36,8 @@ class Line:
         self.rcnt = 0
         self.rlast = self.rprev = 0
         self.quiet = 0
-        self.mt = 0                  # Manchester: cycles since the last mid-bit transition
+        self.q = 0                   # Manchester: time from the expected next mid-bit edge (1/64 half-cycles)
+        self.n = 0                   # Manchester: mid-bit edges accepted in this frame (saturates at 32)
         self.rrun, self.rrunbit = 0, None
         self.end_pend = self.ovf = 0
         # this cycle's core-0 traffic
@@ -117,7 +123,9 @@ class Line:
         self._clear_end = bool(t)
 
     # -- one cycle of the unit
-    def step(self, pins_in):
+    def step(self, pins_in, rx_mid=None):
+        """rx_mid: the RX pin half a clock before its pins_in sample (default: no
+        mid-cycle information, i.e. the pins_in value)."""
         if not self.en:
             self._push, self._take, self._clear_end = None, 0, False
             return
@@ -125,7 +133,7 @@ class Line:
         self._new_end = False
         self._tx_step()
         if self.rx_en:
-            self._rx_step(pins_in)
+            self._rx_step(pins_in, rx_mid)
         else:
             self.rprev = (pins_in >> self.rxp) & 1
 
@@ -247,29 +255,46 @@ class Line:
             self._next_bit()
 
     # -- receiver
-    def _rx_step(self, pins_in):
+    def _rx_step(self, pins_in, rx_mid):
         rx = (pins_in >> self.rxp) & 1
         rxn = (pins_in >> ((self.rxp + 1) & 31)) & 1
+        h = rx if rx_mid is None else rx_mid
         trans = rx != self.rprev
         p = (self.div >> 16) & M16
+        # Manchester (docs/isa.md §4.7): an edge between the last sample and the
+        # mid-cycle one happened about 1.5 half-cycles ago, one after it 0.5
+        # (units of 1/64 half-cycle)
+        age = 96 if h != self.rprev else 32 if rx != h else None
         if not self.rx_on:
             if trans:
                 self.rx_on = 1
                 self.rrun, self.rrunbit = 0, None
                 self.quiet = 0
                 if self.code == MANCH:
-                    self.mt = 0
+                    self.q, self.n = age - _bit(p), 0      # the frame's first edge is a mid-bit edge
                     self._deliver(rx)
                 else:
                     self.rlast = self.rprev
                     self.rcnt = ((p >> 1) - 1) & M16
         elif self.code == MANCH:
-            self.mt = (self.mt + 1) & M16
-            if trans and self.mt >= (3 * p + 2) >> 2:      # 3P/4, rounded
-                self.mt = 0
+            p12 = p & 0xFFF
+            q = self.q + 128                                # one clock
+            e = None if age is None else q - age            # the edge, from the expected time
+            wide = self.n < 32                              # locking: 3/8 bit, else 1/4 bit
+            if e is not None and e >= -(48 * p12 if wide else 32 * p12):
+                g = min(5, 1 + self.n // 6)                 # loop gain 1/2 .. 1/32
+                self.q = q - _bit(p) - ((e + (1 << (g - 1))) >> g)
+                self.n = min(self.n + 1, 32)
+                self.cover("line:rx_edge_" + ("first" if age == 96 else "second") + "_half")
+                if not wide:
+                    self.cover("line:rx_locked")
                 self._deliver(rx)
-            elif self.mt >= (3 * p) >> 1:
+            elif q >= 64 * p12:                             # half a bit late: the frame is over
                 self._end()
+            else:
+                if e is not None:
+                    self.cover("line:rx_edge_outside_window")
+                self.q = q
         else:
             if trans:
                 self.rcnt = ((p >> 1) - 1) & M16

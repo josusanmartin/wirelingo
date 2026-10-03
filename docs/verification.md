@@ -143,8 +143,11 @@ the RTL through the **real SPI host port** (`test/test.py`).
   two-core firmware.
 * 10BASE-T RX (`eth10_rx`, line unit): `eth10_tx` on core 1 to `eth10_rx` on
   core 0 at 40 MHz; an external sender at 50 MHz with random phase, 100 ppm
-  offset and ±4 ns jitter. A jitter sweep: 10/10 frames at ±5 ns, 3/10 at
-  ±10 ns (edges are quantized to a clock).
+  offset and 802.3's ±13.5 ns of jitter, uniform and with every edge at
+  ±13.5 ns (±200 ppm); the pad is sampled at both clock edges. A sweep: 30/30
+  frames at ±15 ns, 9/30 at ±18 ns. `test_line_rx_jitter` (lockstep) runs a
+  jittered frame through the RTL and the model, compared every cycle, through
+  the receiver's lock.
 * UART: 64 back-to-back bytes from a sender at ±3 % with the fractional
   115200-baud divider; the on-chip TX→RX pair over a virtual pin.
 * I2C: SCL held low at every one of the 19 releases (and before START) times

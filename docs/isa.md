@@ -302,15 +302,43 @@ NRZ/NRZI: a transition sets the sample counter to P/2;
           sample: with DIFF, RXP = RXN = 0 (SE0) ends the frame;
                   bit = rx (NRZ), or 1 if rx equals the last sample (NRZI)
           without a transition for STUFF_K + 2 bits (8 if STUFF_K = 0): end
-Manchester: after a mid-bit transition, transitions in the next 3P/4 cycles
-          (rounded: (3P + 2) / 4) are bit boundaries; the first one after that is the next mid-bit
-          transition: bit = rx after it. The frame's first transition counts
+Manchester: a tracked phase (below) predicts the next mid-bit transition;
+          a transition at most a quarter bit before the prediction (3/8 bit
+          while locking) is the mid-bit one: bit = rx after it. Earlier
+          transitions are bit boundaries. The frame's first transition counts
           as mid-bit, so a frame must start with a bit whose first half is the
           idle level (a 1 after a low line, as the 10BASE-T preamble does).
-          No mid-bit transition within 3P/2: end.
+          No mid-bit transition until half a bit after the prediction: end.
 bit:      if STUFF_K and the run reached STUFF_K: drop it as a stuff bit
           (if it isn't the expected one: end the frame); else queue it
 ```
+
+**Manchester timing.** The RX pin is sampled at both clock edges: a pad pin
+(P0–P7, P16–P20) also at the falling edge, half a clock before its
+synchronized sample (internal pins change only at rising edges), so each
+transition is placed in one half of a clock. The phase `q`, in 1/64
+half-cycles, counts from the predicted next mid-bit transition (P ≤ 4095;
+higher bits of the RX period are ignored for Manchester):
+
+```
+start:     q = age - B            B = 128·P (one bit); age = 96 if the
+                                  transition came before the falling-edge
+                                  sample (1.5 half-cycles ago), else 32
+each clock: q += 128
+transition: e = q - age
+           e ≥ -48·P (n < 32) or -32·P: mid-bit; q = q - B - round(e / 2^g),
+           g = 1, 2, 3, 4, 5 for n = 0-5, 6-11, 12-17, 18-23, 24 and up; n += 1
+no mid-bit transition and q ≥ 64·P: end of frame
+```
+
+So the loop locks on the first mid-bit transitions with a wide window and a
+fast loop gain, then follows the sender with gain 1/32 and a quarter-bit
+window: it measures each transition against a prediction rather than against
+the previous (also jittered) transition. At 50 MHz (P = 5) it receives
+10BASE-T with 802.3's ±13.5 ns of edge jitter and ±200 ppm (model sweep: 30/30
+frames at ±15 ns). The wide window holds for the first 32 mid-bit
+transitions, which the 802.3 preamble's 62 alternating bits cover; a sender
+without a preamble works with up to about ±7 ns of jitter there.
 
 The RX queue holds 32 bits. Bits beyond that are dropped and set the overflow bit.
 The end of a frame sets the pending end that `IN LINE` reports.

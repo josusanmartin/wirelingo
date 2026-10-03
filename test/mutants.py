@@ -16,7 +16,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 LOCKSTEP = ("cd test && LOCKSTEP_SEEDS=6 LOCKSTEP_CYCLES=800 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 "
-            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 3")
+            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 4")
 
 
 def top(test):
@@ -54,10 +54,14 @@ MUTANTS = {
     "asm-clkdiv-no-carry": ("tools/pe/isa.py", "    if f == 256:", "    if f == 257:", pytest("test/model/test_asm.py")),
     "rtl-config-in-base-field": ("src/pe_core.sv", "bus_wdata[12], bus_wdata[13], bus_wdata[20:16]}",
                                  "bus_wdata[12], bus_wdata[13], bus_wdata[21:17]}", LOCKSTEP),
+    "rtl-line-no-falling-edge-sample": ("src/pe_chip.sv", "assign line_rx_mid = rx_is_pad ? rx_h2 : pins_in[line_rxp];",
+                                        "assign line_rx_mid = pins_in[line_rxp];", LOCKSTEP),
+    "model-line-fast-loop": ("tools/pe/line.py", "g = min(5, 1 + self.n // 6)", "g = 1",
+                             pytest("test/model/test_eth10.py -k external")),
     "rtl-line-no-tx-stuff": ("src/pe_line.sv", "        if (k != 3'd0 && n_trun == k) begin                      // stuff bit",
                              "        if (1'b0) begin                                          // stuff bit", LOCKSTEP),
-    "model-line-manchester-window": ("tools/pe/line.py", "if trans and self.mt >= (3 * p + 2) >> 2:      # 3P/4, rounded",
-                                     "if trans and self.mt >= p >> 1:", LOCKSTEP),
+    "model-line-manchester-window": ("tools/pe/line.py", "-(48 * p12 if wide else 32 * p12)",
+                                     "-(48 * p12 if wide else 44 * p12)", pytest("test/model/test_eth10.py -k external")),
     "fw-usb-record-no-marker": ("firmware/usb_ls_rx.pasm", "    ldi r1, 0x81                   ; trailer status: good",
                                 "    ldi r1, 0x01                   ; trailer status: good",
                                 pytest("test/model/test_usb_model.py -k rx_packets")),

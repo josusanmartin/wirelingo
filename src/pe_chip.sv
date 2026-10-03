@@ -87,6 +87,8 @@ module pe_chip #(
   wire        line_room, line_ok, line_t;
   wire [5:0]  line_k;
   wire [31:0] line_val, line_r_stat;
+  wire [4:0]  line_rxp;
+  wire        line_rx_mid;
   wire [3:0]  lp_push, lp_msb, lp_in_shr, lp_take;
   wire [127:0] lp_data;
   wire [23:0] lp_n, lp_in_n;
@@ -163,12 +165,28 @@ module pe_chip #(
       .pins_we(bus_we && sel_glob && goff == 4'hE),
       .wdata(bus_wdata),
       .r_stat(line_r_stat),
-      .pins_in(pins_in), .drv_mask(line_mask), .drv_val(line_val_o),
+      .pins_in(pins_in), .rx_mid(line_rx_mid), .rx_pin(line_rxp), .drv_mask(line_mask), .drv_val(line_val_o),
       .room(line_room), .push(lp_push[0]), .push_data(lp_data[31:0]), .push_n(lp_n[5:0]),
       .push_msb(lp_msb[0]), .in_n(lp_in_n[5:0]), .in_shr(lp_in_shr[0]),
       .in_ok(line_ok), .in_k(line_k), .in_t(line_t), .in_val(line_val), .take(lp_take[0]));
 
   // ---------------------------------------------------------------- pins
+  // The line unit's RX pin is also sampled on the falling clock edge, which
+  // halves the receiver's timing quantization (10BASE-T edge jitter, §4.7).
+  // rx_h2 is that sample half a clock before the pin's sync2 sample: the
+  // falling edge before the rising edge where sync1 took it.
+  wire        rx_is_pad = line_rxp[4:3] == 2'b00 || (line_rxp[4:3] == 2'b10 && line_rxp[2:0] <= 3'd4);
+  wire [7:0]  ui8 = {3'd0, ui_in};
+  wire        rx_pad = line_rxp[4] ? ui8[line_rxp[2:0]] : uio_in[line_rxp[2:0]];
+  reg         rx_n1, rx_hq, rx_h2;
+  always @(negedge clk or negedge rst_n)
+    if (!rst_n) rx_n1 <= 1'b0;
+    else rx_n1 <= rx_is_pad && rx_pad;
+  always @(posedge clk or negedge rst_n)
+    if (!rst_n) {rx_h2, rx_hq} <= 2'b00;
+    else {rx_h2, rx_hq} <= {rx_hq, rx_n1};
+  assign line_rx_mid = rx_is_pad ? rx_h2 : pins_in[line_rxp];
+
   reg [31:0] pin_out_n, pin_oe_n;
   integer p;
   always @(*) begin
