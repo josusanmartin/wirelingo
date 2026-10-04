@@ -103,6 +103,11 @@ def main():
     # look violated and the repair loop never ends, so the margin is 0.
     c["PL_RESIZER_SETUP_SLACK_MARGIN"] = 0
     c["GRT_RESIZER_SETUP_SLACK_MARGIN"] = 0
+    # With latches and a 0 margin, repairing every violating endpoint's slack
+    # (TNS) at the slow corner took 1.5-2 h per step (it was minutes before).
+    # The worst paths are what matter (TT signs off at typ, met by +4.5 ns).
+    c["PL_RESIZER_SETUP_REPAIR_TNS_PCT"] = 20
+    c["GRT_RESIZER_SETUP_REPAIR_TNS_PCT"] = 20
     c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     c["RUN_LINTER"] = 1
