@@ -57,6 +57,24 @@ resizer buffers the high-fanout decode nets that dominate them.
   slack after CTS, the SRAM build +8.4 ns, and the SRAM build also meets 50 MHz
   at the slow corner (+1.9 ns).
 
+### Hold buffers came from the constraint (2026-10-04)
+
+About 1700 hold buffers (+6 % area) went in after CTS in every run. The
+violators (t8, fast corner, before repair: 743 endpoints) were mostly flops
+whose next state includes their own value: hold muxes (IHP's flops have no
+enable), counters, shift registers. 618 of them start and end in the same
+register. Such a path launches and captures on the same clock pin, yet failed
+by up to 0.07 ns, because the SDC applied LibreLane's 0.25 ns clock
+uncertainty to hold as well as setup. A hold check compares one edge with
+itself: jitter cancels, skew is computed from the propagated clocks and OCV is
+in the ±5 % derates. With 0.1 ns of hold uncertainty the same database has 20
+fast-corner violators (the SRAM address/data pins and a few real skew paths).
+So `src/protoemu.sdc` sets 0.1 ns for hold (0.25 for setup), and the fast
+corner is repaired directly (`PNR_CORNERS` has all three) with 0.05 ns
+margins, instead of a 0.25 ns typ margin standing in for it. (The earlier
+"fast-corner hold took 3200 buffers" was the same uncertainty.)
+`CTS_BALANCE_LEVELS` changed nothing (same tree, same violators).
+
 ## Routability is the constraint (not cell area)
 
 Numbers are quick global-routing runs (5 iterations) on placed databases.
