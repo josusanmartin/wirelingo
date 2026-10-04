@@ -8,7 +8,7 @@
 # default 2) sets PE_NCORES and the number of SRAM banks. Writes exp.log and
 # result.txt (exit status, commit, signoff summary) in the worktree and exits
 # with the flow's status. Needs .venv-flow (tt-support-tools requirements) and
-# PDK_ROOT (default ~/ttpdk). FIFO_LOG2=2|3 overrides the FIFO depth. STOP=grt stops after global routing (~45 min) for
+# PDK_ROOT (default ~/ttpdk). FIFO_LOG2=2|3 overrides the FIFO depth. STOP=grt stops after global routing (~45 min), STOP=cts after clock-tree synthesis, for
 # routability experiments; result.txt then has the congestion report.
 set -euo pipefail
 NAME=${1:?usage: flow/harden.sh NAME [NCORES] [-- gen_config options]}
@@ -40,10 +40,11 @@ fi
 export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp-sg13cmos5l
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null
 rc=0
-if [ "${STOP:-}" = grt ]; then
+if [ -n "${STOP:-}" ]; then
+  case $STOP in grt) TO=OpenROAD.GlobalRouting ;; cts) TO=OpenROAD.CTS ;; *) echo "STOP=grt|cts"; exit 2 ;; esac
   mkdir -p runs/wokwi
   python -m librelane --pdk-root "$PDK_ROOT" --docker-no-tty --dockerized --pdk ihp-sg13cmos5l --manual-pdk \
-    --run-tag wokwi --force-run-dir runs/wokwi --to OpenROAD.GlobalRouting src/config_merged.json > exp.log 2>&1 || rc=$?
+    --run-tag wokwi --force-run-dir runs/wokwi --to $TO src/config_merged.json > exp.log 2>&1 || rc=$?
 else
   python ./tt/tt_tool.py --harden --ihp > exp.log 2>&1 || rc=$?
 fi
@@ -53,6 +54,6 @@ fi
   grep -E "Flow complete|flow failed|ERROR" exp.log | grep -v PSM-0069 | tail -3 || true
   grep -E "GPL-0019|design__instance__utilization" exp.log | tail -2 || true
   grep -A10 "Final congestion report" exp.log | grep -E "Metal[234] |Total " | tail -4 || true
-  [ "${STOP:-}" = grt ] || python3 flow/signoff.py runs/wokwi || true
+  [ -n "${STOP:-}" ] || python3 flow/signoff.py runs/wokwi || true
 } > result.txt
 exit $rc
