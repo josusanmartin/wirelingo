@@ -30,7 +30,7 @@ jobs:
           cd test
           make clean
           make COCOTB_RESULTS_FILE=top.xml
-          python3 check_results.py top.xml 10
+          python3 check_results.py top.xml 11
 
       - name: Firmware tests on the model, assembler and driver tests
         run: |

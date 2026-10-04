@@ -9,6 +9,7 @@ import pathlib
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
+from cocotb.utils import get_sim_time
 
 from pe import asm, host, sim
 
@@ -578,6 +579,53 @@ async def test_eth10_tx(dut):
 
 
 @cocotb.test()
+async def test_eth10_rx_jitter(dut):
+    """10BASE-T RX at 50 MHz with 802.3's +-13.5 ns of edge jitter (half the
+    edges at the extreme) and -200 ppm: Manchester edges at arbitrary times on
+    ui0, sampled by the chip at both clock edges, decoded by the line unit's
+    tracked-phase receiver and eth10_rx, read back over SPI. Each frame (the
+    802.3 preamble + 80 bits) fits the 8-word RX FIFO, so the 1-bit SPI
+    driver reads it afterwards."""
+    import random
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "model"))
+    import test_eth10 as eth
+    spi = await setup(dut)
+    await run_program(spi, 0, load_fw("eth10_rx"), clkdiv=1 << 8)
+    await spi.write(sim.A_LINEDIV, [5 << 16])                  # 5 clocks per bit
+    await spi.write(sim.A_LINEPINS, [UI(0) << 8])
+    await spi.write(sim.A_LINECFG, [1 | (2 << 1) | (1 << 14)]) # EN, Manchester, RX_EN
+    rng = random.Random(3)
+    half = 50.0 * (1 - 200e-6)
+    for f in range(3):
+        bits = [1, 0] * 31 + [1, 1] + [rng.getrandbits(1) for _ in range(80)]
+        levels = [v for b in bits for v in (1 - b, b)] + [1, 1, 1, 1]   # then TP_IDL
+        t0 = get_sim_time(unit="ns") + rng.uniform(100, 140)
+        edges, prev = [], 0
+        for k, lv in enumerate(levels):
+            if lv != prev:
+                j = rng.choice([-13.5, 13.5]) if rng.random() < 0.5 else rng.uniform(-13.5, 13.5)
+                edges.append((t0 + k * half + j, lv))
+            prev = lv
+        edges.append((t0 + len(levels) * half, 0))                       # idle low
+        for te, lv in edges:
+            dt = round((te - get_sim_time(unit="ns")) * 1000)
+            if dt > 0:
+                await Timer(dt, unit="ps")
+            spi.set_low_inputs(lv)
+        await ClockCycles(dut.clk, 100)
+        words = []
+        for _ in range(3):                         # until the idle fragment is in too
+            st = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
+            if (st >> 4) & 15:
+                words += await spi.read(sim.core_reg(0, sim.C_FIFO), (st >> 4) & 15, fixed=True)
+        # the return to idle after TP_IDL arrives as a 1-bit fragment, like a
+        # link pulse; software drops fragments (test_eth10's receive helpers do)
+        frames = [b for b in eth.rx_bits(words) if len(b) > 64]
+        assert frames == [bits], (f, [len(b) for b in eth.rx_bits(words)], words)
+
+
+@cocotb.test()
 async def test_fifo_read_race(dut):
     """A word the core pushes while the host is reading an empty RXF must not be
     lost: the read returns 0 and the word stays for the next read (the SPI port
@@ -784,8 +832,8 @@ async def test_host_port_fast(dut):
     spi = QuadSpi(dut, period=T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
     await spi.write(sim.A_HOSTCFG, [1])
     await spi.write(sim.A_CTRL, [0])                    # stop the echo
-    t0 = cocotb.utils.get_sim_time("ns")
+    t0 = get_sim_time(unit="ns")
     await spi.qxfer(0x4A, sim.core_reg(1, sim.C_R0), [rng.getrandbits(32) for _ in range(64)])
-    ns = cocotb.utils.get_sim_time("ns") - t0
+    ns = get_sim_time(unit="ns") - t0
     dut._log.info(f"quad write: {64 * 32 / ns * 1e3:.0f} Mbit/s at SCK = clk ({1e3 / T:.0f} MHz)")
     assert 64 * 32 / ns * 1e3 > 150

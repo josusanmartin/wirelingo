@@ -55,7 +55,7 @@ MUTANTS = {
     "rtl-config-in-base-field": ("src/pe_core.sv", "bus_wdata[12], bus_wdata[13], bus_wdata[20:16]}",
                                  "bus_wdata[12], bus_wdata[13], bus_wdata[21:17]}", LOCKSTEP),
     "rtl-line-no-falling-edge-sample": ("src/pe_chip.sv", "assign line_rx_mid = rx_is_pad ? rx_h2 : pins_in[line_rxp];",
-                                        "assign line_rx_mid = pins_in[line_rxp];", LOCKSTEP),
+                                        "assign line_rx_mid = pins_in[line_rxp];", top("test_eth10_rx_jitter")),
     "model-line-fast-loop": ("tools/pe/line.py", "g = min(5, 1 + self.n // 6)", "g = 1",
                              pytest("test/model/test_eth10.py -k external")),
     "rtl-line-no-tx-stuff": ("src/pe_line.sv", "        if (k != 3'd0 && n_trun == k) begin                      // stuff bit",
