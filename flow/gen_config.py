@@ -78,7 +78,7 @@ def main():
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
                     help="extra SRAM array stripe pairs (prism's setting)")
-    ap.add_argument("--layout", choices=["top", "sides", "corners", "corners-swap", "row"], default="corners")
+    ap.add_argument("--layout", choices=["top", "sides", "corners", "corners-swap", "row"], default="corners-swap")
     ap.add_argument("--post-grt-repair", action=argparse.BooleanOptionalAction, default=True,
                     help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
     ap.add_argument("--max-wire", type=int, default=400, help="buffer wires longer than this (um, 0 = off)")
@@ -86,6 +86,9 @@ def main():
                     help="wire capacitance for PnR estimates, pF/um (0 = the tech LEF's, about half of it)")
     ap.add_argument("--post-grt-timing", action=argparse.BooleanOptionalAction, default=True,
                     help="setup/hold repair on global-routing parasitics (off in the Classic flow)")
+    ap.add_argument("--grt-tns", type=int, default=0, help="post-GRT setup repair: %% of violating endpoints")
+    ap.add_argument("--pnr-latch-flops", action=argparse.BooleanOptionalAction, default=False,
+                    help="PnR SDC times the FIFO latches like flops (no D->Q borrowing); signoff keeps them")
     ap.add_argument("--grt-iters", type=int, default=None,
                     help="global-routing overflow iterations (quick routability experiments: 5)")
     a = ap.parse_args()
@@ -107,14 +110,16 @@ def main():
     # (TNS) at the slow corner took 1.5-2 h per step (it was minutes before).
     # The worst paths are what matter (TT signs off at typ, met by +4.5 ns).
     c["PL_RESIZER_SETUP_REPAIR_TNS_PCT"] = 20
-    c["GRT_RESIZER_SETUP_REPAIR_TNS_PCT"] = 20
+    # After global routing, repair stalls: WNS settles in ~800 passes and the
+    # TNS pass then ran 2000 more (t11s: 1 h 54 m for -2.003 -> -2.003 ns).
+    c["GRT_RESIZER_SETUP_REPAIR_TNS_PCT"] = a.grt_tns
     c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
     c["//clocks"] = "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both"
     c["CLOCK_PORT"] = ["clk", "ui_in[6]"]
-    c["PNR_SDC_FILE"] = "dir::protoemu.sdc"
+    c["PNR_SDC_FILE"] = "dir::protoemu_pnr.sdc" if a.pnr_latch_flops else "dir::protoemu.sdc"
     c["SIGNOFF_SDC_FILE"] = "dir::protoemu.sdc"
     c["//threads"] = "LibreLane 3.1.0.dev3 passes '-threads None' to OpenROAD when this is unset (single-threaded)"
     c["OPENROAD_THREADS"] = a.threads
