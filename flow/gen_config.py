@@ -97,6 +97,12 @@ def main():
                "SRAM settings follow kdp1965/ihp-um-janestreet-prism.")
     c["PL_TARGET_DENSITY_PCT"] = a.density
     c["CLOCK_PERIOD"] = 20
+    # The FIFOs store into latches that open in the half cycle after a push;
+    # their data arrives while open, which STA reports as time borrowed with
+    # exactly 0 slack. Any setup margin makes those 512 latch inputs per core
+    # look violated and the repair loop never ends, so the margin is 0.
+    c["PL_RESIZER_SETUP_SLACK_MARGIN"] = 0
+    c["GRT_RESIZER_SETUP_SLACK_MARGIN"] = 0
     c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.1
     # fast-corner hold isn't repaired (PNR_CORNERS); t3 had one fast violator at -24 ps
     # whose typ slack was +0.150, so post-GRT hold repair keeps 0.25 ns at typ

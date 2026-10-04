@@ -31,12 +31,22 @@ module pe_fifo #(
   wire do_push = push && !cnt[LOG2];
   wire do_pop  = pop && cnt != 0;
 
-  // storage: one register per entry. Normally each entry has its own clock
-  // gate instead of a hold mux per bit (IHP flops have no enable input).
+  // storage: one latch per entry bit. A push stores the word in wd (one
+  // clock-gated register per FIFO) at the clock edge; the entry's clock gate
+  // then opens its latches for the high half of the next cycle, while wd holds
+  // that word, so a read in that cycle sees it through the open latch. Latches
+  // (dlhrq, 27 um2) instead of flops (dfrbpq, 49 um2: IHP's flops all have
+  // resets and no enable) save about 4K um2 per 8-deep FIFO.
   // PE_FIFO_NO_CG selects functionally identical enable flops; the core proof
   // (formal/core.sby) uses it to stay single-clock, while formal/fifos.sby
-  // proves the clock-gated version against reference queues.
+  // proves the latch version against reference queues.
   wire [W-1:0] ent[0:DEPTH-1];
+`ifndef PE_FIFO_NO_CG
+  reg  [W-1:0] wd;
+  wire         wd_gclk;
+  pe_cg u_wd_cg (.clk(clk), .en(do_push), .gclk(wd_gclk));
+  always @(posedge wd_gclk) wd <= push_data;
+`endif
   genvar e;
   generate
     for (e = 0; e < DEPTH; e = e + 1) begin : g_ent
@@ -46,8 +56,10 @@ module pe_fifo #(
       always @(posedge clk) if (wen) q <= push_data;
 `else
       wire gclk;
+      wire [W-1:0] lq;
       pe_cg u_cg (.clk(clk), .en(wen), .gclk(gclk));
-      always @(posedge gclk) q <= push_data;
+      pe_latch #(.W(W)) u_lat (.en(gclk), .rst_n(rst_n), .d(wd), .q(lq));
+      always @(*) q = lq;
 `endif
       assign ent[e] = q;
     end

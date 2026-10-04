@@ -22,3 +22,34 @@ module pe_cg (
   assign gclk = clk & en_l;
 `endif
 endmodule
+
+/*
+ * W-bit latch, transparent while en is high, cleared by rst_n. The library's
+ * dlhrq cell in synthesis (inference folds the reset into D and the enable);
+ * a behavioral equivalent otherwise.
+ */
+module pe_latch #(
+    parameter W = 32
+) (
+    input  wire         en,
+    input  wire         rst_n,
+    input  wire [W-1:0] d,
+    output wire [W-1:0] q
+);
+`ifdef SCL_sg13cmos5l_stdcell
+  genvar i;
+  generate
+    for (i = 0; i < W; i = i + 1) begin : g_bit
+      sg13cmos5l_dlhrq_1 l (.D(d[i]), .GATE(en), .RESET_B(rst_n), .Q(q[i]));
+    end
+  endgenerate
+`else
+  reg [W-1:0] r;
+  /* verilator lint_off LATCH */
+  always @(*)
+    if (!rst_n) r = {W{1'b0}};
+    else if (en) r = d;
+  /* verilator lint_on LATCH */
+  assign q = r;
+`endif
+endmodule

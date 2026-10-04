@@ -62,6 +62,8 @@ cat > src/config.json <<EOF
   "PNR_CORNERS": ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"],
   "LAYERS_RC": {"*": {"Metal1": {"res": 8.4375e-4, "cap": 1.42e-4}, "Metal2": {"res": 5.15e-4, "cap": 1.9e-4},
                       "Metal3": {"res": 5.15e-4, "cap": 1.9e-4}, "Metal4": {"res": 5.15e-4, "cap": 1.9e-4}}},
+  "PL_RESIZER_SETUP_SLACK_MARGIN": 0,
+  "GRT_RESIZER_SETUP_SLACK_MARGIN": 0,
   "GRT_ALLOW_CONGESTION": 1,
   "GRT_ADJUSTMENT": 0.15,
   "RUN_LINTER": 0,

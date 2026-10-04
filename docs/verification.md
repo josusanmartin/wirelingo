@@ -84,7 +84,7 @@ lost when pushed 210 clocks into the read).
 
 * **`pe_fifos`** (both FIFOs and the FJOIN_TX join) against reference queues
   for all input sequences, by k-induction, at depths 4 and 8, including the
-  clock-gated storage (multiclock mode). Unjoined: two independent queues.
+  clock-gated latch storage and its staging register (multiclock mode). Unjoined: two independent queues.
   Joined: one queue in order across RXF then TXF, with the stage levels the
   spec defines. Covers reach 2·D words buffered, with a push and a pop in the
   same cycle.
