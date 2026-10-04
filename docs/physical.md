@@ -57,6 +57,23 @@ resizer buffers the high-fanout decode nets that dominate them.
   slack after CTS, the SRAM build +8.4 ns, and the SRAM build also meets 50 MHz
   at the slow corner (+1.9 ns).
 
+### Each core fetches from its own bank (2026-10-04)
+
+With `BANK_OWNER`, every bank's 32-bit output reached every core's instruction
+mux and every core's fetch address reached every bank: with the banks in
+opposite corners, about 128 wires across the die on Metal3, and each core's
+logic pulled between both corners. Same RTL otherwise (t7, which congested:
+300+ overflow iterations in global routing) with bank *b* fixed to core *b*
+(run fb):
+
+| | t7 | fb |
+|---|---|---|
+| global routing | 300+ extra iterations, stopped | 51 (clean), 51 overflows |
+| wire | — | 2.44M µm (t5: 2.50M) |
+| slow setup after post-CTS repair | −1.14 ns | −0.21 ns |
+
+`BANK_OWNER` is gone (docs/isa.md §3); 256 words per core.
+
 ### Hold buffers came from the constraint (2026-10-04)
 
 About 1700 hold buffers (+6 % area) went in after CTS in every run. The
