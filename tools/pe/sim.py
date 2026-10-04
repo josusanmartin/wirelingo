@@ -16,7 +16,7 @@ ID_VALUE = 0x50450002
 IMEM_WORDS = 1024
 
 # Register map
-A_ID, A_CTRL, A_FSET, A_FCLR, A_BANK, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
+A_ID, A_CTRL, A_FSET, A_FCLR, A_RSVD4, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
 A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
@@ -134,7 +134,7 @@ class Core:
         if self.dcnt:
             self.dcnt -= 1
             return e.fx
-        if chip.bank_owner[self.pc >> 8] != self.idx:
+        if self.pc >> 8 != self.idx:          # a core runs from its own bank (docs/isa.md §3)
             self.fault = self.halted = 1
             self.stalled = 0
             chip.cover("core:bank_fault")
@@ -512,7 +512,6 @@ class Chip:
         self.enable = 0
         self.ctrl_pend = None  # CTRL write data from the previous cycle (acts one cycle late)
         self.flags = 0
-        self.bank_owner = [0, 1, 2, 3]
         self.pin_owner = [0] * 32
         self.od_mask = 0
         self.pin_out = self.pin_oe = 0
@@ -656,8 +655,6 @@ class Chip:
                 fset |= wdata & 0xFF
             elif addr == A_FCLR:
                 fclr |= wdata & 0xFF
-            elif addr == A_BANK:
-                self.bank_owner = [(wdata >> (2 * b)) & 3 for b in range(4)]
             elif addr == A_POWN_LO:
                 for i in range(16):
                     self.pin_owner[i] = (wdata >> (2 * i)) & 3

@@ -124,7 +124,6 @@ class Harness:
                              ("pin_oe", v(self.chip.pin_oe), m.pin_oe),
                              ("flags", v(self.chip.flags), m.flags),
                              # configuration (write-only on the bus, so compared here)
-                             ("bank_owner", v(self.chip.bank_owner), sum(o << 2 * i for i, o in enumerate(m.bank_owner))),
                              ("pin_owner", v(self.chip.pin_owner_lo) | v(self.chip.pin_owner_hi) << 32,
                               sum(o << 2 * i for i, o in enumerate(m.pin_owner))),
                              ("od_mask", v(self.chip.od_mask), m.od_mask),
@@ -209,7 +208,7 @@ async def test_registers(dut):
         for off in (0, 1, 2, 3, 4, 5, 6, 7, 0xA, 0xB, 0xC, 0xD):
             await h.write(sim.core_reg(c, off), rng.getrandbits(32))
             await h.cycle_step(addr=sim.core_reg(c, off))
-    for a in (sim.A_BANK, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
+    for a in (sim.A_RSVD4, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
         await h.write(a, rng.getrandbits(32))
         await h.cycle_step(addr=a)
 
@@ -228,15 +227,13 @@ async def test_random_lockstep(dut):
         for k, n in h.model.stats.items():
             h.stats[k] = h.stats.get(k, 0) + n
         await h.reset()
-        # bank ownership + programs + config, all while cores are disabled
-        owners = [rng.randrange(4) for _ in range(4)] if rng.random() < 0.3 else [0, 1, 2, 3]
-        await h.write(sim.A_BANK, sum(o << (2 * b) for b, o in enumerate(owners)))
+        # programs + config, all while cores are disabled (bank b is core b's)
         for b in range(4):
             profile = random_profile(rng)
             for w in range(BANK_WORDS):
-                word = random_program(rng, b, BANK_WORDS, owners, profile)
+                word = random_program(rng, b, BANK_WORDS, profile)
                 await h.write((b << 8) | w, word)
-        for addr, data in random_config_writes(rng, BANK_WORDS, owners):
+        for addr, data in random_config_writes(rng, BANK_WORDS):
             await h.write(addr, data)
         for addr, data in random_line_writes(rng):
             await h.write(addr, data)

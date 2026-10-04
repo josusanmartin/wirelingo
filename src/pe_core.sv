@@ -17,7 +17,6 @@ module pe_core #(
     // instruction fetch (registered read: instr == IMEM[pc])
     output wire [9:0]  fetch_addr,
     input  wire [31:0] instr,
-    input  wire [7:0]  bank_owner,
 
     // pins
     input  wire [31:0] pins_in,
@@ -200,7 +199,7 @@ module pe_core #(
 
   wire        active  = enable && !restart;
   wire        attempt = active && tick && !halted && !fault && dcnt == 8'd0;
-  wire        bank_ok = bank_owner[{pc[9:8], 1'b0} +: 2] == IDX;
+  wire        bank_ok = pc[9:8] == IDX;          // a core runs from its own bank (§3)
   assign      exec    = attempt && bank_ok;
 
   // side-set / delay split

@@ -16,8 +16,7 @@ logic. Each core executes one 32-bit instruction per tick and has:
 
 This tapeout has two cores.
 
-Programs live in on-chip SRAM, with 256 instructions per bank, and banks can be
-reassigned between cores.
+Programs live in on-chip SRAM: each core has its own bank of 256 instructions.
 
 The instruction set is inspired by the RP2040's PIO, with additions that make
 real protocols fit:

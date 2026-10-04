@@ -37,7 +37,6 @@ module pe_chip #(
   reg        hostcfg;                    // HOSTCFG.QUAD_EN
   assign quad_en = hostcfg;
   reg [7:0]  flags;
-  reg [7:0]  bank_owner;
   reg [31:0] pin_owner_lo, pin_owner_hi;
   wire [63:0] pin_owner = {pin_owner_hi, pin_owner_lo};
   reg [7:0]  od_mask;
@@ -72,7 +71,6 @@ module pe_chip #(
   pe_imem #(.BANK_AW(BANK_AW), .NBANKS(NBANKS)) u_imem (
       .clk(clk),
       .fetch_addr(fetch_addr),
-      .bank_owner(bank_owner),
       .we(bus_we && sel_imem),
       .waddr(bus_addr[9:0]),
       .wdata(bus_wdata),
@@ -97,11 +95,6 @@ module pe_chip #(
     for (c = 0; c < 4; c = c + 1) begin : g_core
       if (c < NCORES) begin : g_on
         // instr = bank read data for the bank the core fetched from last cycle
-        reg  [1:0] fbank;
-        always @(posedge clk or negedge rst_n) begin
-          if (!rst_n) fbank <= c[1:0];
-          else fbank <= fetch_addr[10*c+8 +: 2];
-        end
         pe_core #(.IDX(c[1:0]), .FIFO_LOG2(FIFO_LOG2)) u_core (
             .clk(clk),
             .rst_n(rst_n),
@@ -109,8 +102,7 @@ module pe_chip #(
             .restart(restart[c]),
             .fifo_clear(fclear[c]),
             .fetch_addr(fetch_addr[10*c +: 10]),
-            .instr(bank_rdata[32*fbank +: 32]),
-            .bank_owner(bank_owner),
+            .instr(bank_rdata[32*c +: 32]),     // its own bank (§3)
             .pins_in(pins_in),
             .pin_out_cur(pin_out),
             .wr_out_en(w_out_en[32*c +: 32]),
@@ -228,14 +220,14 @@ module pe_chip #(
 
   // ---------------------------------------------------------------- config registers
   // host-only writes: clock-gated instead of a hold mux per bit
-  wire [3:0] gcfg_gclk;
+  // (0x0804 is reserved: each core fetches from its own bank, §3)
+  wire [3:1] gcfg_gclk;
   genvar gi;
   generate
-    for (gi = 0; gi < 4; gi = gi + 1) begin : g_gcfg_cg
+    for (gi = 1; gi < 4; gi = gi + 1) begin : g_gcfg_cg
       pe_cg u_cg (.clk(clk), .en(bus_we && sel_glob && goff == 4'h4 + gi), .gclk(gcfg_gclk[gi]));
     end
   endgenerate
-  always @(posedge gcfg_gclk[0] or negedge rst_n) if (!rst_n) bank_owner <= 8'hE4; else bank_owner <= bus_wdata[7:0];
   always @(posedge gcfg_gclk[1] or negedge rst_n) if (!rst_n) pin_owner_lo <= 32'd0; else pin_owner_lo <= bus_wdata;
   always @(posedge gcfg_gclk[2] or negedge rst_n) if (!rst_n) pin_owner_hi <= 32'd0; else pin_owner_hi <= bus_wdata;
   always @(posedge gcfg_gclk[3] or negedge rst_n) if (!rst_n) od_mask <= 8'd0; else od_mask <= bus_wdata[7:0];

@@ -18,7 +18,7 @@ limitations:
 
 | PIO limitation                           | protoemu                                             |
 |------------------------------------------|------------------------------------------------------|
-| 32 instructions shared by 4 SMs          | 4 banks of up to 256 words, re-assignable among cores |
+| 32 instructions shared by 4 SMs          | 256 words per core (one bank each)                   |
 | only X/Y, no arithmetic, 5-bit immediates| R0–R3 (16 bit), 16-bit LDI, ADD/SUB/AND/OR/XOR/SHL/SHR/CMP, Z/C flags |
 | WAIT has no timeout                      | any WAIT can time out (Rn tick budget), sets T flag  |
 | WAIT only on levels                      | WAIT on rise / fall / any edge, sampled every clock  |
@@ -78,20 +78,22 @@ Four banks of `BANK_WORDS` 32-bit words (256 in the SRAM build; the flop
 build may have fewer, in which case addresses alias within a bank). An
 instruction address is 10 bits: `bank = addr[9:8]`, word = `addr[7:0]`.
 
-Each bank has one fetch port, assigned to a core by `BANK_OWNER` (reset:
-bank *b* → core *b*). Every core has a 10-bit PC covering all banks. A core
-can fetch only from banks it owns. If a core is about to execute from a bank
-it doesn't own, it **faults** and halts (`STATUS.fault = 1`).
+Bank *b* is core *b*'s: its fetch port serves core *b* only. Every core has
+a 10-bit PC; if a core is about to execute outside its own bank, it
+**faults** and halts (`STATUS.fault = 1`).
 
-So one core can run a 768-word USB program across banks 0–2 while core 3 runs
-a UART from bank 3, at no cost to the other cores.
+(Earlier versions let a register, `BANK_OWNER`, give any bank to any core, so
+one core could run a program longer than 256 words. Every bank's 32-bit
+output then had to reach every core and every core's address every bank:
+about 128 wires across the die on its only horizontal routing layer. Fixing
+the mapping removed the routing congestion and about 1 ns from the slowest
+path; docs/physical.md.)
 
 IMEM is loaded by the host and is write-only from the host's side. Fetches
 are registered (SRAM-like): the core presents its next PC every cycle, so
 there's no branch penalty. Two host-side rules follow from this:
 
-* Write a bank only while its owning core is disabled.
-* Change `BANK_OWNER` only while the affected cores are disabled.
+* Write a bank only while its core is disabled.
 
 ## 4. Core programming model
 
@@ -622,7 +624,7 @@ duty cycles and CS timing.
 | 0x0801             | CTRL         | RW     | `[3:0]` enable; write-only, self-clearing: `[11:8]` restart, `[19:16]` FIFO clear |
 | 0x0802             | FLAGS_SET    | RW     | R: flags; W: set bits where 1                |
 | 0x0803             | FLAGS_CLR    | RW     | R: flags; W: clear bits where 1              |
-| 0x0804             | BANK_OWNER   | W      | `[2b+1:2b]` owner core of bank b (reset 0xE4) |
+| 0x0804             | —            | —      | reserved (was BANK_OWNER; writes are ignored) |
 | 0x0805             | PIN_OWNER_LO | W      | `[2i+1:2i]` owner of pin i (0–15)            |
 | 0x0806             | PIN_OWNER_HI | W      | owner of pin 16+i                            |
 | 0x0807             | OD_MASK      | W      | `[7:0]` open-drain enable for P0–P7          |
@@ -681,6 +683,5 @@ exist:
   owned by a missing core keeps its value unless the host writes `PIN_OUT` or
   `PIN_OE`.
 * **Missing bank *b*:** host writes to it are ignored and fetches from it read
-  instruction 0 (`jmp 0`). `BANK_OWNER` still resets to bank *b* → core *b*, so
-  a present core that runs into a missing bank faults (§3), unless the host has
-  explicitly given it that bank.
+  instruction 0 (`jmp 0`), so a present core *b* without its bank jumps to 0
+  and faults there (§3) unless *b* = 0.

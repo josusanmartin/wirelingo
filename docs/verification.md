@@ -43,7 +43,7 @@ The RTL `pe_chip` and the model run side by side in cocotb:
   timeouts so programs keep moving. Some jump targets deliberately cross into
   unowned banks, to exercise faults.
 * **Configuration:** random clock dividers, pin maps, shift and threshold
-  settings, bank and pin ownership, open-drain masks and CRC polynomials.
+  settings, pin ownership, open-drain masks and CRC polynomials.
 * **Stimulus:** random pin toggling at several rates, plus random host bus
   traffic every cycle:
   * FIFO pushes and pops;

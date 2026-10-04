@@ -13,8 +13,8 @@ tile's single horizontal routing layer ([docs/physical.md](docs/physical.md)).
 The ISA is inspired by the RP2040's PIO, with the additions that real
 protocols kept asking for:
 
-- **Room for real programs:** 256 instructions per bank (PIO: 32 shared), and
-  banks can be reassigned between cores.
+- **Room for real programs:** 256 instructions per core, in its own bank (PIO: 32
+  shared).
 - **Registers and arithmetic:** 16-bit R0–R3, a 16-bit immediate load, an ALU
   with Z/C flags.
 - **WAITs that can't hang and don't miss edges:** any WAIT can time out; it can

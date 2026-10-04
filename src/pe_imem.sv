@@ -1,6 +1,6 @@
 /*
  * Banked instruction memory with registered (SRAM-like) reads.
- * Bank b is read at the fetch address of its owner core (BANK_OWNER).
+ * Bank b is core b's: it is read at core b's fetch address (docs/isa.md §3).
  * Default: one IHP 256x32 SRAM macro per bank (BANK_AW = 8).
  * PE_FLOP_IMEM: flop banks with BANK_AW address bits; higher bits alias.
  * SPDX-License-Identifier: Apache-2.0
@@ -13,7 +13,6 @@ module pe_imem #(
 ) (
     input  wire         clk,
     input  wire [39:0]  fetch_addr,   // {core3, core2, core1, core0} x 10 bits
-    input  wire [7:0]   bank_owner,
     input  wire         we,
     input  wire [9:0]   waddr,
     input  wire [31:0]  wdata,
@@ -23,8 +22,7 @@ module pe_imem #(
   generate
     for (b = 0; b < 4; b = b + 1) begin : g_bank
       if (b < NBANKS) begin : g_on
-        wire [1:0] owner = bank_owner[2*b+1:2*b];
-        wire [9:0] a = fetch_addr[10*owner +: 10];
+        wire [9:0] a = fetch_addr[10*b +: 10];
         pe_imem_bank #(.AW(BANK_AW)) u_bank (
             .clk(clk),
             .raddr(a[BANK_AW-1:0]),

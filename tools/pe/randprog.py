@@ -2,14 +2,11 @@
 from . import isa, sim
 
 
-def _target(rng, bank, bank_words, owners):
-    """A jump target: usually inside a bank owned by this bank's owner."""
-    owner = owners[bank]
-    mine = [b for b in range(4) if owners[b] == owner]
+def _target(rng, bank, bank_words):
+    """A jump target: usually inside this bank (its core's own)."""
     if rng.random() < 0.03:
-        return rng.randrange(1024)  # anywhere (may fault)
-    b = bank if rng.random() < 0.8 else rng.choice(mine)
-    return (b << 8) | rng.randrange(bank_words)
+        return rng.randrange(1024)  # anywhere (another bank faults)
+    return (bank << 8) | rng.randrange(bank_words)
 
 
 def _live_pin(rng):
@@ -42,14 +39,14 @@ def random_profile(rng):
     return rng.choices(list(PROFILES), weights=[6, 2, 2])[0]
 
 
-def random_instr(rng, bank, bank_words, owners, profile="mixed"):
+def random_instr(rng, bank, bank_words, profile="mixed"):
     op = rng.choices(
         [isa.OP_JMP, isa.OP_WAIT, isa.OP_IN, isa.OP_OUT, isa.OP_PUSH, isa.OP_PULL, isa.OP_MOV,
          isa.OP_SET, isa.OP_LDI, isa.OP_ALU, isa.OP_PIN, isa.OP_FLAG, isa.OP_HALT, 13 + rng.randrange(19)],
         weights=PROFILES[profile])[0]
     sd = _sd(rng)
     if op == isa.OP_JMP:
-        x = (rng.randrange(16) << 15) | (rng.randrange(32) << 10) | _target(rng, bank, bank_words, owners)
+        x = (rng.randrange(16) << 15) | (rng.randrange(32) << 10) | _target(rng, bank, bank_words)
     elif op == isa.OP_WAIT:
         x = rng.getrandbits(19)
         if rng.random() < 0.7:
@@ -75,14 +72,14 @@ def random_instr(rng, bank, bank_words, owners, profile="mixed"):
     return isa.enc(op, sd, x)
 
 
-def random_program(rng, bank, bank_words, owners, profile="mixed"):
+def random_program(rng, bank, bank_words, profile="mixed"):
     """One random instruction word for `bank` (call once per word)."""
     if rng.random() < 0.02:
         return rng.getrandbits(32)  # completely random word
-    return random_instr(rng, bank, bank_words, owners, profile)
+    return random_instr(rng, bank, bank_words, profile)
 
 
-def random_config_writes(rng, bank_words, owners):
+def random_config_writes(rng, bank_words):
     """(addr, data) register writes for a random but sane configuration."""
     w = []
     for c in range(4):
@@ -95,10 +92,9 @@ def random_config_writes(rng, bank_words, owners):
         w.append((base(sim.C_PINCTRL0), rng.getrandbits(32)))
         w.append((base(sim.C_PINCTRL1), rng.getrandbits(32)))
         w.append((base(sim.C_SHIFTCTRL), rng.getrandbits(32)))
-        mine = [b for b in range(4) if owners[b] == c] or [rng.randrange(4)]
-        eb = rng.choice(mine)
+        eb = c                                      # its own bank
         w.append((base(sim.C_ENTRY), (eb << 8) | rng.randrange(bank_words)))
-        wb = rng.choice(mine)
+        wb = c
         lo, hi = sorted(rng.randrange(bank_words) for _ in range(2))
         if rng.random() < 0.5:
             w.append((base(sim.C_WRAP), ((wb << 8) | lo) | (((wb << 8) | hi) << 16)))
