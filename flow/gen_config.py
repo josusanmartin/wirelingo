@@ -87,7 +87,7 @@ def main():
     ap.add_argument("--post-grt-timing", action=argparse.BooleanOptionalAction, default=True,
                     help="setup/hold repair on global-routing parasitics (off in the Classic flow)")
     ap.add_argument("--grt-tns", type=int, default=0, help="post-GRT setup repair: %% of violating endpoints")
-    ap.add_argument("--pnr-latch-flops", action=argparse.BooleanOptionalAction, default=False,
+    ap.add_argument("--pnr-latch-flops", action=argparse.BooleanOptionalAction, default=True,
                     help="PnR SDC times the FIFO latches like flops (no D->Q borrowing); signoff keeps them")
     ap.add_argument("--grt-iters", type=int, default=None,
                     help="global-routing overflow iterations (quick routability experiments: 5)")
