@@ -30,7 +30,15 @@ set_driving_cell -lib_cell [lindex [split $::env(SYNTH_DRIVING_CELL) "/"] 0] \
     -pin [lindex [split $::env(SYNTH_DRIVING_CELL) "/"] 1] $clk_in
 set_load [expr $::env(OUTPUT_CAP_LOAD) / 1000.0] [all_outputs]
 
-set_clock_uncertainty $::env(CLOCK_UNCERTAINTY_CONSTRAINT) [all_clocks]
+# Setup keeps LibreLane's uncertainty (jitter and margin). Hold gets 0.1 ns:
+# a hold check compares one clock edge with itself, so jitter cancels, skew
+# is computed from the propagated clocks and OCV is in the derates below. With
+# the setup value (0.25 ns) on hold, every flop whose next state includes its
+# own value (hold muxes, counters, shift registers: IHP's flops have no
+# enable) failed hold at the fast corner: 743 endpoints, about 1700 delay
+# buffers (6 % of the area). With 0.1 ns, 20 remain (docs/physical.md).
+set_clock_uncertainty -setup $::env(CLOCK_UNCERTAINTY_CONSTRAINT) [all_clocks]
+set_clock_uncertainty -hold 0.1 [all_clocks]
 set_clock_transition $::env(CLOCK_TRANSITION_CONSTRAINT) [all_clocks]
 set_timing_derate -early [expr 1 - $::env(TIME_DERATING_CONSTRAINT) / 100.0]
 set_timing_derate -late [expr 1 + $::env(TIME_DERATING_CONSTRAINT) / 100.0]

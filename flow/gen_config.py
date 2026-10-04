@@ -105,11 +105,8 @@ def main():
     # look violated and the repair loop never ends, so the margin is 0.
     c["PL_RESIZER_SETUP_SLACK_MARGIN"] = 0
     c["GRT_RESIZER_SETUP_SLACK_MARGIN"] = 0
-    c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.1
-    # fast-corner hold isn't repaired (PNR_CORNERS); t3 had one fast violator at -24 ps
-    # whose typ slack was +0.150, so post-GRT hold repair keeps 0.25 ns at typ
-    # (43 endpoints were below that in t3)
-    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.25
+    c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
+    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
     c["//clocks"] = "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both"
@@ -118,8 +115,9 @@ def main():
     c["SIGNOFF_SDC_FILE"] = "dir::protoemu.sdc"
     c["//threads"] = "LibreLane 3.1.0.dev3 passes '-threads None' to OpenROAD when this is unset (single-threaded)"
     c["OPENROAD_THREADS"] = a.threads
-    c["//corners"] = "Optimise for typ (TT signoff) and slow; fast-corner hold fixing alone added ~3200 buffers"
-    c["PNR_CORNERS"] = ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C"]
+    c["//corners"] = ("Repair at all three corners. Fast-corner hold once took ~3200 buffers: the SDC's "
+                      "0.25 ns uncertainty applied to hold too (now 0.1 ns, src/protoemu.sdc)")
+    c["PNR_CORNERS"] = ["nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C"]
     if a.post_grt_repair:
         c["//repair"] = ("Post-placement repair alone left ~3 ns slews on long nets and SRAM-pin slews "
                          "above the macro's 0.476 ns limit")
