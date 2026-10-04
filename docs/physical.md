@@ -226,9 +226,12 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
 * Clock-gated FIFO storage (one `lgcp` per entry instead of a hold mux per bit):
   −4.9K µm² per core.
 * Latch FIFO storage (2026-10-04): each push lands in a clock-gated staging
-  register, and the entry's clock gate opens its `dlhrq_1` latches (27 µm²,
-  against 49 µm² for IHP's only flops, which all have a reset) in the next
-  half cycle: −11.3K µm² per core (−9.7 %). STA reports the latch inputs as
+  register, and the entry's clock gate opens its latches in the next half
+  cycle. `dlhq_1` (31 µm², no reset) replaces a `dfrbpq_1` (49 µm², IHP's flops
+  all have a reset) plus its tie cell (7 µm²). A first version used the
+  resettable `dlhrq_1`: smaller, but its 1024 reset pins joined the reset net
+  (1394 → 2432 loads) and the chip (t7) congested although 18K µm² smaller;
+  entries are only read after being written, so they need no reset. STA reports the latch inputs as
   time borrowed with 0 slack, so the resizer's setup margin is 0 (any margin
   made it chase 512 unfixable endpoints per core). Instantiating the cell
   matters: an inferred latch with a reset folded the reset into D and the

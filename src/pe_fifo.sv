@@ -35,8 +35,9 @@ module pe_fifo #(
   // clock-gated register per FIFO) at the clock edge; the entry's clock gate
   // then opens its latches for the high half of the next cycle, while wd holds
   // that word, so a read in that cycle sees it through the open latch. Latches
-  // (dlhrq, 27 um2) instead of flops (dfrbpq, 49 um2: IHP's flops all have
-  // resets and no enable) save about 4K um2 per 8-deep FIFO.
+  // (dlhq, 31 um2, no reset) instead of flops (dfrbpq, 49 um2 plus a tie cell:
+  // IHP's flops all have resets and no enable). Entries are only read after
+  // being written, so they need no reset.
   // PE_FIFO_NO_CG selects functionally identical enable flops; the core proof
   // (formal/core.sby) uses it to stay single-clock, while formal/fifos.sby
   // proves the latch version against reference queues.
@@ -58,7 +59,7 @@ module pe_fifo #(
       wire gclk;
       wire [W-1:0] lq;
       pe_cg u_cg (.clk(clk), .en(wen), .gclk(gclk));
-      pe_latch #(.W(W)) u_lat (.en(gclk), .rst_n(rst_n), .d(wd), .q(lq));
+      pe_latch #(.W(W)) u_lat (.en(gclk), .d(wd), .q(lq));
       always @(*) q = lq;
 `endif
       assign ent[e] = q;

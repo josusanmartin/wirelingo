@@ -24,15 +24,15 @@ module pe_cg (
 endmodule
 
 /*
- * W-bit latch, transparent while en is high, cleared by rst_n. The library's
- * dlhrq cell in synthesis (inference folds the reset into D and the enable);
- * a behavioral equivalent otherwise.
+ * W-bit latch, transparent while en is high, no reset: the library's dlhq
+ * cell in synthesis, a behavioral equivalent otherwise. (FIFO storage: an
+ * entry is read only after it was written. A reset would put every bit on
+ * the reset tree: 1024 more loads, which congested the chip.)
  */
 module pe_latch #(
     parameter W = 32
 ) (
     input  wire         en,
-    input  wire         rst_n,
     input  wire [W-1:0] d,
     output wire [W-1:0] q
 );
@@ -40,15 +40,13 @@ module pe_latch #(
   genvar i;
   generate
     for (i = 0; i < W; i = i + 1) begin : g_bit
-      sg13cmos5l_dlhrq_1 l (.D(d[i]), .GATE(en), .RESET_B(rst_n), .Q(q[i]));
+      sg13cmos5l_dlhq_1 l (.D(d[i]), .GATE(en), .Q(q[i]));
     end
   endgenerate
 `else
   reg [W-1:0] r;
   /* verilator lint_off LATCH */
-  always @(*)
-    if (!rst_n) r = {W{1'b0}};
-    else if (en) r = d;
+  always @(*) if (en) r = d;
   /* verilator lint_on LATCH */
   assign q = r;
 `endif
