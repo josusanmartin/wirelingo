@@ -86,8 +86,6 @@ def main():
                     help="wire capacitance for PnR estimates, pF/um (0 = the tech LEF's, about half of it)")
     ap.add_argument("--post-grt-timing", action=argparse.BooleanOptionalAction, default=True,
                     help="setup/hold repair on global-routing parasitics (off in the Classic flow)")
-    ap.add_argument("--cts-balance-levels", action=argparse.BooleanOptionalAction, default=False,
-                    help="balance clock-tree levels across clock gates (fewer hold buffers?)")
     ap.add_argument("--grt-iters", type=int, default=None,
                     help="global-routing overflow iterations (quick routability experiments: 5)")
     a = ap.parse_args()
@@ -136,8 +134,6 @@ def main():
                                 **{m: {"res": 5.15e-4, "cap": a.wire_cap} for m in ("Metal2", "Metal3", "Metal4")}}}
     if a.post_grt_timing:
         c["RUN_POST_GRT_RESIZER_TIMING"] = 1
-    if a.cts_balance_levels:
-        c["CTS_BALANCE_LEVELS"] = True
     if a.grt_iters is not None:
         c["GRT_OVERFLOW_ITERS"] = a.grt_iters
     if a.grt_adjust is not None:
