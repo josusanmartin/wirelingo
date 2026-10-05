@@ -231,12 +231,10 @@ module pe_hostport (
         need_snap <= 1'b1;
       end else if (w_pend) begin               // a write word arrived
         w_pend <= 1'b0;
-        if (active && !c_rd) begin
-          bus_we <= 1'b1;
-          bus_wdata <= w_hold;
-          bus_addr <= snap_addr;
-          snap_addr <= snap_addr + {15'd0, c_inc};
-        end
+        bus_we <= 1'b1;
+        bus_wdata <= w_hold;
+        bus_addr <= snap_addr;
+        snap_addr <= snap_addr + {15'd0, c_inc};
       end else if ((a_pend || cs_s[2]) && active) begin
         active <= 1'b0;                        // the transaction is over
         need_snap <= 1'b0;
