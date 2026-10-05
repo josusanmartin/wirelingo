@@ -26,6 +26,11 @@ describes how, and what it caught.
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
+* A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core** of the
+  signed-off chip, with handshakes 11.5 clocks after the host's packet
+  (spec: 8–26), in RTL and gate-level simulation ([docs/usb-full-speed.md](docs/usb-full-speed.md)).
+* Measured against the RP2040 PIO's reference programs, including where PIO
+  is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
 
 ## What we'd do differently from PIO
@@ -48,8 +53,8 @@ for:
   host port can stream.
 - **A line unit** beside core 0: NRZI, bit stuffing, end-of-packet detection
   and Manchester decoding with a phase-tracking loop, so one core runs a whole
-  low-speed USB device, and 10BASE-T receive meets 802.3's ±13.5 ns edge
-  jitter.
+  USB device, low or full speed, and 10BASE-T receive meets 802.3's ±13.5 ns
+  edge jitter.
 - **A host link that keeps up:** quad SPI at SCK = clk, 193 Mbit/s of payload
   in simulation and 193.6 Mbit/s measured on the FPGA.
 
@@ -74,6 +79,7 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit |
+| `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter margin about 2 ns past the spec | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 11.5 clocks (spec 8–26), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores |
