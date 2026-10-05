@@ -202,7 +202,6 @@ def test_tx_core1_to_rx_core0(clock_mhz, tx_div, rx_period):
     """eth10_tx on core 1 sends onto virtual pins 24/25; core 0 receives TD+
     through the line unit at a common 40 or 50 MHz clock. At 50 MHz the TX
     1.25 divider produces alternating 40/60-ns half cells, not ideal 50 ns.
-    This is digital loopback evidence, not transmitter electrical compliance.
     """
     mh = ModelHost()
     tx = asm.assemble((FW / "eth10_tx.pasm").read_text(), {"F_GO": F_GO})

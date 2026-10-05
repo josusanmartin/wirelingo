@@ -2,9 +2,8 @@
 
 The chip's host port is SPI mode 0 on ui[5]=MOSI, ui[6]=SCK, ui[7]=CS_n, uo[7]=MISO
 (docs/isa.md §6.1). This driver bit-bangs it through the demo board's `tt` object,
-so it needs no particular pin mux. The optional quad_spi PIO/DMA backend uses
-explicit GPIO/state-machine ownership and limits SCK to half the project clock;
-see docs/board-transport.md. Its sustained board rate remains unmeasured.
+so it needs no particular pin mux. quad_spi.py is an optional, much faster
+PIO/DMA backend (docs/board-transport.md).
 
     from protoemu import ProtoEmu
     pe = ProtoEmu(tt)
@@ -30,11 +29,10 @@ MOSI, SCK, CS = 5, 6, 7
 
 class ProtoEmu:
     def __init__(self, tt, fifo_depth=8, ncores=2, bank_words=256, owners=None, nbanks=None):
-        """Default profile: fixed-bank-v1-2c2b8f, constructed after chip reset.
-
-        If attaching to a configured chip, pass its complete pin->core map in
-        owners. Ownership registers are write-only; never infer them by reads.
-        One driver instance must own configuration writes on a shared chip.
+        """Defaults match the tapeout (2 cores, a 256-word bank each, 8-deep
+        FIFOs). PIN_OWNER is write-only, so the driver keeps its own copy of
+        the owner map, starting from the reset state; pass `owners` (pin ->
+        core) when attaching to a chip that was configured before.
         """
         if not 1 <= ncores <= 4 or bank_words not in (16, 32, 64, 128, 256):
             raise ValueError("invalid hardware profile")

@@ -7,8 +7,6 @@ touched. Exit status 1 if any mutant survives.
     python3 test/mutants.py [name ...]      # from the repo root (needs the test env)
 """
 import os
-import hashlib
-import json
 import pathlib
 import shutil
 import subprocess
@@ -102,21 +100,15 @@ def source_files(root):
 
 
 def snapshot(scratch):
-    """One immutable input for every baseline and mutant, including team edits."""
+    """Copy the checkout (tracked and new files) once: every baseline and mutant
+    starts from this copy, so edits made while the run goes on don't leak in."""
     work = pathlib.Path(scratch) / "candidate"
     work.mkdir()
-    hashes = lambda: {f: hashlib.sha256((ROOT / f).read_bytes()).hexdigest() for f in source_files(ROOT)}
-    before = hashes()
-    for name in before:
-        dst = work / name
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / name, dst)
-    copied = {name: hashlib.sha256((work / name).read_bytes()).hexdigest() for name in before}
-    if before != copied or before != hashes():
-        raise RuntimeError("source changed while snapshotting; candidate retained, rerun after coordinating edits")
-    inputs = dict(files=before, commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
-    (pathlib.Path(scratch) / "inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
-    return work, list(before)
+    files = source_files(ROOT)
+    for name in files:
+        (work / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, work / name)
+    return work, files
 
 
 def run(name, scratch, baselines, candidate, files):

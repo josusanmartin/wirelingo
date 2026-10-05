@@ -114,8 +114,8 @@ def usb_setup(pe, variant="line"):
 
 def eth10_receive(pe, timeout_us=100000, max_frames=1):
     """Finite RX capture at 50 MHz, comparator output on ui0; returns frames
-    including verified FCS. RX stops before byte conversion/CRC work. Core 0
-    and the line unit are reserved; continuous board throughput is unmeasured.
+    with a good FCS. Uses core 0 and the line unit; reception stops before
+    the frames are decoded.
     """
     import eth10_rx
     return eth10_rx.Capture(pe).capture(timeout_us, max_frames)

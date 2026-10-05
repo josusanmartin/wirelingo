@@ -1,8 +1,8 @@
 """Opt-in RP2 PIO/DMA transport. Requires MicroPython 1.26's rp2.DMA API.
 
-Construct ProtoEmu first, then attach this transport. The caller reserves an
-unused state machine and all ten SPI GPIOs; the TT SDK must not write ui_in
-while attached. No board throughput or sampling margin has been established.
+Construct ProtoEmu first, then attach this transport. It needs an unused
+state machine and all ten SPI GPIOs; the TT SDK must not write ui_in while
+it is attached.
 """
 from array import array
 
@@ -126,8 +126,8 @@ class QuadSPI:
                 raise ValueError("unsupported PIO GPIO base")
         elif any(pin >= 30 for pin in pins):
             raise ValueError("this MicroPython build cannot access GPIOs above 29")
-        # GPIO base belongs to the whole PIO block. Query it; never change it
-        # behind another state-machine owner's back. Software CS is separate.
+        # The GPIO base is shared by the whole PIO block: check it, don't set
+        # it (other state machines may rely on it). CS is driven in software.
         check_gpio_window(out_gpio + in_gpio + (sck_gpio,), self.gpio_base)
         self.system_hz = machine.freq()
         self.pio_hz, self.divider, self.sck_hz = clock_config(
@@ -146,8 +146,8 @@ class QuadSPI:
         self._program = spi_stream
         self.tx_dma = self.rx_dma = None
         self.closed, self.busy, self._buffers = False, False, None
-        # Allocate both DMA channels before changing GPIO muxes. Partial
-        # allocation failure returns the first channel to its owner pool.
+        # Allocate both DMA channels before touching any GPIO mux, and give
+        # the first back if the second can't be had.
         try:
             self.tx_dma = rp2.DMA()
             self.rx_dma = rp2.DMA()

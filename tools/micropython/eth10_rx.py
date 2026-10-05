@@ -1,8 +1,8 @@
 """Bounded 50-MHz Ethernet receive capture for the demo board.
 
-Core 0 and the line unit belong to this capture. Service raw records while
-receiving; stop before converting bytes/checking FCS. This is a finite bench
-capture, not a continuous network stack or a measured transport guarantee.
+Uses core 0 and the line unit. Raw records are drained while frames arrive;
+decoding and the FCS check happen after reception stops. A finite capture,
+not a network stack.
 """
 from protoemu import (A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT,
                       ST_HALTED, ST_FAULT, _crc32)
