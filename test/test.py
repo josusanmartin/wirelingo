@@ -5,18 +5,22 @@ then talks to a Python device model that sees only the pins.
 """
 import os
 import pathlib
+import importlib.util
 
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
 from cocotb.utils import get_sim_time
+from cocotb.task import bridge, resume
 
 from pe import asm, host, sim
+from pe.profile import Profile
 
 FW = pathlib.Path(__file__).resolve().parent.parent / "firmware"
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
 core = lambda i: i % NCORES  # tests spread over the cores that exist
+PROFILE = Profile("simulation", NCORES, int(os.environ.get("PE_NBANKS", str(NCORES))), 1 << BANK_AW)
 CLK_NS = 20  # 50 MHz
 SCK_HALF = 4  # SPI SCK half period in clk cycles: clk/8 (the port allows up to clk; test_host_port_fast)
 
@@ -98,8 +102,8 @@ class Ext:
         self.dut.ext_val.value = self.val
 
 
-async def setup(dut):
-    cocotb.start_soon(Clock(dut.clk, CLK_NS, unit="ns").start())
+async def setup(dut, clock_ns=CLK_NS):
+    cocotb.start_soon(Clock(dut.clk, clock_ns, unit="ns").start())
     spi = Spi(dut)
     dut.ena.value = 1
     dut.ui_in.value = spi.ui
@@ -123,12 +127,56 @@ async def run_program(spi, core, prog, base=None, **cfg):
     """Load and start one program at the start of the core's own bank."""
     assert need_words(len(prog.words)), f"{prog.name} needs {len(prog.words)} words"
     base = core * 256 if base is None else base
-    await spi.apply(host.load_program(core, prog, base, **cfg))
+    await spi.apply(host.load_program(core, prog, base, profile=PROFILE, **cfg))
     ctrl = (await spi.read(sim.A_CTRL))[0]
     await spi.apply(host.start_writes(1 << core, ctrl & 15))
 
 
 # ------------------------------------------------------------------ tests
+
+@cocotb.test()
+async def test_generated_uart_virtual_loopback(dut):
+    """Run the board's generated programs through SPI with two concurrent cores.
+    Core 0 TX reaches core 1 RX on virtual pin 24, without external wiring.
+    """
+    assert NCORES >= 2, "the board loopback requires two cores"
+    spi = await setup(dut, clock_ns=20.834)  # 48 MHz within simulator precision
+    path = FW.parent / "tools/micropython/protoemu_fw.py"
+    spec = importlib.util.spec_from_file_location("board_firmware", path)
+    bundle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bundle)
+    await spi.write(sim.A_CTRL, [3 << 16])
+    await spi.apply(host.pin_owner_writes({24: 0}))
+    for image in (bundle.UART_RX_V24, bundle.UART_TX_V24):
+        await spi.write(image["base"], image["words"])
+        settings = [image[k] for k in ("clkdiv", "pinctrl0", "pinctrl1", "shiftctrl", "base", "wrap")]
+        await spi.write(sim.core_reg(image["core"], sim.C_CLKDIV), settings)
+    await spi.write(sim.A_CTRL, [3 | (3 << 8)])
+    payload = bytes(range(32)) + b"protoemu: two cores\x00\xff"
+    sent, got, stalled = 0, bytearray(), False
+    begin = get_sim_time(unit="ns")
+    for _ in range(1000):
+        status = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
+        assert not status & ((1 << 13) | (1 << 14)), "TX halted/faulted (ISA STATUS)"
+        n = min(4, (1 << int(os.environ.get("PE_FIFO_LOG2", "3"))) - (status & 15), len(payload) - sent)
+        if n:
+            await spi.write(sim.core_reg(0, sim.C_FIFO), list(payload[sent:sent+n]), fixed=True)
+            sent += n
+        status = (await spi.read(sim.core_reg(1, sim.C_STATUS)))[0]
+        assert not status & ((1 << 13) | (1 << 14)), "RX halted/faulted (ISA STATUS)"
+        n = (status >> 4) & 15
+        if n:
+            got.extend(w & 255 for w in await spi.read(sim.core_reg(1, sim.C_FIFO), n, fixed=True))
+        if sent >= 16 and not stalled:
+            await ClockCycles(dut.clk, 9000)  # 187.5 us host stall, within RX FIFO capacity
+            stalled = True
+        if len(got) == len(payload):
+            break
+    assert bytes(got) == payload
+    assert not int(dut.uio_oe.value), "virtual loopback unexpectedly drives external pins"
+    elapsed = get_sim_time(unit="ns") - begin
+    dut._log.info("generated UART loopback: %d bytes, %.3f ms simulated, TX/RX %d/%d words, 2 cores, 187.5 us service stall",
+                  len(payload), elapsed / 1e6, len(bundle.UART_TX_V24["words"]), len(bundle.UART_RX_V24["words"]))
 
 @cocotb.test()
 async def test_id(dut):
@@ -525,7 +573,7 @@ async def test_usb_ls_device(dut):
     assert resp == usb.handshake(usb.PID_ACK), resp
     assert ta < 7.5 * 32, ta
     await ClockCycles(dut.clk, 200)
-    assert await records() == [usbdev.Record(True, req, 16 + 8 * 10)]
+    assert await records() == [usbdev.Record(True, req, 16 + 8 * 10, setup=True)]
     # IN to another address -> no answer
     await usb_drive(dut, usb.encode(usb.token(usb.PID_IN, 0x15, 0)))
     assert "K" not in await usb_listen(dut, 1500)
@@ -803,8 +851,8 @@ async def test_host_port_fast(dut):
     await Spi(dut).apply(host.load_program(0, prog, 0, clkdiv=1 << 8))
     await Spi(dut).write(sim.A_CTRL, [1 | (1 << 8)])
     fifo = sim.core_reg(0, sim.C_FIFO)
-    for period in (T, 2 * T):
-        spi = QuadSpi(dut, period=period, phase=rng.uniform(0, T), cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    for period, duty in ((T, .5), (2 * T, .25), (2 * T, .75)):
+        spi = QuadSpi(dut, period=period, duty=duty, phase=rng.uniform(0, T), cs_setup=T, cs_hold=T, cs_gap=4 * T)
         regs = [rng.getrandbits(16) for _ in range(4)]
         await spi.write(sim.core_reg(1, sim.C_R0), regs)
         assert await spi.read(sim.core_reg(1, sim.C_R0), 4) == regs, period
@@ -837,3 +885,377 @@ async def test_host_port_fast(dut):
     ns = get_sim_time(unit="ns") - t0
     dut._log.info(f"quad write: {64 * 32 / ns * 1e3:.0f} Mbit/s at SCK = clk ({1e3 / T:.0f} MHz)")
     assert 64 * 32 / ns * 1e3 > 150
+
+
+@cocotb.test()
+async def test_host_reset_aborts_selected_transaction(dut):
+    """Reset at every SPI parser phase, hold CS low through release, and prove
+    later clocks cannot write or pop. A fresh transaction recovers on all cores.
+    This uses pin traffic and register/FIFO observations, also suitable for GL.
+    """
+    await setup(dut)
+    T = CLK_NS
+    spi = TimedSpi(dut, period=2*T, cs_setup=T, cs_hold=T, cs_gap=5*T)
+    frame = host.spi_frame(host.CMD_WRITE, sim.A_POUT, [0x12345678, 0x87654321])
+    bits = [(b >> i) & 1 for b in frame for i in range(7, -1, -1)]
+
+    async def clock(bit):
+        spi._set(spi.MOSI, bit)
+        await Timer(T, unit="ns")
+        spi._set(spi.SCK, 1)
+        await Timer(T, unit="ns")
+        spi._set(spi.SCK, 0)
+
+    for phase_bits in (3, 12, 24, 39, 55, 64):
+        spi._set(spi.CS, 0)
+        await Timer(T, unit="ns")
+        for bit in bits[:phase_bits]:
+            await clock(bit)
+        dut.rst_n.value = 0
+        await ClockCycles(dut.clk, 5)  # SCK stopped: abort must still be immediate
+        dut.rst_n.value = 1
+        await ClockCycles(dut.clk, 6)
+        for bit in bits[phase_bits:]:
+            await clock(bit)
+        for bit in bits:             # even command-shaped continuation must be ignored
+            await clock(bit)
+        spi._set(spi.CS, 1)
+        await ClockCycles(dut.clk, 6)
+        assert await spi.read(sim.A_POUT) == [0]
+        assert await spi.read(sim.A_CTRL) == [0]
+        for c in range(NCORES):
+            values = [0x1234 + c, 0xA5A5, 0xFEED, c]
+            await spi.write(sim.core_reg(c, sim.C_R0), values)
+            assert await spi.read(sim.core_reg(c, sim.C_R0), 4) == values
+    # Abort while a read has fetched FIFO words ahead, then verify recovery.
+    echo = asm.assemble("loop: pull block\nmov isr, osr\npush block\njmp loop")
+    await run_program(spi, 0, echo)
+    await spi.write(sim.core_reg(0, sim.C_FIFO), [0xDEADBEEF], fixed=True)
+    read_bits = [(b >> i) & 1 for b in host.spi_frame(host.CMD_READ_FIXED, sim.core_reg(0, sim.C_FIFO), nread=1)
+                 for i in range(7, -1, -1)]
+    spi._set(spi.CS, 0)
+    await Timer(T, unit="ns")
+    for bit in read_bits[:40]:
+        await clock(bit)
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 6)
+    for bit in read_bits[40:]:
+        await clock(bit)
+    spi._set(spi.CS, 1)
+    await ClockCycles(dut.clk, 6)
+    assert (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0] & 255 == 0
+    await run_program(spi, 0, echo)
+    await spi.write(sim.core_reg(0, sim.C_FIFO), [0xC0FFEE], fixed=True)
+    assert await spi.read(sim.core_reg(0, sim.C_FIFO), fixed=True) == [0xC0FFEE]
+
+
+@cocotb.test()
+async def test_eth10_rx_streaming(dut):
+    """Legal 64..1518-byte frames including FCS, 96-bit IFG, concurrent quad
+    SPI draining, bounded stalls, deliberate overflow and explicit recovery.
+    Digital comparator input at 50 MHz; no analog compliance claim.
+    """
+    import random
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "model"))
+    import test_eth10 as eth
+    await setup(dut)
+    spi = QuadSpi(dut, period=2*CLK_NS, cs_setup=CLK_NS, cs_hold=CLK_NS, cs_gap=4*CLK_NS)
+    await spi.write(sim.A_HOSTCFG, [1])
+    prog = load_fw("eth10_rx")
+
+    async def reset_rx():
+        await spi.write(sim.A_CTRL, [1 << 16])
+        await spi.write(sim.A_LINECFG, [0])
+        await spi.write(sim.A_LINEDIV, [5 << 16])
+        await spi.write(sim.A_LINEPINS, [UI(0) << 8])
+        await spi.write(sim.A_LINECFG, [0x4005])
+        await run_program(spi, 0, prog, clkdiv=1 << 8)
+
+    await reset_rx()
+    rng = random.Random(19)
+    finished, collected = False, []
+
+    async def drain():
+        polls = 0
+        while not finished:
+            st = (await spi.qxfer(0x43, sim.core_reg(0, sim.C_STATUS), nread=1))[0]
+            n = (st >> 4) & 15
+            if n:
+                collected.extend(await spi.qxfer(0x4B, sim.core_reg(0, sim.C_FIFO), nread=n))
+            polls += 1
+            if polls % 73 == 0:
+                await ClockCycles(dut.clk, 200)  # bounded 4 us host stall
+
+    async def send(fr, jitter=True):
+        bits = [1, 0]*31 + [1, 1] + [(b >> k) & 1 for b in fr for k in range(8)]
+        levels = [v for b in bits for v in (1-b, b)] + [1]*4
+        t0 = get_sim_time(unit="ns") + 120
+        prev = 0
+        for k, lv in enumerate(levels):
+            if lv != prev:
+                te = t0 + k*50*(1-200e-6) + (rng.uniform(-13.5, 13.5) if jitter else 0)
+                dt = round((te-get_sim_time(unit="ns"))*1000)
+                if dt > 0:
+                    await Timer(dt, unit="ps")
+                spi._set(0, lv)  # preserve quad IO on ui[5:2] while driving ui0
+            prev = lv
+        dt = round((t0+len(levels)*50-get_sim_time(unit="ns"))*1000)
+        if dt > 0:
+            await Timer(dt, unit="ps")
+        spi._set(0, 0)
+        await Timer(96*100, unit="ns")  # minimum Ethernet IFG
+
+    task = cocotb.start_soon(drain())
+    frames = [eth.frame(n) for n in (46, 110, 1500, 46)]
+    for fr in frames:
+        await send(fr)
+    await ClockCycles(dut.clk, 1000)
+    finished = True
+    await task
+    decoded = [eth.frame_from_bits(b) for b in eth.rx_bits(collected) if len(b) > 64]
+    assert decoded == frames, [len(b) for b in decoded]
+    assert not (await spi.read(sim.A_LINESTAT))[0] & (1 << 19)
+
+    # With no servicing, a legal frame must report overflow, never be trusted.
+    await reset_rx()
+    await send(eth.frame(110), jitter=False)
+    assert (await spi.read(sim.A_LINESTAT))[0] & (1 << 19)
+    # Invalidate the entire frame and reset both firmware/FIFO and line queues.
+    await reset_rx()
+    assert not (await spi.read(sim.A_LINESTAT))[0] & (1 << 19)
+    collected.clear()
+    finished = False
+    task = cocotb.start_soon(drain())
+    await send(frames[0])
+    await ClockCycles(dut.clk, 1000)
+    finished = True
+    await task
+    assert [eth.frame_from_bits(b) for b in eth.rx_bits(collected) if len(b) > 64] == [frames[0]]
+
+
+@cocotb.test()
+async def test_eth10_common_clock_loopback(dut):
+    """Two cores at 50 MHz, TX divider 1.25 and RX period 5, full-frame SPI
+    service over virtual pins. Digital loopback does not prove analog TX limits.
+    """
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "model"))
+    import test_eth10 as eth
+    await setup(dut)
+    spi = QuadSpi(dut, period=2*CLK_NS, cs_setup=CLK_NS, cs_hold=CLK_NS, cs_gap=4*CLK_NS)
+    await spi.write(sim.A_HOSTCFG, [1])
+    await spi.apply(host.pin_owner_writes({24: 1, 25: 1}, profile=PROFILE))
+    await spi.write(sim.A_LINEDIV, [5 << 16])
+    await spi.write(sim.A_LINEPINS, [24 << 8])
+    await spi.write(sim.A_LINECFG, [0x4005])
+    await run_program(spi, 0, load_fw("eth10_rx"), clkdiv=256)
+    await run_program(spi, 1, load_fw("eth10_tx", F_GO=0), clkdiv=320, side_pins=24)
+    collected, frames = [], [eth.frame(46), eth.frame(1500, seed=5)]
+    for fr in frames:
+        words = eth.words(fr)
+        await spi.write(sim.core_reg(1, sim.C_R0), [8*len(fr)-1])
+        await spi.qxfer(0x4A, sim.core_reg(1, sim.C_FIFO), words=words[:16])
+        sent = min(16, len(words))
+        await spi.write(sim.A_FSET, [1])
+        for _ in range(20000):
+            rx = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
+            assert not rx & (1 << 13 | 1 << 14), "RX halted/faulted"
+            n = rx >> 4 & 15
+            if n:
+                collected.extend(await spi.qxfer(0x4B, sim.core_reg(0, sim.C_FIFO), nread=n))
+            tx = (await spi.read(sim.core_reg(1, sim.C_STATUS)))[0]
+            assert not tx & (1 << 13 | 1 << 14), "TX halted/faulted"
+            n = min(4, 8-(tx & 15), len(words)-sent)
+            if n:
+                await spi.qxfer(0x4A, sim.core_reg(1, sim.C_FIFO), words=words[sent:sent+n])
+                sent += n
+            if sent == len(words) and not (await spi.read(sim.A_FSET))[0] & 1:
+                break
+        else:
+            assert False, "common-clock frame did not finish"
+        await ClockCycles(dut.clk, 1000)  # flush trailer and exceed 96-bit IFG
+        n = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0] >> 4 & 15
+        if n:
+            collected.extend(await spi.qxfer(0x4B, sim.core_reg(0, sim.C_FIFO), nread=n))
+        assert not (await spi.read(sim.A_LINESTAT))[0] & (1 << 19), "RX overflow"
+    assert [eth.frame_from_bits(b) for b in eth.rx_bits(collected) if len(b) > 64] == frames
+
+
+@cocotb.test()
+async def test_usb_concurrent_service(dut):
+    """Enumeration/error recovery with actual SPI service running concurrently
+    with USB packets, independent of the reference model's bus or chip state.
+    Both firmware variants use the same portable board control service.
+    """
+    from pe import usb, usbdev
+    clock_ns = 20.834  # nearest even-ps period to 48 MHz (32 ppm quantization)
+    spi = await setup(dut, clock_ns=clock_ns)
+    port = QuadSpi(dut, period=2*clock_ns, cs_setup=clock_ns, cs_hold=clock_ns, cs_gap=4*clock_ns)
+
+    class Transport:
+        @resume
+        async def read(self, addr):
+            return (await port.qxfer(0x43, addr, nread=1))[0]
+
+        @resume
+        async def write(self, addr, word):
+            await port.qxfer(0x42, addr, [word])
+
+        @resume
+        async def push(self, c, word):
+            await port.qxfer(0x4A, sim.core_reg(c, sim.C_FIFO), [word])
+
+        @resume
+        async def pop_all(self, c):
+            st = (await port.qxfer(0x43, sim.core_reg(c, sim.C_STATUS), nread=1))[0]
+            n = (st >> 4) & 15
+            return await port.qxfer(0x4B, sim.core_reg(c, sim.C_FIFO), nread=n) if n else []
+
+        @resume
+        async def now_us(self):
+            return get_sim_time(unit="ns") / 1000
+
+    async def send(pkt):
+        await usb_drive(dut, usb.encode(pkt))
+
+    async def response(cycles=4000):
+        trace = await usb_listen(dut, cycles)
+        return usb_decode_trace(trace)[0] if "K" in trace else None
+
+    async def setup_req(addr, req):
+        for _ in range(20):
+            await send(usb.token(usb.PID_SETUP, addr, 0))
+            await ClockCycles(dut.clk, 64)
+            await send(usb.data_packet(usb.PID_DATA0, req))
+            if await response(1200) == usb.handshake(usb.PID_ACK):
+                return
+        assert False, "SETUP was not ACKed"
+
+    async def data_in(addr, ack=True):
+        for _ in range(150):
+            await send(usb.token(usb.PID_IN, addr, 0))
+            r = await response()
+            if r and r[0] in (usb.pid_byte(usb.PID_DATA0), usb.pid_byte(usb.PID_DATA1)):
+                assert r[-2:] == usb.crc16(r[1:-2])
+                if ack:
+                    await ClockCycles(dut.clk, 64)
+                    await send(usb.handshake(usb.PID_ACK))
+                return r
+        assert False, "IN never returned DATA"
+
+    async def data_out(pid, payload):
+        for _ in range(20):
+            await send(usb.token(usb.PID_OUT, 0, 0))
+            await ClockCycles(dut.clk, 64)
+            await send(usb.data_packet(pid, payload))
+            if await response(1200) == usb.handshake(usb.PID_ACK):
+                return
+        assert False, "OUT was not ACKed"
+
+    def missing_stuffed_zero(packet):
+        states, level, ones, skipped = [], usb.J, 0, False
+        for bit in usb.bits_lsb_first(bytes([0x80]) + packet):
+            if not bit:
+                level = usb.K if level == usb.J else usb.J
+                ones = 0
+            else:
+                ones += 1
+            states.append(level)
+            if ones == 6:
+                if not skipped:
+                    skipped = True
+                else:
+                    level = usb.K if level == usb.J else usb.J
+                    states.append(level)
+                ones = 0
+        assert skipped
+        return states + [usb.SE0, usb.SE0, usb.J]
+
+    transport = Transport()
+    for variant in ("two-core", "line"):
+        # No service owns SPI during reconfiguration.
+        await spi.write(sim.A_CTRL, [3 << 16])
+        await spi.write(sim.A_LINECFG, [0])
+        await spi.write(sim.A_FCLR, [0x7F])
+        dut.pull_up.value = 2
+        rx = load_fw("usb_ls_rx" if variant == "two-core" else "usb_ls_dev", **usbdev.defines())
+        await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [usbdev.CRCCTRL])
+        if variant == "two-core":
+            await spi.apply(host.pin_owner_writes({0: 1, 1: 1}))
+            await run_program(spi, 1, load_fw("usb_ls_tx", **usbdev.defines()), out_pins=(0, 2))
+            tx = 1
+        else:
+            await spi.apply(host.pin_owner_writes({0: 0, 1: 0}))
+            await spi.write(sim.A_LINEDIV, [(32 << 16) | (32 << 8)])
+            await spi.write(sim.A_LINEPINS, [0])
+            await spi.write(sim.A_LINECFG, [0x49F3])
+            tx = 0
+        EXT.set(0, True, 1); EXT.set(1, True, 0)  # K must not look like reset
+        await run_program(spi, 0, rx)
+        await ClockCycles(dut.clk, 2000)
+        assert not (await spi.read(sim.A_FSET))[0] & usbdev.F_RESET
+        EXT.set(0, False); EXT.set(1, False)
+        await ClockCycles(dut.clk, 100)
+        await spi.write(sim.A_HOSTCFG, [1])
+        sw = usbdev.DeviceSoftware(transport, rx, usbdev.DESCRIPTORS, tx_core=tx)
+        done = False
+
+        async def service():
+            while not done:
+                await bridge(sw.service)()
+                await ClockCycles(dut.clk, 200)
+
+        task = cocotb.start_soon(service())
+        try:
+            req = bytes.fromhex("8006000100001200")
+            # Invalid complement with an unchanged valid CRC must be ignored.
+            await send(usb.token(usb.PID_SETUP, 0, 0))
+            await ClockCycles(dut.clk, 64)
+            pkt = usb.data_packet(usb.PID_DATA0, req)
+            await send(bytes([pkt[0]^0x10]) + pkt[1:])
+            assert await response(1200) is None
+            await send(usb.token(usb.PID_SETUP, 0, 0))
+            await ClockCycles(dut.clk, 64)
+            await send(pkt[:-1] + bytes([pkt[-1]^1]))  # valid PID, bad CRC16
+            assert await response(1200) is None
+            await send(usb.token(usb.PID_SETUP, 0, 0))
+            await ClockCycles(dut.clk, 64)
+            await usb_drive(dut, missing_stuffed_zero(usb.data_packet(usb.PID_DATA0, bytes([255]*8))))
+            assert await response(1200) is None
+            # OUT retries are ACKed repeatedly and delivered once per toggle.
+            await data_out(usb.PID_DATA1, b"abc")
+            await data_out(usb.PID_DATA1, b"abc")
+            await data_out(usb.PID_DATA0, b"def")
+            await ClockCycles(dut.clk, 10000)
+            assert sw.out_records == [b"abc", b"def"]
+            await setup_req(0, req)
+            chunks = [await data_in(0) for _ in range(3)]
+            assert b"".join(p[1:-2] for p in chunks) == usbdev.DEVICE_DESC
+            assert [p[0] for p in chunks] == [0x4B, 0xC3, 0x4B]
+            # Lost ACK must repeat the identical packet after the response window.
+            await setup_req(0, req)
+            first = await data_in(0, ack=False)
+            assert await data_in(0) == first
+            # A new SETUP aborts the old request and pending descriptor chunks.
+            await setup_req(0, bytes.fromhex("0005050000000000"))
+            assert (await data_in(0))[1:-2] == b""
+            await ClockCycles(dut.clk, 3000)
+            assert sw.address == 5
+            # Firmware detects reset; SPI service clears filter, FIFOs and transfers.
+            EXT.set(0, True, 0); EXT.set(1, True, 0)
+            await ClockCycles(dut.clk, 480000)
+            assert sw.address == 0 and sw.reset_wait
+            EXT.set(0, False); EXT.set(1, False)
+            await ClockCycles(dut.clk, 480000)
+            assert not sw.reset_wait
+            await setup_req(0, req)
+            assert (await data_in(0))[1:-2] == usbdev.DEVICE_DESC[:8]
+        finally:
+            # bridge() runs synchronous service in a thread. Join it before an
+            # assertion ends the test, so a failure cannot tear down its simulator.
+            done = True
+            await task
+        await spi.write(sim.A_HOSTCFG, [0])

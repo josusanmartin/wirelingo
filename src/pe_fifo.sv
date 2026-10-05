@@ -38,9 +38,9 @@ module pe_fifo #(
   // (dlhq, 31 um2, no reset) instead of flops (dfrbpq, 49 um2 plus a tie cell:
   // IHP's flops all have resets and no enable). Entries are only read after
   // being written, so they need no reset.
-  // PE_FIFO_NO_CG selects functionally identical enable flops; the core proof
-  // (formal/core.sby) uses it to stay single-clock, while formal/fifos.sby
-  // proves the latch version against reference queues.
+  // PE_FIFO_NO_CG selects functionally identical enable flops for alternate
+  // builds. Both formal/core.sby and formal/fifos.sby use multiclock and prove
+  // the latch implementation; the FIFO harness checks reference queues.
   wire [W-1:0] ent[0:DEPTH-1];
 `ifndef PE_FIFO_NO_CG
   reg  [W-1:0] wd;

@@ -59,10 +59,13 @@ bringup.uart_loopback(pe)       # no wiring: core 0 UART TX -> internal pin -> c
 bringup.uart_tx(pe, b"hi\r\n")  # 115200 8N1 on uo[0]
 ```
 
-`protoemu_fw.py` holds assembled programs (UART, SPI, I2C, WS2812, 10BASE-T TX)
+`protoemu_fw.py` holds assembled programs (UART, SPI, I2C, WS2812, USB, 10BASE-T TX)
 ready for `pe.load(**PROGRAM)`. Assemble your own with `tools/pe/asm.py`.
 Clock per demo: 48 MHz for UART/I2C/SPI/USB, 40 MHz for 10BASE-T
 (`bringup.setup(40_000_000)`, then `pe.eth10_send(core, frame)`).
+The optional [PIO/DMA transport](board-transport.md) keeps the same driver
+interface. It requires explicit state-machine/GPIO ownership and a compatible
+PIO GPIO window; its board throughput and sampling margin are unmeasured.
 
 ## External hardware
 
@@ -71,13 +74,32 @@ derived from the specifications, not yet validated on silicon):
 
 * **USB low-speed device:** D+ on `uio[0]`, D- on `uio[1]`, each through 27 Ω
   to the connector; 1.5 kΩ from D- to 3.3 V (marks a low-speed device);
-  48 MHz project clock. The host software is in `test/model/test_usb_enum.py`
-  (`DeviceSoftware`).
+  48 MHz project clock. Copy the generated `usb_device.py`/`usb_bits.py`,
+  `protoemu.py`, `protoemu_fw.py` and `bringup.py` to the RP2350; call
+  `sw = bringup.usb_setup(pe)` and repeatedly call `sw.service()`. This example
+  advertises an endpoint-zero vendor interface, with no HID/report endpoint or
+  string descriptors. It is digitally tested; board enumeration remains a
+  separate hardware check. See `docs/review-fixes.md` for the record ABI.
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
-  pins swing ±3.3 V differentially, so use about 15–20 Ω in series per leg
-  (counting the pad's own output resistance), and AC-couple if the magnetics'
-  centre tap is not floating. 40 MHz project clock.
+  nominal pins swing ±3.3 V differentially. The proposed 15–20 Ω series
+  resistors per leg are an unmeasured starting point: actual pad resistance,
+  magnetics and waveform need characterization. The documented TX mode uses
+  a 40 MHz project clock; no electrical compliance result is established.
+* **10BASE-T RX:** the digital test drives a binary comparator output on `ui[0]`
+  (P16): high for positive receive differential voltage, low for negative,
+  idle low. The input must be 0..3.3 V with no negative excursion, and have
+  enough edge fidelity for the ±13.5 ns digital jitter test. An implementation
+  needs receive magnetics and a terminated differential comparator stage;
+  the comparator threshold, idle squelch, hysteresis, propagation delay and
+  supply protection have not been measured. The
+  [receive bench circuit](eth10-receiver.md) now specifies magnetics, component
+  values, package pins and a finite FCS-checked capture service. Its schematic
+  is proposed and unbuilt; the passing receive tests use a binary digital input.
+  External RX tests use 50 MHz and the original TX mode uses 40 MHz. A digital
+  internal TX→RX loopback now passes at 50 MHz with TX divider 1.25 and RX
+  period 5. Its TX half cells are 40/60 ns; that mode has no established
+  electrical compliance or simultaneous board result.
 * **I2C:** SDA `uio[0]`, SCL `uio[1]`, open drain (set `OD_MASK`), 4.7 kΩ
   pull-ups to 3.3 V.
 * **CAN:** a 3.3 V transceiver (for example SN65HVD230); TXD from an output

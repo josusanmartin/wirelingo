@@ -12,7 +12,10 @@
 ;
 ; Three instructions per bit (the wrap is free), so core 0 keeps up at 4 clocks
 ; per bit; the line unit's 32-bit queue absorbs a slow FIFO for a word or so.
-; The host must drain the FIFO at the line rate (10 Mbit/s).
+; The host must drain at >=13.33 Mbit/s payload (24 line bits per 32-bit word),
+; plus SPI headers and status polling. Eight entries hold 19.2 us of line data.
+; LINESTAT overflow invalidates the entire frame: disable LINECFG, stop/restart
+; core 0, clear its FIFO, and restore the line configuration before receiving.
 .program eth10_rx
 .shift_in right autopush 24
 frame:

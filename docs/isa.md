@@ -13,24 +13,25 @@ bit-banging. A build has `NCORES` cores and `NBANKS` instruction-memory banks
 (1–4 each). The architecture, register map and encodings always describe four;
 see §7 for what a smaller build does with the missing ones.
 Each core has its own clock divider, registers, shift registers and FIFOs to
-the host. The instruction set is PIO-inspired but addresses PIO's main
-limitations:
+the host. The instruction set is PIO-inspired. The comparison below concerns
+the RP2040 PIO engine's encodings, not the entire microcontroller:
 
-| PIO limitation                           | protoemu                                             |
+| RP2040 PIO engine                        | protoemu                                             |
 |------------------------------------------|------------------------------------------------------|
 | 32 instructions shared by 4 SMs          | 256 words per core (one bank each)                   |
-| only X/Y, no arithmetic, 5-bit immediates| R0–R3 (16 bit), 16-bit LDI, ADD/SUB/AND/OR/XOR/SHL/SHR/CMP, Z/C flags |
+| X/Y scratch; decrement branches, no general ALU; SET has 5-bit immediates | R0–R3 (16 bit), 16-bit LDI, ADD/SUB/AND/OR/XOR/SHL/SHR/CMP, Z/C flags |
 | WAIT has no timeout                      | any WAIT can time out (Rn tick budget), sets T flag  |
 | WAIT only on levels                      | WAIT on rise / fall / any edge, sampled every clock  |
-| no compound conditions                   | WAIT qualifier: "SDA falls while SCL is high" in one instruction |
+| WAIT selects one pin/GPIO/IRQ level       | WAIT qualifier: "SDA falls while SCL is high" in one instruction |
 | open drain needs pindir tricks           | per-pin open-drain mode                              |
-| no direct single-pin control             | `PIN p, hi/lo/toggle/hiz` on any absolute pin        |
-| SMs sync only via IRQ flags              | flags + 8 virtual pins (internal wires between cores)|
+| SET/OUT/side-set use configured pin mappings | `PIN p, hi/lo/toggle/hiz` on any absolute pin     |
+| IRQ flags and GPIO signalling            | flags + 8 virtual pins (internal wires between cores)|
 
-Beyond PIO there is also a CRC tap fed by the shift registers (§4.5) and
-FIFO join (§4.4). Bit stuffing and NRZI/Manchester line coding stay in
-firmware (the USB, CAN and 10BASE-T programs); a hardware line-coding stage is
-not planned for this tapeout.
+The CRC tap is fed by the shift registers (§4.5). FIFO join (§4.4) is inspired
+by PIO. A shared hardware line unit (§4.7) assists core 0 with bit stuffing,
+NRZI/Manchester coding and receive clock recovery; pure firmware variants
+also exist. Comparison source and measured program sizes are in
+[guide.md](guide.md).
 
 ## 2. Pins
 
@@ -545,8 +546,9 @@ effects combine into the state for cycle *t + 1*.
 SPI mode 0 (CPOL = 0, CPHA = 0), MSB first, `CS_n` active low.
 **Source-synchronous:** SCK clocks the port's shift registers directly, so SCK
 can run at up to the system clock: about 50 Mbit/s in 1-bit mode and
-200 Mbit/s in quad mode at 50 MHz (`test_host_port_fast` measures 193 Mbit/s
-for a quad burst).
+200 Mbit/s wire rate in quad mode at 50 MHz (`test_host_port_fast` measures
+193 Mbit/s payload for a quad burst in RTL simulation). Board throughput and
+pad timing require separate measurements.
 
 | Line | 1-bit | Quad |
 |---|---|---|
@@ -603,16 +605,29 @@ Timing, in system clocks (clk), at any phase between SCK and clk:
 | Parameter | Min |
 |---|---|
 | SCK period | 1 (SCK ≤ clk) |
+| SCK high / low time | 0.5 each |
 | CS_n low to the first SCK rise | 1 |
 | last SCK fall to CS_n high | 1 |
 | CS_n high between transactions | 4 |
+| CS_n high after global reset release, before starting SCK | 5 |
+
+Global reset aborts a selected transaction, including pending reads. Keep CS_n
+high for five clk cycles after reset release. If held low through reset, all
+continuing SCK activity is ignored until CS_n returns high. Reset assertion
+works with SCK stopped; deassertion of SCK-domain state occurs during the idle
+CS interval, with at least one clk of margin before the first SCK edge.
 
 Words cross from the SCK domain to clk through 2-flop synchronizers, and their
-data is held for at least 8 SCK, longer than the crossing. MISO/IO outputs
+data is held for at least 8 SCK, longer than the crossing. SDC bounds all
+cross-clock datapaths to one clk period; unrelated cross-clock hold checks
+alone are cut. This requires post-route verification on the selected build.
+MISO/IO outputs
 change on the SCK fall, so at SCK = clk the host gets half a period, less the
 pad and board delays, to sample them. `test_host_port_fast` runs both modes at
 SCK = clk and clk/2 at random phases. `test_spi_port_timing` sweeps slower SCK,
-duty cycles and CS timing.
+duty cycles and CS timing. A 0.5-clk half cycle must also satisfy the routed
+SCK-to-output plus board flight time and host input setup. The digital tests
+do not establish that physical sampling margin.
 
 ### 6.2 Register map (32-bit word addresses)
 

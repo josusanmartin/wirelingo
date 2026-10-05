@@ -45,10 +45,15 @@ class Program:
     source_lines: list = field(default_factory=list)  # (word index, line) for listings
 
     def relocate(self, base):
+        if not isinstance(base, int) or not 0 <= base < 1024:
+            raise ValueError("relocation base must be in 0..1023")
         out = []
         for i, w in enumerate(self.words):
             if i in self.reloc:
-                w = (w & ~0x3FF) | ((w + base) & 0x3FF)
+                target = (w & 0x3FF) + base
+                if target >= 1024:
+                    raise ValueError("relocated JMP exceeds address space")
+                w = (w & ~0x3FF) | target
             out.append(w)
         return out
 

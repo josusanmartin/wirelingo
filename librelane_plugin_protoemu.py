@@ -11,6 +11,8 @@ on the Tiny Tapeout SG13CMOS5L tile:
 * Project.DiodesOnSramPins: an antenna diode on each SRAM signal input (the
   SRAM LEF has no antenna data) (flow/odb_sram_diodes.py).
 * A fix for netgen's LVS JSON escaping of the SRAM power pin names (VDD! ...).
+* Project.FixClockFanout: opt-in clock branch repair after CTS. It preserves
+  each branch's loads and NDR while respecting the IHP fanout limit of eight.
 
 LibreLane imports modules named librelane_plugin_* from the working directory
 (the repo root, both locally and in the TT GDS action).
@@ -25,7 +27,7 @@ from typing import List, Optional
 from decimal import Decimal
 
 from librelane.steps.step import CompositeStep
-from librelane.steps.openroad import DetailedPlacement
+from librelane.steps.openroad import DetailedPlacement, OpenROADStep
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow")
 
@@ -81,6 +83,22 @@ class DiodesOnSramPins(CompositeStep):
     id = "Project.DiodesOnSramPins"
     name = "Diodes on SRAM Pins"
     Steps = [SramPinDiodePlacement, DetailedPlacement]
+
+
+@Step.factory.register()
+class ClockFanoutRepair(OpenROADStep):
+    id = "Project.ClockFanoutRepair"
+    name = "Split Overloaded IHP Clock Branches"
+
+    def get_script_path(self):
+        return os.path.join(HERE, "clock_fanout.tcl")
+
+
+@Step.factory.register()
+class FixClockFanout(CompositeStep):
+    id = "Project.FixClockFanout"
+    name = "Repair and Legalize Clock Branches"
+    Steps = [ClockFanoutRepair, DetailedPlacement]
 
 
 # --- netgen writes the IHP SRAM's power pin names (VDD!, VSS!, VDDARRAY!) into

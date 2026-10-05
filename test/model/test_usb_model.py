@@ -56,7 +56,7 @@ def test_usb_rx_packets(ppm):
     drive(mh, usb.encode(usb.token(usb.PID_SETUP, 0, 0)), tpb, rng.random())
     assert rx_record(mh) is None and mh.chip.flags & 0b1100 == 0b1100  # F_EXP, F_SETUP
     drive(mh, usb.encode(usb.data_packet(usb.PID_DATA0, setup)), tpb, rng.random())
-    assert rx_record(mh) == usbdev.Record(True, setup, 16 + 8 * 10)
+    assert rx_record(mh) == usbdev.Record(True, setup, 16 + 8 * 10, setup=True)
     assert mh.chip.flags & 0b0110 == 0b0010  # F_ACK set, F_EXP cleared
     drive(mh, usb.encode(usb.handshake(usb.PID_ACK)), tpb, rng.random())
     assert rx_record(mh) is None and mh.chip.flags & usbdev.F_GOTACK

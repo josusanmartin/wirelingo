@@ -1,0 +1,30 @@
+{
+  "assembler_url": "https://raw.githubusercontent.com/micropython/micropython/v1.26.0/ports/rp2/modules/rp2.py",
+  "assembler_sha256": "095e1e4e44f02510bebd53e7e485a7368d726ced869e593985abfa08bc659f1b",
+  "source_sha256": "dfcac07554bdc970ccca9bd08d6d699126fa6490abe597a8858ec4c16303b7e7",
+  "instructions": [
+    32928,
+    24624,
+    24656,
+    42947,
+    24580,
+    45122,
+    20484,
+    68,
+    107,
+    16496,
+    24688,
+    42818,
+    41163,
+    32800
+  ],
+  "execctrl": 53248,
+  "shiftctrl": 196608,
+  "out_init": [
+    2,
+    2,
+    2,
+    2
+  ],
+  "sideset_init": 2
+}

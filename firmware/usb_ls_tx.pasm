@@ -18,6 +18,7 @@
 .program usb_ls_tx
 .shift_out right autopull 32
 idle:
+    jmp f F_RESET, reset_wait
     jmp f F_ACK, send_ack
     jmp !f F_IN, idle
     flag clr F_IN
@@ -70,4 +71,8 @@ eop:                               ; every path arrives at B+1 (B = cell boundar
     ldi r2, 2                      ; B+67
     mov pins, r2              [31] ; B+68 J (1 bit time)
     mov pindirs, null              ; release the bus
+    jmp idle
+reset_wait:
+    mov pindirs, null
+    wait 0 flag F_RESET
     jmp idle

@@ -37,8 +37,9 @@ and the assembler implement it, and are checked against each other
 ## What runs on it
 
 Each program talks to an independent device model that sees only the pins.
-"RTL" = loaded and exercised through the real SPI host port on the RTL (and at
-gate level); "model" = on the cycle-accurate model, which is lockstep-checked
+"RTL" = loaded and exercised through the real SPI host port on the RTL;
+current routed-netlist validation remains pending. "Model" = on the
+cycle-accurate model, which is lockstep-checked
 against the RTL.
 
 | Firmware | What it does | Limits | Verified on |
@@ -46,9 +47,9 @@ against the RTL.
 | `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error | RTL; ±3 % and back-to-back on the model |
 | `spi_master` | mode 0, MSB first, 8-bit frames, f_SCK = f_tick / 4 | chip select by the host or a wrapper | RTL |
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
-| `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | endpoint 0; the host software does the requests and data toggles | RTL (SETUP/ACK, foreign address, NAK, IN data); **enumeration**, lost ACK, ±2.5 % bit rate on the model |
-| `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | **enumeration**, address filter, lost ACK on the model (lockstep-checked line unit) |
-| `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | model: on-chip TX→RX at 40 MHz, external sender at 50 MHz with 100 ppm offset and jitter |
+| `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
+| `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit |
+| `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores |
 | `swd_probe` | ARM SWD engine: request parity, ACK, DPIDR, register writes | | model |
@@ -74,8 +75,10 @@ WAIT trackers, FIFO levels and heads, pins, flags, bus reads), in the tapeout
 configuration and the 4-core build. SymbiYosys proves the FIFO pair (with
 join) against reference queues at depths 4 and 8, SPI-slave bus safety, and
 core safety invariants. Firmware is developed against device models on the
-model, and the key cases repeat on the RTL through the SPI port and on the
-routed netlist. Deliberately injected bugs are caught. Details, limits and
+model, and the key cases repeat on the RTL through the SPI port. The current
+global-routing checkpoint passes 16 functional GL tests; final extracted
+timing and final-netlist GL remain pending.
+Deliberately injected bugs are caught. Details, limits and
 the bugs this found: [docs/verification.md](docs/verification.md).
 
 ```
@@ -92,13 +95,27 @@ make -C formal                                                   # proofs
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs, the line unit and the quad host port; 52 % standard-cell
   utilization.
-* **Run t5 (the current RTL) signs off clean:** 0 routing violations,
+* **Historical run t5 (`ae7d59d`)** reports 0 routing violations,
   0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the
   typical corner (+4.77 ns setup, +0.32 ns hold) and hold is met at the fast
   corner (+0.12 ns). The slow corner reaches about 41 MHz (−4.1 ns at 50 MHz).
-* All 10 top-level tests pass on the routed netlist (`flow/gl_test.sh`).
+* Its retained functional GL log reports **9/9 tests** on that older netlist.
+  Current RTL adds fixed banks, latch FIFOs, a falling-edge sampler and SPI reset
+  changes. Its **16-test** top-level suite includes concurrent USB service and
+  full-frame Ethernet streaming, with two separate compiled-PIO transport
+  tests and two bounded board-receive service tests. These changes require
+  new physical signoff.
 * Remaining electrical exceptions at typ (1 slew, 2 capacitance) are listed in
   [docs/physical.md](docs/physical.md).
+* [Review fix ledger](docs/review-fixes.md) records changes, validation and team
+  ownership. `flow/gen_config.py --check` verifies the frozen submission preset;
+  `flow/signoff.py` fails release gating when evidence is missing or violated.
+* [Optional board transport](docs/board-transport.md) documents PIO/DMA resource
+  ownership, GPIO-window setup and bounded measurements. Board throughput and
+  sampling margin remain unmeasured.
+* [Ethernet receive bench](docs/eth10-receiver.md) supplies a bounded capture
+  service and a proposed comparator/squelch schematic. The circuit is unbuilt;
+  board throughput and simultaneous external TX/RX remain unqualified.
 
 ## Layout
 

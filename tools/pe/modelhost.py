@@ -63,6 +63,10 @@ class ModelHost:
     def tx_level(self, core):
         return len(self.chip.cores[core].txf)
 
+    def now_us(self):
+        """USB reference service clock (48 MHz). No wall-clock timing in tests."""
+        return self.chip.cycle / 48
+
     # -- pins
     def bus_uio(self):
         """Resolved uio bus (wired-AND of chip and external drivers, pull-ups)."""

@@ -7,6 +7,27 @@ gate-level tests on the result. The routability experiments below used a
 flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
 bd07aa5; see git history).
 
+**Release status:** the tables below describe historical runs. They do not
+sign off the fixed-bank/latch/dual-edge/reset candidate. The submission preset
+now uses swapped corners, all three PVT corners and real latch arcs in both
+PnR and signoff. `flow/gen_config.py --check` checks its checked-in JSON.
+The source/config/SDC/PDK hashes in `candidate-inputs.json`, final timing and
+electrical reports, and exact-netlist GL must agree before release. See
+`docs/review-fixes.md` for fresh results and remaining gates.
+
+New hardening manifests also bind root LibreLane plugins, flow implementation,
+generated TT configuration and support-tool bytes. Snapshot copying includes
+dirty/new plugins and rejects concurrent edits. Strict release checks compare
+those inputs with the hardened worktree; legacy manifests remain diagnostic.
+
+`flow/gen_config.py --clock-fanout-fix` opts into eight-sink CTS clusters and
+`Project.FixClockFanout`, which splits overloaded clock branches and legalizes
+the added IHP buffers. Native checkpoint checks preserve connectivity, power
+and NDR and remove clock-fanout violations at all three placement corners.
+Ordinary timing and data electrical checks still fail; a new complete physical
+run is required. The checked-in submission preset and original live run remain
+unchanged. See the bounded results and ownership handoff in `review-fixes.md`.
+
 ## The tile
 
 * The 6x4 die is 1289.28 × 710.64 µm. The core is about 1283.5 × 703.1 µm (0.90 mm²).
@@ -26,8 +47,9 @@ bd07aa5; see git history).
   power columns by `Project.ExtendPowerStripes` (adapted from
   kdp1965/ihp-um-janestreet-prism). pdngen's PSM-0069 connectivity error before
   that step is expected.
-* Hold repair across all corners inserted about 3200 buffers and broke detailed
-  placement. TT signs off at typ, so `PNR_CORNERS = [typ, slow]` is used.
+* In historical runs, hold repair across all corners inserted about 3200 buffers
+  and broke detailed placement. Those runs used `PNR_CORNERS = [typ, slow]`.
+  The submission preset now includes fast as well after correcting hold uncertainty.
   About 1900 buffers remain, mostly for SRAM address hold.
 
 ## Timing
@@ -166,7 +188,9 @@ pull it there) while bank 0 is in the bottom-right corner. Swapping the banks
 −1.2 ns after global routing) but not signoff: slow −4.72 ns, typ +4.46 ns,
 with 58 overflows after global routing instead of 8 (it still routed clean).
 Both banks side by side at the bottom centre (`row`) stayed congested in
-global routing. The corners layout stays.
+global routing. This experiment retained the original corners layout. The
+2026-10-04 submission preset selects corners-swap; its new routing/signoff
+result must be established separately.
 
 ### Where a core's wiring goes
 
@@ -198,8 +222,8 @@ Synthesis already shares well; the wiring is in what the core does.
 | t3 | 0ceca69: + line unit, quad host port, write-only configuration; measured wire capacitance, post-GRT timing repair | 0 | 0 | clean | 0 | +4.56 / −4.64 ns | +0.15 ns (**fast −0.024**, 1 path) | 3 / 2 |
 | **t5** | t3 + post-GRT hold margin 0.25 ns | 0 | 0 | clean | 0 | **+4.77 / −4.10 ns** | +0.32 ns (fast +0.12) | 1 / 2 |
 
-t5 is the current hardware (src/config.json is its configuration). Its
-gate-level simulation passes all 10 top-level tests. The slow corner allows
+t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
+gate-level log passes 9/9 top-level tests. The slow corner allows
 about 41 MHz. final5's DOUT capacitance exceptions are gone; t5 has one
 slew and two capacitance exceptions at typ.
 
@@ -253,8 +277,12 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
   primitives) in the source list.
 * `flow/gl_test.sh <run dir>` copies the netlist and runs `make GATES=yes`
   with the run's core count and FIFO depth.
-* Results: s2c 6/6 and final4 **7/7** (ID, UART TX/RX, SPI, I2C, USB
-  low-speed device, 10BASE-T TX with FIFO join) on the routed netlist.
+* Historical logs report s2c 6/6 and final4 **7/7** (ID, UART TX/RX, SPI,
+  I2C, USB low-speed device, 10BASE-T TX with FIFO join). They do not validate
+  the current hardware or satisfy the fresh-result checks now required.
+* The current step-41 global-routing checkpoint passes all 16 functional GL
+  tests. Its final extracted timing and final-netlist GL remain pending; see
+  [review-fixes.md](review-fixes.md) for exact input/netlist hashes.
 
 ## Area reductions applied
 

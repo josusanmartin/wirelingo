@@ -46,7 +46,7 @@ module tt_um_josusanmartin_protoemu (
     input  wire       rst_n
 );
   // reset synchroniser (async assert, sync deassert)
-  reg [1:0] rst_s;
+  (* async_reg = "true", keep = 1 *) reg [1:0] rst_s;
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) rst_s <= 2'b00;
     else rst_s <= {rst_s[0], 1'b1};

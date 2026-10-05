@@ -67,8 +67,12 @@ module pe_hostport (
   reg [31:0] w_hold;
   reg        a_tog, w_tog, r_tog;
 
-  always @(posedge sck or posedge cs_n) begin
-    if (cs_n) begin
+  // After global reset, require an idle CS interval in clk before accepting
+  // SCK. A transaction held selected across reset is ignored until CS rises.
+  reg host_ready;
+  wire parser_reset = cs_n || !rst_n || !host_ready;
+  always @(posedge sck or posedge parser_reset) begin
+    if (parser_reset) begin
       phase <= PH_CMD;
       cnt <= 6'd0;
       cmd <= 8'd0;
@@ -122,7 +126,7 @@ module pe_hostport (
       a_tog <= 1'b0;
       w_tog <= 1'b0;
       r_tog <= 1'b0;
-    end else if (!cs_n) begin
+    end else if (!cs_n && host_ready) begin
       if (phase == PH_ADDR && cnt == addr_len) begin
         a_hold <= sh_n[15:0];
         m_hold <= {rd, inc};
@@ -141,16 +145,20 @@ module pe_hostport (
   // output side: changes on SCK fall, half a period before the host samples
   reg [31:0] osh;
   reg [31:0] buf0, buf1;                      // clk domain, stable when used
-  always @(negedge sck or posedge cs_n) begin
-    if (cs_n) osh <= 32'd0;
+  always @(negedge sck or posedge parser_reset) begin
+    if (parser_reset) osh <= 32'd0;
     else if (phase == PH_DATA && rd)
       osh <= (cnt == 6'd0) ? (wpar ? buf1 : buf0) : (quad ? {osh[27:0], 4'd0} : {osh[30:0], 1'b0});
   end
-  assign io_out = (phase == PH_DATA && rd) ? (quad ? osh[31:28] : {osh[31], 3'b000}) : 4'd0;
-  assign io_oe  = !cs_n && phase == PH_DATA && rd && quad;
+  assign io_out = (!parser_reset && phase == PH_DATA && rd) ? (quad ? osh[31:28] : {osh[31], 3'b000}) : 4'd0;
+  assign io_oe  = !parser_reset && phase == PH_DATA && rd && quad;
 
   // ---------------------------------------------------------------- clk domain
-  reg [2:0] a_s, w_s, r_s, cs_s;
+  (* async_reg = "true", keep = 1 *) reg [2:0] a_s, w_s, r_s, cs_s;
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) host_ready <= 1'b0;
+    else if (cs_n && &cs_s) host_ready <= 1'b1;
+  end
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       a_s <= 3'd0;
@@ -223,10 +231,12 @@ module pe_hostport (
         need_snap <= 1'b1;
       end else if (w_pend) begin               // a write word arrived
         w_pend <= 1'b0;
-        bus_we <= 1'b1;
-        bus_wdata <= w_hold;
-        bus_addr <= snap_addr;
-        snap_addr <= snap_addr + {15'd0, c_inc};
+        if (active && !c_rd) begin
+          bus_we <= 1'b1;
+          bus_wdata <= w_hold;
+          bus_addr <= snap_addr;
+          snap_addr <= snap_addr + {15'd0, c_inc};
+        end
       end else if ((a_pend || cs_s[2]) && active) begin
         active <= 1'b0;                        // the transaction is over
         need_snap <= 1'b0;

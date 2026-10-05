@@ -2,15 +2,21 @@
 # Based on LibreLane's base.sdc, plus the host port's SCK domain (docs/isa.md §6.1).
 #
 # Two clocks: clk (CLOCK_PERIOD) and SCK on ui_in[6], at most the same frequency.
-# They are asynchronous. Every crossing between them is a 2-flop synchronizer
-# (toggles, CS_n) or data that is held for at least 8 SCK while a synchronizer
-# carries the event (pe_hostport.sv), so the groups are not timed against each
-# other.
+# They are asynchronous. Events use synchronizers; held buses must reach their
+# consumers within one minimum clock period. Do not use set_clock_groups:
+# its false paths would override the bundled-data max-delay checks.
 
 set period $::env(CLOCK_PERIOD)
 create_clock -name clk -period $period [get_ports clk]
 create_clock -name sck -period $period [get_ports {ui_in[6]}]
-set_clock_groups -asynchronous -group [get_clocks clk] -group [get_clocks sck]
+# OpenSTA's supported datapath constraint excludes clock latency. Apply it to
+# ALL cross-clock register paths, so synthesis renaming cannot omit a bus bit.
+# Same-clock synchronizer stages retain ordinary setup/hold timing.
+# Cross-clock hold has no defined phase relationship and is cut separately.
+set_max_delay -ignore_clock_latency $period -from [get_clocks sck] -to [get_clocks clk]
+set_max_delay -ignore_clock_latency $period -from [get_clocks clk] -to [get_clocks sck]
+set_false_path -hold -from [get_clocks sck] -to [get_clocks clk]
+set_false_path -hold -from [get_clocks clk] -to [get_clocks sck]
 
 set io_delay [expr $period * $::env(IO_DELAY_CONSTRAINT) / 100]
 set sck_in  [get_ports {ui_in[7] ui_in[5] ui_in[4] ui_in[3] ui_in[2]}]

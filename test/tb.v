@@ -7,8 +7,10 @@
    wired-AND, which is what open-drain buses need. */
 module tb ();
 
+  reg [4095:0] dump_file;
   initial begin
-    $dumpfile("tb.fst");
+    if (!$value$plusargs("DUMP_FILE=%s", dump_file)) dump_file = "tb.fst";
+    $dumpfile(dump_file);
     $dumpvars(0, tb);
     #1;
   end

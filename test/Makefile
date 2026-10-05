@@ -64,7 +64,8 @@ VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/verilog/R
 VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/verilog/RM_IHPSG13_1P_256x32_c2_bm_bist.v
 
 # this gets copied in by the GDS action workflow
-VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
+GATE_LEVEL_NETLIST ?= $(PWD)/gate_level_netlist.v
+VERILOG_SOURCES += $(GATE_LEVEL_NETLIST)
 
 endif
 
@@ -86,4 +87,5 @@ COCOTB_TEST_MODULES = test
 endif
 
 # include cocotb's make rules to take care of the simulator setup
+COCOTB_PLUSARGS += +DUMP_FILE=$(SIM_BUILD)/wave.fst
 include $(shell cocotb-config --makefiles)/Makefile.sim

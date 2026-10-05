@@ -2,7 +2,9 @@
 
 The chip's host port is SPI mode 0 on ui[5]=MOSI, ui[6]=SCK, ui[7]=CS_n, uo[7]=MISO
 (docs/isa.md §6.1). This driver bit-bangs it through the demo board's `tt` object,
-so it needs no particular pin mux (and is slow: a PIO host gets the port's full rate, docs/isa.md §6.1).
+so it needs no particular pin mux. The optional quad_spi PIO/DMA backend uses
+explicit GPIO/state-machine ownership and limits SCK to half the project clock;
+see docs/board-transport.md. Its sustained board rate remains unmeasured.
 
     from protoemu import ProtoEmu
     pe = ProtoEmu(tt)
@@ -17,6 +19,7 @@ prints the words and register values to paste here.
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
 A_ID, A_CTRL, A_FSET, A_FCLR, A_RSVD4, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
+A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = range(8)
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
@@ -26,9 +29,24 @@ MOSI, SCK, CS = 5, 6, 7
 
 
 class ProtoEmu:
-    def __init__(self, tt, fifo_depth=8):
+    def __init__(self, tt, fifo_depth=8, ncores=2, bank_words=256, owners=None, nbanks=None):
+        """Default profile: fixed-bank-v1-2c2b8f, constructed after chip reset.
+
+        If attaching to a configured chip, pass its complete pin->core map in
+        owners. Ownership registers are write-only; never infer them by reads.
+        One driver instance must own configuration writes on a shared chip.
+        """
+        if not 1 <= ncores <= 4 or bank_words not in (16, 32, 64, 128, 256):
+            raise ValueError("invalid hardware profile")
+        nbanks = ncores if nbanks is None else nbanks
+        if not 1 <= nbanks <= ncores:
+            raise ValueError("invalid bank count")
         self.tt = tt
         self.depth = fifo_depth
+        self.ncores, self.bank_words = ncores, bank_words
+        self.nbanks = nbanks
+        self._owners = self._owner_words(owners or {})
+        self.transport = None
         self.ui = 1 << CS
         self._set_ui()
 
@@ -47,6 +65,8 @@ class ProtoEmu:
         return r
 
     def xfer(self, data, nread=0):
+        if self.transport is not None:
+            return self.transport.xfer(data, nread)
         self.ui &= ~(1 << CS)
         self._set_ui()
         out = bytearray()
@@ -61,6 +81,8 @@ class ProtoEmu:
 
     # -- bus
     def write(self, addr, words, fixed=False):
+        if self.transport is not None:
+            return self.transport.write(addr, words, fixed)
         if isinstance(words, int):
             words = [words]
         frame = bytearray([CMD_WRITE_FIXED if fixed else CMD_WRITE, addr >> 8, addr & 0xFF])
@@ -69,6 +91,8 @@ class ProtoEmu:
         self.xfer(frame)
 
     def read(self, addr, n=1, fixed=False):
+        if self.transport is not None:
+            return self.transport.read(addr, n, fixed)
         r = self.xfer(bytes([CMD_READ_FIXED if fixed else CMD_READ, addr >> 8, addr & 0xFF, 0]), 4 * n)[4:]  # 0: dummy byte
         words = [int.from_bytes(r[4 * i:4 * i + 4], "big") for i in range(n)]
         return words[0] if n == 1 else words
@@ -80,10 +104,24 @@ class ProtoEmu:
 
     def load(self, core, words, base, clkdiv=1 << 8, pinctrl0=0, pinctrl1=0, shiftctrl=0, wrap=None):
         """Load relocated words at `base` and configure `core` (which must be stopped)."""
-        self.write(base, list(words))
-        r = lambda o: self.core_reg(core, o)
+        words = list(words)
+        if not isinstance(core, int) or not 0 <= core < self.nbanks:
+            raise ValueError("core has no instruction bank in selected profile")
+        lo = core * 256
+        hi = lo + self.bank_words
+        if not words or not isinstance(base, int) or not lo <= base < hi or base + len(words) > hi:
+            raise ValueError("program exceeds core's fixed instruction bank or is empty")
         if wrap is None:
             wrap = base | ((base + len(words) - 1) << 16)
+        if not isinstance(wrap, int) or wrap < 0 or wrap >> 32 or not base <= (wrap & 0xFFFF) <= (wrap >> 16) < base + len(words):
+            raise ValueError("wrap must lie inside the loaded image")
+        for w in words:
+            if not isinstance(w, int) or not 0 <= w <= 0xFFFFFFFF:
+                raise ValueError("instruction must be a 32-bit word")
+            if w >> 27 == 0 and not lo <= (w & 0x3FF) < hi:
+                raise ValueError("JMP target leaves core's fixed instruction bank")
+        self.write(base, words)
+        r = lambda o: self.core_reg(core, o)
         self.write(r(C_CLKDIV), [clkdiv, pinctrl0, pinctrl1, shiftctrl, base, wrap])
 
     def start(self, mask):
@@ -106,13 +144,39 @@ class ProtoEmu:
 
     def own_pins(self, core, pins):
         """Give logical pins (docs/isa.md §2) to core: only the owner drives them."""
-        lo, hi = self.read(A_POWN_LO, 2)
+        if not isinstance(core, int) or not 0 <= core < self.ncores:
+            raise ValueError("core does not exist in selected profile")
+        pins = list(pins)
+        self._owner_words({p: core for p in pins})  # validate all fields before any writes
+        lo, hi = self._owners
         for p in pins:
             if p < 16:
                 lo = (lo & ~(3 << 2 * p)) | (core << 2 * p)
             else:
                 hi = (hi & ~(3 << 2 * (p - 16))) | (core << 2 * (p - 16))
         self.write(A_POWN_LO, [lo, hi])
+        self._owners = (lo, hi)
+
+    def _owner_words(self, owners):
+        lo = hi = 0
+        for p, c in owners.items():
+            if not isinstance(p, int) or not 0 <= p < 32:
+                raise ValueError("pin must be in 0..31")
+            if not isinstance(c, int) or not 0 <= c < self.ncores:
+                raise ValueError("pin owner does not exist in selected profile")
+            if p < 16:
+                lo |= c << (2 * p)
+            else:
+                hi |= c << (2 * (p - 16))
+        return lo, hi
+
+    def set_pin_owners(self, owners):
+        """Replace the complete ownership map (unspecified pins belong to core 0).
+        Use this to resynchronise after chip reset or another configuration writer.
+        """
+        values = self._owner_words(owners)
+        self.write(A_POWN_LO, list(values))
+        self._owners = values
 
     def status(self, core):
         return self.read(self.core_reg(core, C_STATUS))
@@ -134,6 +198,28 @@ class ProtoEmu:
         if (self.status(core) >> 4) & 15 == 0:
             return None
         return self.read(self.core_reg(core, C_FIFO), fixed=True)
+
+    def pop_all(self, core):
+        """Drain a bounded snapshot of RX availability, without starving service.
+        Words arriving during the burst are collected on the next service call.
+        """
+        n = (self.status(core) >> 4) & 15
+        if not n:
+            return []
+        words = self.read(self.core_reg(core, C_FIFO), n, fixed=True)
+        return [words] if n == 1 else words
+
+    @staticmethod
+    def now_us():
+        import time
+        if hasattr(time, "ticks_us"):
+            return time.ticks_us()
+        return time.monotonic_ns() // 1000
+
+    @staticmethod
+    def elapsed_us(now, before):
+        import time
+        return time.ticks_diff(now, before) if hasattr(time, "ticks_diff") else now - before
 
     # -- 10BASE-T (firmware/eth10_tx.pasm, 40 MHz clock)
     def eth10_send(self, core, frame, flag=0):

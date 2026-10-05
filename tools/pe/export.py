@@ -5,6 +5,7 @@
 import argparse
 
 from . import asm, host, isa
+from .profile import TAPEOUT, FULL
 
 
 def main():
@@ -12,6 +13,7 @@ def main():
     ap.add_argument("file")
     ap.add_argument("--core", type=int, default=0)
     ap.add_argument("--base", type=int)
+    ap.add_argument("--profile", choices=["tapeout", "full"], default="tapeout")
     ap.add_argument("--define", action="append", default=[], help="NAME=value")
     ap.add_argument("--out-pins")
     ap.add_argument("--set-pins")
@@ -21,7 +23,8 @@ def main():
     a = ap.parse_args()
     defs = {k: int(v, 0) for k, v in (d.split("=") for d in a.define)}
     prog = asm.assemble(open(a.file).read(), defs)
-    base = a.base if a.base is not None else a.core * 256
+    profile = TAPEOUT if a.profile == "tapeout" else FULL
+    base = a.base if a.base is not None else (prog.origin if prog.origin is not None else a.core * 256)
     kw = {}
     if a.out_pins:
         kw["out_pins"] = tuple(int(x) for x in a.out_pins.split(","))
@@ -34,10 +37,11 @@ def main():
     if a.clkdiv:
         i, f = isa.clkdiv_fields(a.clkdiv)
         kw["clkdiv"] = (i << 8) | f
+    host.load_program(a.core, prog, base, profile=profile, **kw)
     c = host.core_config(prog, **kw)
     words = prog.relocate(base)
     wrap = (base + prog.wrap_bottom) | ((base + prog.wrap_top) << 16)
-    print(f"# {prog.name}: {len(words)} words at {base}")
+    print(f"# {prog.name}: {len(words)} words at {base}, profile {profile.name}")
     print(f"pe.load(core={a.core}, base={base}, words=[{', '.join(hex(w) for w in words)}],")
     print(f"        clkdiv={c['clkdiv']:#x}, pinctrl0={c['pinctrl0']:#x}, pinctrl1={c['pinctrl1']:#x},")
     print(f"        shiftctrl={c['shiftctrl']:#x}, wrap={wrap:#x})")

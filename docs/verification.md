@@ -56,10 +56,11 @@ The RTL `pe_chip` and the model run side by side in cocotb:
   edge tracker `prev`/`event`), halted/fault/stalled, CRC, FIFO levels, the
   word at the head of each FIFO (so every entry is compared as it reaches the
   head) and the FIFO read-snapshot bit; plus pin registers, global flags, pad
-  outputs, and the bus read data for a random address. Not compared directly
-  each cycle: configuration registers (they are read back through random bus
-  reads and act on everything above), FIFO entries behind the head, and a CTRL
-  write in flight.
+  outputs, and the bus read data for a random address. Configuration registers
+  are write-only and their internal RTL values are compared directly each
+  cycle, including pin and shift settings. FIFO entries behind the head are
+  checked as they reach it; read reservations and the full line state are also
+  compared. Finite traces establish agreement for the exercised stimuli.
 
 The first mismatch stops the run with a register diff, recent bus traffic and
 the disassembly of every core's current instruction. Coverage counters (per
@@ -118,7 +119,8 @@ whole core is covered by lockstep, not by formal.
 
 `tools/pe/modelhost.py` runs firmware on the model with pin-level device
 models, about 100× faster than RTL simulation. The model is lockstep-checked
-against the RTL, so model results carry over; the key cases are repeated on
+against the RTL on tested traces; model-only results remain model evidence.
+The key cases are repeated on
 the RTL through the **real SPI host port** (`test/test.py`).
 
 **On the RTL, through the SPI port** (also run at gate level):
@@ -132,8 +134,26 @@ the RTL through the **real SPI host port** (`test/test.py`).
   decoded from the waveform (Manchester cells, preamble/SFD, FCS, TP_IDL).
 * The FIFO read race: a word pushed anywhere during a read of an empty RXF
   must be read exactly once.
+* SPI reset with CS low at command, address and data phases, SCK stopped during
+  reset, and read-ahead state discarded; skewed duty cycles at fast rates.
+* 10BASE-T RX: comparator-pad jitter and full 64..1518-byte frames with FCS,
+  96-bit inter-frame gaps, concurrent quad draining, bounded 4-us stalls,
+  deliberate overflow and explicit queue/firmware recovery.
+* USB: both variants enumerate through concurrent SPI service at a quantized
+  48 MHz, reject an invalid PID, retry lost ACKs, abort a transfer on SETUP,
+  and restore address zero after bus reset. Functional GL can run these same
+  tests, but requires a new candidate netlist.
 
-**On the model only:**
+**Additional model coverage (beyond the RTL cases above):**
+
+The separate `test_eth_service` suite executes the MicroPython finite RX
+capture through real quad SPI, with independent 64/1518-byte input waveforms,
+jitter, bad FCS and overflow. Its two tests also pass on the retained global-
+routing checkpoint netlist without SDF. `test_eth10_board.py` checks bounded
+records, independent FCS, preamble/padding and failure cleanup; its board API
+tests use fakes. The proposed [receiver circuit](eth10-receiver.md) is unbuilt.
+The final GL runner requires the main, compiled-PIO and receive-service suites;
+checkpoint tests do not satisfy final physical release.
 
 * USB: packets at ±2.5 % bit rate (the spec requires ±1.5 %) with every
   payload length; tokens to other addresses/endpoints or with a bad CRC5
@@ -172,20 +192,32 @@ the RTL through the **real SPI host port** (`test/test.py`).
 * Host software: the demo-board MicroPython driver runs unmodified against the
   model through a Python model of the SPI port (UART output, a 10BASE-T frame).
 
-**What these runs don't show.** The top-level testbench runs at 50 MHz, and
-protocol timing is checked in clock cycles (for example 32 clocks per USB bit,
-4 per 10BASE-T bit); at the documented clocks (48 and 40 MHz) the same cycle
-counts give the specified bit rates. The device models are behavioural:
+**What these runs don't show.** Most top-level tests run at 50 MHz; the
+concurrent USB service and generated UART loopback run at 48 MHz (rounded
+to 20.834 ns by the simulator). Protocol timing is checked against behavioural
+device models. USB uses 32 clocks per bit at 48 MHz; 10BASE-T TX uses four at
+40 MHz, while RX tests use 50 MHz. Nothing here establishes board performance:
 nothing here checks analog levels, USB or Ethernet electrical compliance, or
 the CAN error-confinement state machine (the CAN programs send and receive
 frames; they are not a full controller).
 
 ## 5. Gate level
 
-The hardened netlist (`final/nl`, as Tiny Tapeout's CI uses for IHP) runs the
+The hardened netlist (`final/nl`, as Tiny Tapeout's CI uses for IHP) must run the
 top-level cocotb tests with the PDK cell and SRAM models (`make GATES=yes`;
 `flow/gl_test.sh`). The models are functional and no SDF is annotated, so this
-checks the mapped logic, not delays; timing is covered by STA.
+checks the mapped logic, not delays; timing requires STA. The new review-fix
+candidate is still hardening; older passing GL logs do not validate it.
+
+Detailed timing must demonstrate coverage as well as absence of violations.
+`flow/timing_review.tcl` reports mapped synchronizer stages, IHP clock-gate
+enable arcs and FIFO latch windows under the full candidate constraints.
+The recorded OpenSTA image suppresses pulse-width rows with the cross-clock
+exceptions, so `flow/pulse_width_review.tcl` uses a separate clock-only process
+and verifies that its SDC differs by exactly four exception lines. It supplies
+no setup/hold/CDC signoff result. Native passing/failing pulse controls and
+three-corner placement reports are retained; final extracted checks remain
+required. See [review-fixes.md](review-fixes.md) for hashes, coverage and commands.
 
 ## Bugs found by this flow (selection)
 

@@ -197,14 +197,18 @@ def rx_setup(mh, clk_per_bit, rxp):
     mh.write(sim.A_LINECFG, 1 | (2 << 1) | (1 << 14))
 
 
-def test_tx_core1_to_rx_core0():
+@pytest.mark.parametrize("clock_mhz,tx_div,rx_period", [(40, 256, 4), (50, 320, 5)])
+def test_tx_core1_to_rx_core0(clock_mhz, tx_div, rx_period):
     """eth10_tx on core 1 sends onto virtual pins 24/25; core 0 receives TD+
-    through the line unit (40 MHz, 4 clocks per bit)."""
+    through the line unit at a common 40 or 50 MHz clock. At 50 MHz the TX
+    1.25 divider produces alternating 40/60-ns half cells, not ideal 50 ns.
+    This is digital loopback evidence, not transmitter electrical compliance.
+    """
     mh = ModelHost()
     tx = asm.assemble((FW / "eth10_tx.pasm").read_text(), {"F_GO": F_GO})
     mh.apply(host.pin_owner_writes({24: 1, 25: 1}))
-    mh.apply(host.load_program(1, tx, 256, side_pins=24, clkdiv=1 << 8))
-    rx_setup(mh, 4, 24)
+    mh.apply(host.load_program(1, tx, 256, side_pins=24, clkdiv=tx_div))
+    rx_setup(mh, rx_period, 24)
     mh.start(0b11)
     got = []
     for fr in (frame(46), frame(100, seed=5)):

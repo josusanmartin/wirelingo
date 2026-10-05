@@ -1,0 +1,27 @@
+name: FPGA full-profile validation
+on: [workflow_dispatch]
+jobs:
+  full-profile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: YosysHQ/setup-oss-cad-suite@v3
+      - name: Check converted memory and clock enables against the model
+        run: |
+          python3 flow/fpga_profile.py --output build/fpga-lockstep
+          PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 LOCKSTEP_SEEDS=30 LOCKSTEP_CYCLES=1000 \
+            make -C test TB=chip IMEM=flop PE_BANK_AW=8 SRC_DIR="$GITHUB_WORKSPACE/build/fpga-lockstep/src" \
+            SIM_BUILD=sim_build/fpga-lockstep COCOTB_RESULTS_FILE=fpga-lockstep.xml
+          python3 test/check_results.py test/fpga-lockstep.xml 4
+      - name: Validate full geometry on ECP5-25k
+        run: python3 flow/fpga_validate.py --output build/fpga-full
+      - name: Retain source, synthesis and routed timing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fpga-full-profile
+          path: |
+            build/fpga-full
+            build/fpga-lockstep
+            test/fpga-lockstep.xml
+            test/sim_build/fpga-lockstep

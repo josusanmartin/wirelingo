@@ -4,9 +4,11 @@
 
 // Testbench wrapper around pe_chip (no SPI) for lockstep tests against the model.
 module tb_chip ();
+  reg [4095:0] dump_file;
   initial begin
     if ($test$plusargs("dump")) begin
-      $dumpfile("tb_chip.fst");
+      if (!$value$plusargs("DUMP_FILE=%s", dump_file)) dump_file = "tb_chip.fst";
+      $dumpfile(dump_file);
       $dumpvars(0, tb_chip);
     end
   end

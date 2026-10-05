@@ -170,7 +170,7 @@ module pe_chip #(
   wire        rx_is_pad = line_rxp[4:3] == 2'b00 || (line_rxp[4:3] == 2'b10 && line_rxp[2:0] <= 3'd4);
   wire [7:0]  ui8 = {3'd0, ui_in};
   wire        rx_pad = line_rxp[4] ? ui8[line_rxp[2:0]] : uio_in[line_rxp[2:0]];
-  reg         rx_n1, rx_hq, rx_h2;
+  (* async_reg = "true", keep = 1 *) reg rx_n1, rx_hq, rx_h2;
   always @(negedge clk or negedge rst_n)
     if (!rst_n) rx_n1 <= 1'b0;
     else rx_n1 <= rx_is_pad && rx_pad;

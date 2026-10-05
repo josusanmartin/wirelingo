@@ -11,7 +11,7 @@ setup() needs the TT SDK; the other functions only need a ProtoEmu, so they
 also run against the model (test/model/test_micropython_driver.py).
 """
 import protoemu_fw as fw
-from protoemu import ProtoEmu, A_ID
+from protoemu import ProtoEmu, A_ID, ST_HALTED, ST_FAULT
 
 PROJECT = "tt_um_josusanmartin_protoemu"
 ID = 0x50450002
@@ -26,8 +26,11 @@ def setup(clock_hz=48_000_000):
     getattr(tt.shuttle, PROJECT).enable()
     tt.mode = RPMode.ASIC_RP_CONTROL
     tt.uio_oe_pico.value = 0            # the board drives no uio pin: the chip and devices do
-    tt.clock_project_PWM(clock_hz)
     tt.reset_project(True)
+    tt.clock_project_PWM(clock_hz)
+    actual = tt.auto_clocking_freq
+    if actual != clock_hz:
+        raise RuntimeError("project clock %r Hz, requested %r Hz" % (actual, clock_hz))
     time.sleep_ms(10)
     tt.reset_project(False)
     pe = ProtoEmu(tt)
@@ -45,22 +48,31 @@ def load(pe, prog, start=True):
 
 
 def uart_loopback(pe, msg=b"Hello, protoemu!", timeout=2000):
-    """Core 0 sends msg on virtual pin 24; core 1 receives it. Returns what came back."""
+    """Core 0 sends to core 1 over virtual pin 24; drain RX while feeding TX.
+    The transport must service RX within its eight-byte buffering window.
+    timeout bounds service iterations; both cores stop even on failure.
+    """
+    msg = bytes(msg)
     pe.stop(0b11)
     pe.clear_fifos(0b11)
     pe.own_pins(0, [24])
     load(pe, fw.UART_RX_V24)
     load(pe, fw.UART_TX_V24)
-    got = bytearray()
-    for b in msg:
-        pe.push(0, b)
-    for _ in range(timeout):
-        w = pe.pop(1)
-        if w is not None:
-            got.append(w & 0xFF)      # uart_rx right-aligns the byte
-            if len(got) == len(msg):
+    got, sent = bytearray(), 0
+    try:
+        for _ in range(timeout):
+            got.extend(w & 0xFF for w in pe.pop_all(1))
+            if len(got) >= len(msg):
                 break
-    pe.stop(0b11)
+            rx = pe.status(1)
+            tx = pe.status(0)
+            if (rx | tx) & (ST_HALTED | ST_FAULT):
+                raise RuntimeError("UART loopback core halted or faulted")
+            if sent < len(msg) and (tx & 15) < pe.depth:
+                pe.push(0, msg[sent])
+                sent += 1
+    finally:
+        pe.stop(0b11)
     if bytes(got) != msg:
         raise RuntimeError("loopback got %r" % bytes(got))
     return bytes(got)
@@ -72,3 +84,38 @@ def uart_tx(pe, data):
     load(pe, fw.UART_TX)
     for b in data:
         pe.push(0, b)
+
+
+def usb_setup(pe, variant="line"):
+    """48 MHz, D+ on uio0, D- on uio1 with the external low-speed pull-up.
+    Returns the endpoint-zero service: call sw.service() repeatedly.
+    USB owns flags 0..6. The slow bit-bang transport is a bring-up path;
+    sustained host service must be measured on the selected board transport.
+    """
+    import usb_device
+    if variant not in ("line", "two-core"):
+        raise ValueError("USB variant must be line or two-core")
+    pe.stop(3)
+    pe.clear_fifos(3)
+    pe.write(usb_device.sim.A_FCLR, 0x7F)
+    rx = fw.USB_LINE if variant == "line" else fw.USB_RX
+    for image in [rx] if variant == "line" else [rx, fw.USB_TX]:
+        pe.load(**{k: v for k, v in image.items() if k != "filter_index"})
+    tx = 0 if variant == "line" else 1
+    pe.own_pins(tx, [0, 1])
+    pe.write(pe.core_reg(0, 6), usb_device.CRCCTRL)
+    if variant == "line":
+        pe.write(usb_device.sim.A_LINEDIV, (32 << 16) | (32 << 8))
+        pe.write(usb_device.sim.A_LINEPINS, 0)
+        pe.write(usb_device.sim.A_LINECFG, 0x49F3)
+    pe.start(1 if variant == "line" else 3)
+    return usb_device.DeviceSoftware(pe, rx, usb_device.DESCRIPTORS, tx_core=tx)
+
+
+def eth10_receive(pe, timeout_us=100000, max_frames=1):
+    """Finite RX capture at 50 MHz, comparator output on ui0; returns frames
+    including verified FCS. RX stops before byte conversion/CRC work. Core 0
+    and the line unit are reserved; continuous board throughput is unmeasured.
+    """
+    import eth10_rx
+    return eth10_rx.Capture(pe).capture(timeout_us, max_frames)

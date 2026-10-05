@@ -194,6 +194,18 @@ def test_bringup_uart_loopback_and_errors():
         pe.push(0, 8)
 
 
+def test_bringup_uart_loopback_streams_beyond_fifo_capacity():
+    import pytest
+    mh = ModelHost()
+    pe = protoemu.ProtoEmu(FakeTT(mh))
+    msg = bytes(range(32)) + b"protoemu: two cores\0\xff"
+    assert bringup.uart_loopback(pe, msg) == msg
+    assert pe.read(protoemu.A_CTRL) & 3 == 0
+    with pytest.raises(RuntimeError, match="loopback got"):
+        bringup.uart_loopback(pe, msg, timeout=0)
+    assert pe.read(protoemu.A_CTRL) & 3 == 0
+
+
 def test_driver_register_map_matches_the_model():
     """The MicroPython driver keeps its own copy of the register map (it can't
     import tools/pe on the board); every constant must match the model's."""

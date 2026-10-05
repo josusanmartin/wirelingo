@@ -24,8 +24,9 @@
 ;   received bit lowest; then the partial last word (its bits at the top; an
 ;   all-zero word if none); then a trailer: [31:16] = bits received including
 ;   SYNC and PID, [7] = 1 (marks the trailer: payload words have [7:0] = 0),
-;   [0] = 1 if the CRC16 checked out (and an ACK is sent).
-; F_SETUP marks a SETUP's data stage (the host clears it). The largest record
+;   [15:8] = reversed PID, [1] = SETUP association, [0] = CRC/PID good and ACKed.
+; F_SETUP marks a SETUP's data stage (firmware clears it after recording it).
+; The largest record
 ; (8 data bytes) is 5 words, so the host must keep 5 entries free.
 ;
 ; Timing: D is the tick a WAIT completes. The next WAIT's first attempt is at
@@ -45,7 +46,7 @@
 ; 0x8005, 16 bits, IN_TAP) sees every received bit; it is preset after the PID
 ; so that at EOP it holds the residue 0x800D for a correct packet.
 ;
-; Registers: r0 = bit count, r1 = consecutive 1s, r2 = timeout budget, r3 = PID.
+; Registers: r0 = bit count, r1 = ones remaining (6..0), r2 = timeout budget, r3 = PID.
 ; OSR = all ones.
 .program usb_ls_rx
 .shift_in right autopush 24
@@ -53,8 +54,10 @@ start:
     mov osr, ~null                 ; source of 1 bits for "in osr, 1"
 idle:
     ldi r0, 0
-    ldi r1, 0
-    wait 1 pin DM                  ; bus idle (J)
+    ldi r1, 6                     ; ones remaining before a mandatory stuffed zero
+    ldi r2, 120                    ; sustained SE0 (2.5 us at 48 MHz) is reset
+    wait 1 pin DM timeout r2       ; normal EOP is only 64 ticks
+    jmp t, bus_reset
     wait fall DM                   ; J -> K: first transition of SYNC (a 0 bit)
     in null, 1                     ; D+1
     add r0, 1                      ; D+2
@@ -64,12 +67,11 @@ idle:
 ; needs the next WAIT armed by D+18 (one tick later loses edges), so this falls
 ; into wait_bit. Expected DATA (F_EXP) presets the CRC; a token doesn't need it.
 o_grab:
-    mov r3, ::isr                  ; D+10  SYNC + PID
-    mov isr, null                  ; D+11  drop SYNC + PID from the output
-    jmp f F_EXP, o_data            ; D+12
-    mov r2, r3                     ; D+13
-    and r2, 0x40                   ; D+14  0: a token (PID ends in binary 01)
-    jmp r2, rx_skip                ; D+15  anything else: skip it
+    mov r3, ::isr                  ; D+11  SYNC + PID
+    mov isr, null                  ; D+12  drop SYNC + PID from the output
+    jmp f F_EXP, o_data            ; D+13
+    cmp r3, 0x187                  ; D+14  OUT is the only supported token ending in 1
+    jmp !z, rx_skip                ; D+15  ACK and unexpected DATA are skipped
     ldi r2, 15                     ; D+16  (W = D+17, target 32)
 wait_bit:
     wait edge DM timeout r2
@@ -82,8 +84,8 @@ zero_j:
     nop                            ; D+3
     nop                            ; D+4
 zero:
-    cmp r1, 6                      ; D+5
-    ldi r1, 0                      ; D+6
+    cmp r1, 0                      ; D+5
+    ldi r1, 6                      ; D+6
     jmp z, stuffed                 ; D+7
     in null, 1                     ; D+8
     add r0, 1                      ; D+9
@@ -116,17 +118,18 @@ one_k:
     nop                            ; D+3
     nop                            ; D+4
 one_ok:
-    add r1, 1                      ; D+5
-    in osr, 1                      ; D+6
-    add r0, 1                      ; D+7
-    cmp r0, 16                     ; D+8
-    jmp z, o_grab                  ; D+9
-    ldi r2, 20                     ; D+10  (W = D+12, target 32)
-    jmp wait_bit                   ; D+11
+    sub r1, 1                      ; D+5  seventh one borrows (C), so abort the packet
+    jmp c, stuff_error             ; D+6
+    in osr, 1                      ; D+7
+    add r0, 1                      ; D+8
+    cmp r0, 16                     ; D+9
+    jmp z, o_grab                  ; D+10
+    ldi r2, 19                     ; D+11  (W = D+13, target 32)
+    jmp wait_bit                   ; D+12
 o_data:
-    mov crc, ~null                 ; D+13  CRC16 covers what follows the PID
-    ldi r2, 16                     ; D+14  (W = D+16)
-    jmp wait_bit                   ; D+15
+    mov crc, ~null                 ; D+14  CRC16 covers what follows the PID
+    ldi r2, 15                     ; D+15  (W = D+17)
+    jmp wait_bit                   ; D+16
 ; -- handshakes, our own transmissions, unexpected DATA: nothing to receive,
 ; just find the end of the packet. One qualified WAIT detects SE0 (D+ low while
 ; D- is low); it must still be there 8 ticks later, which rejects glitches
@@ -165,6 +168,15 @@ eop_data:                          ; DATA or handshake
     jmp z, eop_skip                ; handshake
     jmp !f F_EXP, eop_skip         ; not after SETUP/OUT
     flag clr F_EXP
+    cmp r3, 0x1C3                  ; exact SYNC + DATA0 (including PID complement)
+    jmp z, data_pid_ok
+    jmp f F_SETUP, data_bad_pid    ; SETUP data must use DATA0
+    cmp r3, 0x1D2                  ; exact SYNC + DATA1
+    jmp z, data_pid_ok
+data_bad_pid:
+    ldi r1, 0x80                   ; invalid PID: record failure, never ACK
+    jmp trailer
+data_pid_ok:
     ldi r2, 0x800D                 ; CRC16 residue of a correct packet
     mov r1, crc
     cmp r1, r2
@@ -173,6 +185,14 @@ eop_data:                          ; DATA or handshake
     flag set F_ACK
     ldi r1, 0x81                   ; trailer status: good
 trailer:
+    jmp !f F_SETUP, trailer_out
+    or r1, 2                     ; record carries SETUP association, not a live flag
+    flag clr F_SETUP
+trailer_out:
+    mov r2, r3
+    and r2, 0xFF
+    shl r2, 8                     ; trailer [15:8] = reversed PID
+    or r1, r2
     push block                     ; partial last word (bits at the top)
     mov isr, null
     in r1, 16                      ; [15:0] = status
@@ -182,9 +202,29 @@ got_in:
     flag set F_IN
     jmp eop_skip
 got_setup:
+    flag clr F_STAGED              ; abort the preceding transfer immediately
+    flag clr F_GOTACK
     flag set F_SETUP
+    jmp expect_data
 got_out:
+    flag clr F_SETUP
+expect_data:
     flag set F_EXP
 eop_skip:
     mov isr, null
     jmp idle
+bus_reset:
+    jmp pin DP, idle              ; timeout in K is not SE0
+    flag set F_RESET
+    wait 1 pin DM
+    wait 0 flag F_RESET            ; software restores filter, FIFOs and transfer state
+    jmp idle
+stuff_error:
+    ldi r3, 0                     ; invalid PID marks any partial DATA record bad
+stuff_error_wait:
+    wait 0 pin DP if pin DM == 0
+    nop                       [7]
+    jmp pin DP, stuff_error_wait
+    jmp pin DM, stuff_error_wait
+    jmp !f F_EXP, eop_skip
+    jmp eop_data

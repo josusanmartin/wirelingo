@@ -19,40 +19,75 @@ CAD Suite).
   receive works.
 * **FIFO join** (from PIO) plus in-core preamble generation make 10BASE-T TX
   fit through the host port; the port itself is source-synchronous (SCK up to
-  the core clock) with a quad mode: 193 Mbit/s measured.
+  the core clock) with a quad mode: 193 Mbit/s payload in RTL simulation.
 * **Verification as part of the design:**
   * a cycle-accurate model is checked against the RTL every cycle on random
     programs, with required coverage goals;
   * formal proofs of the FIFOs;
   * mutation checks;
-  * firmware tested against independent device models.
+* firmware tested against independent device models.
+
+The comparison is with the RP2040 PIO instruction engine, not with the whole
+microcontroller or its dedicated USB peripheral. RP2040 has two PIO blocks,
+each with four state machines and 32 shared instruction slots. Its WAIT
+encoding selects one GPIO, mapped pin or IRQ level. Implementing a timeout
+or second-pin qualification therefore needs additional program or host logic;
+this is an inference from the encoding. See the
+[RP2040 datasheet, chapter 3](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf).
+No head-to-head hardware throughput benchmark has been performed.
+
+| Dimension | RP2040 PIO engine | protoemu tapeout configuration |
+|---|---|---|
+| Program storage | 32 slots shared by four state machines per block | Two private 256-word banks |
+| WAIT | GPIO/pin/IRQ level | Level/edge, optional second-pin qualifier and register timeout |
+| FIFO transport | On-chip bus and DMA | External SPI; sustained board transport remains unmeasured |
+| Protocol assistance | Shift registers and instruction sequencing | CRC tap and one shared line unit for core 0 |
+
+Program sizes below come from the generated board bundle. They describe
+occupancy, not a speed comparison:
+
+| Demonstration | Instructions / cores | Evidence |
+|---|---|---|
+| UART over virtual pin 24 | TX 4 + RX 13 / two cores | Generated bundle loaded via RTL SPI; 53 bytes in 4.639 ms simulated, including a 187.5-us service stall |
+| USB without line unit | RX 138 + TX 48 / two cores | Concurrent SPI service, descriptors, errors, retries and bus reset |
+| USB with line unit | 119 / core 0 | Same software service and end-to-end RTL checks; core 1 remains available |
+| I2C master | 71 / one core | Device-model transactions and stuck-clock recovery |
+
+The UART test demonstrates two independent programs communicating internally.
+The USB variants demonstrate moving bit coding between firmware and the line
+unit while preserving the host application interface. Physical timing and
+board measurements still need their own evidence.
 
 ## Claims and evidence
 
 | Claim | Evidence | Reproduce |
 |---|---|---|
 | The RTL matches the spec's model cycle for cycle | random programs, pins and host traffic; registers, WAIT trackers, FIFO levels and heads compared every cycle; coverage goals required | `cd test && LOCKSTEP_SEEDS=60 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 make TB=chip` |
-| The tests catch bugs | 12 one-line bugs in the model, RTL, firmware and assembler, each killed | `python3 test/mutants.py` |
+| The tests catch bugs | 17 mutation definitions in model, RTL, firmware and assembler; the runner requires a passing baseline and an executed target-test failure | `python3 test/mutants.py` (use its recorded results for killed counts) |
 | FIFOs (incl. join) are correct for all input sequences | k-induction against reference queues, depths 4 and 8 | `make -C formal fifos` |
-| The host port is fast and safe | 193 Mbit/s quad at SCK = clk, 1-bit and quad at random phases, aborts lose nothing; bus-side safety proven for any SCK behaviour | `cd test && make TESTCASE=test_host_port_fast`; `make -C formal hostport` |
-| Protocols work through the real host port | top-level cocotb: UART, SPI, I2C, USB device, 10BASE-T, FIFO read race, SPI timing sweep | `cd test && make` |
-| … and on the routed netlist | the same tests on `final/nl` with the PDK cell and SRAM models | `flow/gl_test.sh <run>` |
-| USB low-speed device enumerates, on two cores or one | cycle-level host + device software (also with random service stalls); address filter, lost ACK, bad packets; both firmware variants | `pytest test/model/test_usb_enum.py test/model/test_usb_model.py` |
+| The host port is fast and safe | 193 Mbit/s simulated quad payload at SCK = clk; phase/duty sweeps and reset aborts; formal bus safety | `cd test && make COCOTB_TEST_FILTER=test_host_port_fast`; `make -C formal hostport` |
+| Protocols work through the real host port | RTL UART, SPI, I2C, concurrent USB service, full Ethernet RX frames and overflow recovery | `cd test && make` |
+| Current routed-netlist validation | Pending the new candidate; historical GL results cover older hardware | `flow/gl_test.sh <run>` |
+| USB device service, on two cores or one | Concurrent RTL service at 48 MHz; address changes, lost ACK, malformed PID/CRC/stuffing, duplicate OUT, interrupted SETUP and reset | `cd test && make COCOTB_TEST_FILTER=test_usb_concurrent_service`; model USB tests |
 | I2C can't hang | SCL stuck low at every one of 19 releases, plus before START | `pytest test/model/test_i2c_timeout.py` |
 | 10BASE-T TX and RX | TX waveform decoded (Manchester, FCS, TP_IDL, link pulses), a 1518-byte frame streamed; RX from core 1's TX and from an external sender with jitter | `pytest test/model/test_eth10.py` |
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model | `pytest test/model/test_micropython_driver.py` |
-| It fits and closes timing | DRC/LVS/antenna clean, timing per corner, SRAM view per corner | `python3 flow/signoff.py <run>/runs/wokwi` (docs/physical.md) |
+| Optional RP2 PIO/DMA transport | Compiled PIO instruction traces drive the ASIC SPI port; API/error-path tests use fakes; board rate and pad margin remain unmeasured | [board-transport.md](board-transport.md); `make -C test COCOTB_TEST_MODULES=test_pio SIM_BUILD=sim_build/pio COCOTB_RESULTS_FILE=pio.xml` |
+| Finite Ethernet board capture | Actual capture driver over RTL/checkpoint GL SPI: 64/1518-byte frames, FCS failure and overflow cleanup; analog circuit remains unbuilt | [eth10-receiver.md](eth10-receiver.md); `make -C test COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml` |
+| Current physical signoff | Pending: exact source, correct SRAM views, all corners, detailed timing and bound GL evidence | `python3 flow/signoff.py <run>/runs/wokwi --manifest <candidate-inputs.json>`; [review-fixes.md](review-fixes.md) |
 
 (`pytest` = `PYTHONPATH=tools python -m pytest -q` from the repo root.)
 
 ## Known limits
 
-* Two cores on silicon (four don't route on this tile). 50 MHz at the typical
-  corner; about 41 MHz at the slow corner.
+* Two cores are selected for tapeout. Historical t5 met 50 MHz at typical
+  and about 41 MHz at slow, but these numbers do not validate the current RTL.
+  The current isolated hardening run has not completed signoff.
 * 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
-* Host link: 193 Mbit/s (quad SPI, SDR, SCK = clk = 50 MHz, 96.5 % of the
-  wire rate). DDR was evaluated and left out: words would arrive every 4 SCK,
+* Host link: 193 Mbit/s simulated payload (quad SPI, SDR, SCK = clk = 50 MHz,
+  96.5 % of the wire rate); no sustained board measurement. DDR was evaluated
+  and left out: words would arrive every 4 SCK,
   but the clock side needs about 6 cycles to commit a sent word and fetch the
   next, and it reads 2 words ahead, so full-rate DDR reads need a third read
   reservation per core (another FIFO read port: the kind of mux that cost 4 %
@@ -62,7 +97,9 @@ CAD Suite).
   not a full controller (no error counters or bus-off).
 * Protocol timing is checked in clock cycles against behavioural device models,
   not against electrical specifications.
-* Gate-level simulation is functional (no SDF); timing is covered by STA.
+* Gate-level simulation is functional (no SDF); delay validation needs STA.
+* The full two-core ECP5 profile fits but reaches only 24.02 MHz in routed
+  timing against a 48-MHz target. This is not a USB-ready FPGA or board image.
 
 ## Where things are
 

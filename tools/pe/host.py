@@ -5,6 +5,7 @@ register writes that can be sent over SPI (cocotb, RP2350 MicroPython) or
 applied directly to the model.
 """
 from . import isa, sim
+from .profile import TAPEOUT, validate_image
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
 QUAD = 0x40        # cmd | QUAD: address and data 4 bits per SCK (HOSTCFG.QUAD_EN)
@@ -54,12 +55,18 @@ def core_config(prog, *, out_pins=None, set_pins=None, side_pins=None, in_pins=N
     return dict(clkdiv=clkdiv, pinctrl0=pinctrl0, pinctrl1=pinctrl1, shiftctrl=shiftctrl)
 
 
-def load_program(core, prog, base=None, **cfg_kw):
+def load_program(core, prog, base=None, *, profile=TAPEOUT, **cfg_kw):
     """Register writes to load `prog` into IMEM at `base` and configure `core`.
     The core must be disabled. Doesn't enable it."""
     if base is None:
         base = prog.origin if prog.origin is not None else core * 256
+    if not prog.words:
+        raise ValueError("program must not be empty")
+    if prog.wrap_top is None:
+        raise ValueError("program has no wrap top")
     words = prog.relocate(base)
+    wrap = (base + prog.wrap_bottom) | ((base + prog.wrap_top) << 16)
+    validate_image(core, words, base, wrap, profile)
     w = [(base + i, word) for i, word in enumerate(words)]
     c = core_config(prog, **cfg_kw)
     reg = lambda off: sim.core_reg(core, off)
@@ -69,15 +76,19 @@ def load_program(core, prog, base=None, **cfg_kw):
         (reg(sim.C_PINCTRL1), c["pinctrl1"]),
         (reg(sim.C_SHIFTCTRL), c["shiftctrl"]),
         (reg(sim.C_ENTRY), base),
-        (reg(sim.C_WRAP), (base + prog.wrap_bottom) | ((base + prog.wrap_top) << 16)),
+        (reg(sim.C_WRAP), wrap),
     ]
     return w
 
 
-def pin_owner_writes(owners):
+def pin_owner_writes(owners, *, profile=TAPEOUT):
     """owners: dict pin -> core. Returns writes for PIN_OWNER_LO/HI (others -> core 0)."""
     lo = hi = 0
     for p, c in owners.items():
+        if not isinstance(p, int) or not 0 <= p < 32:
+            raise ValueError("pin must be in 0..31")
+        if not isinstance(c, int) or not 0 <= c < profile.ncores:
+            raise ValueError("pin owner does not exist in selected profile")
         if p < 16:
             lo |= c << (2 * p)
         else:

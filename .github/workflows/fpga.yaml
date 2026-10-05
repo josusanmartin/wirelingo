@@ -15,5 +15,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: FPGA bitstream for TT ASIC Sim (ICE40UP5K)
+      - name: Stage FPGA memory and clock-enable profile
+        run: |
+          python3 flow/fpga_profile.py --output build/fpga-profile --cores 1 --fifo-log2 2
+          cp build/fpga-profile/src/project.v src/project.v
+          cp build/fpga-profile/src/pe_core.sv src/pe_core.sv
+          cp build/fpga-profile/src/pe_chip.sv src/pe_chip.sv
+          cp build/fpga-profile/src/pe_fifo.sv src/pe_fifo.sv
+          cp build/fpga-profile/src/pe_imem.sv src/pe_imem.sv
+
+      - name: FPGA bitstream for TT ASIC Sim (ICE40UP5K, one core)
         uses: TinyTapeout/tt-gds-action/fpga/ice40up5k@ihp-cmos5l
+        env:
+          TT_FPGA_FREQ: "48"

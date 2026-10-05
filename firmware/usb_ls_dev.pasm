@@ -14,7 +14,8 @@
 ;     `filter` (pe.usb.token_filter; the host rewrites it after SET_ADDRESS);
 ;   * SETUP/OUT set F_EXP (and SETUP F_SETUP); the following DATA packet gives
 ;     a record: payload + CRC16 bits 24 per word in [31:8], the last word, and a
-;     trailer [31:16] = bits including SYNC and PID, [7] = 1, [0] = CRC good.
+;     trailer [31:16] = bits including SYNC and PID, [15:8] = reversed PID,
+;     [7] = 1, [1] = SETUP association, [0] = CRC/PID good.
 ;     A good one is ACKed;
 ;   * an IN gets the staged packet (F_STAGED; TX FIFO: bit count, then SYNC,
 ;     PID, payload and CRC16 bytes, little-endian) or a NAK; a SETUP drops a
@@ -27,6 +28,11 @@
 .shift_out right autopull 32
 idle:
     mov isr, null
+    ldi r2, 120
+    wait 1 pin DM timeout r2
+    jmp t, bus_reset
+    wait fall DM
+    jmp !pin DP, idle              ; J -> SE0: reset, rather than packet SYNC
     in line, 8                     ; SYNC
     jmp t, idle
     in line, 8                     ; PID
@@ -49,6 +55,15 @@ dbit:
     jmp dbit
 dend:
     flag clr F_EXP
+    cmp r3, 0x1C3                  ; exact SYNC + DATA0, PID complement included
+    jmp z, data_pid_ok
+    jmp f F_SETUP, data_bad_pid
+    cmp r3, 0x1D2                  ; exact SYNC + DATA1
+    jmp z, data_pid_ok
+data_bad_pid:
+    ldi r1, 0x80
+    jmp trailer
+data_pid_ok:
     ldi r2, 0x800D
     mov r1, crc
     cmp r1, r2
@@ -62,11 +77,20 @@ dend:
     mov osr, r2
     out line, 16
 trailer:
+    jmp !f F_SETUP, trailer_out
+    or r1, 2
+    flag clr F_SETUP
+trailer_out:
     push block                     ; the last word (bits at the top)
     mov isr, null
+    mov r2, r3
+    and r2, 0xFF
+    shl r2, 8
+    or r1, r2                      ; trailer [15:8] = reversed PID
     in r1, 16
     in r0, 16                      ; [31:16] = bits, [15:0] = status: autopushed
-    cmp r1, 0x81
+    and r1, 1
+    cmp r1, 1
     jmp z, echo                    ; our ACK comes back through the receiver
     jmp idle
 ; ---------------------------------------------------------------- tokens
@@ -89,9 +113,11 @@ filter:
     jmp z, got_setup
     cmp r3, 0x187                  ; OUT
     jmp !z, idle                   ; another token
+    flag clr F_SETUP
     flag set F_EXP
     jmp idle
 got_setup:                         ; a SETUP aborts the last transfer:
+    flag clr F_GOTACK
     flag clr F_STAGED              ; drop a packet still staged for it
 flush:
     jmp txne, drop
@@ -137,3 +163,9 @@ skip:                              ; the rest of an unwanted packet
     jmp t, idle
     mov isr, null
     jmp skip
+bus_reset:
+    jmp pin DP, idle              ; timeout in K is not SE0
+    flag set F_RESET
+    wait 1 pin DM
+    wait 0 flag F_RESET
+    jmp idle

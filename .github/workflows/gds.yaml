@@ -13,6 +13,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Check frozen submission configuration
+        run: python3 flow/gen_config.py --preset submission --check
+
       - name: Build GDS
         uses: TinyTapeout/tt-gds-action@ihp-cmos5l
         with:

@@ -15,11 +15,9 @@ from pe.usbhost import UsbHost
 FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 RX, TX = 0, 1
 
-DEVICE_DESC = bytes([18, 1, 0x10, 0x01, 0, 0, 0, 8, 0x09, 0x12, 0x34, 0x56, 0x01, 0x00, 1, 2, 0, 1])
-CONFIG_DESC = bytes([9, 2, 34, 0, 1, 1, 0, 0x80, 50,             # configuration
-                     9, 4, 0, 0, 1, 3, 1, 1, 0,                  # interface: HID boot keyboard
-                     9, 0x21, 0x11, 0x01, 0, 1, 0x22, 63, 0,     # HID
-                     7, 5, 0x81, 3, 8, 0, 10])                   # endpoint 1 IN, interrupt
+DEVICE_DESC = bytes([18, 1, 0x10, 0x01, 0, 0, 0, 8, 0x09, 0x12, 0x34, 0x56, 0x01, 0x00, 0, 0, 0, 1])
+CONFIG_DESC = bytes([9, 2, 18, 0, 1, 1, 0, 0x80, 50,
+                     9, 4, 0, 0, 0, 0xFF, 0, 0, 0])  # vendor interface, endpoint zero only
 
 
 DESCRIPTORS = {1: DEVICE_DESC, 2: CONFIG_DESC}
@@ -117,3 +115,103 @@ def test_lost_ack_restages_the_same_packet(variant):
     assert (pid, payload) == (usb.pid_byte(usb.PID_DATA1), DEVICE_DESC[:8]) and sw.restaged == 1
     pid, payload = h.data_in(0, 0)
     assert (pid, payload) == (usb.pid_byte(usb.PID_DATA0), DEVICE_DESC[8:16])
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_invalid_pid_no_ack_and_valid_retry(variant):
+    mh, sw = device(variant)
+    h = UsbHost(mh)
+    req = bytes.fromhex("8006000100001200")
+    h._send(usb.token(usb.PID_SETUP, 0, 0))
+    h._gap(2)
+    pkt = usb.data_packet(usb.PID_DATA0, req)
+    h._send(bytes([pkt[0] ^ 0x10]) + pkt[1:])
+    assert h._listen(120 * h.bit) is None
+    assert not sw.records()
+    h.idle = lambda m: (m.step(300), sw.service(m))
+    assert h.control_read(0, req, 18) == DEVICE_DESC
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+@pytest.mark.parametrize("pending", [False, True])
+def test_bus_reset_restores_default_address_and_discards_transfer(variant, pending):
+    mh, sw = device(variant)
+    h = UsbHost(mh, idle=lambda m: (m.step(300), sw.service(m)))
+    h.control_write_nodata(0, bytes.fromhex("0005050000000000"))
+    assert sw.address == 5
+    if pending:
+        h.setup(5, bytes.fromhex("8006000100001200"))
+        assert sw.unacked or sw.pending
+        sw.new_address = 7
+    mh.ext_oe, mh.uio = 3, 0
+    # Ten milliseconds SE0, with a bounded, realistically intermittent service loop.
+    for _ in range(480):
+        mh.step(1000)
+        sw.service(mh)
+    assert sw.address == 0 and sw.reset_wait
+    assert not sw.pending and sw.unacked is None and sw.new_address is None
+    mh.ext_oe = 0
+    mh.step(1000)
+    sw.service(mh)
+    mh.step(480000)  # host's reset recovery interval
+    assert not sw.reset_wait
+    h._send(usb.token(usb.PID_IN, 5, 0))
+    assert h._listen(120 * h.bit) is None
+    assert h.control_read(0, bytes.fromhex("8006000100001200"), 18) == DEVICE_DESC
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_bus_reset_requires_both_lines_low(variant):
+    mh, _ = device(variant)
+    mask = 3 if variant == "two-core" else 1
+    mh.write(sim.A_CTRL, 0)
+    mh.ext_oe, mh.uio = 3, 1        # K: D+ high, D- low
+    mh.start(mask)
+    mh.step(2000)
+    assert not mh.read(sim.A_FSET) & usbdev.F_RESET
+    mh.uio = 0                    # SE0: D+ and D- both low
+    mh.step(2000)
+    assert mh.read(sim.A_FSET) & usbdev.F_RESET
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_duplicate_out_is_acked_but_delivered_once(variant):
+    mh, sw = device(variant)
+    h = UsbHost(mh, idle=lambda m: (m.step(300), sw.service(m)))
+    h.data_out(0, 0, usb.PID_DATA1, b"abc")
+    h.data_out(0, 0, usb.PID_DATA1, b"abc")  # lost ACK: repeated toggle
+    h.data_out(0, 0, usb.PID_DATA0, b"def")
+    assert sw.out_records == [b"abc", b"def"]
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_missing_stuffed_bit_not_acked_and_retry_recovers(variant):
+    mh, sw = device(variant)
+    h = UsbHost(mh)
+    req = bytes([0xFF]*8)
+    h._send(usb.token(usb.PID_SETUP, 0, 0))
+    h._gap(2)
+    states, level, ones, skipped = [], usb.J, 0, False
+    for b in usb.bits_lsb_first(bytes([0x80]) + usb.data_packet(usb.PID_DATA0, req)):
+        if not b:
+            level = usb.K if level == usb.J else usb.J
+            ones = 0
+        else:
+            ones += 1
+        states.append(level)
+        if ones == 6:
+            if not skipped:
+                skipped = True  # malformed seven-one run, CRC bytes otherwise unchanged
+            else:
+                level = usb.K if level == usb.J else usb.J
+                states.append(level)
+            ones = 0
+    mh.ext_oe = 3
+    for state in states + [usb.SE0, usb.SE0, usb.J]:
+        mh.uio = {usb.J: 2, usb.K: 1, usb.SE0: 0}[state]
+        mh.step(32)
+    mh.ext_oe = 0
+    assert h._listen(120*32) is None
+    sw.records()
+    h.idle = lambda m: (m.step(300), sw.service(m))
+    assert h.control_read(0, bytes.fromhex("8006000100001200"), 18) == DEVICE_DESC

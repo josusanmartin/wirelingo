@@ -33,10 +33,10 @@ pinout:
   # Inputs
   ui[0]: "P16"
   ui[1]: "P17"
-  ui[2]: "P18"
-  ui[3]: "P19"
-  ui[4]: "P20"
-  ui[5]: "host MOSI"
+  ui[2]: "P18 / host quad IO0 in"
+  ui[3]: "P19 / host quad IO1 in"
+  ui[4]: "P20 / host quad IO2 in"
+  ui[5]: "host MOSI / quad IO3 in"
   ui[6]: "host SCK"
   ui[7]: "host CS_n"
 
@@ -45,10 +45,10 @@ pinout:
   uo[1]: "P9"
   uo[2]: "P10"
   uo[3]: "P11"
-  uo[4]: "P12"
-  uo[5]: "P13"
-  uo[6]: "P14"
-  uo[7]: "host MISO"
+  uo[4]: "P12 / host quad IO0 out during reads"
+  uo[5]: "P13 / host quad IO1 out during reads"
+  uo[6]: "P14 / host quad IO2 out during reads"
+  uo[7]: "host MISO / quad IO3 out"
 
   # Bidirectional pins
   uio[0]: "P0"
