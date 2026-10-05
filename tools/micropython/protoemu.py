@@ -116,8 +116,8 @@ class ProtoEmu:
         for w in words:
             if not isinstance(w, int) or not 0 <= w <= 0xFFFFFFFF:
                 raise ValueError("instruction must be a 32-bit word")
-            if w >> 27 == 0 and not lo <= (w & 0x3FF) < hi:
-                raise ValueError("JMP target leaves core's fixed instruction bank")
+            if w >> 27 in (0, 13) and not lo <= (w & 0x3FF) < hi:   # JMP, CALL
+                raise ValueError("JMP/CALL target leaves core's fixed instruction bank")
         self.write(base, words)
         r = lambda o: self.core_reg(core, o)
         self.write(r(C_CLKDIV), [clkdiv, pinctrl0, pinctrl1, shiftctrl, base, wrap])
