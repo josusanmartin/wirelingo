@@ -729,9 +729,12 @@ def usb_decode_trace(trace):
 async def test_usb_ls_device(dut):
     """USB low-speed device side in firmware: SETUP+DATA0 -> ACK (and a good record),
     IN to another address -> silence, IN -> NAK, IN -> staged DATA1.
-    Two cores (RX on core 0, TX on core 1); bit time = 32 clocks (48 MHz / 1.5 Mbit/s)."""
+    Two cores (RX on core 0, TX on core 1); bit time = 32 clocks (48 MHz / 1.5 Mbit/s).
+    The clock is 48 MHz: at the default 50 MHz the bus ran at 1.5625 Mbit/s
+    (+4.2 %, outside low speed's +-1.5 %), which sigrok's decoder rejected
+    (test_sigrok.py) while the test's own helpers, scaled the same way, passed."""
     from pe import usb, usbdev
-    spi = await setup(dut)
+    spi = await setup(dut, clock_ns=20.834)  # 48 MHz within simulator precision
     dut.pull_up.value = 0b10  # D- pull-up: J when idle
     rx = load_fw("usb_ls_rx", **usbdev.defines())
     tx = load_fw("usb_ls_tx", **usbdev.defines())
