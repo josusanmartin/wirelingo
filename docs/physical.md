@@ -86,6 +86,19 @@ logic pulled between both corners. Same RTL otherwise (t7, which congested:
 
 `BANK_OWNER` is gone (docs/isa.md §3); 256 words per core.
 
+### Placement is chaotic near this congestion (2026-10-05)
+
+The host port's reset fix (docs/review.md, R3) changes a few dozen gates, yet
+global routing went from 9 overflows to 236 (2.27M → 2.60M µm of wire).
+Reverting one change at a time on that run: the CDC constraint change alone
+(same 236), the host-port RTL alone (back to exactly 9: identical to before),
+the `async_reg`/`keep` attributes alone (49). The host-port change moved
+placement so the SRAM-to-core fetch paths started at −16.8 ns instead of
+−8.4 ns before repair; repair buffered twice as much (385 vs 194 buffers) and
+routing congested. Nothing in the change is at fault: at Metal3 ≈ 70 % the
+outcome swings with any perturbation, so candidates are compared over a few
+deterministic placement variations (`gen_config.py --set`).
+
 ### Hold buffers came from the constraint (2026-10-04)
 
 About 1700 hold buffers (+6 % area) went in after CTS in every run. The
