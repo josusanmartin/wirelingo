@@ -111,8 +111,11 @@ overflows, and detailed routing clears them: g3, g4 and r2 all reached 0
 violations, antenna repair included. (0.05 was no better than 0.10.) The
 setting also changes placement, since routability-driven global placement
 estimates congestion with the same adjustment. Of the clean runs, g4 (density
-44) met hold at every corner; r2 (wire-length coefficient 0.2) missed
-fast-corner hold by 8 ps on two paths. `gen_config.py` defaults are g4's.
+44) met hold at every corner (fast +0.05 ns); r2 (wire-length coefficient 0.2)
+and g3 (density 34) missed fast-corner hold by 8 and 11 ps. `gen_config.py`
+defaults are g4's. Fast-corner hold is the thin margin: the PnR hold margin is
+0.05 ns, and extraction after detailed routing moves it by about that much, so
+a later RTL change may want a larger post-GRT hold margin.
 `PL_TIMING_DRIVEN=false` changed nothing (identical placement).
 
 ### Hold buffers came from the constraint (2026-10-04)
