@@ -75,9 +75,9 @@ def random_instr(rng, bank, bank_words, profile="mixed"):
     if op == isa.OP_WAIT and rng.random() < 0.5:
         x &= ~(1 << 6)  # half without qualifier
     if op == isa.OP_WAIT and rng.random() < 0.25:
-        # kind 7: masked pins != R[idx[1:0]]; a mask of a few pins, so it often waits
+        # kind 7: masked pins != R[x[15:14]]; a mask of a few pins, so it often waits
         to = int(rng.random() < 0.7)
-        x = ((isa.W_DIFF << 16) | (rng.randrange(4) << 11) | (to << 10) | (rng.randrange(4) << 8)
+        x = ((isa.W_DIFF << 16) | (rng.randrange(4) << 14) | (to << 10) | (rng.randrange(4) << 8)
              | (rng.getrandbits(8) & rng.getrandbits(8)))
     return isa.enc(op, sd, x)
 

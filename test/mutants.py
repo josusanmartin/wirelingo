@@ -89,7 +89,7 @@ MUTANTS = {
     "fw-i2c-device-no-rstart": ("firmware/i2c_device.pasm",
                                 "    jmp start                          ; SDA fell while SCL high: repeated START",
                                 "    jmp idle", pytest("test/model/test_reverse_engineering.py -k impersonate")),
-    "rtl-wait-diff-ref-r0": ("src/pe_core.sv", "wire [15:0] wref = rsel(widx[1:0], r0, r1, r2, r3);",
+    "rtl-wait-diff-ref-r0": ("src/pe_core.sv", "wire [15:0] wref = rsel(x[15:14], r0, r1, r2, r3);",
                              "wire [15:0] wref = r0;", LOCKSTEP),
     "rtl-mov-lr-ignored": ("src/pe_core.sv", "          L_LR: begin\n            lr_we = 1'b1;",
                            "          L_LR: begin\n            lr_we = 1'b0;", LOCKSTEP),

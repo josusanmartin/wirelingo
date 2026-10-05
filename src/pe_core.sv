@@ -199,9 +199,11 @@ module pe_core #(
   wire        qual = !x[6] || (pins_in[x[4:0]] == x[5]);
   wire        trans = (wkind == W_RISE) ? (!wprev && wpin) :
                       (wkind == W_FALL) ? (wprev && !wpin) : (wprev != wpin);
-  // kind 7 (docs/isa.md §5.2): the masked pins differ from R[idx[1:0]]; it
-  // shares the sticky event bit, so a difference between ticks is kept
-  wire [15:0] wref = rsel(widx[1:0], r0, r1, r2, r3);
+  // kind 7 (docs/isa.md §5.2): the masked pins differ from R[x[15:14]]; it
+  // shares the sticky event bit, so a difference between ticks is kept. The
+  // reference field is the ALU's rd field, so it shares that selector
+  // (core_route: about 1 % less wire than a selector of its own)
+  wire [15:0] wref = rsel(x[15:14], r0, r1, r2, r3);
   wire        wdiff = |((pins_rot[7:0] ^ wref[7:0]) & x[7:0]);
   wire        edge_done = wevent || (wkind == W_DIFF ? wdiff : (trans && qual));
 

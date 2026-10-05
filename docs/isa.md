@@ -402,7 +402,7 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | Op | Mnemonic | Operand layout                                                             |
 |----|----------|----------------------------------------------------------------------------|
 | 0  | `JMP`    | `[18:15] cond  [14:10] sel  [9:0] addr`                                    |
-| 1  | `WAIT`   | `[18:16] kind  [15:11] idx  [10] timeout  [9:8] treg  [7] clear  [6] qen  [5] qpol  [4:0] qpin`; kind 7: `[12:11] rref  [10] timeout  [9:8] treg  [7:0] mask` |
+| 1  | `WAIT`   | `[18:16] kind  [15:11] idx  [10] timeout  [9:8] treg  [7] clear  [6] qen  [5] qpol  [4:0] qpin`; kind 7: `[15:14] rref  [10] timeout  [9:8] treg  [7:0] mask` |
 | 2  | `IN`     | `[18:15] src  [4:0] count (0 = 32)`                                        |
 | 3  | `OUT`    | `[18:15] dst  [4:0] count (0 = 32)`                                        |
 | 4  | `PUSH`   | `[18] iffull  [17] block`                                                  |
@@ -492,7 +492,7 @@ holds. `p = idx` is an absolute pin; `k = idx[2:0]` is a flag.
 
 **Pin-set difference** (kind 7). The 8 pins from `IN_BASE` (the low byte of
 the `PINS` source), masked by `mask`, are compared with the low byte of
-`R[rref]` (`rref = idx[1:0]`; `idx[4:2]` are reserved, 0). Kind 7 has no
+`R[rref]` (`rref = x[15:14]`, which is `idx[4:3]`; `idx[2:0]` are reserved, 0). Kind 7 has no
 qualifier and no `clear`: its operand bits `[7:0]` are the mask. The condition
 `D` is a level, checked on every attempt including the first, so a WAIT that
 starts while the pins already differ completes at once. While the WAIT is in
@@ -509,9 +509,11 @@ firmware records a sample, then waits for the pins to differ from *that
 sample*, so a change between the sample and the WAIT's first attempt is still
 caught (on the first attempt). Why a register and an immediate mask: the
 reference needs a register anyway, and an 8-bit mask fills the operand bits
-the qualifier uses; the comparison reuses the `PINS` rotator, the register
-selector and the edge tracker's event bit (an 8-bit XOR/AND/OR and an 8-bit
-4:1 multiplexer are new).
+the qualifier uses; the comparison reuses the `PINS` rotator, the edge
+tracker's event bit and the ALU's register selector: `rref` sits where ALU
+puts `rd` (bits [15:14]), so only an 8-bit XOR/AND/OR is new. (With its own
+selector on bits [12:11] the routed core had about 1 % more wire in
+`flow/core_route.sh` runs at three densities.)
 
 **Qualifier** (`qen = 1`, syntax `if pin q == v`, kinds 0–6): `Q = (pins_in[qpin] == qpol)`.
 For level kinds (0, 1, 5, 6) the condition is `base && Q`, evaluated on the tick.

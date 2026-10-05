@@ -186,10 +186,10 @@ class Core:
             trans = self.wprev != e.wpin
         e.ev = bool(trans and e.qual)
         e.seen = self.in_wait and self.wevent      # an event latched on an earlier (non-tick) cycle
-        # kind 7: the pins from IN_BASE, masked, differ from R[idx[1:0]] (no qualifier)
+        # kind 7: the pins from IN_BASE, masked, differ from R[x[15:14]] (no qualifier)
         e.diff = False
         if e.kind == isa.W_DIFF:
-            ref = self.r[isa.bits(x, 12, 11)]
+            ref = self.r[isa.bits(x, 15, 14)]
             e.ev = e.diff = bool((rotr32(e.pins_in, self.in_base) ^ ref) & isa.bits(x, 7, 0))
         e.edge_done = bool(self.wevent or e.ev)
         if self.in_wait and qen and trans and not e.qual and e.kind in _EDGE_WAITS:

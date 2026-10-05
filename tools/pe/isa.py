@@ -81,7 +81,7 @@ def disasm(word):
         to, treg, clr = bits(x, 10, 10), bits(x, 9, 8), bits(x, 7, 7)
         qen, qpol, qpin = bits(x, 6, 6), bits(x, 5, 5), bits(x, 4, 0)
         if kind == W_DIFF:
-            return f"wait pins != r{idx & 3} mask {bits(x, 7, 0):#04x}{f' timeout r{treg}' if to else ''}{sfx}"
+            return f"wait pins != r{bits(x, 15, 14)} mask {bits(x, 7, 0):#04x}{f' timeout r{treg}' if to else ''}{sfx}"
         k = ["1 pin {i}", "0 pin {i}", "rise {i}", "fall {i}", "edge {i}",
              "1 flag {f}", "0 flag {f}"][kind].format(i=idx, f=idx & 7)
         q = f" if pin {qpin} == {qpol}" if qen else ""

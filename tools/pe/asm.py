@@ -337,7 +337,7 @@ def _wait(ln):
             m = ln.ranged(" ".join(toks[4:]), 0, 256, "mask")
         else:
             raise ln.err("wait pins != rN [mask m] [timeout rT]")
-        return isa.OP_WAIT, (isa.W_DIFF << 16) | (ref << 11) | (to << 10) | (treg << 8) | m
+        return isa.OP_WAIT, (isa.W_DIFF << 16) | (ref << 14) | (to << 10) | (treg << 8) | m
     if len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] == "pin":
         kind, idx = (isa.W_PIN1 if toks[0] == "1" else isa.W_PIN0), ln.value(" ".join(toks[2:]))
     elif len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] in ("flag", "irq"):
