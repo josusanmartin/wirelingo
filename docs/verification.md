@@ -70,6 +70,12 @@ opcode: attempted, completed, stalled) are printed. The regression runs on the
 tapeout configuration (2 cores, 2 SRAM banks, 8-deep FIFOs) and on the full
 4-core flop build.
 
+**WAIT kind 7** (`wait pins != rN mask m`) is a quarter of the random WAITs,
+with coverage goals for completing on the first attempt, while in progress and
+by timeout; `test_wait_diff` (directed, compared every cycle) adds slow and
+fractional dividers, single-clock pin pulses caught between ticks, host PC
+writes and restarts landing mid-WAIT.
+
 **The line unit** (§4.7) is in the lockstep too: random LINECFG/LINEDIV/
 LINEPINS (pins chosen so its TX often loops back to its RX), random IN/OUT LINE
 on core 0, and its whole state compared every cycle. The tapeout-config run
@@ -200,6 +206,12 @@ checkpoint tests do not satisfy final physical release.
   (host model checking parity), WS2812 (datasheet timing windows), and the I2C
   sniffer running beside the I2C master.
 * The CRC tap against the USB reference CRCs (fields and residues).
+* WAIT kind 7 (`test_wait_diff.py`): the mask and IN_BASE, completion on
+  the first attempt, a one-clock pulse between ticks, the timeout as a tick
+  counter. The logic-analyzer capture (`test_reverse_engineering.py`):
+  160 random edges timestamped with one constant offset, edges 1–6 ticks apart
+  on two channels never lost, the 7-tick square-wave bound, idle records and
+  the gap word.
 * SPI master against a device model whose answer delay is swept
   (`test_spi_fast.py`): clocks per SCK and the delay budget for each firmware,
   divider and bypass setting.

@@ -18,6 +18,8 @@ CASES = {
     "wait rise 3": "wait rise 3", "wait fall 3 if pin 4 == 1": "wait fall 3 if pin 4 == 1",
     "wait edge v2 timeout r1": "wait edge 26 timeout r1",
     "wait 1 flag 5 clear": "wait 1 flag 5 clear", "wait 0 flag 2 timeout": "wait 0 flag 2 timeout r3",
+    "wait pins != r1 mask 0x0F timeout r2": "wait pins != r1 mask 0x0f timeout r2",
+    "wait pins != x": "wait pins != r0 mask 0xff",
     "in pins, 8": "in pins, 8", "in r2, 32": "in r2, 32", "in null, 1": "in null, 1",
     "out pindirs, 3": "out pindirs, 3", "out pc, 5": "out pc, 5", "out isr, 16": "out isr, 16",
     "push": "push block", "push iffull noblock": "push iffull noblock",
@@ -74,6 +76,10 @@ def test_clkdiv_rounding_carries():
     "pin 3",
     "flag set",
     "add r0",
+    "wait pins != r0 mask 256",         # 8-bit mask
+    "wait pins != r0 if pin 3 == 1",    # kind 7 has no qualifier (its bits are the mask)
+    "wait pins != 5",
+    "wait pins != r0 0x0F",
 ])
 def test_rejects_malformed(src):
     with pytest.raises(asm.AsmError):

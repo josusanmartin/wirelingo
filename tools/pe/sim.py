@@ -184,6 +184,12 @@ class Core:
         else:
             trans = self.wprev != e.wpin
         e.ev = bool(trans and e.qual)
+        e.seen = self.in_wait and self.wevent      # an event latched on an earlier (non-tick) cycle
+        # kind 7: the pins from IN_BASE, masked, differ from R[idx[1:0]] (no qualifier)
+        e.diff = False
+        if e.kind == isa.W_DIFF:
+            ref = self.r[isa.bits(x, 12, 11)]
+            e.ev = e.diff = bool((rotr32(e.pins_in, self.in_base) ^ ref) & isa.bits(x, 7, 0))
         e.edge_done = bool(self.wevent or e.ev)
         if self.in_wait and qen and trans and not e.qual and e.kind in _EDGE_WAITS:
             e.chip.cover("wait:qualifier_blocked_edge")
@@ -274,11 +280,14 @@ class Core:
             done = f == 1 and e.qual
         elif kind == isa.W_FLAG0:
             done = f == 0 and e.qual
-        else:
-            done = True
+        else:                                   # W_DIFF: a level on the first attempt, sticky after
+            done = e.diff if first else e.edge_done
         if done:
             if kind in _EDGE_WAITS and not e.ev:
                 e.chip.cover("wait:edge_caught_between_ticks")
+            if kind == isa.W_DIFF:
+                e.chip.cover("wait:diff_first_attempt" if first else
+                             "wait:diff_caught_between_ticks" if e.seen else "wait:diff_done")
             if to:
                 self.t = 0
             if kind == isa.W_FLAG1 and clr:
@@ -286,6 +295,8 @@ class Core:
         elif to and self.r[treg] == 0:
             self.t = 1
             e.chip.cover("wait:timeout")
+            if kind == isa.W_DIFF:
+                e.chip.cover("wait:diff_timeout")
         else:
             if to:
                 self.r[treg] = (self.r[treg] - 1) & M16

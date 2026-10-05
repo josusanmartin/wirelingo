@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 LOCKSTEP = ("cd test && LOCKSTEP_SEEDS=20 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 "
-            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 4")
+            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 5")
 
 
 def top(test):
@@ -73,6 +73,15 @@ MUTANTS = {
                                  "wire [15:0] r_load = {1'b0, p[15:1]} - 16'd1;", LOCKSTEP),
     "model-line-nrzi-full-count": ("tools/pe/line.py", "        return int(h != self.rprev)", "        return 0",
                                    pytest("test/model/test_usb_fs.py -k duty_cycle")),
+    "rtl-wait-diff-not-sticky": ("src/pe_core.sv", "default: wbase = in_wait ? edge_done : wdiff;", "default: wbase = wdiff;",
+                                 LOCKSTEP),
+    "rtl-wait-diff-ignores-mask": ("src/pe_core.sv", "wire        wdiff = |((pins_rot[7:0] ^ wref[7:0]) & x[7:0]);",
+                                   "wire        wdiff = |(pins_rot[7:0] ^ wref[7:0]);", LOCKSTEP),
+    "model-wait-diff-not-sticky": ("tools/pe/sim.py", "done = e.diff if first else e.edge_done", "done = e.diff",
+                                   pytest("test/model/test_wait_diff.py")),
+    "fw-la-no-gap-check": ("firmware/la_capture.pasm", "    jmp rxf, full               ; W+4",
+                           "    nop                         ; W+4",
+                           pytest("test/model/test_reverse_engineering.py -k gap")),
     "fw-usb-record-no-marker": ("firmware/usb_ls_rx.pasm", "    ldi r1, 0x81                   ; trailer status: good",
                                 "    ldi r1, 0x01                   ; trailer status: good",
                                 pytest("test/model/test_usb_model.py -k rx_packets")),

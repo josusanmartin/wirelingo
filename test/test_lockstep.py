@@ -14,7 +14,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, RisingEdge, Timer
 
 from pe import isa, sim
-from pe.randprog import random_profile, random_program, random_config_writes
+from pe.randprog import random_profile, random_program, random_config_writes, random_bypass_writes
 
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
@@ -238,6 +238,8 @@ async def test_random_lockstep(dut):
             await h.write(addr, data)
         for addr, data in random_line_writes(rng):
             await h.write(addr, data)
+        for addr, data in random_bypass_writes(random.Random(seed + 0xB1A5)):
+            await h.write(addr, data)
         await h.write(sim.A_CTRL, 15 if rng.random() < 0.7 else rng.randrange(1, 16))
         # run
         mrng = random.Random(seed + 0x5EED)            # own stream: the rest of the stimulus is unchanged
@@ -332,6 +334,7 @@ def coverage_goals():
     ops = ["jmp", "wait", "in", "out", "push", "pull", "mov", "set", "ldi", "alu", "pin", "flag"]
     return ([f"done:{op}" for op in ops] + ["stall:wait", "stall:push", "stall:pull", "stall:out", "jump"] + [
         "wait:timeout", "wait:edge_caught_between_ticks", "wait:qualifier_blocked_edge",
+        "wait:diff_first_attempt", "wait:diff_done", "wait:diff_timeout",   # between ticks: test_wait_diff
         "shift:autopush", "shift:autopull",
         "pins:side_set_over_out", "pins:write_to_unowned_pin", "pins:sync_bypass_fresher",
         "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
@@ -428,3 +431,59 @@ async def test_line_rx_jitter(dut):
     missing = [g for g in ("line:rx_locked", "line:rx_edge_first_half", "line:rx_edge_second_half",
                            "line:rx_frame_end") if not h.model.stats.get(g)]
     assert not missing, missing
+
+
+@cocotb.test()
+async def test_wait_diff(dut):
+    """Directed, compared every cycle: WAIT kind 7 (`wait pins != rN mask m`)
+    on slow and fractional dividers while pins pulse for single clocks, with
+    host PC writes and restarts landing mid-WAIT and timeouts expiring. Reaches
+    a difference caught between ticks (a pulse that is gone by the tick)."""
+    from pe import asm, host
+    h = await start(dut)
+    progs = [asm.assemble("""
+    .shift_in left
+    loop:
+        mov r0, pins
+        ldi r2, 30
+        wait pins != r0 mask 0x0F timeout r2
+        in r2, 16
+        push noblock
+        jmp loop
+    """), asm.assemble("""
+    loop:
+        ldi r1, 0x5
+        wait pins != r1 mask 0x05 timeout r3
+        jmp t, loop
+        wait pins != r1 mask 0x05
+        mov r3, pins
+        jmp loop
+    """)]
+    for c, (prog, div) in enumerate(zip(progs, (3 << 8 | 0x80, 2 << 8))):
+        for addr, data in host.load_program(c, prog, c * 256, in_pins=0, clkdiv=div):
+            await h.write(addr, data)
+    await h.write(sim.core_reg(1, sim.C_R0 + 3), 25)
+    await h.write(sim.A_CTRL, 3 | (3 << 8))
+    rng = random.Random(7)
+    uio = 0
+    for cyc in range(6000):
+        if rng.random() < 0.15:
+            uio ^= 1 << rng.randrange(4)               # pulses: often for a single clock
+        k = rng.random()
+        if k < 0.003:
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(rng.randrange(2), sim.C_PC), wdata=0)
+            uio = 0
+        elif k < 0.006:
+            await h.cycle_step(0, uio, we=True, addr=sim.A_CTRL, wdata=3 | (rng.randrange(1, 4) << 8))
+        elif k < 0.01:
+            c = rng.randrange(2)
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(c, sim.C_CLKDIV),
+                               wdata=(rng.randrange(1, 4) << 8) | rng.getrandbits(8))
+        else:
+            await h.cycle_step(0, uio, addr=sim.core_reg(0, sim.C_FIFO), snap=k < 0.3, commit=k < 0.3)
+            if rng.random() < 0.5:
+                uio &= ~(1 << rng.randrange(4))
+    want = ["wait:diff_first_attempt", "wait:diff_done", "wait:diff_caught_between_ticks", "wait:diff_timeout",
+            "ctrl:restart_mid_instruction"]
+    missing = [g for g in want if not h.model.stats.get(g)]
+    assert not missing, (missing, {k: v for k, v in h.model.stats.items() if k.startswith("wait")})

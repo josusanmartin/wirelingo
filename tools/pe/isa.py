@@ -35,7 +35,7 @@ def clkdiv_fields(d):
  C_T, C_NOSRE, C_TXNE, C_RXF, C_F, C_NF) = range(16)
 
 # WAIT kinds
-W_PIN1, W_PIN0, W_RISE, W_FALL, W_EDGE, W_FLAG1, W_FLAG0 = range(7)
+W_PIN1, W_PIN0, W_RISE, W_FALL, W_EDGE, W_FLAG1, W_FLAG0, W_DIFF = range(8)
 
 # ALU ops
 A_ADD, A_SUB, A_AND, A_OR, A_XOR, A_SHL, A_SHR, A_CMP = range(8)
@@ -80,8 +80,10 @@ def disasm(word):
         kind, idx = bits(x, 18, 16), bits(x, 15, 11)
         to, treg, clr = bits(x, 10, 10), bits(x, 9, 8), bits(x, 7, 7)
         qen, qpol, qpin = bits(x, 6, 6), bits(x, 5, 5), bits(x, 4, 0)
+        if kind == W_DIFF:
+            return f"wait pins != r{idx & 3} mask {bits(x, 7, 0):#04x}{f' timeout r{treg}' if to else ''}{sfx}"
         k = ["1 pin {i}", "0 pin {i}", "rise {i}", "fall {i}", "edge {i}",
-             "1 flag {f}", "0 flag {f}", "reserved"][kind].format(i=idx, f=idx & 7)
+             "1 flag {f}", "0 flag {f}"][kind].format(i=idx, f=idx & 7)
         q = f" if pin {qpin} == {qpol}" if qen else ""
         return f"wait {k}{q}{' clear' if clr else ''}{f' timeout r{treg}' if to else ''}{sfx}"
     if op in (OP_IN, OP_OUT):

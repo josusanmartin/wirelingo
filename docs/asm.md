@@ -62,6 +62,7 @@ jmp [cond,] target
 wait 1|0 pin p   [if pin q == v] [timeout rN]
 wait rise|fall|edge p   [if pin q == v] [timeout rN]
 wait 1 flag k [clear] [timeout rN]      wait 0 flag k
+wait pins != rN [mask m] [timeout rT]   ; the 8 pins from IN_BASE, masked (default 0xFF), differ from rN's low byte
 in  src, n        ; src: r0-r3 pins isr osr null status flags pc crc
 out dst, n        ; dst: r0-r3 pins pindirs isr pc crc null
 push [iffull] [block|noblock]

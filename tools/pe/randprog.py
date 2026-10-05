@@ -69,6 +69,11 @@ def random_instr(rng, bank, bank_words, profile="mixed"):
         x = rng.getrandbits(19)
     if op == isa.OP_WAIT and rng.random() < 0.5:
         x &= ~(1 << 6)  # half without qualifier
+    if op == isa.OP_WAIT and rng.random() < 0.25:
+        # kind 7: masked pins != R[idx[1:0]]; a mask of a few pins, so it often waits
+        to = int(rng.random() < 0.7)
+        x = ((isa.W_DIFF << 16) | (rng.randrange(4) << 11) | (to << 10) | (rng.randrange(4) << 8)
+             | (rng.getrandbits(8) & rng.getrandbits(8)))
     return isa.enc(op, sd, x)
 
 
@@ -106,6 +111,10 @@ def random_config_writes(rng, bank_words):
     w.append((sim.A_POWN_LO, rng.getrandbits(32)))
     w.append((sim.A_POWN_HI, rng.getrandbits(32)))
     w.append((sim.A_OD, rng.getrandbits(8)))
-    if rng.random() < 0.5:                          # some pad inputs one synchroniser stage fresher
-        w.append((sim.A_SYNCBYP, rng.getrandbits(32)))
     return w
+
+
+def random_bypass_writes(rng):
+    """SYNC_BYPASS: half the time some pad inputs one synchroniser flop fresher.
+    (Its own generator call, so the other configuration streams stay as they were.)"""
+    return [(sim.A_SYNCBYP, rng.getrandbits(32))] if rng.random() < 0.5 else []

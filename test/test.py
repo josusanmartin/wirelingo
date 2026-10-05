@@ -650,8 +650,8 @@ async def test_reverse_engineering(dut):
     await spi.write(sim.A_POUT, [0b11])                 # released
     await spi.write(sim.A_OD, [0b11])
     await spi.apply(host.pin_owner_writes({SDA: 1, SCL: 1}, profile=PROFILE))
-    await spi.apply(host.load_program(0, load_fw("la_capture"), 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
-    await spi.write(sim.core_reg(0, sim.C_R0 + 3), [0b11])     # channel mask
+    await spi.apply(host.load_program(0, load_fw("la_capture", MASK=0b11), 0, profile=PROFILE, in_pins=0,
+                                      clkdiv=1 << 8))         # channels SDA, SCL
     bus = OdBus([SDA, SCL])
     rng = random.Random(5)
     rom = bytes(rng.getrandbits(8) for _ in range(256))
@@ -662,7 +662,7 @@ async def test_reverse_engineering(dut):
                   "write to 0x51: address NACKed"]
 
     def decode(words):
-        cap = la.decode_records(words)
+        cap = la.decode_records(words, 0b11)
         assert cap.exact, f"capture has gaps at {cap.gaps}"
         ev = la.i2c_events(cap, SDA, SCL)
         return cap, ev, la.i2c_summary(ev)
@@ -703,15 +703,15 @@ async def test_la_capture_rate(dut):
     """la_capture's sustained edge rate through the host port: 300 edges of a
     square wave on one channel, drained with blind READ_FIXED bursts of 8 words,
     must arrive complete with no gap marker. 1-bit SPI at SCK = clk/2 and quad
-    at SCK = clk; logs the fastest gap-free wave of each sweep (each sweep stops
-    at its first failure)."""
+    at SCK = clk (8- and 32-word bursts); logs the fastest gap-free wave of each
+    sweep (each sweep stops at its first failure)."""
     from pe import la
     await setup(dut)
     T = CLK_NS
     one = TimedSpi(dut, period=2 * T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
     quad = QuadSpi(dut, period=T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
-    await one.apply(host.load_program(0, load_fw("la_capture"), 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
-    await one.write(sim.core_reg(0, sim.C_R0 + 3), [0b100])     # channel 2 only
+    await one.apply(host.load_program(0, load_fw("la_capture", MASK=0b100), 0, profile=PROFILE, in_pins=0,
+                                      clkdiv=1 << 8))         # channel 2 only
     await one.write(sim.A_HOSTCFG, [1])
     fifo = sim.core_reg(0, sim.C_FIFO)
     EXT.set(2, True, 0)
@@ -731,11 +731,12 @@ async def test_la_capture_rate(dut):
         await ClockCycles(dut.clk, 50)
         words += [w for w in await drain() if w]
         await one.write(sim.A_CTRL, [0])
-        cap = la.decode_records(words)
+        cap = la.decode_records(words, 0b100)
         return cap.exact and len(cap.edges) == N + 1
 
     modes = {"1-bit SPI, SCK = clk/2": (lambda: one.read(fifo, 8, fixed=True), (120, 90, 80, 70)),
-             "quad SPI, SCK = clk": (lambda: quad.qxfer(0x4B, fifo, nread=8), (24, 18, 14, 12, 11))}
+             "quad SPI, SCK = clk": (lambda: quad.qxfer(0x4B, fifo, nread=8), (24, 14, 13, 12, 11)),
+             "quad SPI, SCK = clk, 32-word bursts": (lambda: quad.qxfer(0x4B, fifo, nread=32), (12, 11, 10, 9, 8, 7))}
     best = {}
     for name, (drain, halves) in modes.items():
         for half in halves:
@@ -745,8 +746,11 @@ async def test_la_capture_rate(dut):
         assert name in best, f"{name}: gaps even at an edge every {halves[0]} clocks"
         dut._log.info(f"{name}: gap-free down to an edge every {best[name]} clocks "
                       f"({1e3 / (best[name] * T):.2f} M edges/s at {1e3 / T:.0f} MHz)")
-    # quad drains faster than the firmware records: its bound (an edge per 12 ticks) shows
+    # The firmware records an edge per 7 ticks (test_capture_close_edges); the
+    # port is the limit here: 8-word quad bursts drain a word per ~11 clocks
+    # (g4's polling firmware stopped at 12 itself), 32-word bursts one per ~8.8
     assert best["1-bit SPI, SCK = clk/2"] <= 90 and best["quad SPI, SCK = clk"] == 12, best
+    assert best["quad SPI, SCK = clk, 32-word bursts"] == 9, best
 
 
 # ------------------------------------------------------------------ USB low speed

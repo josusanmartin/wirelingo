@@ -23,6 +23,7 @@ the RP2040 PIO engine's encodings, not the entire microcontroller:
 | WAIT has no timeout                      | any WAIT can time out (Rn tick budget), sets T flag  |
 | WAIT only on levels                      | WAIT on rise / fall / any edge, sampled every clock  |
 | WAIT selects one pin/GPIO/IRQ level       | WAIT qualifier: "SDA falls while SCL is high" in one instruction |
+| —                                        | WAIT until any of 8 pins differs from a register, with the timeout counter as a timestamp |
 | open drain needs pindir tricks           | per-pin open-drain mode                              |
 | SET/OUT/side-set use configured pin mappings | `PIN p, hi/lo/toggle/hiz` on any absolute pin     |
 | IRQ flags and GPIO signalling            | flags + 8 virtual pins (internal wires between cores)|
@@ -396,7 +397,7 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | Op | Mnemonic | Operand layout                                                             |
 |----|----------|----------------------------------------------------------------------------|
 | 0  | `JMP`    | `[18:15] cond  [14:10] sel  [9:0] addr`                                    |
-| 1  | `WAIT`   | `[18:16] kind  [15:11] idx  [10] timeout  [9:8] treg  [7] clear  [6] qen  [5] qpol  [4:0] qpin` |
+| 1  | `WAIT`   | `[18:16] kind  [15:11] idx  [10] timeout  [9:8] treg  [7] clear  [6] qen  [5] qpol  [4:0] qpin`; kind 7: `[12:11] rref  [10] timeout  [9:8] treg  [7:0] mask` |
 | 2  | `IN`     | `[18:15] src  [4:0] count (0 = 32)`                                        |
 | 3  | `OUT`    | `[18:15] dst  [4:0] count (0 = 32)`                                        |
 | 4  | `PUSH`   | `[18] iffull  [17] block`                                                  |
@@ -465,9 +466,32 @@ holds. `p = idx` is an absolute pin; `k = idx[2:0]` is a flag.
 | 4    | `wait edge p`     | any transition has been observed                      |
 | 5    | `wait 1 flag k`   | `F[k] == 1`; with `clear`, the flag is cleared when the WAIT completes |
 | 6    | `wait 0 flag k`   | `F[k] == 0`                                           |
-| 7    | —                 | reserved (completes immediately)                      |
+| 7    | `wait pins != rN [mask m]` | `(rotr(pins_in, IN_BASE)[7:0] ^ R[rref][7:0]) & mask != 0` (see below) |
 
-**Qualifier** (`qen = 1`, syntax `if pin q == v`): `Q = (pins_in[qpin] == qpol)`.
+**Pin-set difference** (kind 7). The 8 pins from `IN_BASE` (the low byte of
+the `PINS` source), masked by `mask`, are compared with the low byte of
+`R[rref]` (`rref = idx[1:0]`; `idx[4:2]` are reserved, 0). Kind 7 has no
+qualifier and no `clear`: its operand bits `[7:0]` are the mask. The condition
+`D` is a level, checked on every attempt including the first, so a WAIT that
+starts while the pins already differ completes at once. While the WAIT is in
+progress, every enabled cycle (tick or not) also sets the sticky `event` bit
+when `D` holds, as an edge WAIT does (below), and the WAIT completes on a tick
+where `D || event`. So a difference that lasts a single clock is caught even
+when the core ticks slowly. With a timeout, `R[treg]` counts the waiting ticks
+down, which makes it the timestamp of the change: started at `N`, it ends at
+`N − k` when the WAIT completes on its *k*-th tick after the first attempt
+(`la_capture` timestamps edges to the tick this way). The reference is read
+every cycle; if `rref = treg`, the decrements count.
+Why a register reference and not "a change since the WAIT began": the
+firmware records a sample, then waits for the pins to differ from *that
+sample*, so a change between the sample and the WAIT's first attempt is still
+caught (on the first attempt). Why a register and an immediate mask: the
+reference needs a register anyway, and an 8-bit mask fills the operand bits
+the qualifier uses; the comparison reuses the `PINS` rotator, the register
+selector and the edge tracker's event bit (an 8-bit XOR/AND/OR and an 8-bit
+4:1 multiplexer are new).
+
+**Qualifier** (`qen = 1`, syntax `if pin q == v`, kinds 0–6): `Q = (pins_in[qpin] == qpol)`.
 For level kinds (0, 1, 5, 6) the condition is `base && Q`, evaluated on the tick.
 For edge kinds, a transition counts only if `Q` holds in the same clock cycle
 as the transition.
@@ -480,12 +504,15 @@ or not):
 
 ```
 ev    = transition(prev, pins_in[p]) && (!qen || Q)     // rise: !prev && cur, fall: prev && !cur, edge: prev != cur
+                                                        // kind 7: ev = D (the pin-set difference)
 done  = event || ev                                     // used if this cycle is a tick
-event = event || ev;  prev = pins_in[p]
+event = event || ev;  prev = pins_in[p]                 // (prev follows pin idx for every kind)
 ```
 
 So edges are caught at full clock resolution even when the core ticks slowly.
-Only edges that happen after the WAIT began count.
+Only edges that happen after the WAIT began count. (Kind 7 also completes on
+its first attempt if `D` holds then; a stalled first attempt clears `event`
+like the others.)
 
 **Timeout** (`timeout = 1`) uses `R[treg]` as a tick budget. On each tick
 where the WAIT attempts but its condition doesn't hold:

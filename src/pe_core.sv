@@ -64,7 +64,7 @@ module pe_core #(
   localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12, L_LINE = 4'd13;
 
   localparam W_PIN1 = 3'd0, W_PIN0 = 3'd1, W_RISE = 3'd2, W_FALL = 3'd3, W_EDGE = 3'd4;
-  localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6;
+  localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6, W_DIFF = 3'd7;
 
   // ---------------------------------------------------------------- config
   reg [15:0] div_int;
@@ -188,6 +188,9 @@ module pe_core #(
   wire [8:0]  fsum = {1'b0, facc} + {1'b0, div_frac};
   wire [15:0] cnt_next = tick ? (div_int - 16'd1 + {15'd0, fsum[8]}) : (cnt - 16'd1);
 
+  // pins from IN_BASE: the PINS source, and what WAIT kind 7 watches
+  wire [31:0] pins_rot = rotr32(pins_in, in_base);
+
   // WAIT edge tracker
   wire [2:0]  wkind = x[18:16];
   wire [4:0]  widx = x[15:11];
@@ -195,7 +198,11 @@ module pe_core #(
   wire        qual = !x[6] || (pins_in[x[4:0]] == x[5]);
   wire        trans = (wkind == W_RISE) ? (!wprev && wpin) :
                       (wkind == W_FALL) ? (wprev && !wpin) : (wprev != wpin);
-  wire        edge_done = wevent || (trans && qual);
+  // kind 7 (docs/isa.md §5.2): the masked pins differ from R[idx[1:0]]; it
+  // shares the sticky event bit, so a difference between ticks is kept
+  wire [15:0] wref = rsel(widx[1:0], r0, r1, r2, r3);
+  wire        wdiff = |((pins_rot[7:0] ^ wref[7:0]) & x[7:0]);
+  wire        edge_done = wevent || (wkind == W_DIFF ? wdiff : (trans && qual));
 
   wire        active  = enable && !restart;
   wire        attempt = active && tick && !halted && !fault && dcnt == 8'd0;
@@ -219,7 +226,7 @@ module pe_core #(
   always @(*) begin
     case (src_code)
       4'd0, 4'd1, 4'd2, 4'd3: src_val = {16'd0, rsel(src_code[1:0], r0, r1, r2, r3)};
-      L_PINS:   src_val = rotr32(pins_in, in_base);
+      L_PINS:   src_val = pins_rot;
       L_ISR:    src_val = isr;
       L_OSR:    src_val = osr;
       L_STATUS: src_val = {21'd0, status16[10:0]};
@@ -324,7 +331,7 @@ module pe_core #(
       W_RISE, W_FALL, W_EDGE: wbase = in_wait && edge_done;
       W_FLAG1: wbase = wflag && qual;
       W_FLAG0: wbase = !wflag && qual;
-      default: wbase = 1'b1;
+      default: wbase = in_wait ? edge_done : wdiff;     // W_DIFF: also on the first attempt
     endcase
   end
   wire        w_to = x[10];

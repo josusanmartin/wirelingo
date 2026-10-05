@@ -326,6 +326,18 @@ def _wait(ln):
             raise ln.err("qualifier pin out of range")
     toks = body.split()
     kw = [t.lower() for t in toks]
+    if len(toks) >= 3 and kw[0] == "pins" and kw[1] == "!=":
+        # wait pins != rN [mask m]: kind 7, the pins from IN_BASE (8, masked) differ from rN
+        if qen or clr:
+            raise ln.err("'wait pins != rN' takes no qualifier or 'clear'")
+        ref = ln.reg(toks[2])
+        if len(toks) == 3:
+            m = 0xFF
+        elif len(toks) >= 5 and kw[3] == "mask":
+            m = ln.ranged(" ".join(toks[4:]), 0, 256, "mask")
+        else:
+            raise ln.err("wait pins != rN [mask m] [timeout rT]")
+        return isa.OP_WAIT, (isa.W_DIFF << 16) | (ref << 11) | (to << 10) | (treg << 8) | m
     if len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] == "pin":
         kind, idx = (isa.W_PIN1 if toks[0] == "1" else isa.W_PIN0), ln.value(" ".join(toks[2:]))
     elif len(toks) >= 3 and kw[0] in ("1", "0") and kw[1] in ("flag", "irq"):
