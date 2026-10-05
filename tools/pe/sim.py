@@ -620,6 +620,7 @@ class Chip:
         says the oldest snapped word was sent (pops it if it was a real entry);
         `cancel` ends the transaction and drops the reservations."""
         pins_in = self.pins_in()
+        byp = self.sync_bypass        # start of cycle: a host write takes effect next cycle (§5.3)
         line_write = None
         flags = self.flags
         fjoin = [core.fjoin for core in self.cores]  # start of cycle: a host write lands at the edge
@@ -758,8 +759,8 @@ class Chip:
         rxp = self.line.rxp
         bit = _pad_bit(rxp)          # the falling-edge sample before sync1's (rx_hq) or sync2's (rx_h2)
         rx_mid = (pins_in >> rxp) & 1 if bit is None else \
-            self.rx_hq if (self.sync_bypass >> bit) & 1 else self.rx_h2
-        if bit is not None and (self.sync_bypass >> bit) & 1 and self.line.en and self.line.rx_en \
+            self.rx_hq if (byp >> bit) & 1 else self.rx_h2
+        if bit is not None and (byp >> bit) & 1 and self.line.en and self.line.rx_en \
                 and self.rx_hq != self.rx_h2:
             self.cover("line:rx_bypassed_pin")
         self.line.step(pins_in, rx_mid)  # after the cores: they used its start-of-cycle state
@@ -769,7 +770,7 @@ class Chip:
         self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None
         self.flags = ((flags & ~fclr) | fset) & 0xFF
         self.pin_out, self.pin_oe = new_out & M32, new_oe & M32
-        if self.sync_bypass & (self.sync1 ^ self.sync2):
+        if byp & (self.sync1 ^ self.sync2):
             self.cover("pins:sync_bypass_fresher")
         self.sync2 = self.sync1
         pads = (uio_in & 0xFF) | ((ui_in & 0x1F) << 8)

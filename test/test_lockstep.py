@@ -38,6 +38,7 @@ def line_state_rtl(u):
         eop=v(u.eop_idle), tcnt=v(u.tcnt), tfacc=v(u.tfacc), trun=v(u.trun), entries=v(u.e_cnt),
         rx_on=v(u.rx_on), rq=v(u.rq) & ((1 << v(u.rcount)) - 1), rcount=v(u.rcount), rcnt=v(u.rcnt),
         q=v(u.q) - ((v(u.q) >> 20) << 21), n=v(u.mn), quiet=v(u.quiet), rrun=v(u.rrun), end_pend=v(u.end_pend), ovf=v(u.ovf), rprev=v(u.rprev),
+        runbits=(v(u.trunbit), v(u.trunv), v(u.rrunbit), v(u.rrunv)),
     )
 
 
@@ -47,6 +48,7 @@ def line_state_model(l):
         tcnt=l.tcnt, tfacc=l.tfacc, trun=l.trun, entries=len(l.entries),
         rx_on=l.rx_on, rq=sum(b << i for i, b in enumerate(l.rq)), rcount=len(l.rq), rcnt=l.rcnt,
         q=l.q, n=l.n, quiet=l.quiet, rrun=l.rrun, end_pend=l.end_pend, ovf=l.ovf, rprev=l.rprev,
+        runbits=(l.trunbit, l.trunv, l.rrunbit, l.rrunv),
     )
 
 
