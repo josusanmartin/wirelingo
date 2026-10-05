@@ -67,7 +67,7 @@ assumptions:
   line unit's phase tracking.
 * **Mutation testing** checks the checks. Injected bugs in the model, RTL,
   firmware and assembler must each make a named test fail
-  (`test/mutants.py`, 17 of 17 killed). Tests that pass whatever the code
+  (`test/mutants.py`, 34 of 34 killed). Tests that pass whatever the code
   does are worthless, and agents write those too.
 * **Device models that see only pins.** Firmware is tested against
   independent models of a UART, an I2C EEPROM, a USB host and so on, not

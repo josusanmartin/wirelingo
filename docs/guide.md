@@ -66,7 +66,7 @@ board measurements still need their own evidence.
 | Claim | Evidence | Reproduce |
 |---|---|---|
 | The RTL matches the spec's model cycle for cycle | random programs, pins and host traffic; registers, WAIT trackers, FIFO levels and heads compared every cycle; coverage goals required | `cd test && LOCKSTEP_SEEDS=60 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 make TB=chip` |
-| The tests catch bugs | 17 mutation definitions in model, RTL, firmware and assembler; the runner requires a passing baseline and an executed target-test failure | `python3 test/mutants.py` (use its recorded results for killed counts) |
+| The tests catch bugs | 34 mutation definitions in model, RTL, firmware, assembler and host driver; the runner requires a passing baseline and an executed target-test failure | `python3 test/mutants.py` (use its recorded results for killed counts) |
 | FIFOs (incl. join) are correct for all input sequences | k-induction against reference queues, depths 4 and 8 | `make -C formal fifos` |
 | The host port is fast and safe | 193 Mbit/s simulated quad payload at SCK = clk; phase/duty sweeps and reset aborts; formal bus safety | `cd test && make COCOTB_TEST_FILTER=test_host_port_fast`; `make -C formal hostport` |
 | Protocols work through the real host port | RTL UART, SPI, I2C, concurrent USB service, full Ethernet RX frames and overflow recovery | `cd test && make` |

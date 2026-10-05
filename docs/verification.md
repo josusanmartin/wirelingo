@@ -307,6 +307,23 @@ five tests at 50 MHz, although STA says −2.88 ns, because no test reaches
 STA's worst path. Details and limits:
 [physical.md](physical.md#timing-annotated-gate-level-sdf).
 
+## v2 regression (2026-10-05, RTL not yet hardened)
+
+On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
+
+* model suite: 251 passed;
+* top-level cocotb: `test.py` 20/20, `test_pio.py` 2/2, `test_eth_service.py` 2/2;
+* lockstep, tapeout configuration (`LOCKSTEP_SEEDS=60`, 2 cores, 2 SRAM banks,
+  8-deep FIFOs): 6/6, every coverage goal reached; 4-core flop build
+  (`LOCKSTEP_GOALS=core`, 60 seeds × 1000 cycles): 6/6; plus 400 seeds × 1000
+  cycles in four other seed windows (tapeout) and 200 in two (4-core), all
+  passing. Two earlier windows found the two golden-model bugs in the table
+  below; the regression's own windows had not reached them;
+* formal: all seven jobs pass (fifos 4/8 + cover, hostport + cover, core, line);
+* mutation runner: 34 of 34 mutants killed (13 of them for the v2 features).
+
+Not yet: gate level (needs a v2 netlist) and STA.
+
 ## Bugs found by this flow (selection)
 
 | Where | Bug | Caught by |
@@ -324,3 +341,6 @@ STA's worst path. Details and limits:
 | test harness | driver test traced only `ModelHost.step`, missing the clocks of the host's own bus cycles (a 1-tick gap breaks Manchester decoding) | 10BASE-T driver test; trace now hooks `Chip.step` |
 | UART RX firmware | back-to-back bytes: the program returned to its start-bit edge WAIT exactly at the end of the stop bit, and with a fractional divider the next start edge could fall on that tick and be missed; also too little margin for a 3 %-fast sender | the board bring-up loopback (driver on the model); now a level WAIT, the byte pushed during the stop bit, and test_uart (±3 %, back to back) |
 | USB RX firmware (two-core) | the device's own ACK of SETUP/OUT data, heard by the RX core, set F_GOTACK; host software fast enough to stage the first IN chunk before that ACK ended saw the chunk as acknowledged, and a lost host ACK skipped a chunk | concurrent RTL service test, once the service loop got faster; the TX core now sets F_SENT when it sends DATA and only an ACK after it counts |
+| golden model (v2) | the line unit's falling-edge RX sample was chosen with a `SYNC_BYPASS` value written in the same cycle (the RTL uses it from the next cycle) | lockstep, a seed window outside the regression's (`LOCKSTEP_SEED0=5000`): Manchester phase off by one sample after a mid-frame bypass write |
+| golden model | the stuffing run bit was "none" at a frame start where the RTL keeps the last bit and clears a valid flag; switching STUFF_ONES off mid-frame crashed the model | lockstep, seed window 9000 (TypeError); run bits and flags are now compared every cycle |
+| MicroPython driver (v2) | its image check ignored CALL (opcode 13), so a CALL out of the core's bank loaded and faulted at run time | review; `test_board_load_validates_before_any_bus_write` has a CALL case and a mutant |

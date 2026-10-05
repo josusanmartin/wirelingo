@@ -28,14 +28,15 @@ def test_call_links_and_ret_returns():
 
 def test_conditional_call_links_only_when_taken():
     c, _ = run("""
-        call r0, sub        ; r0 = 0: not taken, LR unchanged
-        call !r0, sub       ; taken
-        halt
+        call r0, sub        ; 0: r0 = 0: not taken, LR unchanged (0)
+        mov r2, lr          ; 1
+        call !r0, sub       ; 2: taken, LR = 3
+        halt                ; 3
     sub:
         mov r1, lr
         ret
     """)
-    assert c.halted and c.r[1] == 2 and c.lr == 2
+    assert c.halted and c.r[2] == 0 and c.r[1] == 3 and c.lr == 3
 
 
 def test_nesting_through_a_register():
