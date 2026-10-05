@@ -246,7 +246,13 @@ Synthesis already shares well; the wiring is in what the core does.
 | **g4** | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | **0 (met) / −2.88 ns** | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
 
 g4 is the current candidate (netlist sha256 `4db31a01877b1977…`, GDS
-`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). Its typ
+`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). The
+build is reproducible on a GitHub runner's budget: a fresh `flow/harden.sh` of
+the same tree with its container capped to 4 CPUs and 16 GB (a public-repo
+runner; the official action uses the same tt-support-tools, PDK and LibreLane
+revisions) finished in 1 h 56 min, passed signoff, and produced the same
+netlist and, with GDS timestamps zeroed, a byte-identical GDS. Tiny
+Tapeout's precheck (`tt/precheck`) passes on it. Its typ
 setup slack is exactly 0 because the FIFO latches borrow time; every flop path
 meets. The slow corner allows about 44 MHz. t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
 gate-level log passes 9/9 top-level tests. The slow corner allows
