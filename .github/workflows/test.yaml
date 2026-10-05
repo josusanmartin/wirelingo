@@ -30,19 +30,19 @@ jobs:
           cd test
           make clean
           make COCOTB_RESULTS_FILE=top.xml
-          python3 check_results.py top.xml 16
+          python3 check_results.py top.xml $(grep -c '^@cocotb.test()' test.py)
 
       - name: Compiled RP2 PIO host transport through the SPI port
         run: |
           cd test
           make COCOTB_TEST_MODULES=test_pio SIM_BUILD=sim_build/pio COCOTB_RESULTS_FILE=pio.xml
-          python3 check_results.py pio.xml 2
+          python3 check_results.py pio.xml $(grep -c '^@cocotb.test()' test_pio.py)
 
       - name: Bounded board Ethernet receive service through the SPI port
         run: |
           cd test
           make COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml
-          python3 check_results.py eth_service.xml 2
+          python3 check_results.py eth_service.xml $(grep -c '^@cocotb.test()' test_eth_service.py)
 
       - name: Firmware tests on the model, assembler and driver tests
         run: |
@@ -56,13 +56,13 @@ jobs:
           cd test
           LOCKSTEP_SEEDS=20 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 \
             make TB=chip COCOTB_RESULTS_FILE=lockstep_tapeout.xml
-          python3 check_results.py lockstep_tapeout.xml 4
+          python3 check_results.py lockstep_tapeout.xml $(grep -c '^@cocotb.test()' test_lockstep.py)
 
       - name: Lockstep RTL vs model, 4-core flop build
         run: |
           cd test
           LOCKSTEP_GOALS=core LOCKSTEP_SEEDS=30 LOCKSTEP_CYCLES=1000 make TB=chip IMEM=flop COCOTB_RESULTS_FILE=lockstep_4core.xml
-          python3 check_results.py lockstep_4core.xml 4
+          python3 check_results.py lockstep_4core.xml $(grep -c '^@cocotb.test()' test_lockstep.py)
 
       - name: Test Summary
         uses: test-summary/action@v2.4
