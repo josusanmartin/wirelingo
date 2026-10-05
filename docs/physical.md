@@ -7,26 +7,16 @@ gate-level tests on the result. The routability experiments below used a
 flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
 bd07aa5; see git history).
 
-**Release status:** the tables below describe historical runs. They do not
-sign off the fixed-bank/latch/dual-edge/reset candidate. The submission preset
-now uses swapped corners, all three PVT corners and real latch arcs in both
-PnR and signoff. `flow/gen_config.py --check` checks its checked-in JSON.
-The source/config/SDC/PDK hashes in `candidate-inputs.json`, final timing and
-electrical reports, and exact-netlist GL must agree before release. See
-`docs/review-fixes.md` for fresh results and remaining gates.
+**Status:** the signoff table at the end lists the runs so far; the current
+RTL (fixed banks, latch FIFOs, the dual-edge line receiver and the host-port
+reset fix) has not finished a signoff run yet. A run is a commit:
+`flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
+confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
+the result.
 
-New hardening manifests also bind root LibreLane plugins, flow implementation,
-generated TT configuration and support-tool bytes. Snapshot copying includes
-dirty/new plugins and rejects concurrent edits. Strict release checks compare
-those inputs with the hardened worktree; legacy manifests remain diagnostic.
-
-`flow/gen_config.py --clock-fanout-fix` opts into eight-sink CTS clusters and
-`Project.FixClockFanout`, which splits overloaded clock branches and legalizes
-the added IHP buffers. Native checkpoint checks preserve connectivity, power
-and NDR and remove clock-fanout violations at all three placement corners.
-Ordinary timing and data electrical checks still fail; a new complete physical
-run is required. The checked-in submission preset and original live run remain
-unchanged. See the bounded results and ownership handoff in `review-fixes.md`.
+`flow/gen_config.py --clock-fanout-fix` (off by default) clusters CTS sinks by
+eight and adds `Project.FixClockFanout`, which splits clock branches above the
+IHP buffers' fanout limit of eight and legalizes the added buffers.
 
 ## The tile
 
@@ -280,9 +270,8 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
 * Historical logs report s2c 6/6 and final4 **7/7** (ID, UART TX/RX, SPI,
   I2C, USB low-speed device, 10BASE-T TX with FIFO join). They do not validate
   the current hardware or satisfy the fresh-result checks now required.
-* The current step-41 global-routing checkpoint passes all 16 functional GL
-  tests. Its final extracted timing and final-netlist GL remain pending; see
-  [review-fixes.md](review-fixes.md) for exact input/netlist hashes.
+* The current RTL's netlist after global routing (not final) passed the
+  functional GL suites; the final netlist's run is pending.
 
 ## Area reductions applied
 

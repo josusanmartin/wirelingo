@@ -79,7 +79,10 @@ derived from the specifications, not yet validated on silicon):
   `sw = bringup.usb_setup(pe)` and repeatedly call `sw.service()`. This example
   advertises an endpoint-zero vendor interface, with no HID/report endpoint or
   string descriptors. It is digitally tested; board enumeration remains a
-  separate hardware check. See `docs/review-fixes.md` for the record ABI.
+  separate hardware check. Each received DATA packet arrives as a record:
+  payload words, then a trailer with the bit count in [31:16], the reversed
+  PID in [15:8], [7] = 1, SETUP association in [1] and CRC/PID good in [0]
+  (`firmware/usb_ls_rx.pasm`).
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
   nominal pins swing ±3.3 V differentially. The proposed 15–20 Ω series

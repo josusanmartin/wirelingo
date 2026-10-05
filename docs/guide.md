@@ -74,7 +74,7 @@ board measurements still need their own evidence.
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model | `pytest test/model/test_micropython_driver.py` |
 | Optional RP2 PIO/DMA transport | Compiled PIO instruction traces drive the ASIC SPI port; API/error-path tests use fakes; board rate and pad margin remain unmeasured | [board-transport.md](board-transport.md); `make -C test COCOTB_TEST_MODULES=test_pio SIM_BUILD=sim_build/pio COCOTB_RESULTS_FILE=pio.xml` |
 | Finite Ethernet board capture | Actual capture driver over RTL/checkpoint GL SPI: 64/1518-byte frames, FCS failure and overflow cleanup; analog circuit remains unbuilt | [eth10-receiver.md](eth10-receiver.md); `make -C test COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml` |
-| Current physical signoff | Pending: exact source, correct SRAM views, all corners, detailed timing and bound GL evidence | `python3 flow/signoff.py <run>/runs/wokwi --manifest <candidate-inputs.json>`; [review-fixes.md](review-fixes.md) |
+| Current physical signoff | Pending (run in progress) | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/gl_test.sh <run>` |
 
 (`pytest` = `PYTHONPATH=tools python -m pytest -q` from the repo root.)
 

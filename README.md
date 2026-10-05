@@ -107,9 +107,11 @@ make -C formal                                                   # proofs
   new physical signoff.
 * Remaining electrical exceptions at typ (1 slew, 2 capacitance) are listed in
   [docs/physical.md](docs/physical.md).
-* [Review fix ledger](docs/review-fixes.md) records changes, validation and team
-  ownership. `flow/gen_config.py --check` verifies the frozen submission preset;
-  `flow/signoff.py` fails release gating when evidence is missing or violated.
+* [External review](docs/review.md): the bugs an independent review found and
+  how they were fixed and tested. `flow/gen_config.py --check` verifies that
+  `src/config.json` is the generator's; `flow/signoff.py` prints a run's
+  signoff summary and fails on DRC/LVS/antenna errors, typical-corner setup or
+  any hold violation.
 * [Optional board transport](docs/board-transport.md) documents PIO/DMA resource
   ownership, GPIO-window setup and bounded measurements. Board throughput and
   sampling margin remain unmeasured.

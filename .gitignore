@@ -21,3 +21,4 @@ formal/*/status.sqlite
 test/gate_level_netlist.v
 test/*.fst.hier
 test/*.xml
+test/*.log

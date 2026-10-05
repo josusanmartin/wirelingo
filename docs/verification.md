@@ -204,20 +204,13 @@ frames; they are not a full controller).
 ## 5. Gate level
 
 The hardened netlist (`final/nl`, as Tiny Tapeout's CI uses for IHP) must run the
-top-level cocotb tests with the PDK cell and SRAM models (`make GATES=yes`;
-`flow/gl_test.sh`). The models are functional and no SDF is annotated, so this
-checks the mapped logic, not delays; timing requires STA. The new review-fix
-candidate is still hardening; older passing GL logs do not validate it.
-
-Detailed timing must demonstrate coverage as well as absence of violations.
-`flow/timing_review.tcl` reports mapped synchronizer stages, IHP clock-gate
-enable arcs and FIFO latch windows under the full candidate constraints.
-The recorded OpenSTA image suppresses pulse-width rows with the cross-clock
-exceptions, so `flow/pulse_width_review.tcl` uses a separate clock-only process
-and verifies that its SDC differs by exactly four exception lines. It supplies
-no setup/hold/CDC signoff result. Native passing/failing pulse controls and
-three-corner placement reports are retained; final extracted checks remain
-required. See [review-fixes.md](review-fixes.md) for hashes, coverage and commands.
+top-level cocotb suites (`test.py`, `test_pio.py`, `test_eth_service.py`) with
+the PDK cell and SRAM models (`flow/gl_test.sh <run>`, fresh build and result
+directories per run). The models are functional and no SDF is annotated, so
+this checks the mapped logic, not delays; timing is STA's job. Besides
+setup/hold, every STA corner reports the SCK↔clk crossings against their
+one-period bound and the clock-gating, pulse-width and recovery/removal checks
+(`src/timing_checks.tcl`).
 
 ## Bugs found by this flow (selection)
 

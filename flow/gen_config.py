@@ -100,7 +100,7 @@ def main():
     if a.pnr_latch_flops is None:
         # PnR times the FIFO latches like flops (protoemu_pnr.sdc); signoff
         # always times the real latch arcs. Same repair edits, ~20x faster
-        # repair steps (docs/review-fixes.md, "PnR latch timing").
+        # repair steps (docs/review.md).
         a.pnr_latch_flops = True
     if a.preset == "submission" and (a.banks != 2 or a.grt_iters is not None):
         ap.error("submission requires 2 banks and no truncated routing; use --preset experiment")
