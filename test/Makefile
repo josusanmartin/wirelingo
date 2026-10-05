@@ -40,7 +40,9 @@ endif
 export PYTHONPATH := $(PWD)/../tools:$(PYTHONPATH)
 
 # PROPOSAL (docs/usb-full-speed.md): PE_LINE_NRZI_HALF=1 builds the line unit's
-# half-cycle NRZI sample point; the model reads the same variable.
+# half-cycle NRZI sample point; the model reads the same variable. The RTL side
+# needs docs/proposals/pe_line_nrzi_half.patch applied first (src/ is the
+# signed-off design and doesn't carry it).
 ifneq ($(filter-out 0,$(PE_LINE_NRZI_HALF)),)
 COMPILE_ARGS += -DPE_LINE_NRZI_HALF
 endif

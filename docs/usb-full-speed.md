@@ -252,7 +252,10 @@ a full re-harden (3–4 h) and signoff. Ranked by benefit/cost:
 
 ### Change A in detail
 
-`src/pe_line.sv`, under `` `ifdef PE_LINE_NRZI_HALF `` (off by default):
+[`docs/proposals/pe_line_nrzi_half.patch`](proposals/pe_line_nrzi_half.patch)
+adds it to `src/pe_line.sv` under `` `ifdef PE_LINE_NRZI_HALF `` (off by
+default). The patch isn't applied in `src/`, which stays exactly the signed-off
+design; apply it to test the proposal:
 
 ```verilog
 wire [15:0] r_load = {1'b0, p[15:1]} - (edge1 ? 16'd2 : 16'd1);   // was: - 16'd1
