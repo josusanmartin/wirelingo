@@ -106,4 +106,6 @@ def random_config_writes(rng, bank_words):
     w.append((sim.A_POWN_LO, rng.getrandbits(32)))
     w.append((sim.A_POWN_HI, rng.getrandbits(32)))
     w.append((sim.A_OD, rng.getrandbits(8)))
+    if rng.random() < 0.5:                          # some pad inputs one synchroniser stage fresher
+        w.append((sim.A_SYNCBYP, rng.getrandbits(32)))
     return w

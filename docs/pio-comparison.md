@@ -8,8 +8,10 @@ occupancy table see [guide.md](guide.md).
 
 **Short version.** protoemu is not faster than PIO, and its programs are not
 smaller. Per state-machine cycle the two match on UART and SPI. PIO runs on a
-clock 2.7× faster, needs half the system clocks per SPI bit, spends less I2C bus
-time per byte, and its instructions are half the width.
+clock 2.7× faster, spends less I2C bus time per byte, and its instructions are
+half the width. On the signed-off g4 chip PIO also needed half the system
+clocks per SPI bit; v2's input-synchroniser bypass (`SYNC_BYPASS`) closes that
+gap (4 clocks per SCK on both).
 
 protoemu's advantage is how much the host has to do, and what happens when the
 bus misbehaves:
@@ -78,7 +80,7 @@ protoemu 8 ticks per bit at 800 kHz.
 | UART RX framing error / break | byte dropped, sticky IRQ 4 | byte pushed, sticky flag F0 | PIO (bad byte not delivered) |
 | UART RX, back-to-back frames from a fast sender | fails at −3 % (needs frames ≥ 78 SM clocks) | passes −3.5 % (needs ≥ 77 ticks) | protoemu |
 | **SPI** program | 2 instr = 4 B | 2 instr = 8 B | PIO (bytes) |
-| SPI fastest correct loopback | 4 system clocks per SCK (synchroniser bypassed): 33 MHz at 133 MHz | 8 per SCK (at 4 the synchroniser makes MISO a bit late): 6.25 MHz | PIO |
+| SPI fastest correct loopback | 4 system clocks per SCK (synchroniser bypassed): 33 MHz at 133 MHz | g4: 8 per SCK (at 4 the synchroniser makes MISO a bit late), 6.25 MHz. v2 with `SYNC_BYPASS`: 4 per SCK, 12.5 MHz | g4: PIO; v2: equal per clock, PIO in absolute rate |
 | **I2C** program | 18 instr in PIO + START/STOP/RSTART injected by the CPU as instructions in the FIFO | 71 instr, all in the engine | PIO on size; protoemu on autonomy |
 | I2C register read (repeated START, 2 bytes): host accesses | 19 FIFO writes + 3 FIFO reads + 3 control-register writes | 8 FIFO writes + 5 FIFO reads | protoemu (count); bytes similar, see below |
 | I2C bus time, START to STOP | 478 µs; 89.7 µs per byte | 560 µs; 105 µs per byte | PIO |
@@ -151,14 +153,38 @@ The shipped 13-instruction firmware spends 4 extra instructions on two things:
 | Instructions / bytes | 2 / 4 | 2 / 8 |
 | Ticks per SCK | 4 | 4 |
 | Gap between back-to-back bytes (autopull/autopush) | none (16 bits in 64 ticks) | none (16 bits in 64 ticks) |
-| Fastest setting with correct loopback, no external delay | clkdiv 1: 4 system clocks per SCK, input synchroniser bypassed (`pio_spi_init` does this) | CLKDIV 2: 8 clocks per SCK. At CLKDIV 1 MISO is sampled one bit late (0xA5 → 0x52) |
-| Max SCK | 31.25 MHz at 125 MHz, 33 MHz at 133 MHz | 6.25 MHz |
+| Fastest setting with correct loopback, no external delay | clkdiv 1: 4 system clocks per SCK, input synchroniser bypassed (`pio_spi_init` does this) | g4: CLKDIV 2, 8 clocks per SCK; at CLKDIV 1 MISO is sampled one bit late (0xA5 → 0x52). v2: CLKDIV 1 with MISO in `SYNC_BYPASS`, 4 clocks per SCK |
+| Against a device that answers a clock after SCK falls | MISO sampled 2 clocks after SCK falls | v2: `spi_master_fast` (3 instructions), 4 clocks per SCK, MISO sampled 2 clocks after SCK falls |
+| Max SCK | 31.25 MHz at 125 MHz, 33 MHz at 133 MHz | g4: 6.25 MHz; v2: 12.5 MHz |
 
-protoemu's pad inputs always pass a 2-flop synchroniser ([isa.md §2](isa.md)),
-and there is no bypass. PIO has a per-GPIO bypass (`INPUT_SYNC_BYPASS`,
-datasheet §3.5.6.3). This is a real PIO advantage for fast synchronous
-interfaces: 2× in clocks per bit, about 5× in absolute SCK. The RTL SPI test
-already uses CLKDIV 2.
+On g4, protoemu's pad inputs always pass a 2-flop synchroniser
+([isa.md §2](isa.md)), and there is no bypass. PIO has a per-GPIO bypass
+(`INPUT_SYNC_BYPASS`, datasheet §3.5.6.3). That was a real PIO advantage for
+fast synchronous interfaces: 2× in clocks per bit, about 5× in absolute SCK.
+
+v2 adds a per-pin bypass (`SYNC_BYPASS`, 0x0804): the pad is read from the
+first flop. In the loopback above `spi_master` then runs at CLKDIV 1, 4 clocks
+per SCK, like PIO (`test_uart_tx_and_spi_cycles`). PIO's IN samples at the
+clock edge where it raises SCK, two clocks after SCK fell. protoemu's IN reads
+the pad as it was a clock before the instruction, so the 2-instruction program
+gives a device only one clock to answer. `spi_master_fast` spends a third
+instruction to sample at the SCK rise, which restores the two clocks.
+`test/model/test_spi_fast.py` sweeps the device's answer delay:
+
+| Firmware, setting | Clocks per SCK | Device must answer within (after the SCK fall) |
+|---|---|---|
+| `spi_master`, CLKDIV 2 (g4) | 8 | 2 clocks |
+| `spi_master`, CLKDIV 1 (g4) | 4 | never correct (one bit late) |
+| `spi_master`, CLKDIV 1, bypass | 4 | 1 clock |
+| `spi_master_fast`, CLKDIV 1 | 4 | 1 clock |
+| `spi_master_fast`, CLKDIV 1, bypass | 4 | **2 clocks** (40 ns at 50 MHz, less pad and board delays) |
+
+The RTL test `test_spi_master_fast` runs the last row through the real host
+port against `test_spi_master`'s device model, which answers a clock after it
+sees SCK fall: 5 bytes back to back at 4 clocks per SCK, all correct. Without
+the bypass, or with `spi_master` at CLKDIV 1 even with it, every MISO bit
+arrives one bit late (0xC3 read as 0xE1). PIO keeps the absolute-rate
+advantage of its faster clock (33 against 12.5 MHz).
 
 ## I2C master
 
@@ -330,8 +356,10 @@ benchmarked against PRU code.
 1. **Speed.** 133 MHz (200 MHz overvolted) on 40 nm against 50 MHz on 130 nm:
    2.7× the absolute rate for the same cycles per bit (UART), and finer edge
    placement (7.5 ns against 20 ns).
-2. **Fast synchronous inputs.** Input-synchroniser bypass gives 4 clocks per
-   SPI bit against protoemu's 8, about 33 MHz against 6.25 MHz SCK.
+2. **Fast synchronous inputs.** On g4, PIO's input-synchroniser bypass gave
+   4 clocks per SPI bit against protoemu's 8, about 33 MHz against 6.25 MHz
+   SCK. v2's `SYNC_BYPASS` matches the 4 clocks (12.5 MHz at 50 MHz); the
+   absolute rate is the clock's.
 3. **Code density.** 16-bit instructions, and smaller programs where the PIO
    design pushes work to the CPU: I2C uses 36 B against 284 B, UART RX 18 B
    against 52 B.

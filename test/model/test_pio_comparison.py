@@ -750,7 +750,8 @@ def tx_bit_ticks():
 def spi_ticks():
     """Mode-0 SPI with MOSI looped to MISO and no external delay, two bytes
     back to back: system clocks per SCK and the data received. protoemu at
-    DIV 1 and 2 (its pad inputs pass a 2-flop synchroniser, isa.md §2);
+    DIV 1 and 2 (its pad inputs pass a 2-flop synchroniser, isa.md §2), and
+    DIV 1 with MISO's pad in SYNC_BYPASS (one flop);
     pico-examples spi_cpha0 at clkdiv 1 with the input synchroniser bypassed,
     as pio_spi_init does (the PIO model has no synchroniser)."""
     r = {}
@@ -758,10 +759,12 @@ def spi_ticks():
     def rises(sck):
         return [i for i in range(1, len(sck)) if not sck[i - 1] and sck[i]]
 
-    for div in (1, 2):
+    for div, byp in ((1, 0), (2, 0), (1, 1)):
         mh = ModelHost()
         mh.apply(host.load_program(0, pe_prog("spi_master"), out_pins=(8, 1), side_pins=9,
                                    in_pins=16, clkdiv=div << 8))
+        if byp:                                 # MISO (ui0 = P16) one synchroniser stage fresher
+            mh.write(sim.A_SYNCBYP, 1 << 16)
         for b in (0xA5, 0x3C):
             mh.push(0, b << 24)
         mh.start(1)
@@ -771,7 +774,7 @@ def spi_ticks():
             mh.step()
             sck.append((mh.chip.pin_out >> 9) & 1)
         e = rises(sck)
-        r[f"pe_div{div}"] = dict(clocks_per_sck=e[1] - e[0], clocks_16bit=e[15] - e[0] + e[1] - e[0],
+        r[f"pe_div{div}" + ("_bypass" if byp else "")] = dict(clocks_per_sck=e[1] - e[0], clocks_16bit=e[15] - e[0] + e[1] - e[0],
                                  data=[x & 0xFF for x in mh.pop_all(0)])
     sm = PioSm(program("spi_cpha0"), out_base=0, side_base=1, in_base=2, autopull=True,
                pull_thresh=8, autopush=True, push_thresh=8)
@@ -795,6 +798,9 @@ def test_uart_tx_and_spi_cycles():
     # MISO sample one bit late even with zero external delay
     assert r["pe_div1"] == dict(clocks_per_sck=4, clocks_16bit=64, data=[0x52, 0x9E])
     assert r["pe_div2"] == dict(clocks_per_sck=8, clocks_16bit=128, data=[0xA5, 0x3C])
+    # with SYNC_BYPASS on MISO, the same 2-instruction program at 4 clocks per
+    # SCK, like PIO (test_spi_fast.py: a device with real delay wants spi_master_fast)
+    assert r["pe_div1_bypass"] == dict(clocks_per_sck=4, clocks_16bit=64, data=[0xA5, 0x3C])
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ ID_VALUE = 0x50450002
 IMEM_WORDS = 1024
 
 # Register map
-A_ID, A_CTRL, A_FSET, A_FCLR, A_RSVD4, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
+A_ID, A_CTRL, A_FSET, A_FCLR, A_SYNCBYP, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
 A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
@@ -518,6 +518,7 @@ class Chip:
         self.hostcfg = 0  # QUAD_EN: only the host port uses it
         self.line = Line(self.cover)
         self.sync1 = self.sync2 = 0  # {ui[4:0], uio[7:0]}
+        self.sync_bypass = 0         # SYNC_BYPASS, same bit order: read sync1 instead of sync2
         # the line unit's RX pin, also sampled on the falling clock edge (pe_chip
         # rx_hq, rx_h2): half a clock older than its sync2 sample
         self.rx_hq = self.rx_h2 = 0
@@ -547,8 +548,12 @@ class Chip:
             oe |= 1 << p
         return out, oe
 
+    def pad_in(self):
+        """The pads as the cores see them: sync2, or sync1 where SYNC_BYPASS is set (§2)."""
+        return (self.sync2 & ~self.sync_bypass) | (self.sync1 & self.sync_bypass)
+
     def pins_in(self):
-        s = self.sync2
+        s = self.pad_in()
         out, _ = self.eff_pins()
         return ((s & 0xFF) | (out & 0x7F00) | (((s >> 8) & 0x1F) << 16)
                 | (out & 0xFF000000))
@@ -663,6 +668,8 @@ class Chip:
                     self.pin_owner[16 + i] = (wdata >> (2 * i)) & 3
             elif addr == A_OD:
                 self.od_mask = wdata & 0xFF
+            elif addr == A_SYNCBYP:
+                self.sync_bypass = (wdata & 0xFF) | (((wdata >> 16) & 0x1F) << 8)
             elif addr == A_POUT:
                 new_out = wdata & M32
             elif addr == A_POE:
@@ -721,7 +728,12 @@ class Chip:
         if ctrl is not None:
             self.enable = ctrl & 15
         rxp = self.line.rxp
-        rx_mid = self.rx_h2 if _pad_bit(rxp) is not None else (pins_in >> rxp) & 1
+        bit = _pad_bit(rxp)          # the falling-edge sample before sync1's (rx_hq) or sync2's (rx_h2)
+        rx_mid = (pins_in >> rxp) & 1 if bit is None else \
+            self.rx_hq if (self.sync_bypass >> bit) & 1 else self.rx_h2
+        if bit is not None and (self.sync_bypass >> bit) & 1 and self.line.en and self.line.rx_en \
+                and self.rx_hq != self.rx_h2:
+            self.cover("line:rx_bypassed_pin")
         self.line.step(pins_in, rx_mid)  # after the cores: they used its start-of-cycle state
         self.line.commit()
         if line_write:
@@ -729,6 +741,8 @@ class Chip:
         self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None
         self.flags = ((flags & ~fclr) | fset) & 0xFF
         self.pin_out, self.pin_oe = new_out & M32, new_oe & M32
+        if self.sync_bypass & (self.sync1 ^ self.sync2):
+            self.cover("pins:sync_bypass_fresher")
         self.sync2 = self.sync1
         pads = (uio_in & 0xFF) | ((ui_in & 0x1F) << 8)
         mid = self.pads_prev if ui_mid is None and uio_mid is None else \

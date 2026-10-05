@@ -43,7 +43,9 @@ The RTL `pe_chip` and the model run side by side in cocotb:
   timeouts so programs keep moving. Some jump targets deliberately cross into
   unowned banks, to exercise faults.
 * **Configuration:** random clock dividers, pin maps, shift and threshold
-  settings, pin ownership, open-drain masks and CRC polynomials.
+  settings, pin ownership, open-drain masks, synchroniser bypass masks (also
+  rewritten mid-run, so the switch between one and two flops is covered) and
+  CRC polynomials.
 * **Stimulus:** random pin toggling at several rates, plus random host bus
   traffic every cycle:
   * FIFO pushes and pops;
@@ -127,8 +129,10 @@ the RTL through the **real SPI host port** (`test/test.py`).
 
 **On the RTL, through the SPI port** (also run at gate level):
 
-* UART TX/RX; SPI master; I2C master against an EEPROM model with clock
-  stretching, NACKs and repeated STARTs.
+* UART TX/RX; SPI master, also at 4 clocks per SCK with MISO in
+  `SYNC_BYPASS` (`test_spi_master_fast`: correct with the bypass, one bit late
+  without it); I2C master against an EEPROM model with clock stretching, NACKs
+  and repeated STARTs.
 * USB low-speed device: SETUP + DATA0 → ACK and a good record; an IN to
   another address gets no answer; IN → NAK; IN → the staged DATA1, each within
   the 7.5-bit turnaround.
@@ -196,6 +200,9 @@ checkpoint tests do not satisfy final physical release.
   (host model checking parity), WS2812 (datasheet timing windows), and the I2C
   sniffer running beside the I2C master.
 * The CRC tap against the USB reference CRCs (fields and residues).
+* SPI master against a device model whose answer delay is swept
+  (`test_spi_fast.py`): clocks per SCK and the delay budget for each firmware,
+  divider and bypass setting.
 * Host software: the demo-board MicroPython driver runs unmodified against the
   model through a Python model of the SPI port (UART output, a 10BASE-T frame).
 

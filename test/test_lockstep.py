@@ -127,6 +127,7 @@ class Harness:
                              ("pin_owner", v(self.chip.pin_owner_lo) | v(self.chip.pin_owner_hi) << 32,
                               sum(o << 2 * i for i, o in enumerate(m.pin_owner))),
                              ("od_mask", v(self.chip.od_mask), m.od_mask),
+                             ("sync_byp", v(self.chip.sync_byp), m.sync_bypass),
                              ("hostcfg", v(self.chip.hostcfg), m.hostcfg),
                              ("line.cfg", v(u.cfg), m.line.cfg), ("line.div", v(u.div), m.line.div),
                              ("line.txp", v(u.txp), m.line.txp), ("line.rxp", v(u.rxp), m.line.rxp)):
@@ -208,7 +209,7 @@ async def test_registers(dut):
         for off in (0, 1, 2, 3, 4, 5, 6, 7, 0xA, 0xB, 0xC, 0xD):
             await h.write(sim.core_reg(c, off), rng.getrandbits(32))
             await h.cycle_step(addr=sim.core_reg(c, off))
-    for a in (sim.A_RSVD4, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
+    for a in (sim.A_SYNCBYP, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
         await h.write(a, rng.getrandbits(32))
         await h.cycle_step(addr=a)
 
@@ -286,6 +287,7 @@ async def test_random_lockstep(dut):
                                    wdata=rng.getrandbits(32))
             elif op < 0.155:
                 await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_HOSTCFG,
+                                                                   sim.A_SYNCBYP,
                                                                    sim.A_LINECFG,
                                                                    sim.A_POUT, sim.A_POE]),
                                    wdata=rng.getrandbits(32))
@@ -331,14 +333,14 @@ def coverage_goals():
     return ([f"done:{op}" for op in ops] + ["stall:wait", "stall:push", "stall:pull", "stall:out", "jump"] + [
         "wait:timeout", "wait:edge_caught_between_ticks", "wait:qualifier_blocked_edge",
         "shift:autopush", "shift:autopull",
-        "pins:side_set_over_out", "pins:write_to_unowned_pin",
+        "pins:side_set_over_out", "pins:write_to_unowned_pin", "pins:sync_bypass_fresher",
         "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
         "fifo:clear_nonempty", "fifo:join_move",
         "ctrl:restart_mid_instruction", "core:bank_fault",
         "line:out_entry", "line:tx_bit", "line:tx_stuff", "line:tx_manchester_half", "line:tx_frame_end",
         "line:rx_bit", "line:rx_stuff", "line:rx_frame_end", "line:in_bits", "line:in_frame_end",
         "line:rx_overflow", "line:rx_edge_first_half", "line:rx_edge_second_half",
-        "line:rx_edge_outside_window",                                   # rx_locked: test_line_rx_jitter
+        "line:rx_edge_outside_window", "line:rx_bypassed_pin",                                   # rx_locked: test_line_rx_jitter
     ])
 
 

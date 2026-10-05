@@ -59,6 +59,26 @@ Cores see a 32-entry **logical pin space**:
 * **Synchroniser:** pad inputs pass through a 2-flop synchroniser. A core
   reading a pad input in cycle *t* sees the pad value that was present at the
   clock edge ending cycle *t − 2*.
+* **Synchroniser bypass:** with bit *i* of `SYNC_BYPASS` (0x0804) set, pad
+  input P*i* (P0–P7, P16–P20) is read from the first flop: in cycle *t* it is
+  the pad value at the edge ending cycle *t − 1*. The bit selects what
+  `pins_in[i]` is, so it applies everywhere the pin is read: IN/MOV `PINS`,
+  JMP pin conditions, WAIT and its edge trackers, the host's `PINS` register
+  and the line unit (its falling-edge sample moves with it, §4.7). Every reader
+  sees one value stream, so an edge WAIT followed by an IN, or a WAIT
+  qualifier on another pin, keeps its meaning. Changing a bit skips one sample
+  of that pin (bypass on) or repeats one (off): a one-cycle pulse can be lost
+  at that moment, but no edge is invented.
+  **Use it only for inputs synchronous to the chip's own outputs** whose round
+  trip is known to meet the first flop's setup and hold, such as SPI MISO
+  answering our SCK: with one flop, a metastable sample reaches the cores'
+  logic. It buys a clock of input latency, which a fast synchronous master
+  needs: `spi_master_fast` runs SPI at 4 clocks per SCK (12.5 MHz at 50 MHz)
+  with two clocks for the device to answer, where the synchronised input
+  needs 8 clocks per SCK (docs/pio-comparison.md).
+  The control is per pin and global rather than per core because the
+  synchroniser is: 13 flops and 13 multiplexers beside it, and `pins_in` keeps
+  its width. A per-core choice would route both flops' outputs to every core.
 * **Output registers:** one global `pin_out[31:0]` and `pin_oe[31:0]`.
   Writes take effect at the end of the cycle in which the writing instruction
   executes, so the pad changes one cycle later.
@@ -325,11 +345,13 @@ edge instead of 2–3, centred in the bit at P = 4 (USB full speed at 48 MHz:
 an edge-to-edge interval may shrink by about 31 ns instead of 21; USB allows
 18.5). An internal pin's falling-edge sample equals `pins_in`, so it always
 takes the shorter count, which is harmless with no analog edge. P ≥ 4 keeps the
-count from wrapping (it is 16 bits, mod 2^16).
+count from wrapping (it is 16 bits, mod 2^16). With the RX pad in
+`SYNC_BYPASS` everything happens a clock earlier (an asynchronous line such
+as USB should not use the bypass).
 
 **Manchester timing.** The RX pin is sampled at both clock edges: a pad pin
-(P0–P7, P16–P20) also at the falling edge, half a clock before its
-synchronized sample (internal pins change only at rising edges), so each
+(P0–P7, P16–P20) also at the falling edge, half a clock before the
+synchronized sample it is read as (the first flop's with `SYNC_BYPASS`, §2) (internal pins change only at rising edges), so each
 transition is placed in one half of a clock. The phase `q`, in 1/64
 half-cycles, counts from the predicted next mid-bit transition (P ≤ 4095;
 higher bits of the RX period are ignored for Manchester):
@@ -652,7 +674,7 @@ do not establish that physical sampling margin.
 | 0x0801             | CTRL         | RW     | `[3:0]` enable; write-only, self-clearing: `[11:8]` restart, `[19:16]` FIFO clear |
 | 0x0802             | FLAGS_SET    | RW     | R: flags; W: set bits where 1                |
 | 0x0803             | FLAGS_CLR    | RW     | R: flags; W: clear bits where 1              |
-| 0x0804             | —            | —      | reserved (was BANK_OWNER; writes are ignored) |
+| 0x0804             | SYNC_BYPASS  | W      | `[7:0]` P0–P7, `[20:16]` P16–P20: read the pad through one synchroniser flop instead of two (§2); reset 0. (Was BANK_OWNER.) |
 | 0x0805             | PIN_OWNER_LO | W      | `[2i+1:2i]` owner of pin i (0–15)            |
 | 0x0806             | PIN_OWNER_HI | W      | owner of pin 16+i                            |
 | 0x0807             | OD_MASK      | W      | `[7:0]` open-drain enable for P0–P7          |

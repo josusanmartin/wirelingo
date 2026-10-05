@@ -282,7 +282,7 @@ class SpiSlave:
         self._drive(self._bit())
         self.nbit = 0
         self.cur = 0
-        cocotb.start_soon(self.run())
+        self.task = cocotb.start_soon(self.run())
 
     def _bit(self):
         byte = self.resp[0] if self.resp else 0
@@ -341,6 +341,61 @@ async def test_spi_master(dut):
     got = await spi.read(sim.core_reg(core(2), sim.C_FIFO), len(tx), fixed=True)
     assert list(slave.rx) == tx, list(slave.rx)
     assert [g & 0xFF for g in got] == resp, got
+
+
+@cocotb.test()
+async def test_spi_master_fast(dut):
+    """SPI master at 4 clocks per SCK (12.5 MHz at 50 MHz) against the same
+    device model as test_spi_master, which answers one clock after it sees SCK
+    fall. spi_master_fast with MISO's pad in SYNC_BYPASS (docs/isa.md §2)
+    reads every byte; without the bypass, or with spi_master at CLKDIV 1 even
+    with it, every MISO bit is taken one bit late (MOSI is always right)."""
+    spi = await setup(dut)
+    SCK, MOSI, MISO = UIO(2), UIO(3), UIO(4)
+    c = core(2)
+    await spi.apply(host.pin_owner_writes({SCK: c, MOSI: c, MISO: c}))
+    await run_program(spi, c, asm.assemble(f"pin {SCK}, lo\npin {MOSI}, lo\nhalt"))
+    await ClockCycles(dut.clk, 20)
+    tx, resp = [0xA5, 0x0F, 0xFF, 0x00, 0x3C], [0xC3, 0x5A, 0x01, 0x80, 0xE7]
+
+    async def transfer(fw, bypass):
+        await spi.write(sim.A_CTRL, [1 << (16 + c)])                 # stop the core, clear its FIFOs
+        await spi.write(sim.A_SYNCBYP, [(1 << MISO) if bypass else 0])
+        await spi.write(sim.core_reg(c, sim.C_FIFO), [b << 24 for b in tx], fixed=True)   # queued: back to back
+        slave = SpiSlave(dut, SCK, MOSI, MISO, resp)
+        rises = []
+
+        async def sck_monitor():
+            prev = 0
+            while True:
+                await RisingEdge(dut.clk)
+                s = (int(dut.uio_out.value) >> SCK) & 1
+                if s and not prev:
+                    rises.append(get_sim_time(unit="ns"))
+                prev = s
+        mon = cocotb.start_soon(sck_monitor())
+        await run_program(spi, c, load_fw(fw), out_pins=(MOSI, 1), side_pins=SCK, in_pins=MISO, clkdiv=1 << 8)
+        for _ in range(100):
+            if ((await spi.read(sim.core_reg(c, sim.C_STATUS)))[0] >> 4) & 15 == len(tx):
+                break
+        got = [g & 0xFF for g in await spi.read(sim.core_reg(c, sim.C_FIFO), len(tx), fixed=True)]
+        slave.task.cancel()
+        mon.cancel()
+        clocks = {round((b - a) / CLK_NS) for a, b in zip(rises, rises[1:])}
+        return list(slave.rx), got, clocks
+
+    rx, got, clocks = await transfer("spi_master_fast", True)
+    assert rx == tx and got == resp, (rx, got)
+    assert clocks == {4}, clocks                                   # 12.5 MHz SCK, back to back
+    dut._log.info(f"spi_master_fast, CLKDIV 1, MISO in SYNC_BYPASS: {len(tx)} bytes at "
+                  f"{sorted(clocks)} clocks per SCK, read {[hex(b) for b in got]}")
+    for fw, byp in (("spi_master_fast", False), ("spi_master", True)):
+        rx, got, clocks = await transfer(fw, byp)
+        assert rx == tx and clocks == {4}, (fw, byp, rx, clocks)
+        late = [((resp[i - 1] & 1 if i else resp[0] >> 7) << 7) | (resp[i] >> 1) for i in range(len(resp))]
+        assert got == late, (fw, byp, [hex(b) for b in got])         # every MISO bit one bit late
+        dut._log.info(f"{fw}, CLKDIV 1, bypass {int(byp)}: read {[hex(b) for b in got]} (one bit late)")
+    await spi.write(sim.A_SYNCBYP, [0])
 
 
 class I2cEeprom:
