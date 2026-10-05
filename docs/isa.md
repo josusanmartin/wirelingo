@@ -77,7 +77,10 @@ Cores see a 32-entry **logical pin space**:
   logic. It buys a clock of input latency, which a fast synchronous master
   needs: `spi_master_fast` runs SPI at 4 clocks per SCK (12.5 MHz at 50 MHz)
   with two clocks for the device to answer, where the synchronised input
-  needs 8 clocks per SCK (docs/pio-comparison.md).
+  needs 8 clocks per SCK (docs/pio-comparison.md). The two clocks must hold
+  the chip's clock-to-SCK-pad delay, both board flight times, the device's
+  SCK-to-MISO delay, the input pad delay and the flop's setup (40 ns at
+  50 MHz); none of the pad terms is characterised yet.
   The control is per pin and global rather than per core because the
   synchroniser is: 13 flops and 13 multiplexers beside it, and `pins_in` keeps
   its width. A per-core choice would route both flops' outputs to every core.

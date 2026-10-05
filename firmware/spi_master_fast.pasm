@@ -5,9 +5,16 @@
 ;
 ; MISO's pad must be in SYNC_BYPASS (docs/isa.md §2), which is safe here
 ; because MISO answers our own SCK. The IN reads the pad as it was at the
-; clock edge where SCK rose, two clocks after SCK fell: the device has two
-; clocks (40 ns at 50 MHz, less the pad and board delays) to present the next
-; bit, the same budget spi_master.pasm gets at CLKDIV 2 (8 clocks per SCK).
+; clock edge where SCK rose, two clocks after the edge that made SCK fall: the
+; device has two clocks to present the next bit, the same budget spi_master.pasm
+; gets at CLKDIV 2 (8 clocks per SCK). As a timing budget, with T = the clock
+; period (20 ns at 50 MHz):
+;   t_out(clk -> SCK at the pad) + t_board(SCK) + t_v(device: SCK fall -> MISO)
+;     + t_board(MISO) + t_in(pad -> first synchroniser flop) + t_setup <= 2 T
+; Hold is not at risk: the device changes MISO only after the next SCK fall,
+; two clocks after the sample. The Tiny Tapeout pad/mux delays (t_out, t_in)
+; are not characterised here; only simulation (zero delays, plus the device
+; model's one-clock answer) backs the 4-clocks-per-SCK claim.
 ; Without the bypass the IN would see MISO one clock after SCK fell.
 ; Chip select is left to the host (PIN_OUT) or a PIN instruction in a wrapper.
 .program spi_master_fast

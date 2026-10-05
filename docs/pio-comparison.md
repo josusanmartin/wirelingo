@@ -177,7 +177,7 @@ instruction to sample at the SCK rise, which restores the two clocks.
 | `spi_master`, CLKDIV 1 (g4) | 4 | never correct (one bit late) |
 | `spi_master`, CLKDIV 1, bypass | 4 | 1 clock |
 | `spi_master_fast`, CLKDIV 1 | 4 | 1 clock |
-| `spi_master_fast`, CLKDIV 1, bypass | 4 | **2 clocks** (40 ns at 50 MHz, less pad and board delays) |
+| `spi_master_fast`, CLKDIV 1, bypass | 4 | **2 clocks** (40 ns at 50 MHz, less pad and board delays, below) |
 
 The RTL test `test_spi_master_fast` runs the last row through the real host
 port against `test_spi_master`'s device model, which answers a clock after it
@@ -185,6 +185,16 @@ sees SCK fall: 5 bytes back to back at 4 clocks per SCK, all correct. Without
 the bypass, or with `spi_master` at CLKDIV 1 even with it, every MISO bit
 arrives one bit late (0xC3 read as 0xE1). PIO keeps the absolute-rate
 advantage of its faster clock (33 against 12.5 MHz).
+
+The "2 clocks" are a budget, not a margin: t_out (clock to SCK at the pad) +
+SCK board flight + the device's SCK-fall-to-MISO delay + MISO board flight +
+t_in (pad to the first synchroniser flop) + setup must stay under 40 ns at
+50 MHz. Hold is safe (MISO changes only at the next SCK fall). The simulation
+has zero pad and board delays, and the Tiny Tapeout I/O path (pad plus the
+shared input/output multiplexers) is not characterised here, so 12.5 MHz with
+a real device is unmeasured; a device with a 10 ns clock-to-out leaves about
+30 ns for the chip's pads and the board. PIO's own budget is the same two
+clocks, at 133 MHz: 15 ns.
 
 ## I2C master
 

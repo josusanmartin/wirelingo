@@ -12,6 +12,9 @@ lists what the runs can't show.
 > "signed-off line unit" lines) describe the chip that was signed off; on v2,
 > `test_usb_fs_device` ACKs 24/24 packets at DCD 14 ns (28 ns edge to edge),
 > where g4 ACKed 11/24, and the turnarounds are 10.5 / 13.4 / 14.9 clocks.
+> Like g4's, these are digital simulations at exactly 48 MHz: whether the v2
+> chip runs at 48 MHz is up to its own signoff (g4's slow corner reaches about
+> 44 MHz; typ met 50 MHz).
 
 ## Bottom line
 

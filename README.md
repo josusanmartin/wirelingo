@@ -36,6 +36,18 @@ describes how, and what it caught.
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
+* **Branch `v2`** (RTL changed, to be re-hardened and signed off): four small
+  additions, each in the spec, RTL, model, assembler, lockstep, formal where an
+  invariant applies, and a firmware that uses it. The line unit's NRZI sample
+  point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
+  packets at 28 ns edge-to-edge distortion, g4 11/24; running at 48 MHz still
+  depends on the re-hardened chip's timing, since g4's slow corner reaches
+  about 44 MHz); `SYNC_BYPASS` reads chosen pad inputs through one
+  synchroniser flop (SPI master at 4 clocks per SCK, like PIO, if the pads and
+  the device answer within 2 clocks); WAIT kind 7 waits until any of 8 pins
+  differs from a register (logic analyzer timestamps to the tick instead of
+  5 ticks); CALL/RET with one link register (`i2c_device` 98 → 88
+  instructions). docs/isa.md has the details.
 
 ## What we'd do differently from PIO
 
@@ -49,7 +61,8 @@ for:
 - **WAITs that can't hang and don't miss edges:** any WAIT can time out; it can
   wait on a rise, fall or any edge, caught at full clock resolution even when
   the core ticks slowly; and it can be qualified by a second pin ("SDA falls
-  while SCL is high" is one instruction).
+  while SCL is high" is one instruction). v2: or wait until any of 8 pins
+  differs from a register, with the timeout counter as the timestamp.
 - **Pins:** per-pin open drain, `PIN p, hi/lo/toggle/hiz` on any pin, 8 virtual
   pins as wires between cores, per-pin ownership.
 - **A CRC tap** (any polynomial up to 16 bits) fed by the shift registers, and
