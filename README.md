@@ -6,12 +6,32 @@ targeting IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles).
 Protocols are programs, not peripherals. The chip has **two small cores built
 for bit-banging**, each with its own SRAM bank of 256 32-bit instructions,
 FIFOs to the host and a clock divider. A host (the TT demo board's RP2350)
-loads firmware over SPI and exchanges data through the FIFOs. The RTL is
-parameterised up to four cores and four banks. Two is what routes on this
-tile's single horizontal routing layer ([docs/physical.md](docs/physical.md)).
+loads firmware over SPI and exchanges data through the FIFOs. UART, SPI, I2C,
+low-speed USB, 10BASE-T, CAN, SWD, JTAG, 1-Wire, PS/2 and WS2812 are all
+firmware ([below](#what-runs-on-it)).
 
-The ISA is inspired by the RP2040's PIO, with the additions that real
-protocols kept asking for:
+**It was designed by one person with no prior chip-design experience, with AI
+agents writing the spec, RTL, firmware and tests,** and every claim backed by
+evidence an agent can't talk its way past: two independent implementations
+of the spec compared cycle by cycle, formal proofs, mutation testing,
+gate-level simulation, scripted physical signoff, an adversarial second agent,
+and the RTL running on an FPGA. [docs/methodology.md](docs/methodology.md)
+describes how, and what it caught.
+
+**Where it stands:**
+
+* Signed off (run g4): DRC, LVS and antenna clean, 50 MHz at the typical
+  corner, hold met at every corner, Tiny Tapeout precheck passed; the netlist
+  passes all 20 top-level tests at gate level ([docs/physical.md](docs/physical.md)).
+* Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
+  crosses real pins in both directions, and the quad host port moves
+  193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
+* Not yet on the Tiny Tapeout demo board or silicon.
+
+## What we'd do differently from PIO
+
+The ISA starts from the RP2040's PIO and adds what real protocols kept asking
+for:
 
 - **Room for real programs:** 256 instructions per core, in its own bank (PIO: 32
   shared).
