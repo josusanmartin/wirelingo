@@ -2,9 +2,10 @@
 
 This chip was designed by one person with no prior ASIC or RTL experience,
 working with AI agents that wrote nearly all of the specification, RTL,
-models, firmware, tests and flow scripts. <!-- TODO(author): one or two
-sentences on your background and when you started; the git history begins on
-2026-09-30 with "v0.2", so say what came before. -->
+models, firmware, tests and flow scripts. <!-- TODO(author): What is your
+background, and what ASIC, RTL or FPGA experience did you have before this
+project? When did you start, and what had you built before the git history
+begins on 2026-09-30 with "v0.2"? -->
 
 The interesting question isn't whether an AI can write Verilog. It is how you
 can trust a chip you couldn't have written yourself. This page describes what
@@ -86,8 +87,13 @@ flow) and [review.md](review.md) (the independent review).
   board, and the decision of what to publish and when.
 * **Ask "how do you know?"** Most of the value came from refusing a
   summary until it pointed at a test, a report or a measurement.
-<!-- TODO(author): anything you'd add in your own words: what surprised you,
-what you'd do differently, how much time it took. -->
+* **Push for comparisons and further improvement.** The author asked which
+  reference designs should be used to judge novelty, then asked for better
+  efficiency and speed instead of a justification that the current design was
+  already good enough.
+<!-- TODO(author): Roughly how many hours of your own time have you spent,
+over what period? What surprised you? What would you do differently if
+starting again? -->
 
 ## Limits
 
