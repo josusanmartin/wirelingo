@@ -107,7 +107,7 @@ v2 firmware (WAIT kind 7), with g4's polling firmware for comparison:
 | Sustained rate, quad SPI, SCK = 50 MHz | 8-word bursts: an edge every 12 clocks (the port: a word per ~11 clocks); 32-word bursts: every **9** clocks (5.56 M edges/s) | 12 clocks, the firmware's bound | `test_la_capture_rate` (RTL) |
 | Idle cost | one record per 65,536 ticks (1.3 ms): about 3 kB/s | one per 65,536 samples (6.55 ms), 610 bytes/s | `test_capture_timestamps` (an 8 ms gap) |
 | I2C at 100 kHz | 460 records in 2.02 ms ≈ 230 k records/s average | 480 records | `test_reverse_engineering` |
-| Device response | SDA changes 3–10 clocks after an SCL fall (10 = the address ACK); read stretch starts after 4 clocks, lasts ≥ 22 | the same | `test_device_response_times` |
+| Device response | SDA changes 3–10 clocks after an SCL fall (10 = the address ACK, 5 = a written byte's ACK); read stretch starts after 4 clocks, lasts ≥ 22 | the same, but a written byte's ACK after 4 (v2 adds the RET from the shared bit loop) | `test_device_response_times` |
 | Device host latency (RTL) | 2936 clocks of stretching over 10 read bytes, ≈ 6 µs per byte with the 1-bit polling loop | the same | `test_reverse_engineering` |
 
 So I2C at 400 kHz (about 1 M records/s) needs the quad port or a host that
@@ -130,7 +130,10 @@ that drains every cycle.
 * **ISA (fixed in v2): no CALL/RET** on g4, so the address and data paths had
   separate copies of the bit loop, the event push with its stretch and the
   STOP/repeated-START check (98 words). v2's CALL shares them as three
-  subroutines: 88 words, with the same response times.
+  subroutines: 88 words. Each use costs a CALL and a RET (2 ticks): a written
+  byte's ACK comes 5 clocks after the SCL fall instead of 4, and after a NACK
+  and a clock the core is back in idle 2 ticks later; the bit, address-ACK and
+  stretch timings, STOP and repeated-START detection are unchanged.
 * The device emulates one 7-bit address. It has no 10-bit addressing, general
   call or spike filter (I2C fast mode asks for 50 ns suppression; the capture
   and the device both see any glitch that lasts a sample). STOP and NACK events

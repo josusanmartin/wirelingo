@@ -218,7 +218,8 @@ checkpoint tests do not satisfy final physical release.
 * CALL / RET (`test_call.py`): linking, conditional calls (LR untouched when
   not taken), nesting through a register, a CALL at the wrap top, LR across a
   restart. `i2c_device` with its three subroutines runs the whole reverse
-  engineering flow and its response-time test unchanged.
+  engineering flow; its response-time test keeps its bounds (a written byte's
+  ACK moved from 4 to 5 clocks after the SCL fall, the rest is unchanged).
 * WAIT kind 7 (`test_wait_diff.py`): the mask and IN_BASE, completion on
   the first attempt, a one-clock pulse between ticks, the timeout as a tick
   counter. The logic-analyzer capture (`test_reverse_engineering.py`):

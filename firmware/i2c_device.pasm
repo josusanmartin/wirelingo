@@ -7,8 +7,9 @@
 ; R3 = the 7-bit address (the host writes it before starting the core).
 ; Tick = clk (CLKDIV 1): the core sees an SCL edge 2-3 clocks after the pad
 ; (synchronizer). Measured on the model from the SCL fall (test_reverse_engineering):
-; a data bit is on SDA after 3 clocks, a data byte's ACK after 4, the address
-; ACK after 10 (the compare), the read stretch starts after 4. At 50 MHz that
+; a data bit is on SDA after 3 clocks, a data byte's ACK after 5 (g4: 4; the
+; RET from the bit loop), the address ACK after 10 (the compare), the read
+; stretch starts after 4. At 50 MHz that
 ; is <= 200 ns into an SCL low phase of >= 1300 ns (fast mode) or 500 ns (Fm+).
 ;
 ; RX events (core -> host):
@@ -33,7 +34,10 @@
 ; Three subroutines (CALL / RET, one level: docs/isa.md §5.2) carry what the
 ; address and data paths share: the bit loop, the event push with its stretch,
 ; and the bit that may turn out to be a STOP or a repeated START. g4, without
-; CALL, had two copies of each (98 instructions; now 88).
+; CALL, had two copies of each (98 instructions; now 88). The cost is a CALL and
+; a RET per use (2 ticks): a written byte's ACK comes a clock later, and after
+; a NACK followed by a clock the core is back in idle 2 ticks later; nothing
+; else moves (test_device_response_times).
 .program i2c_device
 .shift_in left
 .shift_out left
