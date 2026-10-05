@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Stage a named FPGA profile without modifying the ASIC checkout.
+"""Stage an FPGA copy of src/ (for the TT FPGA workflow, .github/workflows/fpga.yaml).
 
-The default preserves the ASIC core/bank/FIFO geometry. Inferred RAM,
-flop FIFOs and configuration clock enables replace ASIC-only primitives.
-Explicit smaller profiles are experiments, not validation of the tapeout.
-FPGA results do not establish ASIC timing/CDC/analog behavior.
+The SRAM banks become inferred RAM, the FIFOs enable flops, and the clock-gated
+configuration registers clock enables; the ASIC checkout is not modified. The
+default keeps the ASIC's core count and FIFO depth.
 """
 import argparse
-import hashlib
-import json
 import pathlib
 import re
 import shutil
@@ -16,16 +13,9 @@ import shutil
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def inputs():
-    return {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted((ROOT / "src").rglob("*")) if p.is_file()
-            and p.name not in ("user_config.json", "config_merged.json")}
-
-
 def stage(dst, ncores=None, fifo_log2=None):
     if dst.exists():
-        raise ValueError("output exists; select a new private staging directory")
-    before = inputs()
+        raise ValueError(f"{dst} exists")
     original = (ROOT / "src/project.v").read_text()
     def default(name):
         match = re.search(rf"^`define {name} ([0-9]+)$", original, re.M)
@@ -37,10 +27,6 @@ def stage(dst, ncores=None, fifo_log2=None):
     if ncores not in range(1, 5) or fifo_log2 not in (2, 3):
         raise ValueError("FPGA profile requires 1..4 cores and FIFO log2 2 or 3")
     shutil.copytree(ROOT / "src", dst / "src", ignore=shutil.ignore_patterns("user_config.json", "config_merged.json"))
-    copied = {str(p.relative_to(dst)): hashlib.sha256(p.read_bytes()).hexdigest()
-              for p in sorted((dst / "src").rglob("*")) if p.is_file()}
-    if before != copied or before != inputs():
-        raise ValueError("ASIC sources changed during staging; retain output and use a new directory")
     project = dst / "src/project.v"
     text = re.sub(r"^`define PE_NCORES [0-9]+$", f"`define PE_NCORES {ncores}", original, flags=re.M)
     text = re.sub(r"^`define PE_FIFO_LOG2 [0-9]+$", f"`define PE_FIFO_LOG2 {fifo_log2}", text, flags=re.M)
@@ -76,19 +62,11 @@ def stage(dst, ncores=None, fifo_log2=None):
     for name, define in (("pe_fifo.sv", "PE_FIFO_NO_CG"), ("pe_imem.sv", "PE_FLOP_IMEM")):
         path = dst / "src" / name
         path.write_text(f"`define {define}\n" + path.read_text())
-    manifest = dict(profile=f"fpga-fixed-bank-{ncores}c{ncores}b256w{1 << fifo_log2}f",
-                    ncores=ncores, nbanks=ncores, bank_words=256, fifo_depth=1 << fifo_log2,
-                    changes="inferred RAM, enable-flop FIFOs and configuration registers")
-    manifest["asic_inputs"] = before
-    manifest["staged_sources"] = {str(p.relative_to(dst)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                  for p in sorted((dst / "src").rglob("*")) if p.is_file()}
-    (dst / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", required=True, type=pathlib.Path)
-    ap.add_argument("--cores", type=int, choices=range(1, 5), help="explicit experimental geometry override")
-    ap.add_argument("--fifo-log2", type=int, choices=(2, 3), help="explicit experimental FIFO override")
+    ap.add_argument("--cores", type=int, choices=range(1, 5), help="core count (default: the ASIC's)")
+    ap.add_argument("--fifo-log2", type=int, choices=(2, 3), help="FIFO depth 2**N (default: the ASIC's)")
     a = ap.parse_args()
     stage(a.output.resolve(), a.cores, a.fifo_log2)

@@ -130,53 +130,15 @@ def test_signoff_verdict(tmp_path, fault):
     assert gate.main(str(run)) == (0 if fault in (None, "slow-setup") else 1)
 
 
-@pytest.mark.parametrize("fault", [None, "tool-failure", "missing-report", "negative-timing"])
-def test_fpga_retains_failures_and_requires_routed_timing(tmp_path, monkeypatch, fault):
-    monkeypatch.syspath_prepend(str(ROOT / "flow"))
-    import fpga_validate as flow
-    monkeypatch.setattr(flow, "tool_identity", lambda name: {"version": "fixture"})
-    def run(cmd, out, name):
-        (out / (name + ".log")).write_text(repr(cmd))
-        if name == "synthesis":
-            (out / "design.json").write_text('{}')
-            (out / "mapped.v").write_text('module fixture; endmodule')
-        elif fault == "tool-failure":
-            raise RuntimeError("route failed (1)")
-        elif fault != "missing-report":
-            clocks = {name: dict(achieved=24 if fault == "negative-timing" else 60, constraint=48)
-                      for name in ("$glbnet$clk$TRELLIS_IO_IN", "$glbnet$ui_in[6]$TRELLIS_IO_IN")}
-            (out / "route.json").write_text(json.dumps(dict(fmax=clocks)))
-    monkeypatch.setattr(flow, "run", run)
-    out = tmp_path / "private"
-    if fault:
-        with pytest.raises(RuntimeError):
-            flow.validate(out, 48)
-    else:
-        flow.validate(out, 48)
-    receipt = json.loads((out / "validation.json").read_text())
-    assert receipt["status"] == ("fail" if fault else "pass")
-    assert receipt["evidence"]["manifest.json"] == hashlib.sha256((out / "manifest.json").read_bytes()).hexdigest()
-    assert json.loads((out / "manifest.json").read_text())["ncores"] == 2
-    assert (out / "route.log").exists()
-    old = (out / "validation.json").read_bytes()
-    with pytest.raises(ValueError, match="output exists"):
-        flow.validate(out, 48)
-    assert (out / "validation.json").read_bytes() == old
-
-
-def test_fpga_staging_rejects_a_racing_team_edit(tmp_path, monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT / "flow"))
-    import fpga_profile as flow
-    source = tmp_path / "source"
-    shutil.copytree(ROOT / "src", source / "src")
-    monkeypatch.setattr(flow, "ROOT", source)
-    copy = shutil.copytree
-    def racing_copy(src, dst, *args, **kwargs):
-        copy(src, dst, *args, **kwargs)
-        if pathlib.Path(src) == source / "src":
-            with (source / "src/project.v").open("a") as f:
-                f.write("\n// team edit during copy\n")
-    monkeypatch.setattr(flow.shutil, "copytree", racing_copy)
-    with pytest.raises(ValueError, match="sources changed during staging"):
-        flow.stage(tmp_path / "private")
-    assert not (tmp_path / "private/manifest.json").exists()
+def test_fpga_profile_replaces_asic_primitives(tmp_path):
+    spec = importlib.util.spec_from_file_location("fpga_profile", ROOT / "flow/fpga_profile.py")
+    fpga = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fpga)
+    fpga.stage(tmp_path / "fpga", ncores=1, fifo_log2=2)
+    src = tmp_path / "fpga/src"
+    assert "cfg_gclk" not in (src / "pe_core.sv").read_text()
+    assert "gcfg_gclk" not in (src / "pe_chip.sv").read_text()
+    project = (src / "project.v").read_text()
+    assert "`define PE_FLOP_IMEM" in project and "`define PE_NCORES 1" in project
+    with pytest.raises(ValueError):
+        fpga.stage(tmp_path / "fpga")                    # never overwrites

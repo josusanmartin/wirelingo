@@ -275,23 +275,6 @@ def test_protoemu_delegates_every_low_level_operation():
     assert tt.ui_in.value == 0x80  # Attaching PIO avoids SDK port writes.
 
 
-def test_bounded_board_benchmark_records_samples_and_checks_id(board_api):
-    import transport_bench
-    bus = transport()
-    pe = types.SimpleNamespace(transport=bus,
-                               read=lambda addr, n, fixed: 0x50450002 if n == 1 else [0x50450002] * n)
-    result = transport_bench.run(pe, 'declared-test-board', 'declared-test-sdk', repeats=3, sizes=(1, 8))
-    assert [row['words'] for row in result['rows']] == [1, 8]
-    assert result['rows'][0]['samples_us'] == [1000] * 3
-    assert result['measured_sck_hz'] is None and result['in_gpio'] == (8, 9, 10, 11)
-    pe.read = lambda addr, n, fixed: 0
-    with pytest.raises(RuntimeError, match='corrupted'):
-        transport_bench.run(pe, 'board', 'sdk', repeats=1, sizes=(1,))
-    with pytest.raises(ValueError, match='bounded'):
-        transport_bench.run(pe, 'board', 'sdk', repeats=1001)
-    bus.close()
-
-
 def test_rp2350_high_gpio_map_requires_preconfigured_block(board_api):
     pins = types.SimpleNamespace()
     for logical, physical in zip(range(2, 8), range(19, 25)):

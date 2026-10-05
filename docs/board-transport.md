@@ -2,7 +2,7 @@
 
 `tools/micropython/quad_spi.py` supplies an opt-in mode-0 quad transport for
 the existing `ProtoEmu` interface. `pio_quad.py` supplies its 14-instruction PIO
-program; `transport_bench.py` records bounded, read-only ID-burst measurements.
+program.
 The default driver remains the portable bit-banged implementation.
 
 The implementation was checked against the
@@ -45,8 +45,8 @@ rejects unsupported layouts before changing GPIOs. A different layout needs
 an explicit adapter or a different PIO program; do not assume a board pin map.
 Quad operation reserves these ASIC pins from other protocol uses.
 
-Copy `protoemu.py`, `bringup.py`, `protoemu_fw.py`, `quad_spi.py`, `pio_quad.py`
-and `transport_bench.py` to the board. Select an unused machine according to
+Copy `protoemu.py`, `bringup.py`, `protoemu_fw.py`, `quad_spi.py` and `pio_quad.py`
+to the board. Select an unused machine according to
 the team's resource allocation, then attach after normal reset/ID bring-up:
 
 ```python
@@ -143,20 +143,4 @@ python test/compile_pio.py --rp2-source /path/to/pinned/rp2.py \
   --output test/pio_program.json
 ```
 
-On the board, record declared board and SDK revisions with the bounded probe:
-
-```python
-import transport_bench
-result = transport_bench.run(pe, board_revision="actual PCB revision",
-                             sdk_revision=pe.tt.revision)
-print(result)
-```
-
-The result retains every transaction latency plus median, p99, maximum and
-payload bytes/second. It labels clock settings and leaves measured clocks and
-sampling margin unset. It reads only the fixed ID address and does not touch
-FIFOs or programs. Add oscilloscope/logic-analyzer SCK/project frequency,
-high/low duty, input margin and CS interval evidence. Then measure the actual
-concurrent USB/Ethernet service loop, including tail latency, host pauses,
-FIFO levels/loss and reset recovery. ID-burst measurements alone cannot
-establish those service bounds.
+Throughput and sampling margin on a real board have not been measured yet.
