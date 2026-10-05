@@ -15,13 +15,21 @@
  * protoemu runs on an MMCM clock derived from pl_clk0 (100 MHz), so it is
  * asynchronous to the AXI side, as the chip is to its host. The uio pads are
  * modelled: uio_in[i] = uio_oe[i] ? uio_out[i] : the PS's value.
+ * The only package pin is the carrier's fan enable, held on.
  * SPDX-License-Identifier: Apache-2.0
  */
 `default_nettype none
 
 module kv260_top #(
     parameter integer CLK_DIV = 24  // 1200 MHz VCO / CLK_DIV: 24 -> 50 MHz, 25 -> 48 MHz
-) ();
+) (
+    // KV260 carrier fan enable (active low; package pin A12, kv260.xdc). The
+    // starter-kit platform drives it with the TTC0 PWM; this design keeps the
+    // fan fully on.
+    output wire fan_en_b
+);
+  assign fan_en_b = 1'b0;
+
   wire        pl_clk0, pl_resetn0;
   wire [31:0] gpio0_o, gpio0_i, gpio1_i;
 

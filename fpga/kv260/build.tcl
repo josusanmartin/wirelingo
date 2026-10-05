@@ -70,10 +70,11 @@ assign_bd_address -offset 0xA0010000 -range 64K [get_bd_addr_segs gpio1/S_AXI/Re
 validate_bd_design
 save_bd_design
 set bd_file [get_files pe_ps.bd]
+# global synthesis: the BD's IP is synthesized with the top (no OOC IP runs)
+set_property synth_checkpoint_mode None $bd_file
 generate_target all $bd_file
 set wrapper [make_wrapper -files $bd_file -top]
 read_verilog $wrapper
-synth_ip [get_ips]
 
 # ---- RTL ---------------------------------------------------------------------
 read_verilog $here/kv260_top.v

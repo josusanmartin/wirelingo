@@ -6,7 +6,7 @@ module tb_kv260 ();
   reg         pl_clk, pe_clk;
   reg  [31:0] gpio0_o;
   wire [31:0] gpio0_i, gpio1_i;
-  kv260_top dut ();
+  kv260_top dut (.fan_en_b());
   assign gpio0_i = dut.gpio0_i;
   assign gpio1_i = dut.gpio1_i;
 endmodule
