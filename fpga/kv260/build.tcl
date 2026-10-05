@@ -42,16 +42,16 @@ set g1 [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_gpio gpio1]
 set_property -dict [list CONFIG.C_GPIO_WIDTH {32} CONFIG.C_ALL_INPUTS {1}] $g1
 
 set ic [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect ic]
-set_property -dict [list CONFIG.NUM_MI {2}] $ic
+set_property -dict [list CONFIG.NUM_MI {3}] $ic
 set rst [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset rst]
 
 connect_bd_net [get_bd_pins ps/pl_clk0] [get_bd_pins ps/maxihpm0_fpd_aclk] \
-    [get_bd_pins ic/ACLK] [get_bd_pins ic/S00_ACLK] [get_bd_pins ic/M00_ACLK] [get_bd_pins ic/M01_ACLK] \
+    [get_bd_pins ic/ACLK] [get_bd_pins ic/S00_ACLK] [get_bd_pins ic/M00_ACLK] [get_bd_pins ic/M01_ACLK] [get_bd_pins ic/M02_ACLK] \
     [get_bd_pins gpio0/s_axi_aclk] [get_bd_pins gpio1/s_axi_aclk] [get_bd_pins rst/slowest_sync_clk]
 connect_bd_net [get_bd_pins ps/pl_resetn0] [get_bd_pins rst/ext_reset_in]
 connect_bd_net [get_bd_pins rst/interconnect_aresetn] [get_bd_pins ic/ARESETN]
 connect_bd_net [get_bd_pins rst/peripheral_aresetn] [get_bd_pins ic/S00_ARESETN] \
-    [get_bd_pins ic/M00_ARESETN] [get_bd_pins ic/M01_ARESETN] \
+    [get_bd_pins ic/M00_ARESETN] [get_bd_pins ic/M01_ARESETN] [get_bd_pins ic/M02_ARESETN] \
     [get_bd_pins gpio0/s_axi_aresetn] [get_bd_pins gpio1/s_axi_aresetn]
 connect_bd_intf_net [get_bd_intf_pins ps/M_AXI_HPM0_FPD] [get_bd_intf_pins ic/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins ic/M00_AXI] [get_bd_intf_pins gpio0/S_AXI]
@@ -61,12 +61,20 @@ create_bd_port -dir O -type clk pl_clk0
 connect_bd_net [get_bd_pins ps/pl_clk0] [get_bd_ports pl_clk0]
 create_bd_port -dir O -type rst pl_resetn0
 connect_bd_net [get_bd_pins ps/pl_resetn0] [get_bd_ports pl_resetn0]
+# AXI4-Lite to pe_spim (fabric SPI master, kv260_top.v)
+create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 spim_axi
+set_property -dict [list CONFIG.PROTOCOL {AXI4LITE} CONFIG.ADDR_WIDTH {16} CONFIG.DATA_WIDTH {32}] [get_bd_intf_ports spim_axi]
+connect_bd_intf_net [get_bd_intf_pins ic/M02_AXI] [get_bd_intf_ports spim_axi]
+set_property CONFIG.ASSOCIATED_BUSIF {spim_axi} [get_bd_ports pl_clk0]
+create_bd_port -dir O -type rst periph_aresetn
+connect_bd_net [get_bd_pins rst/peripheral_aresetn] [get_bd_ports periph_aresetn]
 make_bd_intf_pins_external -name gpio0_o [get_bd_intf_pins gpio0/GPIO]
 make_bd_intf_pins_external -name gpio0_i [get_bd_intf_pins gpio0/GPIO2]
 make_bd_intf_pins_external -name gpio1_i [get_bd_intf_pins gpio1/GPIO]
 
 assign_bd_address -offset 0xA0000000 -range 64K [get_bd_addr_segs gpio0/S_AXI/Reg]
 assign_bd_address -offset 0xA0010000 -range 64K [get_bd_addr_segs gpio1/S_AXI/Reg]
+assign_bd_address -offset 0xA0020000 -range 64K [get_bd_addr_segs spim_axi/Reg]
 validate_bd_design
 save_bd_design
 set bd_file [get_files pe_ps.bd]
@@ -77,7 +85,7 @@ set wrapper [make_wrapper -files $bd_file -top]
 read_verilog $wrapper
 
 # ---- RTL ---------------------------------------------------------------------
-read_verilog $here/kv260_top.v
+read_verilog $here/kv260_top.v $here/pe_spim.v
 foreach f [glob $src_dir/*.sv $src_dir/project.v] { read_verilog -sv $f }
 set_property include_dirs [list $src_dir] [current_fileset]
 read_xdc $here/kv260.xdc

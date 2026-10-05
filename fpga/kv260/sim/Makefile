@@ -4,7 +4,7 @@ SIM ?= icarus
 TOPLEVEL_LANG = verilog
 STAGE := $(PWD)/sim_build/stage
 $(shell rm -rf $(STAGE) && python3 $(PWD)/../../../flow/fpga_profile.py --output $(STAGE) --cores 2 --fifo-log2 3)
-VERILOG_SOURCES = $(PWD)/tb_kv260.v $(PWD)/../kv260_top.v $(STAGE)/src/project.v \
+VERILOG_SOURCES = $(PWD)/tb_kv260.v $(PWD)/../kv260_top.v $(PWD)/../pe_spim.v $(STAGE)/src/project.v \
     $(wildcard $(STAGE)/src/*.sv)
 COMPILE_ARGS += -g2012 -I$(STAGE)/src
 TOPLEVEL = tb_kv260
