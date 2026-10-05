@@ -5,6 +5,7 @@
 #
 #   flow/core_route.sh NAME [SRC_DIR]
 #   TOP=pe_line flow/core_route.sh NAME [SRC_DIR]     # another block alone
+#   DENSITY=46 flow/core_route.sh NAME [SRC_DIR]      # placement density (default 34)
 #
 # SRC_DIR (default: this repo's src/) supplies pe_core.sv, pe_fifos.sv,
 # pe_fifo.sv and pe_cg.sv. Runs in <parent of this repo>/pe-core-NAME and
@@ -13,6 +14,8 @@
 # measured, SRAM-like delays on instr and fetch_addr).
 # The die (560 x 560 um, density 34 %) and routing layers (Metal2-Metal4,
 # PDN stripes on Metal4) match the tile's conditions, not its shape.
+# Wirelength moves by about 2 % between placements of the same netlist: compare
+# designs over several DENSITY values (e.g. 34, 46, 50), not one run each.
 set -euo pipefail
 NAME=${1:?usage: flow/core_route.sh NAME [SRC_DIR]}
 REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
@@ -52,7 +55,7 @@ cat > src/config.json <<EOF
   "SIGNOFF_SDC_FILE": "dir::core.sdc",
   "FP_SIZING": "absolute",
   "DIE_AREA": [0, 0, $DIE, $DIE],
-  "PL_TARGET_DENSITY_PCT": 34,
+  "PL_TARGET_DENSITY_PCT": ${DENSITY:-34},
   "RT_MAX_LAYER": "Metal4",
   "FP_PDN_MULTILAYER": 0,
   "FP_PDN_VPITCH": 44.96,
