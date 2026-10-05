@@ -192,6 +192,49 @@ checkpoint tests do not satisfy final physical release.
 * Host software: the demo-board MicroPython driver runs unmodified against the
   model through a Python model of the SPI port (UART output, a 10BASE-T frame).
 
+**Independent protocol oracle (sigrok).** The firmware and the device models
+above come from the same hands, so a shared misreading of a protocol would
+pass both. `test/test_sigrok.py` re-runs test.py's UART TX and RX, SPI master,
+I2C master and both USB device tests unchanged (their own assertions included)
+while recording the pads, then decodes the recording with sigrok-cli's
+protocol decoders (libsigrokdecode: third-party code sharing nothing with our
+models, `tools/pe/sigrok.py`). The decode must equal the data the test meant
+to move, with no decoder warnings, and in every test the host port (SPI mode
+0: CS_n ui7, SCK ui6, MOSI ui5, MISO uo7) must decode byte for byte to what
+test.py's master sent and sampled. `test/model/test_sigrok_can.py` does the
+same for the CAN firmware on the cycle model (`ModelRecorder` records the
+model's pins) with sigrok's CAN decoder.
+
+```
+make -C test COCOTB_TEST_MODULES=test_sigrok                         # 6 tests, ~1 min
+PYTHONPATH=tools python -m pytest test/model/test_sigrok_can.py      # 2 tests, ~5 s
+```
+
+sigrok-cli comes from `sudo apt install sigrok-cli`, or `flow/install_sigrok.sh`
+(no root: unpacks the Ubuntu packages, ~1 MB, under `~/tools/sigrok`; tested
+on Ubuntu 22.04 with sigrok-cli 0.7.2 and libsigrokdecode 0.5.3), or
+`SIGROK_CLI=<path>`. Without it every sigrok test is skipped and the log says
+how to install it. `SIGROK_KEEP=<dir>` keeps each test's VCD and sigrok
+output. What sigrok disagreed with:
+
+* `test_usb_ls_device` clocked the chip at 50 MHz with 32 clocks per bit:
+  1.5625 Mbit/s, +4.2 %, outside low speed's ±1.5 %. Our USB helpers scaled
+  the same way, so nothing had noticed; sigrok's `usb_signalling` rejected the
+  bus. A test bug (the firmware is right at 48 MHz); the test now runs at
+  48 MHz as its docstring said.
+* CAN identifiers 0x7F0 and 0x7FF (test_can.py's all-ones corner cases):
+  sigrok warns "Identifier bits 10..4 must not be all recessive", Bosch CAN
+  2.0's reserved range. The firmware treats them as any identifier, which is
+  what a receiver should do; the test vectors are deliberate, so that one
+  warning is expected for those frames and no other.
+* Decoder limits, not disagreements: libsigrokdecode 0.5.3's CAN decoder
+  never checks the CRC (`is_valid_crc()` is a TODO returning true), so the
+  test compares the CRC field sigrok read with the CRC of the fields sigrok
+  decoded (the corrupted frame fails that and is not ACKed). The decoder also
+  needs the bus idle at the start of the capture: recorded from reset (ui0
+  low while the program loads) it misdecoded the first frames, so the capture
+  starts after setup.
+
 **What these runs don't show.** Most top-level tests run at 50 MHz; the
 concurrent USB service and generated UART loopback run at 48 MHz (rounded
 to 20.834 ns by the simulator). Protocol timing is checked against behavioural

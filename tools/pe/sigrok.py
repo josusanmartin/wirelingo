@@ -246,8 +246,13 @@ def usb(trace, dp, dm, speed="low-speed", **kw):
 
 def can(trace, pin, bitrate, sample_point=70.0, **kw):
     """sigrok's can decoder (classic frames). Returns (frames, warnings);
-    each frame is a dict: t, id, rtr, dlc, data (bytes), crc_ok, ack, and
-    the raw field texts; warnings: [(t_ns, text)]."""
+    each frame is a dict: t, id, rtr, dlc, data (bytes), crc (the CRC-15
+    field as sigrok read it off the wire), crc_ok, ack, eof, warnings;
+    warnings: [(t_ns, text)] for all frames.
+
+    crc_ok is False only if sigrok reports "CRC is invalid", else None: the
+    decoder in libsigrokdecode 0.5.3 does not check the CRC (is_valid_crc()
+    is a TODO that returns True), so check `crc` yourself."""
     anns = decode(trace, f"can:can_rx={pin}:nominal_bitrate={bitrate}:sample_point={sample_point}",
                   "can=sof:id:rtr:dlc:data:crc-sequence:ack-slot:eof:warnings", **kw)
     frames, warn, cur = [], [], None
@@ -255,7 +260,7 @@ def can(trace, pin, bitrate, sample_point=70.0, **kw):
         t = a.text
         if t == "Start of frame":
             cur = {"t": a.start, "id": None, "rtr": None, "dlc": None, "data": b"",
-                   "crc_ok": None, "ack": None, "eof": False, "warnings": []}
+                   "crc": None, "crc_ok": None, "ack": None, "eof": False, "warnings": []}
             frames.append(cur)
             continue
         if cur is None:
@@ -269,8 +274,8 @@ def can(trace, pin, bitrate, sample_point=70.0, **kw):
             cur["dlc"] = int(m[1])
         elif m := re.match(r"Data byte \d+: 0x([0-9a-fA-F]{2})", t):
             cur["data"] += bytes([int(m[1], 16)])
-        elif t.startswith("CRC-15 sequence"):
-            cur["crc_ok"] = True
+        elif m := re.match(r"CRC-15 sequence: 0x([0-9a-fA-F]+)", t):
+            cur["crc"] = int(m[1], 16)
         elif t == "CRC is invalid":
             cur["crc_ok"] = False
             cur["warnings"].append(t)
