@@ -217,3 +217,14 @@ def test_driver_register_map_matches_the_model():
     for n in ("CMD_WRITE", "CMD_READ", "CMD_WRITE_FIXED", "CMD_READ_FIXED"):
         assert getattr(protoemu, n) == getattr(host, n), n
     assert bringup.ID == sim.ID_VALUE
+
+
+def test_board_modules_avoid_cpython_only_features():
+    """tools/micropython runs on MicroPython: no step slices on str/bytes, no
+    str/bytes padding methods, no dataclasses/typing (none of them exist there)."""
+    import re
+    root = pathlib.Path(__file__).resolve().parents[2] / "tools/micropython"
+    bad = re.compile(r"\[[^\]]*::-1\]|\.(ljust|rjust|zfill)\(|^\s*(from|import) (dataclasses|typing)\b", re.M)
+    for f in sorted(root.glob("*.py")):
+        hits = [m.group(0) for m in bad.finditer(f.read_text())]
+        assert not hits, (f.name, hits)

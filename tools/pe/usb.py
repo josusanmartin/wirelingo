@@ -15,6 +15,16 @@ def pid_byte(pid):
     return pid | ((~pid & 0xF) << 4)
 
 
+def rev(v, n):
+    """The low n bits of v in reverse order (integer arithmetic only: this
+    module also runs on the board, and MicroPython strings have no step slices)."""
+    r = 0
+    for _ in range(n):
+        r = (r << 1) | (v & 1)
+        v >>= 1
+    return r
+
+
 def crc5(value, nbits=11):
     """USB CRC5 over `nbits` LSB-first bits of value; returns the 5-bit field as sent."""
     crc = 0x1F
@@ -26,7 +36,7 @@ def crc5(value, nbits=11):
             crc ^= 0x05
     crc ^= 0x1F
     # transmitted MSB of the CRC register first => reverse into LSB-first field
-    return int(f"{crc:05b}"[::-1], 2)
+    return rev(crc, 5)
 
 
 def crc16(data):
@@ -40,7 +50,7 @@ def crc16(data):
             if fb:
                 crc ^= 0x8005
     crc ^= 0xFFFF
-    r = int(f"{crc:016b}"[::-1], 2)
+    r = rev(crc, 16)
     return bytes([r & 0xFF, r >> 8])
 
 
@@ -56,7 +66,7 @@ def token_filter(addr, endp):
     after the PID (address, endpoint, CRC5) as the firmware sees them, bit-reversed."""
     v = addr | (endp << 7)
     v |= crc5(v) << 11
-    return int(f"{v:016b}"[::-1], 2)
+    return rev(v, 16)
 
 
 def data_packet(pid, payload):

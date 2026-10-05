@@ -59,7 +59,7 @@ def parse_records(words):
             bits += [(body[full] >> (32 - rem + j)) & 1 for j in range(rem)]
         data = bytes(sum(b << j for j, b in enumerate(bits[8 * k:8 * k + 8])) for k in range(len(bits) // 8))
         good = bool(w & 1) and len(body) == full + 1 and n % 8 == 0
-        pid = int(f"{(w >> 8) & 255:08b}"[::-1], 2)
+        pid = usb.rev((w >> 8) & 255, 8)
         good = good and pid in (usb.pid_byte(usb.PID_DATA0), usb.pid_byte(usb.PID_DATA1))
         out.append(Record(good, data[:-2] if good else data, nbits, pid, bool(w & 2)))
         start = i + 1
@@ -71,7 +71,7 @@ def stage_words(pid, payload):
     if pid not in (usb.PID_DATA0, usb.PID_DATA1) or len(payload) > 8:
         raise ValueError("low-speed endpoint-zero packet must be DATA0/1 and <=8 bytes")
     pkt = bytes([0x80]) + usb.data_packet(pid, payload)
-    return [8 * len(pkt)] + [int.from_bytes(pkt[i:i + 4].ljust(4, b"\0"), "little")
+    return [8 * len(pkt)] + [int.from_bytes(pkt[i:i + 4] + bytes(4 - len(pkt[i:i + 4])), "little")
                              for i in range(0, len(pkt), 4)]
 
 
