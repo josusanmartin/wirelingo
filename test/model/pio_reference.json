@@ -1,0 +1,446 @@
+{
+ "assembler": "pioasm from raspberrypi/pico-sdk 079c6f39023649b154152db30f1d781e884879bc (tools/pioasm), -o json",
+ "sources": {
+  "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/uart_tx/uart_tx.pio": "7463c0e5310e54dac82a2edecfb07e6f44f05d8801a4d7cea619a621c96be62a",
+  "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/uart_rx/uart_rx.pio": "10cb07243dfc86a9fe42aef2e6d805e9dd7b7395b6c7afba90048190cf522950",
+  "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/spi/spi.pio": "b6407e9daf6b3f7efbae0a37b18989c91d5435ade66f8093d1e5074f0f053777",
+  "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/i2c/i2c.pio": "430190b7b32f9822c5b6a36133752349ee4d32bc0a93d181f2b54f3865923021",
+  "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_tx.pio": "1b2440280298f6f58dad0fea5589fa6a375097cdebae60fd5f0bc908004572d3",
+  "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_rx.pio": "1d2452a528da1e439fefe31c1a858090b6f531fe94ab3f8d6d1d9edfc5aea9a6"
+ },
+ "programs": {
+  "uart_tx": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/uart_tx/uart_tx.pio",
+   "wrap_target": 0,
+   "wrap": 3,
+   "sideset": {
+    "size": 2,
+    "optional": true,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    40864,
+    63271,
+    24577,
+    1602
+   ],
+   "listing": [
+    "pull   block           side 1 [7]",
+    "set    x, 7            side 0 [7]",
+    "out    pins, 1",
+    "jmp    x--, 2                 [6]"
+   ]
+  },
+  "uart_rx_mini": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/uart_rx/uart_rx.pio",
+   "wrap_target": 0,
+   "wrap": 3,
+   "sideset": null,
+   "public_labels": {},
+   "words": [
+    8224,
+    59943,
+    16385,
+    1602
+   ],
+   "listing": [
+    "wait   0 pin, 0",
+    "set    x, 7                   [10]",
+    "in     pins, 1",
+    "jmp    x--, 2                 [6]"
+   ]
+  },
+  "uart_rx": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/uart_rx/uart_rx.pio",
+   "wrap_target": 0,
+   "wrap": 8,
+   "sideset": null,
+   "public_labels": {},
+   "words": [
+    8224,
+    59943,
+    16385,
+    1602,
+    200,
+    49172,
+    8352,
+    0,
+    32800
+   ],
+   "listing": [
+    "wait   0 pin, 0",
+    "set    x, 7                   [10]",
+    "in     pins, 1",
+    "jmp    x--, 2                 [6]",
+    "jmp    pin, 8",
+    "irq    nowait 4 rel",
+    "wait   1 pin, 0",
+    "jmp    0",
+    "push   block"
+   ]
+  },
+  "spi_cpha0": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/spi/spi.pio",
+   "wrap_target": 0,
+   "wrap": 1,
+   "sideset": {
+    "size": 1,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    24833,
+    20737
+   ],
+   "listing": [
+    "out    pins, 1         side 0 [1]",
+    "in     pins, 1         side 1 [1]"
+   ]
+  },
+  "spi_cpha1": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/spi/spi.pio",
+   "wrap_target": 0,
+   "wrap": 2,
+   "sideset": {
+    "size": 1,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    24609,
+    45313,
+    16385
+   ],
+   "listing": [
+    "out    x, 1            side 0",
+    "mov    pins, x         side 1 [1]",
+    "in     pins, 1         side 0"
+   ]
+  },
+  "spi_cpha0_cs": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/spi/spi.pio",
+   "wrap_target": 0,
+   "wrap": 8,
+   "sideset": {
+    "size": 2,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {
+    "entry_point": 8
+   },
+   "words": [
+    24833,
+    18433,
+    2112,
+    24577,
+    40994,
+    18433,
+    2272,
+    41282,
+    37344
+   ],
+   "listing": [
+    "out    pins, 1         side 0 [1]",
+    "in     pins, 1         side 1",
+    "jmp    x--, 0          side 1",
+    "out    pins, 1         side 0",
+    "mov    x, y            side 0",
+    "in     pins, 1         side 1",
+    "jmp    !osre, 0        side 1",
+    "nop                    side 0 [1]",
+    "pull   ifempty block   side 2 [1]"
+   ]
+  },
+  "spi_cpha1_cs": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/spi/spi.pio",
+   "wrap_target": 0,
+   "wrap": 8,
+   "sideset": {
+    "size": 2,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {
+    "entry_point": 7
+   },
+   "words": [
+    26881,
+    16385,
+    64,
+    26625,
+    43042,
+    16385,
+    224,
+    37344,
+    41282
+   ],
+   "listing": [
+    "out    pins, 1         side 1 [1]",
+    "in     pins, 1         side 0",
+    "jmp    x--, 0          side 0",
+    "out    pins, 1         side 1",
+    "mov    x, y            side 1",
+    "in     pins, 1         side 0",
+    "jmp    !osre, 0        side 0",
+    "pull   ifempty block   side 2 [1]",
+    "nop                    side 0 [1]"
+   ]
+  },
+  "i2c": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/i2c/i2c.pio",
+   "wrap_target": 12,
+   "wrap": 17,
+   "sideset": {
+    "size": 2,
+    "optional": true,
+    "pindirs": true
+   },
+   "public_labels": {
+    "entry_point": 12
+   },
+   "words": [
+    140,
+    49200,
+    57383,
+    26497,
+    47682,
+    9377,
+    18177,
+    5955,
+    26497,
+    48962,
+    10145,
+    4800,
+    24614,
+    24641,
+    34,
+    24672,
+    24816,
+    80
+   ],
+   "listing": [
+    "jmp    y--, 12",
+    "irq    wait 0 rel",
+    "set    x, 7",
+    "out    pindirs, 1             [7]",
+    "nop                    side 1 [2]",
+    "wait   1 pin, 1               [4]",
+    "in     pins, 1                [7]",
+    "jmp    x--, 3          side 0 [7]",
+    "out    pindirs, 1             [7]",
+    "nop                    side 1 [7]",
+    "wait   1 pin, 1               [7]",
+    "jmp    pin, 0          side 0 [2]",
+    "out    x, 6",
+    "out    y, 1",
+    "jmp    !x, 2",
+    "out    null, 32",
+    "out    exec, 16",
+    "jmp    x--, 16"
+   ]
+  },
+  "set_scl_sda": {
+   "source": "https://github.com/raspberrypi/pico-examples/blob/0d62f75bafc2c8120d3276c3343d1a9195e909e9/pio/i2c/i2c.pio",
+   "wrap_target": 0,
+   "wrap": 3,
+   "sideset": {
+    "size": 2,
+    "optional": true,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    63360,
+    63361,
+    65408,
+    65409
+   ],
+   "listing": [
+    "set    pindirs, 0      side 0 [7]",
+    "set    pindirs, 1      side 0 [7]",
+    "set    pindirs, 0      side 1 [7]",
+    "set    pindirs, 1      side 1 [7]"
+   ]
+  },
+  "usb_tx_dpdm": {
+   "source": "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_tx.pio",
+   "wrap_target": 1,
+   "wrap": 4,
+   "sideset": {
+    "size": 2,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    50944,
+    27554,
+    60288,
+    29602,
+    59523
+   ],
+   "listing": [
+    "irq    nowait 0        side 0 [7]",
+    "out    pc, 2           side 1 [3]",
+    "set    pindirs, 0      side 1 [3]",
+    "out    pc, 2           side 2 [3]",
+    "set    pindirs, 3      side 1"
+   ]
+  },
+  "usb_tx_pre_dpdm": {
+   "source": "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_tx.pio",
+   "wrap_target": 1,
+   "wrap": 4,
+   "sideset": {
+    "size": 2,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    52992,
+    27554,
+    60288,
+    29602,
+    59523
+   ],
+   "listing": [
+    "irq    nowait 0        side 1 [7]",
+    "out    pc, 2           side 1 [3]",
+    "set    pindirs, 0      side 1 [3]",
+    "out    pc, 2           side 2 [3]",
+    "set    pindirs, 3      side 1"
+   ]
+  },
+  "usb_tx_dmdp": {
+   "source": "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_tx.pio",
+   "wrap_target": 1,
+   "wrap": 4,
+   "sideset": {
+    "size": 2,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    50944,
+    29602,
+    62336,
+    27554,
+    61571
+   ],
+   "listing": [
+    "irq    nowait 0        side 0 [7]",
+    "out    pc, 2           side 2 [3]",
+    "set    pindirs, 0      side 2 [3]",
+    "out    pc, 2           side 1 [3]",
+    "set    pindirs, 3      side 2"
+   ]
+  },
+  "usb_tx_pre_dmdp": {
+   "source": "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_tx.pio",
+   "wrap_target": 1,
+   "wrap": 4,
+   "sideset": {
+    "size": 2,
+    "optional": false,
+    "pindirs": false
+   },
+   "public_labels": {},
+   "words": [
+    55040,
+    29602,
+    62336,
+    27554,
+    61571
+   ],
+   "listing": [
+    "irq    nowait 0        side 2 [7]",
+    "out    pc, 2           side 2 [3]",
+    "set    pindirs, 0      side 2 [3]",
+    "out    pc, 2           side 1 [3]",
+    "set    pindirs, 3      side 2"
+   ]
+  },
+  "usb_edge_detector": {
+   "source": "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_rx.pio",
+   "wrap_target": 3,
+   "wrap": 9,
+   "sideset": null,
+   "public_labels": {},
+   "words": [
+    49186,
+    193,
+    49411,
+    49412,
+    204,
+    204,
+    204,
+    204,
+    204,
+    204,
+    41254,
+    64,
+    41411,
+    49156,
+    16385,
+    202,
+    6
+   ],
+   "listing": [
+    "irq    wait 2",
+    "jmp    pin, 1",
+    "irq    nowait 3               [1]",
+    "irq    nowait 4               [1]",
+    "jmp    pin, 12",
+    "jmp    pin, 12",
+    "jmp    pin, 12",
+    "jmp    pin, 12",
+    "jmp    pin, 12",
+    "jmp    pin, 12",
+    "mov    x, isr                 [1]",
+    "jmp    x--, 0",
+    "mov    isr, null              [1]",
+    "irq    nowait 4",
+    "in     pins, 1",
+    "jmp    pin, 10",
+    "jmp    6"
+   ]
+  },
+  "usb_nrzi_decoder": {
+   "source": "https://github.com/sekigon-gonnoc/Pico-PIO-USB/blob/5a37a66dc5d3fbe0ef3cdbeda923a757440f984f/src/usb_rx.pio",
+   "wrap_target": 0,
+   "wrap": 6,
+   "sideset": null,
+   "public_labels": {},
+   "words": [
+    57414,
+    8388,
+    102,
+    199,
+    40,
+    16481,
+    41001,
+    37,
+    16609,
+    129
+   ],
+   "listing": [
+    "set    y, 6",
+    "wait   1 irq, 4",
+    "jmp    !y, 6",
+    "jmp    pin, 7",
+    "jmp    !x, 8",
+    "in     null, 1",
+    "mov    x, ~x",
+    "jmp    !x, 5",
+    "in     osr, 1",
+    "jmp    y--, 1"
+   ]
+  }
+ }
+}

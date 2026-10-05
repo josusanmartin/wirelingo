@@ -35,6 +35,9 @@ or second-pin qualification therefore needs additional program or host logic;
 this is an inference from the encoding. See the
 [RP2040 datasheet, chapter 3](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf).
 No head-to-head hardware throughput benchmark has been performed.
+A simulated head-to-head against the pico-examples PIO programs (UART, SPI,
+I2C, with fault injection) and Pico-PIO-USB is in
+[pio-comparison.md](pio-comparison.md), including where PIO is better.
 
 | Dimension | RP2040 PIO engine | protoemu tapeout configuration |
 |---|---|---|
@@ -49,7 +52,7 @@ occupancy, not a speed comparison:
 | Demonstration | Instructions / cores | Evidence |
 |---|---|---|
 | UART over virtual pin 24 | TX 4 + RX 13 / two cores | Generated bundle loaded via RTL SPI; 53 bytes in 4.639 ms simulated, including a 187.5-us service stall |
-| USB without line unit | RX 138 + TX 48 / two cores | Concurrent SPI service, descriptors, errors, retries and bus reset |
+| USB without line unit | RX 143 + TX 49 / two cores | Concurrent SPI service, descriptors, errors, retries and bus reset |
 | USB with line unit | 119 / core 0 | Same software service and end-to-end RTL checks; core 1 remains available |
 | I2C master | 71 / one core | Device-model transactions and stuck-clock recovery |
 
