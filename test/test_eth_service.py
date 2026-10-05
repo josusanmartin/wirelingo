@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import cocotb
 from cocotb.task import bridge, resume
-from cocotb.triggers import ClockCycles, Timer
+from cocotb.triggers import ClockCycles
 from cocotb.utils import get_sim_time
 
 from pe import sim
@@ -62,25 +62,7 @@ async def host(dut, stall=False):
 
 
 async def send(dut, port, frame, seed=19):
-    rng = random.Random(seed)
-    wire = bytes([0x55] * 7 + [0xD5]) + frame
-    bits = [(byte >> k) & 1 for byte in wire for k in range(8)]
-    levels = [v for bit in bits for v in (1-bit, bit)] + [1] * 4
-    before = get_sim_time(unit="ns") + 120
-    previous = 0
-    for k, level in enumerate(levels):
-        if level != previous:
-            when = before + k * 50 * (1-200e-6) + rng.uniform(-13.5, 13.5)
-            delay = round((when - get_sim_time(unit="ns")) * 1000)
-            if delay > 0:
-                await Timer(delay, unit="ps")
-            port._set(0, level)
-        previous = level
-    delay = round((before + len(levels) * 50 - get_sim_time(unit="ns")) * 1000)
-    if delay > 0:
-        await Timer(delay, unit="ps")
-    port._set(0, 0)
-    await Timer(9600, unit="ns")
+    await base.eth_send(port, frame, random.Random(seed))
 
 
 def capture_result(capture, **kwargs):

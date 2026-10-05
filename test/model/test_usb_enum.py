@@ -9,18 +9,13 @@ import random
 import pytest
 
 from pe import asm, host, sim, usb, usbdev
+from pe.usbdev import CONFIG_DESC, DESCRIPTORS, DEVICE_DESC
 from pe.modelhost import ModelHost
 from pe.usbhost import UsbHost
 
 FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 RX, TX = 0, 1
 
-DEVICE_DESC = bytes([18, 1, 0x10, 0x01, 0, 0, 0, 8, 0x09, 0x12, 0x34, 0x56, 0x01, 0x00, 0, 0, 0, 1])
-CONFIG_DESC = bytes([9, 2, 18, 0, 1, 1, 0, 0x80, 50,
-                     9, 4, 0, 0, 0, 0xFF, 0, 0, 0])  # vendor interface, endpoint zero only
-
-
-DESCRIPTORS = {1: DEVICE_DESC, 2: CONFIG_DESC}
 LINECFG = 0x49F3                  # EN NRZI STUFF_K=6 ONES DIFF END=SE0 END_BITS=2 RX_EN
 VARIANTS = ["two-core", "line"]   # usb_ls_rx + usb_ls_tx, or usb_ls_dev on one core
 

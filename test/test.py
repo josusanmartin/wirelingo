@@ -951,6 +951,29 @@ async def test_host_reset_aborts_selected_transaction(dut):
     assert await spi.read(sim.core_reg(0, sim.C_FIFO), fixed=True) == [0xC0FFEE]
 
 
+async def eth_send(port, frame, rng, jitter=True):
+    """One 10BASE-T frame (preamble, SFD, frame) on ui0 at 10 Mbit/s - 200 ppm,
+    each edge moved by up to 802.3's +-13.5 ns, then the minimum 96-bit gap.
+    port._set drives ui0 without disturbing the quad IO pins on ui[5:2]."""
+    bits = [1, 0]*31 + [1, 1] + [(b >> k) & 1 for b in frame for k in range(8)]
+    levels = [v for b in bits for v in (1-b, b)] + [1]*4
+    t0 = get_sim_time(unit="ns") + 120
+    prev = 0
+    for k, lv in enumerate(levels):
+        if lv != prev:
+            te = t0 + k*50*(1-200e-6) + (rng.uniform(-13.5, 13.5) if jitter else 0)
+            dt = round((te-get_sim_time(unit="ns"))*1000)
+            if dt > 0:
+                await Timer(dt, unit="ps")
+            port._set(0, lv)
+        prev = lv
+    dt = round((t0+len(levels)*50-get_sim_time(unit="ns"))*1000)
+    if dt > 0:
+        await Timer(dt, unit="ps")
+    port._set(0, 0)
+    await Timer(96*100, unit="ns")
+
+
 @cocotb.test()
 async def test_eth10_rx_streaming(dut):
     """Legal 64..1518-byte frames including FCS, 96-bit IFG, concurrent quad
@@ -990,23 +1013,7 @@ async def test_eth10_rx_streaming(dut):
                 await ClockCycles(dut.clk, 200)  # bounded 4 us host stall
 
     async def send(fr, jitter=True):
-        bits = [1, 0]*31 + [1, 1] + [(b >> k) & 1 for b in fr for k in range(8)]
-        levels = [v for b in bits for v in (1-b, b)] + [1]*4
-        t0 = get_sim_time(unit="ns") + 120
-        prev = 0
-        for k, lv in enumerate(levels):
-            if lv != prev:
-                te = t0 + k*50*(1-200e-6) + (rng.uniform(-13.5, 13.5) if jitter else 0)
-                dt = round((te-get_sim_time(unit="ns"))*1000)
-                if dt > 0:
-                    await Timer(dt, unit="ps")
-                spi._set(0, lv)  # preserve quad IO on ui[5:2] while driving ui0
-            prev = lv
-        dt = round((t0+len(levels)*50-get_sim_time(unit="ns"))*1000)
-        if dt > 0:
-            await Timer(dt, unit="ps")
-        spi._set(0, 0)
-        await Timer(96*100, unit="ns")  # minimum Ethernet IFG
+        await eth_send(spi, fr, rng, jitter)
 
     task = cocotb.start_soon(drain())
     frames = [eth.frame(n) for n in (46, 110, 1500, 46)]
