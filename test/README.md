@@ -7,8 +7,7 @@
   programs, pins and host traffic, compared every cycle (`TB=chip`).
 * `model/`: firmware on the cycle-accurate model, assembler and driver tests (pytest).
 * USB full-speed study (docs/usb-full-speed.md): `model/test_usb_fs.py` and
-  `test.py::test_usb_fs_device`; `make PE_LINE_NRZI_HALF=1` builds the proposed
-  line-unit change (the model reads the same variable).
+  `test.py::test_usb_fs_device`.
 
 ```sh
 make                                   # top-level tests (2 cores, 2 SRAM banks, 8-deep FIFOs)

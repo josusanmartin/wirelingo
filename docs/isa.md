@@ -300,7 +300,8 @@ RXP from `pins_in`):
 
 ```
 idle:     a transition on rx starts a frame
-NRZ/NRZI: a transition sets the sample counter to P/2;
+NRZ/NRZI: a transition sets the sample counter to P/2, or to P/2 - 1
+          if the falling-edge sample (below) already showed it;
           otherwise at 0 it samples and reloads P, else counts down
           sample: with DIFF, RXP = RXN = 0 (SE0) ends the frame;
                   bit = rx (NRZ), or 1 if rx equals the last sample (NRZI)
@@ -315,6 +316,16 @@ Manchester: a tracked phase (below) predicts the next mid-bit transition;
 bit:      if STUFF_K and the run reached STUFF_K: drop it as a stuff bit
           (if it isn't the expected one: end the frame); else queue it
 ```
+
+**NRZ/NRZI sample point.** A pad edge reaches `pins_in` 1 to 2 clocks after
+it happens (the synchroniser, §2). The falling-edge sample (below) tells which
+half of that clock it fell in: if it fell before the falling edge, the counter
+starts one clock shorter. So the sample lands 1.5–2.5 clocks after the real
+edge instead of 2–3, centred in the bit at P = 4 (USB full speed at 48 MHz:
+an edge-to-edge interval may shrink by about 31 ns instead of 21; USB allows
+18.5). An internal pin's falling-edge sample equals `pins_in`, so it always
+takes the shorter count, which is harmless with no analog edge. P ≥ 4 keeps the
+count from wrapping (it is 16 bits, mod 2^16).
 
 **Manchester timing.** The RX pin is sampled at both clock edges: a pad pin
 (P0–P7, P16–P20) also at the falling edge, half a clock before its

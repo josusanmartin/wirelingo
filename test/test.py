@@ -790,11 +790,11 @@ async def test_usb_fs_device(dut):
     host's ACK -> F_GOTACK; turnaround measured on the bus from the host's
     SE0 -> J to the device's first K (USB 2.0: 2 to 6.5 bit times). Then OUT
     packets at the spec's consecutive-edge jitter (DCD 9.25 ns = 18.5 ns between
-    edges) must all be ACKed, and at DCD 14 ns the signed-off receiver must
-    start missing them while the PE_LINE_NRZI_HALF proposal must not."""
+    edges) must all be ACKed, and so must those at DCD 14 ns (28 ns), which
+    the g4 receiver (sample 2-3 clocks after an edge) missed half of: the
+    half-cycle NRZI sample point (docs/isa.md §4.7) centres the sample."""
     import random
     from pe import usb, usbdev
-    half = os.environ.get("PE_LINE_NRZI_HALF", "0") not in ("", "0")
     T = 20.834                                     # 48 MHz (ps-quantized)
     TBIT = 1000 / 12
     spi = await setup(dut, clock_ns=T)
@@ -911,11 +911,10 @@ async def test_usb_fs_device(dut):
     n = 24
     spec = await out_burst(9.25, n)
     wide = await out_burst(14.0, n)
-    dut._log.info(f"{'PROPOSAL half-cycle NRZI sample' if half else 'signed-off line unit'}: "
-                  f"DCD 9.25 ns (18.5 ns edge-to-edge): {spec}/{n} ACKed; DCD 14 ns (28 ns): {wide}/{n} ACKed")
+    dut._log.info(f"half-cycle NRZI sample point: DCD 9.25 ns (18.5 ns edge-to-edge): {spec}/{n} ACKed; DCD 14 ns (28 ns): {wide}/{n} ACKed")
     mon.cancel()
     assert spec == n
-    assert (wide == n) if half else (wide < n)
+    assert wide == n
 
 
 @cocotb.test()

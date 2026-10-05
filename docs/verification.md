@@ -110,7 +110,9 @@ lost when pushed 210 clocks into the read).
   ≤ 32 bits, and the Manchester receiver's phase stays in [−720720, 262208]
   for any period up to 4095, with every 21-bit operation equal to the same
   computation at 23 bits (it never wraps). Tightening either bound breaks the
-  induction.
+  induction. For any legal RX period (P ≥ 4) the NRZ/NRZI sample counter's
+  load after a transition (P/2 − 1, or P/2 − 2 with the half-cycle sample
+  point) doesn't wrap.
 
 These are safety properties of the pieces. Functional equivalence of the
 whole core is covered by lockstep, not by formal.
@@ -165,6 +167,11 @@ checkpoint tests do not satisfy final physical release.
   re-stage the same packet with the same toggle.
 * Line unit: USB-style (NRZI, stuffing, SE0 end; the waveform also decoded
   by the USB reference), Manchester and CAN-style (NRZ stuffing) loopbacks.
+* USB full speed (`usb_fs_dev`, 48 MHz, 4 clocks per bit): ±9.25 ns edge
+  jitter at ±500/±2500 ppm, and 28 ns of duty-cycle distortion between
+  consecutive edges at 0/±2500 ppm (`test_fs_rx_duty_cycle_margin`, which
+  needs the half-cycle NRZI sample point; the RTL test `test_usb_fs_device`
+  checks the same 28 ns case: 24/24 packets, against 11/24 on g4).
 * USB on one core (`usb_ls_dev`, line unit): enumeration with fixed and random
   service stalls, the address filter, the lost ACK, the same tests as the
   two-core firmware.
