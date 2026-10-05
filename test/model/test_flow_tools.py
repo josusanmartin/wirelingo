@@ -24,7 +24,14 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     assert subprocess.run(cmd + ["--check"], capture_output=True).returncode != 0
     assert dst.read_text() == '{"stale": true}'
     c = json.loads(original)
-    assert c["PNR_SDC_FILE"] == c["SIGNOFF_SDC_FILE"] == "dir::protoemu.sdc"
+    # signoff times the real latch arcs; PnR is the same SDC plus only the FIFO
+    # latch D->Q exception (docs/review-fixes.md, "PnR latch timing")
+    assert c["SIGNOFF_SDC_FILE"] == "dir::protoemu.sdc"
+    assert c["PNR_SDC_FILE"] == "dir::protoemu_pnr.sdc"
+    pnr = [l for l in (ROOT / "src/protoemu_pnr.sdc").read_text().splitlines()
+           if l.strip() and not l.lstrip().startswith("#")]
+    assert pnr == ["source [file join [file dirname $::env(PNR_SDC_FILE)] protoemu.sdc]",
+                   "set_disable_timing -from D -to Q [get_lib_cells */sg13cmos5l_dlhq_1]"]
     assert c["//generator"]["preset"] == "submission"
 
 

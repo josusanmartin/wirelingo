@@ -20,7 +20,7 @@
     "wire_cap": 0.00019,
     "post_grt_timing": true,
     "grt_tns": 0,
-    "pnr_latch_flops": false,
+    "pnr_latch_flops": true,
     "grt_iters": null
   },
   "PL_TARGET_DENSITY_PCT": 34,
@@ -38,7 +38,7 @@
     "clk",
     "ui_in[6]"
   ],
-  "PNR_SDC_FILE": "dir::protoemu.sdc",
+  "PNR_SDC_FILE": "dir::protoemu_pnr.sdc",
   "SIGNOFF_SDC_FILE": "dir::protoemu.sdc",
   "STA_EXTRA_CORNER_TCL_FILE": "dir::timing_checks.tcl",
   "//threads": "LibreLane 3.1.0.dev3 passes '-threads None' to OpenROAD when this is unset (single-threaded)",

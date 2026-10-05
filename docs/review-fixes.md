@@ -208,9 +208,10 @@ enumeration and sustained transport performance remain unmeasured.
 
 ### Verification integrity, configuration and CI (C1/C3/V1/V4)
 
-The submission preset uses real latch arcs in both PnR and signoff, all PVT
-corners and swapped bottom macros. Experimental latch approximations require
-the named experiment preset. Generator arguments are in the JSON; `--check`
+The submission preset uses all PVT corners and swapped bottom macros.
+Signoff (`SIGNOFF_SDC_FILE = protoemu.sdc`) times the real latch arcs; PnR
+(`protoemu_pnr.sdc`) times the FIFO latches like flops (see "PnR latch timing"
+below; the first version of this preset forbade it). Generator arguments are in the JSON; `--check`
 never writes. GDS CI checks the same preset, and test CI checks generated
 board bundles. The duplicate formal workflow is consolidated into test CI.
 
@@ -650,6 +651,24 @@ epoch. Its firmware, model, drivers, RTL and protocol tests are unchanged;
 their retained digital results remain applicable to those inputs. The 17-file
 hardware map is still `b2a090e416b235e94e9970f8511822614866d6e349dc14971aaf03ae8fe6ce5d`
 and equals the live worktree. New complete physical validation remains open.
+
+### PnR latch timing (decision, 2026-10-05)
+
+The FIFO storage latches receive their data while open, so STA passes the
+borrowed time on through Q and every incremental update during repair walks
+it. Same RTL, placement and settings except the PnR SDC (runs t11s and t12b,
+2026-10-04):
+
+| Step | real latch arcs in PnR (t11s) | latch D->Q disabled in PnR (t12b) |
+|---|---|---|
+| post-CTS repair | 1 h 19 m, final WNS -0.068 ns, 194 buffers | 3 m 54 s, identical edits and result |
+| post-GRT repair | 1 h 54 m, final WNS -1.993 ns | 8 m, final WNS -2.013 ns |
+
+The run that started this review (reviewfixes-20261004, real arcs in PnR) was
+past 10 h and still in post-GRT repair. Signoff always times the real arcs,
+so an approximation in PnR cannot hide a violation; it can only leave one for
+signoff to report. The submission preset therefore uses `protoemu_pnr.sdc`
+(a multi-hour PnR would also exceed the 6-hour CI job limit).
 
 ## Validation record
 

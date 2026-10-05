@@ -3,7 +3,7 @@
 
     python3 flow/gen_config.py --banks 2 [--density 45] [--grt-adjust 0.15]
 
-The submission preset uses swapped bottom corners and real latch timing.
+The submission preset uses swapped bottom corners; signoff times the real latch arcs.
 Experimental overrides must be named and recorded separately from submission.
 """
 import argparse
@@ -98,9 +98,12 @@ def main():
                     help="opt-in CTS clusters of eight and IHP clock branch repair; requires fresh physical validation")
     a = ap.parse_args()
     if a.pnr_latch_flops is None:
-        a.pnr_latch_flops = a.preset == "experiment"
-    if a.preset == "submission" and (a.banks != 2 or a.pnr_latch_flops or a.grt_iters is not None):
-        ap.error("submission requires 2 banks, real latch timing and no truncated routing; use --preset experiment")
+        # PnR times the FIFO latches like flops (protoemu_pnr.sdc); signoff
+        # always times the real latch arcs. Same repair edits, ~20x faster
+        # repair steps (docs/review-fixes.md, "PnR latch timing").
+        a.pnr_latch_flops = True
+    if a.preset == "submission" and (a.banks != 2 or a.grt_iters is not None):
+        ap.error("submission requires 2 banks and no truncated routing; use --preset experiment")
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
         "+OpenROAD.GeneratePDN": "Project.ExtendPowerStripes",
