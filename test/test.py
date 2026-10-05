@@ -353,7 +353,7 @@ class I2cEeprom:
         self.mem = bytearray(range(256))
         self.ptr = 0
         self.log = []
-        cocotb.start_soon(self.run())
+        self.task = cocotb.start_soon(self.run())
 
     def _pull(self, pin, low):
         EXT.set(pin, low, 0)
@@ -508,6 +508,190 @@ async def test_i2c_master(dut):
     assert r[0] & 1 == 1
     assert (await spi.read(sim.A_FSET))[0] & 2 == 0, "clock-stretch timeout flag set"
     dut._log.info("i2c log: " + " ".join(eeprom.log))
+
+
+# ------------------------------------------------------------------ reverse engineering
+
+class OdBus:
+    """External open-drain devices sharing uio lines: a line is low while any
+    of them pulls it (the testbench's ext_oe/ext_val are one driver)."""
+
+    def __init__(self, pins):
+        self.pins, self.low = pins, {}
+
+    def set(self, who, mask):
+        self.low[who] = mask
+        lows = 0
+        for m in self.low.values():
+            lows |= m
+        for p in self.pins:
+            EXT.set(p, (lows >> p) & 1, 0)
+
+
+class BusEeprom(I2cEeprom):
+    """The I2cEeprom model on a shared OdBus (removable: task.cancel + release)."""
+
+    def __init__(self, dut, bus, sda, scl, **kw):
+        self.bus, self.lowmask = bus, 0
+        super().__init__(dut, sda, scl, **kw)
+
+    def _pull(self, pin, low):
+        self.lowmask = (self.lowmask & ~(1 << pin)) | (int(low) << pin)
+        self.bus.set("eeprom", self.lowmask)
+
+    def remove(self):
+        self.task.cancel()
+        self.bus.set("eeprom", 0)
+
+
+async def i2c_session(dut, spi, bus, ops, device=None, restart=0, half=250, sda=0, scl=1):
+    """A bit-banged I2C master (pe.i2cbus, 100 kHz at half = 250 clk) runs `ops`
+    while the host restarts core 0's capture and keeps draining it with blind
+    8-word READ_FIXED bursts; with a device model it also serves core 1's
+    i2c_device events. Returns (master, capture words)."""
+    from pe import i2cbus
+    m = i2cbus.Master(lambda: int(dut.uio_in.value), sda, scl, half)
+
+    async def master():
+        for n in m.run(ops):
+            bus.set("master", m.low)
+            await ClockCycles(dut.clk, n)
+        bus.set("master", 0)
+    en = 0b11 if device else 0b01
+    await spi.write(sim.A_CTRL, [en | ((1 | restart) << 8) | ((1 | restart) << 16)])
+    task = cocotb.start_soon(master())
+    fifo0, fifo1 = sim.core_reg(0, sim.C_FIFO), sim.core_reg(1, sim.C_FIFO)
+    words = []
+    while not task.done():
+        words += [w for w in await spi.read(fifo0, 8, fixed=True) if w]
+        if device:
+            for ev in [w for w in await spi.read(fifo1, 2, fixed=True) if w]:
+                for b in device.handle(ev):
+                    await spi.write(fifo1, [b], fixed=True)
+    await ClockCycles(dut.clk, 100)
+    words += [w for w in await spi.read(fifo0, 8, fixed=True) if w]
+    return m, words
+
+
+@cocotb.test()
+async def test_reverse_engineering(dut):
+    """Capture -> understand -> impersonate (docs/reverse-engineering.md), all
+    through the SPI port at SCK = clk/2. A 100 kHz master talks to the
+    I2cEeprom model while core 0 captures SDA/SCL (la_capture); pe.la decodes
+    the transcript and the register image; the EEPROM is removed and core 1
+    (i2c_device) serves that image at the decoded address: the master gets the
+    same answers and core 0's capture of the clone decodes the same. Then a man
+    in the middle changes one register on its way to the master."""
+    import random
+    from pe import i2cdev, la
+    if NCORES < 2:
+        dut._log.warning("needs two cores")
+        return
+    await setup(dut)
+    T = CLK_NS
+    spi = TimedSpi(dut, period=2 * T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    SDA, SCL = UIO(0), UIO(1)
+    dut.pull_up.value = 0b11
+    await spi.write(sim.A_POUT, [0b11])                 # released
+    await spi.write(sim.A_OD, [0b11])
+    await spi.apply(host.pin_owner_writes({SDA: 1, SCL: 1}, profile=PROFILE))
+    await spi.apply(host.load_program(0, load_fw("la_capture"), 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
+    await spi.write(sim.core_reg(0, sim.C_R0 + 3), [0b11])     # channel mask
+    bus = OdBus([SDA, SCL])
+    rng = random.Random(5)
+    rom = bytes(rng.getrandbits(8) for _ in range(256))
+    ops = [("wr", 0x50, [0x10], 8), ("w", 0x50, [0x20, 0xCA, 0xFE]), ("wr", 0x50, [0x20], 2), ("w", 0x51, [0])]
+    hexes = lambda bs: " ".join(f"{b:02X}" for b in bs)
+    transcript = ["write to 0x50: 10", "read 8 bytes from 0x50: " + hexes(rom[0x10:0x18]),
+                  "write to 0x50: 20 CA FE", "write to 0x50: 20", "read 2 bytes from 0x50: CA FE",
+                  "write to 0x51: address NACKed"]
+
+    def decode(words):
+        cap = la.decode_records(words)
+        assert cap.exact, f"capture has gaps at {cap.gaps}"
+        ev = la.i2c_events(cap, SDA, SCL)
+        return cap, ev, la.i2c_summary(ev)
+
+    # 1. capture: master <-> EEPROM model
+    ee = BusEeprom(dut, bus, SDA, SCL)
+    ee.mem[:] = rom
+    m, words = await i2c_session(dut, spi, bus, ops)
+    ee.remove()
+    answers = m.results
+    assert answers[0] == list(rom[0x10:0x18]) and answers[2] == [0xCA, 0xFE] and answers[3] is None, answers
+    # 2. understand
+    cap, ev, text = decode(words)
+    dut._log.info(f"captured {len(words)} records over {cap.end * T / 1000:.0f} us:\n  " + "\n  ".join(text))
+    assert text == transcript, text
+    image = la.i2c_register_image(ev)
+    assert list(image) == [0x50] and image[0x50] == {**{r: rom[r] for r in range(0x10, 0x18)}, 0x20: 0xCA, 0x21: 0xFE}
+    # 3. impersonate: core 1 at the decoded address, serving the decoded image
+    addr = list(image)[0]
+    dev = i2cdev.Device(addr, mem=image[addr])
+    await spi.apply(dev.setup_writes(1, load_fw("i2c_device", SDA=SDA, SCL=SCL), SDA, SCL, 256, profile=PROFILE))
+    m2, words2 = await i2c_session(dut, spi, bus, ops, device=dev, restart=0b10)
+    assert m2.results == answers, m2.results
+    assert decode(words2)[2] == transcript
+    dut._log.info(f"clone: same answers and transcript; SCL stretched {m2.stretched} clocks waiting for the host")
+    assert m2.stretched > 0
+    # man in the middle: register 0x12 changed on its way to the master
+    mitm = i2cdev.Device(addr, mem=image[addr], on_read=lambda reg, v: 0x00 if reg == 0x12 else v)
+    m3, words3 = await i2c_session(dut, spi, bus, ops[:1], device=mitm)
+    want = list(rom[0x10:0x18])
+    want[2] = 0
+    assert m3.results == [want], m3.results
+    assert decode(words3)[2][1] == "read 8 bytes from 0x50: " + hexes(want)
+
+
+@cocotb.test()
+async def test_la_capture_rate(dut):
+    """la_capture's sustained edge rate through the host port: 300 edges of a
+    square wave on one channel, drained with blind READ_FIXED bursts of 8 words,
+    must arrive complete with no gap marker. 1-bit SPI at SCK = clk/2 and quad
+    at SCK = clk; logs the fastest gap-free wave of each sweep (each sweep stops
+    at its first failure)."""
+    from pe import la
+    await setup(dut)
+    T = CLK_NS
+    one = TimedSpi(dut, period=2 * T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    quad = QuadSpi(dut, period=T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    await one.apply(host.load_program(0, load_fw("la_capture"), 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
+    await one.write(sim.core_reg(0, sim.C_R0 + 3), [0b100])     # channel 2 only
+    await one.write(sim.A_HOSTCFG, [1])
+    fifo = sim.core_reg(0, sim.C_FIFO)
+    EXT.set(2, True, 0)
+    N = 300
+
+    async def run(drain, half):
+        async def wave():
+            for i in range(N):
+                await ClockCycles(dut.clk, half)
+                EXT.set(2, True, (i + 1) & 1)
+        await one.write(sim.A_CTRL, [1 | (1 << 8) | (1 << 16)])
+        await ClockCycles(dut.clk, 20)
+        task = cocotb.start_soon(wave())
+        words = []
+        while not task.done():
+            words += [w for w in await drain() if w]
+        await ClockCycles(dut.clk, 50)
+        words += [w for w in await drain() if w]
+        await one.write(sim.A_CTRL, [0])
+        cap = la.decode_records(words)
+        return cap.exact and len(cap.edges) == N + 1
+
+    modes = {"1-bit SPI, SCK = clk/2": (lambda: one.read(fifo, 8, fixed=True), (120, 90, 80, 70)),
+             "quad SPI, SCK = clk": (lambda: quad.qxfer(0x4B, fifo, nread=8), (24, 18, 14, 12, 11))}
+    best = {}
+    for name, (drain, halves) in modes.items():
+        for half in halves:
+            if not await run(drain, half):
+                break
+            best[name] = half
+        assert name in best, f"{name}: gaps even at an edge every {halves[0]} clocks"
+        dut._log.info(f"{name}: gap-free down to an edge every {best[name]} clocks "
+                      f"({1e3 / (best[name] * T):.2f} M edges/s at {1e3 / T:.0f} MHz)")
+    # quad drains faster than the firmware records: its bound (an edge per 12 ticks) shows
+    assert best["1-bit SPI, SCK = clk/2"] <= 90 and best["quad SPI, SCK = clk"] == 12, best
 
 
 # ------------------------------------------------------------------ USB low speed
