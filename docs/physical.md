@@ -234,6 +234,39 @@ Rewrites that keep the behaviour gained nothing: masks from thermometer codes
 instead of rotators (−0.5 %), ALU shifts through the funnel (+1.8 %).
 Synthesis already shares well; the wiring is in what the core does.
 
+### What the v2 additions cost (2026-10-05, before re-hardening)
+
+Measured on the RTL alone (not yet hardened). Per core: `flow/core_route.sh`
+at placement densities 34/46/50 (a single placement moves wire by ~2 %, as
+much as the differences measured), cumulative from main, LibreLane synthesis
+area. pe_line: `TOP=pe_line` at 34/56/62 (its utilisation is 51 %, so lower
+densities place identically). pe_chip glue: yosys with the IHP typ library
+(it isn't a core_route target).
+
+| Step | Block | Wire (k µm, per density) | Avg Δ wire | Area |
+|---|---|---|---|---|
+| main (g4) | core | 718.0 / 706.5 / 689.5 | — | 105.5K µm² |
+| + half-cycle NRZI sample | pe_line | 187.2 / 183.9 / 180.8 vs 182.2 / 179.2 / 177.0 | +2.5 % of pe_line (+4.6K µm, one per chip) | −0.2K |
+| + SYNC_BYPASS | pe_chip | — | 13 flops and muxes beside the synchroniser | +1.26K (yosys) |
+| + WAIT kind 7 (own selector) | core | 737.7 / 722.8 / 705.9 | +2.5 % | +1.3K |
+| + CALL / RET | core | 740.5 / 724.5 / 705.4 | +0.2 % | −0.5K |
+| kind 7 on the ALU's selector (v2 as committed) | core | 732.6 / 715.5 / 700.6 | −1.0 %; **+1.6 % vs main** | +0.3K |
+| (not done) 32-bit CRC, poly top half fixed at 0x04C1 | core | 746.6 / 735.0 / 721.2 | +1.5 % over CALL/RET | +1.2K |
+
+So the committed v2 adds about 23K µm of wire across the two cores and 4.6K in
+the line unit, about 1.2 % of g4's 2.29M µm global route, and the core's
+Metal3 use rises by about 0.9 points (44.3 → 45.3 % in these runs). That's the
+kind of change that moved g4-era routing a lot, so it needs the full harden.
+
+The 32-bit CRC was left out: it costs about as much wire as the committed
+kind 7 (+1.5 % per core), and the
+firmware half doesn't fit. To check a 10BASE-T FCS in the engine, `eth10_rx`
+must restart the CRC right after the SFD. The cheap way to find it (preset
+the CRC to the fixed point of the preamble's `10` pairs, 0xFE9506DB, and wait
+for it to change) needs pair alignment, but receivers can lose the first
+preamble bits (test_eth10 allows it); a bit-by-bit SFD search costs about 7
+instructions per bit against a 5-clock bit. The host already checks the FCS.
+
 ## Signoff runs
 
 | Run | RTL | DRT (final) | KLayout DRC | LVS | Antenna | Setup WS typ / slow | Hold WS typ | Max slew / cap viol. (typ) |
