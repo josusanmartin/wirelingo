@@ -320,7 +320,7 @@ On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
   passing. Two earlier windows found the two golden-model bugs in the table
   below; the regression's own windows had not reached them;
 * formal: all seven jobs pass (fifos 4/8 + cover, hostport + cover, core, line);
-* mutation runner: 34 of 34 mutants killed (13 of them for the v2 features).
+* mutation runner: 34 of 34 mutants killed (17 of them new for the v2 features).
 
 Not yet: gate level (needs a v2 netlist) and STA.
 
