@@ -83,6 +83,7 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 | `ps2_device` | PS/2 device, odd parity from the CRC tap | | model |
 | `ws2812` | NeoPixel driver, datasheet timing windows | | model |
 | `i2c_sniff` | passive I2C monitor (START/STOP/bytes), beside the master on the other core | | model |
+| `la_capture` + `i2c_device` (2 cores) | **reverse engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): an 8-channel logic analyzer (timestamped change records; `pe.la` makes a VCD, an I2C transcript and the device's register image), then an I2C target at the decoded address whose registers are host software: a clone of the captured EEPROM, or a man in the middle | capture: 5-tick samples, edges ≥ 12 ticks apart, sustained rate bounded by the host's draining (1-bit SPI at 25 MHz: 625 k edges/s); device: every read byte is a host round trip under clock stretching | RTL: capture → decode → clone → man in the middle through the SPI port, rate sweep; capture timing and device response on the model |
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
 sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
