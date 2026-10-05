@@ -37,10 +37,9 @@ and the assembler implement it, and are checked against each other
 ## What runs on it
 
 Each program talks to an independent device model that sees only the pins.
-"RTL" = loaded and exercised through the real SPI host port on the RTL;
-current routed-netlist validation remains pending. "Model" = on the
-cycle-accurate model, which is lockstep-checked
-against the RTL.
+"RTL" = loaded and exercised through the real SPI host port on the RTL (the
+same suites pass on the signed-off gate-level netlist). "Model" = on the
+cycle-accurate model, which is lockstep-checked against the RTL.
 
 | Firmware | What it does | Limits | Verified on |
 |---|---|---|---|
@@ -75,10 +74,9 @@ WAIT trackers, FIFO levels and heads, pins, flags, bus reads), in the tapeout
 configuration and the 4-core build. SymbiYosys proves the FIFO pair (with
 join) against reference queues at depths 4 and 8, SPI-slave bus safety, and
 core safety invariants. Firmware is developed against device models on the
-model, and the key cases repeat on the RTL through the SPI port. The current
-global-routing checkpoint passes 16 functional GL tests; final extracted
-timing and final-netlist GL remain pending.
-Deliberately injected bugs are caught. Details, limits and
+model, and the key cases repeat on the RTL through the SPI port. The
+signed-off netlist passes the same 20 top-level tests at gate level
+(functional, no SDF). Deliberately injected bugs are caught. Details, limits and
 the bugs this found: [docs/verification.md](docs/verification.md).
 
 ```
@@ -93,31 +91,26 @@ make -C formal                                                   # proofs
 ## Physical design (IHP SG13CMOS5L, 6x4 tiles)
 
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
-  8-deep FIFOs, the line unit and the quad host port; 52 % standard-cell
-  utilization.
-* **Historical run t5 (`ae7d59d`)** reports 0 routing violations,
-  0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the
-  typical corner (+4.77 ns setup, +0.32 ns hold) and hold is met at the fast
-  corner (+0.12 ns). The slow corner reaches about 41 MHz (−4.1 ns at 50 MHz).
-* Its retained functional GL log reports **9/9 tests** on that older netlist.
-  Current RTL adds fixed banks, latch FIFOs, a falling-edge sampler and SPI reset
-  changes. Its **16-test** top-level suite includes concurrent USB service and
-  full-frame Ethernet streaming, with two separate compiled-PIO transport
-  tests and two bounded board-receive service tests. These changes require
-  new physical signoff.
-* Remaining electrical exceptions at typ (1 slew, 2 capacitance) are listed in
-  [docs/physical.md](docs/physical.md).
+  8-deep FIFOs, the line unit and the quad host port; 44 % standard-cell
+  utilization, 50 % with the macros.
+* **Run g4 passes signoff** (`flow/signoff.py`): 0 routing violations,
+  0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the typical
+  corner, and hold is met at every corner (+0.15 / +0.30 / +0.05 ns typ / slow /
+  fast). The slow corner reaches about 44 MHz (−2.88 ns at 50 MHz). Two slew
+  exceptions remain at typ.
+* The signed-off netlist passes all 20 top-level tests at gate level
+  (`flow/gl_test.sh`: main suite 16, compiled PIO 2, Ethernet capture 2;
+  functional, no SDF).
+* Routing is the constraint: one horizontal layer (Metal3) at ≈ 63 %. Global
+  routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
+  the current RTL routable ([docs/physical.md](docs/physical.md)).
 * [External review](docs/review.md): the bugs an independent review found and
   how they were fixed and tested. `flow/gen_config.py --check` verifies that
-  `src/config.json` is the generator's; `flow/signoff.py` prints a run's
-  signoff summary and fails on DRC/LVS/antenna errors, typical-corner setup or
-  any hold violation.
-* [Optional board transport](docs/board-transport.md) documents PIO/DMA resource
-  ownership, GPIO-window setup and bounded measurements. Board throughput and
-  sampling margin remain unmeasured.
-* [Ethernet receive bench](docs/eth10-receiver.md) supplies a bounded capture
-  service and a proposed comparator/squelch schematic. The circuit is unbuilt;
-  board throughput and simultaneous external TX/RX remain unqualified.
+  `src/config.json` is the generator's (g4's settings).
+* [Optional board transport](docs/board-transport.md): RP2350 PIO/DMA quad
+  SPI; board throughput and sampling margin remain unmeasured.
+* [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service
+  and a proposed comparator/squelch circuit, not yet built.
 
 ## Layout
 

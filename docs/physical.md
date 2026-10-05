@@ -306,8 +306,8 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
 * Historical logs report s2c 6/6 and final4 **7/7** (ID, UART TX/RX, SPI,
   I2C, USB low-speed device, 10BASE-T TX with FIFO join). They do not validate
   the current hardware or satisfy the fresh-result checks now required.
-* The current RTL's netlist after global routing (not final) passed the
-  functional GL suites; the final netlist's run is pending.
+* Run g4's final netlist passes all 20 top-level tests (main 16, compiled
+  PIO 2, Ethernet capture 2), functional, no SDF.
 
 ## Area reductions applied
 

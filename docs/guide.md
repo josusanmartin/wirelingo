@@ -67,22 +67,22 @@ board measurements still need their own evidence.
 | FIFOs (incl. join) are correct for all input sequences | k-induction against reference queues, depths 4 and 8 | `make -C formal fifos` |
 | The host port is fast and safe | 193 Mbit/s simulated quad payload at SCK = clk; phase/duty sweeps and reset aborts; formal bus safety | `cd test && make COCOTB_TEST_FILTER=test_host_port_fast`; `make -C formal hostport` |
 | Protocols work through the real host port | RTL UART, SPI, I2C, concurrent USB service, full Ethernet RX frames and overflow recovery | `cd test && make` |
-| Current routed-netlist validation | Pending the new candidate; historical GL results cover older hardware | `flow/gl_test.sh <run>` |
+| The routed netlist does the same | Run g4's final netlist passes the 20 top-level tests at gate level (functional, no SDF) | `flow/gl_test.sh <run>` |
 | USB device service, on two cores or one | Concurrent RTL service at 48 MHz; address changes, lost ACK, malformed PID/CRC/stuffing, duplicate OUT, interrupted SETUP and reset | `cd test && make COCOTB_TEST_FILTER=test_usb_concurrent_service`; model USB tests |
 | I2C can't hang | SCL stuck low at every one of 19 releases, plus before START | `pytest test/model/test_i2c_timeout.py` |
 | 10BASE-T TX and RX | TX waveform decoded (Manchester, FCS, TP_IDL, link pulses), a 1518-byte frame streamed; RX from core 1's TX and from an external sender with jitter | `pytest test/model/test_eth10.py` |
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model | `pytest test/model/test_micropython_driver.py` |
 | Optional RP2 PIO/DMA transport | Compiled PIO instruction traces drive the ASIC SPI port; API/error-path tests use fakes; board rate and pad margin remain unmeasured | [board-transport.md](board-transport.md); `make -C test COCOTB_TEST_MODULES=test_pio SIM_BUILD=sim_build/pio COCOTB_RESULTS_FILE=pio.xml` |
 | Finite Ethernet board capture | Actual capture driver over RTL/checkpoint GL SPI: 64/1518-byte frames, FCS failure and overflow cleanup; analog circuit remains unbuilt | [eth10-receiver.md](eth10-receiver.md); `make -C test COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml` |
-| Current physical signoff | Pending (run in progress) | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/gl_test.sh <run>` |
+| Physical signoff | Run g4: DRC/LVS/antenna clean, typ setup met, hold met at every corner; slow corner ≈ 44 MHz | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/gl_test.sh <run>` |
 
 (`pytest` = `PYTHONPATH=tools python -m pytest -q` from the repo root.)
 
 ## Known limits
 
-* Two cores are selected for tapeout. Historical t5 met 50 MHz at typical
-  and about 41 MHz at slow, but these numbers do not validate the current RTL.
-  The current isolated hardening run has not completed signoff.
+* Two cores are selected for tapeout. The signed-off run (g4) meets 50 MHz at
+  the typical corner; the slow corner reaches about 44 MHz. Fast-corner hold
+  passes by 0.05 ns, the thinnest margin (docs/physical.md).
 * 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
 * Host link: 193 Mbit/s simulated payload (quad SPI, SDR, SCK = clk = 50 MHz,

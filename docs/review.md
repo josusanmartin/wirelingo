@@ -57,9 +57,11 @@ tests now cover each fix. Finding codes are the review's.
 
 ## Still open
 
-* Physical signoff of the current RTL, and gate-level tests on its netlist.
 * Anything on hardware: RP2350 transport throughput, USB enumeration on a real
   host, the 10BASE-T analog front end.
+* A formal equivalence check of the RTL against the synthesized netlist. LVS
+  compares layout with netlist; gate-level simulation covers only the cases
+  the tests exercise.
 * An opt-in clock-fanout repair step (`gen_config.py --clock-fanout-fix`) is
   in the flow but unused until a signoff run shows the clock-fanout limits it
   addresses.
