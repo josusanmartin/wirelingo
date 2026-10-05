@@ -1,0 +1,33 @@
+// Device-tree overlay for the protoemu Kria app (dfx-mgr / xmutil loadapp).
+// Loads the bitstream, sets pl_clk0 to 100 MHz (the MMCM in kv260_top.v makes
+// protoemu's clock from it) and the HPM0/1_FPD width to 128 bit (config-afi
+// 14 = 0xa00, matching build.tcl). The AXI GPIO blocks at 0xA0000000 and
+// 0xA0010000 get no node: no driver claims them and the host maps them
+// through /dev/mem (fpga/kv260/host/pe_kria.py).
+/dts-v1/;
+/plugin/;
+
+&fpga_full {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	firmware-name = "protoemu.bit.bin";
+	resets = <&zynqmp_reset 116>, <&zynqmp_reset 117>, <&zynqmp_reset 118>, <&zynqmp_reset 119>;
+};
+
+&amba {
+	afi0: afi0 {
+		compatible = "xlnx,afi-fpga";
+		config-afi = <0 0>, <1 0>, <2 0>, <3 0>, <4 0>, <5 0>, <6 0>, <7 0>,
+			     <8 0>, <9 0>, <10 0>, <11 0>, <12 0>, <13 0>, <14 0xa00>, <15 0x000>;
+		resets = <&zynqmp_reset 116>, <&zynqmp_reset 117>, <&zynqmp_reset 118>, <&zynqmp_reset 119>;
+	};
+
+	clocking0: clocking0 {
+		compatible = "xlnx,fclk";
+		#clock-cells = <0>;
+		clocks = <&zynqmp_clk 71>;
+		clock-output-names = "fabric_clk";
+		assigned-clocks = <&zynqmp_clk 71>;
+		assigned-clock-rates = <100000000>;
+	};
+};
