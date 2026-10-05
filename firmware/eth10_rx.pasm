@@ -14,8 +14,8 @@
 ; per bit; the line unit's 32-bit queue absorbs a slow FIFO for a word or so.
 ; The host must drain at >=13.33 Mbit/s payload (24 line bits per 32-bit word),
 ; plus SPI headers and status polling. Eight entries hold 19.2 us of line data.
-; LINESTAT overflow invalidates the entire frame: disable LINECFG, stop/restart
-; core 0, clear its FIFO, and restore the line configuration before receiving.
+; An overflow (LINESTAT) loses the frame; to recover, disable the line unit,
+; restart core 0 with its FIFO cleared, and configure the line unit again.
 .program eth10_rx
 .shift_in right autopush 24
 frame:

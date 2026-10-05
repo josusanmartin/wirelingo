@@ -145,7 +145,6 @@ class DeviceSoftware:
             if r.setup and len(r.data) == 8 and r.pid == usb.pid_byte(usb.PID_DATA0):
                 self.requests.append(r.data.hex())
                 self.handle(r.data)
-                flags = mh.read(sim.A_FSET)
             elif not r.setup:
                 expected = usb.pid_byte(usb.PID_DATA1 if self.out_toggle else usb.PID_DATA0)
                 if r.pid == expected:
@@ -213,12 +212,9 @@ class DeviceSoftware:
         self.sent_at = None
         if self.unacked:                       # a new SETUP abandons the old transfer
             self.mh.write(sim.A_FCLR, F_STAGED | F_GOTACK)
-            if self.tx != self.rx:             # (the one-core firmware flushes its TX FIFO itself)
-                en = self.mh.read(sim.A_CTRL)
-                self.mh.write(sim.A_CTRL, en | (1 << (16 + self.tx)))   # clear the TX core's FIFOs
             self.unacked = None
-        if self.tx != self.rx:
-            en = self.mh.read(sim.A_CTRL)
+        if self.tx != self.rx:                 # clear the TX core's FIFOs (the one-core
+            en = self.mh.read(sim.A_CTRL)      # firmware flushes its TX FIFO itself)
             self.mh.write(sim.A_CTRL, en | (1 << (16 + self.tx)))
         if bm == 0x80 and breq == 6:           # GET_DESCRIPTOR
             desc = self.descriptors.get(wval >> 8, b"")[:wlen]

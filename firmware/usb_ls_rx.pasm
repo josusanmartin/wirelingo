@@ -26,8 +26,7 @@
 ;   SYNC and PID, [7] = 1 (marks the trailer: payload words have [7:0] = 0),
 ;   [15:8] = reversed PID, [1] = SETUP association, [0] = CRC/PID good and ACKed.
 ; F_SETUP marks a SETUP's data stage (firmware clears it after recording it).
-; The largest record
-; (8 data bytes) is 5 words, so the host must keep 5 entries free.
+; The largest record (8 data bytes) is 5 words, so the host must keep 5 entries free.
 ;
 ; Timing: D is the tick a WAIT completes. The next WAIT's first attempt is at
 ; D+w, and its timeout N = target - w. The "no edge" decision is taken 10 ticks
@@ -38,10 +37,10 @@
 ; Paths of different length load different budgets so the decision time is the
 ; same whichever branch is taken (the once-per-packet PID grab takes 3 ticks more).
 ;
-;
 ; After 16 bits, r3 = bit-reverse of the ISR, i.e. r3[15:8] = rev(SYNC) = 0x01 and
 ; r3[7:0] = rev(PID). Token PIDs end in binary 01, so a token has
-; r3 & 0xC0 == 0x80. At the end of a DATA packet while F_EXP is set: clear
+; r3 & 0xC0 == 0x80 (the grab after a 1 bit can only be OUT, so it compares
+; directly). At the end of a DATA packet while F_EXP is set: clear
 ; F_EXP, and set F_ACK if the CRC16 checks out. The CRC tap (CRCCTRL: poly
 ; 0x8005, 16 bits, IN_TAP) sees every received bit; it is preset after the PID
 ; so that at EOP it holds the residue 0x800D for a correct packet.
