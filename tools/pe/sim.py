@@ -5,7 +5,7 @@ Everything reads start-of-cycle state; effects combine into the next state,
 mirroring the synchronous RTL.
 """
 from . import isa
-from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE)
+from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE, LR)
 from .line import Line
 
 M32 = 0xFFFFFFFF
@@ -53,6 +53,7 @@ class Core:
         self.crc_poly = self.crc_w = self.in_tap = self.out_tap = 0
         self.crc = 0
         self.r = [0, 0, 0, 0]
+        self.lr = 0          # link register: kept on restart, like R0-R3
         self.txf, self.rxf = [], []
         self.res = []  # host read reservations, oldest first: True if a real RXF entry (<= 2)
         self.restart()
@@ -219,7 +220,8 @@ class Core:
         if code < 4:
             return self.r[code]
         return {PINS: rotr32(e.pins_in, self.in_base), ISR: self.isr, OSR: self.osr,
-                STATUS: self.status() & 0x7FF, FLAGS: e.flags, PC: self.pc, CRC: self.crc}.get(code, 0)
+                STATUS: self.status() & 0x7FF, FLAGS: e.flags, PC: self.pc, CRC: self.crc,
+                LR: self.lr}.get(code, 0)
 
     def _crc_mask(self):
         return mask(self.crc_w + 1)
@@ -245,6 +247,8 @@ class Core:
             e.jump = v & 1023
         elif dst == CRC:
             self.crc = v & self._crc_mask()
+        elif dst == LR:                 # MOV only (OUT skips it)
+            self.lr = v & 1023
 
     # ------------------------------------------------------------ the ops (docs/isa.md §5)
     def _op_jmp(self, e):
@@ -263,6 +267,15 @@ class Core:
             self.r[rs] = (rv - 1) & M16
         if ok:
             e.jump = addr
+        return ok
+
+    def _op_call(self, e):
+        """JMP that, when taken, links: LR = the PC it would have gone to."""
+        if self._op_jmp(e):
+            self.lr = self.wrap_bottom if self.pc == self.wrap_top else (self.pc + 1) & 1023
+            e.chip.cover("call:taken")
+            if self.pc == self.wrap_top:
+                e.chip.cover("call:at_wrap_top")
 
     def _op_wait(self, e):
         x, kind = e.x, e.kind
@@ -354,7 +367,7 @@ class Core:
             self._crc_feed(data & 1)
         if line:
             e.chip.line.push([(data >> i) & 1 for i in (range(n) if self.out_shr else range(n - 1, -1, -1))])
-        elif dst != OSR:                # OUT to OSR only shifts (docs/isa.md §5)
+        elif dst not in (OSR, LR):      # OUT to OSR only shifts, to LR discards (docs/isa.md §5)
             self._write_dst(e, dst, data, n)
 
     def _in_line(self, e, n):
@@ -421,6 +434,10 @@ class Core:
             v = ~v & M32
         elif mop == isa.M_REV:
             v = rev32(v)
+        if src == LR and dst == PC and mop == isa.M_NONE:
+            e.chip.cover("call:ret")
+        elif dst == LR:
+            e.chip.cover("call:mov_to_lr")
         self._write_dst(e, dst, v, 0)
 
     def _op_set(self, e):
@@ -485,7 +502,7 @@ _OPS = {isa.OP_JMP: Core._op_jmp, isa.OP_WAIT: Core._op_wait, isa.OP_IN: Core._o
         isa.OP_OUT: Core._op_out, isa.OP_PUSH: Core._op_push, isa.OP_PULL: Core._op_pull,
         isa.OP_MOV: Core._op_mov, isa.OP_SET: Core._op_set, isa.OP_LDI: Core._op_ldi,
         isa.OP_ALU: Core._op_alu, isa.OP_PIN: Core._op_pin, isa.OP_FLAG: Core._op_flag,
-        isa.OP_HALT: Core._op_halt}
+        isa.OP_HALT: Core._op_halt, isa.OP_CALL: Core._op_call}
 
 
 class _Exec:

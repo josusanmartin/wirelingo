@@ -59,7 +59,7 @@ def core_state_rtl(core):
         isr=v(core.isr), isr_cnt=v(core.isr_cnt), osr=v(core.osr), osr_cnt=v(core.osr_cnt),
         z=v(core.z), c=v(core.c), t=v(core.t), dcnt=v(core.dcnt), in_wait=v(core.in_wait),
         halted=v(core.halted), fault=v(core.fault), stalled=v(core.stalled),
-        cnt=v(core.cnt), facc=v(core.facc),
+        cnt=v(core.cnt), facc=v(core.facc), lr=v(core.lr),
         txl=v(core.u_fifos.txf.cnt), rxl=v(core.u_fifos.rxf.cnt), crc=v(core.crc),
         wprev=v(core.wprev), wevent=v(core.wevent), res=reservations(v(core.res_n), v(core.res_v)),
         # FIFO heads (when occupied): every entry is compared as it reaches the head
@@ -76,7 +76,7 @@ def core_state_model(m):
         isr=m.isr, isr_cnt=m.isr_cnt, osr=m.osr, osr_cnt=m.osr_cnt,
         z=m.z, c=m.c, t=m.t, dcnt=m.dcnt, in_wait=m.in_wait,
         halted=m.halted, fault=m.fault, stalled=m.stalled,
-        cnt=m.cnt, facc=m.facc, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
+        cnt=m.cnt, facc=m.facc, lr=m.lr, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
         wprev=m.wprev, wevent=m.wevent, res=reservations(len(m.res), sum(b << i for i, b in enumerate(m.res))),
         txh=m.txf[0] if m.txf else None, rxh=m.rxf[0] if m.rxf else None,
         **{k: getattr(m, k) for k in CONFIG},
@@ -331,11 +331,11 @@ def coverage_goals():
     """Events every lockstep run must exercise: each opcode completing, the
     blocking ones also stalling, and the spec's corner cases (tools/pe/sim.py
     counts them with Chip.cover)."""
-    ops = ["jmp", "wait", "in", "out", "push", "pull", "mov", "set", "ldi", "alu", "pin", "flag"]
+    ops = ["jmp", "wait", "in", "out", "push", "pull", "mov", "set", "ldi", "alu", "pin", "flag", "call"]
     return ([f"done:{op}" for op in ops] + ["stall:wait", "stall:push", "stall:pull", "stall:out", "jump"] + [
         "wait:timeout", "wait:edge_caught_between_ticks", "wait:qualifier_blocked_edge",
         "wait:diff_first_attempt", "wait:diff_done", "wait:diff_timeout",   # between ticks: test_wait_diff
-        "shift:autopush", "shift:autopull",
+        "shift:autopush", "shift:autopull", "call:taken", "call:ret", "call:mov_to_lr",
         "pins:side_set_over_out", "pins:write_to_unowned_pin", "pins:sync_bypass_fresher",
         "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
         "fifo:clear_nonempty", "fifo:join_move",
@@ -487,3 +487,61 @@ async def test_wait_diff(dut):
             "ctrl:restart_mid_instruction"]
     missing = [g for g in want if not h.model.stats.get(g)]
     assert not missing, (missing, {k: v for k, v in h.model.stats.items() if k.startswith("wait")})
+
+
+@cocotb.test()
+async def test_call_ret(dut):
+    """Directed, compared every cycle: CALL / RET with conditional calls,
+    nesting through a saved LR, a CALL on the wrap's last word, side-set and
+    delays, on a fractional divider, while the host restarts the cores and
+    writes their PCs at random."""
+    from pe import asm, host
+    h = await start(dut)
+    progs = [asm.assemble("""
+    .side_set 1 opt
+        ldi r0, 3
+    .wrap_target
+    top:
+        call !r1, sub [1]
+        call r0--, outer side 1
+        jmp pin 0, skip
+        call sub
+    skip:
+        call sub side 0
+    .wrap
+    outer:
+        mov r3, lr
+        call sub [2]
+        mov lr, r3
+        ret
+    sub:
+        add r1, 1
+        and r1, 3
+        ret side 1 [1]
+    """), asm.assemble("""
+    loop:
+        call f
+        mov r2, lr
+        jmp loop
+    f:
+        add r3, 1
+        ret
+    """)]
+    for c, (prog, div) in enumerate(zip(progs, (2 << 8 | 0x40, 1 << 8))):
+        for addr, data in host.load_program(c, prog, c * 256, side_pins=8, clkdiv=div):
+            await h.write(addr, data)
+    await h.write(sim.A_CTRL, 3 | (3 << 8))
+    rng = random.Random(11)
+    for cyc in range(5000):
+        k = rng.random()
+        uio = rng.getrandbits(1)
+        if k < 0.004:
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(rng.randrange(2), sim.C_PC), wdata=0)
+        elif k < 0.008:
+            await h.cycle_step(0, uio, we=True, addr=sim.A_CTRL, wdata=3 | (rng.randrange(1, 4) << 8))
+        else:
+            await h.cycle_step(0, uio)
+    want = ["done:call", "call:taken", "call:ret", "call:mov_to_lr", "call:at_wrap_top",
+            "ctrl:restart_mid_instruction"]
+    missing = [g for g in want if not h.model.stats.get(g)]
+    assert not missing, (missing, {k: v for k, v in h.model.stats.items() if "call" in k})

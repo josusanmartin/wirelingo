@@ -28,10 +28,10 @@ def _sd(rng):
 # Opcode weights per program profile. "fifo" keeps the FIFOs moving (pulls and
 # pushes racing the host); "wait" exercises edge WAITs, qualifiers and timeouts.
 PROFILES = {
-    #         JMP WAIT IN OUT PUSH PULL MOV SET LDI ALU PIN FLAG HALT rsvd
-    "mixed": [14, 8, 10, 10, 5, 5, 10, 6, 6, 12, 6, 4, 0.5, 1],
-    "fifo":  [10, 3, 12, 14, 14, 14, 6, 3, 4, 6, 3, 2, 0.2, 0.5],
-    "wait":  [12, 30, 6, 6, 3, 3, 6, 4, 6, 8, 6, 4, 0.2, 0.5],
+    #         JMP WAIT IN OUT PUSH PULL MOV SET LDI ALU PIN FLAG HALT CALL rsvd
+    "mixed": [14, 8, 10, 10, 5, 5, 10, 6, 6, 12, 6, 4, 0.5, 4, 1],
+    "fifo":  [10, 3, 12, 14, 14, 14, 6, 3, 4, 6, 3, 2, 0.2, 2, 0.5],
+    "wait":  [12, 30, 6, 6, 3, 3, 6, 4, 6, 8, 6, 4, 0.2, 3, 0.5],
 }
 
 
@@ -42,11 +42,16 @@ def random_profile(rng):
 def random_instr(rng, bank, bank_words, profile="mixed"):
     op = rng.choices(
         [isa.OP_JMP, isa.OP_WAIT, isa.OP_IN, isa.OP_OUT, isa.OP_PUSH, isa.OP_PULL, isa.OP_MOV,
-         isa.OP_SET, isa.OP_LDI, isa.OP_ALU, isa.OP_PIN, isa.OP_FLAG, isa.OP_HALT, 13 + rng.randrange(19)],
+         isa.OP_SET, isa.OP_LDI, isa.OP_ALU, isa.OP_PIN, isa.OP_FLAG, isa.OP_HALT, isa.OP_CALL,
+         14 + rng.randrange(18)],
         weights=PROFILES[profile])[0]
     sd = _sd(rng)
-    if op == isa.OP_JMP:
+    if op in (isa.OP_JMP, isa.OP_CALL):
         x = (rng.randrange(16) << 15) | (rng.randrange(32) << 10) | _target(rng, bank, bank_words)
+    elif op == isa.OP_MOV and rng.random() < 0.25:
+        # the link register: RET (mov pc, lr), saving and restoring it
+        x = rng.choice([(isa.PC << 15) | (isa.LR << 9), (rng.randrange(4) << 15) | (isa.LR << 9),
+                        (isa.LR << 15) | (rng.randrange(4) << 9)])
     elif op == isa.OP_WAIT:
         x = rng.getrandbits(19)
         if rng.random() < 0.7:

@@ -70,6 +70,13 @@ opcode: attempted, completed, stalled) are printed. The regression runs on the
 tapeout configuration (2 cores, 2 SRAM banks, 8-deep FIFOs) and on the full
 4-core flop build.
 
+**CALL / RET**: random programs contain CALLs (conditions and targets as
+JMP), RETs, and MOVs to and from LR, with coverage goals for a taken CALL, a
+RET and a write to LR; LR is compared every cycle. `test_call_ret` (directed)
+adds nesting through a saved LR, a CALL on the wrap's last word (it links to
+the wrap bottom), side-set and delays on CALL/RET, a fractional divider, and
+host restarts and PC writes.
+
 **WAIT kind 7** (`wait pins != rN mask m`) is a quarter of the random WAITs,
 with coverage goals for completing on the first attempt, while in progress and
 by timeout; `test_wait_diff` (directed, compared every cycle) adds slow and
@@ -111,6 +118,8 @@ lost when pushed 210 clocks into the read).
   * halted/fault are sticky until restart;
   * the PC changes only on a completed instruction, a restart or a host write;
   * a disabled core's state is frozen;
+  * LR changes only on a completed instruction, and a taken CALL leaves it
+    equal to the PC the core would have gone to without the jump;
   * shift counts never exceed 32.
 * **`pe_line`**, with every input free except core 0's contract (pushes only
   with room, takes only what `IN LINE` may, counts 1–32), including LINECFG,
@@ -206,6 +215,10 @@ checkpoint tests do not satisfy final physical release.
   (host model checking parity), WS2812 (datasheet timing windows), and the I2C
   sniffer running beside the I2C master.
 * The CRC tap against the USB reference CRCs (fields and residues).
+* CALL / RET (`test_call.py`): linking, conditional calls (LR untouched when
+  not taken), nesting through a register, a CALL at the wrap top, LR across a
+  restart. `i2c_device` with its three subroutines runs the whole reverse
+  engineering flow and its response-time test unchanged.
 * WAIT kind 7 (`test_wait_diff.py`): the mask and IN_BASE, completion on
   the first attempt, a one-clock pulse between ticks, the timeout as a tick
   counter. The logic-analyzer capture (`test_reverse_engineering.py`):

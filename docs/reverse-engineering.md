@@ -25,7 +25,7 @@ controller does one of those jobs, on its own pins.
 | Part | File | Size |
 |---|---|---|
 | Capture firmware: up to 8 channels, change records timestamped to the tick | `firmware/la_capture.pasm` | 20 instructions (g4: 25) |
-| I2C target firmware: address match, ACKs, bits, clock stretching | `firmware/i2c_device.pasm` | 98 instructions |
+| I2C target firmware: address match, ACKs, bits, clock stretching | `firmware/i2c_device.pasm` | 88 instructions (g4: 98) |
 | Records → edges, VCD, I2C events/transcript/register image; command line | `tools/pe/la.py` | host |
 | Device register model (EEPROM-style pointer device, `on_read` hook) | `tools/pe/i2cdev.py` | host |
 | Bit-banged I2C master and EEPROM pin models (tests) | `tools/pe/i2cbus.py` | host |
@@ -127,8 +127,10 @@ that drains every cycle.
   host may queue bytes ahead (the core then does not wait), but it cannot
   withdraw them when the master stops early: the CTRL FIFO clear empties both
   directions.
-* **ISA: no CALL/RET**, so the address and data byte loops are separate copies
-  (98 words of 256).
+* **ISA (fixed in v2): no CALL/RET** on g4, so the address and data paths had
+  separate copies of the bit loop, the event push with its stretch and the
+  STOP/repeated-START check (98 words). v2's CALL shares them as three
+  subroutines: 88 words, with the same response times.
 * The device emulates one 7-bit address. It has no 10-bit addressing, general
   call or spike filter (I2C fast mode asks for 50 ns suppression; the capture
   and the device both see any glitch that lasts a sample). STOP and NACK events

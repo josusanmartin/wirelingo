@@ -27,6 +27,7 @@ the RP2040 PIO engine's encodings, not the entire microcontroller:
 | open drain needs pindir tricks           | per-pin open-drain mode                              |
 | SET/OUT/side-set use configured pin mappings | `PIN p, hi/lo/toggle/hiz` on any absolute pin     |
 | IRQ flags and GPIO signalling            | flags + 8 virtual pins (internal wires between cores)|
+| JMP only                                 | CALL / RET with one link register                    |
 
 The CRC tap is fed by the shift registers (§4.5). FIFO join (§4.4) is inspired
 by PIO. A shared hardware line unit (§4.7) assists core 0 with bit stuffing,
@@ -125,6 +126,7 @@ Per-core architectural state:
 |--------------|-------|----------------------------------|
 | PC           | 10    | `ENTRY`                          |
 | R0–R3        | 16    | 0 at reset; kept on restart      |
+| LR           | 10    | 0 at reset; kept on restart (link register, §5.2) |
 | ISR          | 32    | 0                                |
 | ISR_CNT      | 6     | 0 (bits shifted in, saturates at 32) |
 | OSR          | 32    | 0                                |
@@ -409,7 +411,8 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 10 | `PIN`    | `[18:17] action  [4:0] pin`                                                |
 | 11 | `FLAG`   | `[18] clear  [2:0] idx`                                                    |
 | 12 | `HALT`   | —                                                                          |
-| 13–31 | —     | reserved (v0.3 serial pipeline)                                            |
+| 13 | `CALL`   | as JMP: `[18:15] cond  [14:10] sel  [9:0] addr`                            |
+| 14–31 | —     | reserved (v0.3 serial pipeline)                                            |
 
 ### 5.1 Operand codes (`src` / `dst`)
 
@@ -426,7 +429,8 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 11   | PC       | `{22'b0, PC}`                              | jump to `value[9:0]`                         |
 | 12   | CRC      | `{16'b0, CRC}`                             | `CRC = value[15:0] & CRC_MASK` (§4.5)        |
 | 13   | LINE     | IN: received bits (§4.7; core 0)           | OUT: queue bits to transmit (§4.7; core 0); MOV: discard |
-| 14–15| —        | 0                                          | discard                                      |
+| 14   | LR       | `{22'b0, LR}`                              | MOV: `LR = value[9:0]`; OUT: discard (the assembler rejects it) |
+| 15   | —        | 0                                          | discard                                      |
 
 For a PINS/PINDIRS destination, pin `(OUT_BASE + i) mod 32` gets `value[i]`
 for `0 ≤ i < OUT_COUNT`.
@@ -453,6 +457,21 @@ for `0 ≤ i < OUT_COUNT`.
 | 13   | `rxf`      | RXF full                                                    |
 | 14   | `f k`      | `F[sel[2:0]] == 1`                                          |
 | 15   | `!f k`     | `F[sel[2:0]] == 0`                                          |
+
+**CALL cond, sel, addr** (opcode 13). Exactly JMP: the same fields and
+conditions, and `rN--` decrements either way. When the condition holds it also
+links: `LR` = the PC the core would have gone to without the jump
+(`WRAP_BOTTOM` if `PC == WRAP_TOP`, else `PC + 1`). **RET** is `MOV PC, LR`
+(assembler `ret`). There is one link register and no stack: a subroutine that
+calls another saves LR first (`mov r3, lr` … `mov lr, r3`), which costs two
+instructions per extra level. Neither the host nor a restart touches LR, and
+it is not on the host bus.
+Why one register: protocol firmware rarely nests (the shared pieces of
+`i2c_device` are leaves), and a 10-bit register costs 10 flops and a 2:1
+multiplexer in front of them, plus one input on the source multiplexer. A
+2-entry stack would double the flops and add a pointer and a second
+multiplexer level for no firmware that needs it. CALL reuses JMP's decode and
+condition logic, so the opcode costs one compare.
 
 **WAIT kind, idx [qualifier] [clear] [timeout].** Stalls until the condition
 holds. `p = idx` is an absolute pin; `k = idx[2:0]` is a flag.

@@ -2,7 +2,7 @@
 
     prog = assemble(open("uart_tx.pasm").read())
     prog.words            # list of 32-bit instruction words, relative to address 0
-    prog.relocate(base)   # words with JMP targets offset by base
+    prog.relocate(base)   # words with JMP/CALL targets offset by base
 """
 import re
 from dataclasses import dataclass, field
@@ -299,9 +299,9 @@ def _jmp(ln):
         if not 0 <= sel < 32:
             raise ln.err("jmp selector out of range")
     else:
-        raise ln.err("jmp takes [cond,] target")
-    addr = ln.ranged(tgt, 0, 1024, "jmp target")
-    return isa.OP_JMP, (cond << 15) | (sel << 10) | addr
+        raise ln.err(f"{ln.mn} takes [cond,] target")
+    addr = ln.ranged(tgt, 0, 1024, f"{ln.mn} target")
+    return (isa.OP_CALL if ln.mn == "call" else isa.OP_JMP), (cond << 15) | (sel << 10) | addr
 
 
 def _wait(ln):
@@ -421,7 +421,9 @@ def _flag(ln):
 
 _ENCODERS = {
     "nop": lambda ln: (isa.OP_MOV, (isa.NULL << 15) | (isa.NULL << 9)),
-    "jmp": _jmp, "wait": _wait, "in": _in_out, "out": _in_out, "push": _push_pull, "pull": _push_pull,
+    "jmp": _jmp, "call": _jmp, "wait": _wait,
+    "ret": lambda ln: (isa.OP_MOV, (isa.PC << 15) | (isa.LR << 9)),  # mov pc, lr
+    "in": _in_out, "out": _in_out, "push": _push_pull, "pull": _push_pull,
     "mov": _mov, "set": _set, "ldi": _ldi, "pin": _pin, "flag": _flag,
     "halt": lambda ln: (isa.OP_HALT, 0),
     **{name: _alu for name in isa.ALU_NAMES},
@@ -438,4 +440,4 @@ def _encode(line, prog, defs, lineno):
     if ln.mn not in _ENCODERS:
         raise ln.err("unknown mnemonic")
     op, x = _ENCODERS[ln.mn](ln)
-    return isa.enc(op, sd, x), op == isa.OP_JMP
+    return isa.enc(op, sd, x), op in (isa.OP_JMP, isa.OP_CALL)

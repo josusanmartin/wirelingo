@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 LOCKSTEP = ("cd test && LOCKSTEP_SEEDS=20 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 "
-            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 5")
+            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 6")
 
 
 def top(test):
@@ -82,6 +82,13 @@ MUTANTS = {
     "fw-la-no-gap-check": ("firmware/la_capture.pasm", "    jmp rxf, full               ; W+4",
                            "    nop                         ; W+4",
                            pytest("test/model/test_reverse_engineering.py -k gap")),
+    "rtl-call-link-ignores-wrap": ("src/pe_core.sv", "    lr_nv = pc_seq;", "    lr_nv = pc + 10'd1;", LOCKSTEP),
+    "rtl-call-no-link": ("src/pe_core.sv", "lr_we = op == OP_CALL && cond_ok;", "lr_we = 1'b0;", LOCKSTEP),
+    "model-call-links-untaken": ("tools/pe/sim.py", "        if self._op_jmp(e):", "        if self._op_jmp(e) or True:",
+                                 pytest("test/model/test_call.py")),
+    "fw-i2c-device-no-rstart": ("firmware/i2c_device.pasm",
+                                "    jmp start                          ; SDA fell while SCL high: repeated START",
+                                "    jmp idle", pytest("test/model/test_reverse_engineering.py -k impersonate")),
     "fw-usb-record-no-marker": ("firmware/usb_ls_rx.pasm", "    ldi r1, 0x81                   ; trailer status: good",
                                 "    ldi r1, 0x01                   ; trailer status: good",
                                 pytest("test/model/test_usb_model.py -k rx_packets")),

@@ -30,6 +30,10 @@
 ; full.
 ;
 ; r0 = byte/event, r1 = bit counter, r2 = R/W, then the constant 1, r3 = address.
+; Three subroutines (CALL / RET, one level: docs/isa.md §5.2) carry what the
+; address and data paths share: the bit loop, the event push with its stretch,
+; and the bit that may turn out to be a STOP or a repeated START. g4, without
+; CALL, had two copies of each (98 instructions; now 88).
 .program i2c_device
 .shift_in left
 .shift_out left
@@ -40,15 +44,11 @@ idle:
     wait fall SDA if pin SCL == 1      ; START
 start:
     pin SDA, hi
+    mov isr, null                      ; the address byte lands alone in the ISR
     wait 0 pin SCL
     ldi r1, 7
-abit:                                  ; address byte, MSB first
-    wait 1 pin SCL
-    in pins, 1                         ; SDA, sampled while SCL is high
-    wait 0 pin SCL
-    jmp r1--, abit
+    call rxbits                        ; address byte, MSB first
     mov r0, isr
-    and r0, 0xFF
     mov r2, r0
     shr r2, 1
     cmp r2, r3
@@ -57,58 +57,21 @@ abit:                                  ; address byte, MSB first
     mov r2, r0
     and r2, 1                          ; R/W
     or r0, 0x100
-    mov isr, r0
-    jmp rxf, astall
-    push
-    jmp aack
-astall:
-    pin SCL, lo                        ; RXF full: stretch until the host reads
-    push block
-    pin SCL, hi
-aack:
-    wait 1 pin SCL                     ; the ACK clock
+    call event                         ; push it; returns in the ACK clock
     wait 0 pin SCL
     jmp r2, rbyte
 ; ---- the master writes
 wbyte:
     pin SDA, hi                        ; release the ACK
+    mov isr, null
     ldi r2, 1
-    wait 1 pin SCL                     ; first bit: may be a STOP or a repeated START
-    jmp pin SDA, w1
-w0:
-    jmp !pin SCL, w0done
-    jmp !pin SDA, w0
-    jmp stop                           ; SDA rose while SCL high: STOP
-w1:
-    jmp !pin SCL, w1done
-    jmp pin SDA, w1
-    jmp start                          ; SDA fell while SCL high: repeated START
-w0done:
-    in null, 1
-    jmp wrest
-w1done:
-    in r2, 1
-wrest:
+    call bit1                          ; first bit: may be a STOP or a repeated START
     ldi r1, 6
-wbit:                                  ; bits 2..8
-    wait 1 pin SCL
-    in pins, 1
-    wait 0 pin SCL
-    jmp r1--, wbit
+    call rxbits                        ; bits 2..8
     pin SDA, lo                        ; ACK
     mov r0, isr
-    and r0, 0xFF
     or r0, 0x200
-    mov isr, r0
-    jmp rxf, wstall
-    push
-    jmp wack
-wstall:
-    pin SCL, lo
-    push block
-    pin SCL, hi
-wack:
-    wait 1 pin SCL
+    call event
     wait 0 pin SCL
     jmp wbyte
 stop:
@@ -144,13 +107,41 @@ rnack:
     mov isr, r0
     push noblock
     wait 0 pin SCL
-    wait 1 pin SCL                     ; after a NACK: STOP or repeated START
-    jmp pin SDA, p1
-p0:
-    jmp !pin SCL, idle
-    jmp !pin SDA, p0
-    jmp stop
-p1:
-    jmp !pin SCL, idle
-    jmp pin SDA, p1
-    jmp start
+    call bit1                          ; after a NACK: STOP or repeated START (bit1 goes there)
+    jmp idle                           ; a clock instead: not ours any more
+; ---- subroutines
+rxbits:                                ; r1 + 1 bits, MSB first, into the ISR; returns after the last SCL fall
+    wait 1 pin SCL
+    in pins, 1                         ; SDA, sampled while SCL is high
+    wait 0 pin SCL
+    jmp r1--, rxbits
+    ret
+event:                                 ; push r0; with RXF full, stretch SCL until the host reads.
+    mov isr, r0                        ; returns once the ACK clock is high
+    jmp rxf, estall
+    push
+    jmp eclk
+estall:
+    pin SCL, lo
+    push block
+    pin SCL, hi
+eclk:
+    wait 1 pin SCL
+    ret
+bit1:                                  ; SCL low: one bit, unless SDA moves while SCL is high
+    wait 1 pin SCL
+    jmp pin SDA, h1
+h0:
+    jmp !pin SCL, h0done
+    jmp !pin SDA, h0
+    jmp stop                           ; SDA rose while SCL high: STOP
+h1:
+    jmp !pin SCL, h1done
+    jmp pin SDA, h1
+    jmp start                          ; SDA fell while SCL high: repeated START
+h0done:
+    in null, 1
+    ret
+h1done:
+    in r2, 1                           ; r2 = 1 here (after a NACK the bit is unused)
+    ret

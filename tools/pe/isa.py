@@ -2,20 +2,20 @@
 
 # Opcodes
 OP_JMP, OP_WAIT, OP_IN, OP_OUT, OP_PUSH, OP_PULL, OP_MOV, OP_SET = range(8)
-OP_LDI, OP_ALU, OP_PIN, OP_FLAG, OP_HALT = range(8, 13)
+OP_LDI, OP_ALU, OP_PIN, OP_FLAG, OP_HALT, OP_CALL = range(8, 14)
 
 OPNAMES = {
     OP_JMP: "jmp", OP_WAIT: "wait", OP_IN: "in", OP_OUT: "out",
     OP_PUSH: "push", OP_PULL: "pull", OP_MOV: "mov", OP_SET: "set",
-    OP_LDI: "ldi", OP_ALU: "alu", OP_PIN: "pin", OP_FLAG: "flag", OP_HALT: "halt",
+    OP_LDI: "ldi", OP_ALU: "alu", OP_PIN: "pin", OP_FLAG: "flag", OP_HALT: "halt", OP_CALL: "call",
 }
 
 # src/dst operand codes (§5.1)
-R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC, CRC, LINE = range(14)
+R0, R1, R2, R3, PINS, PINDIRS, ISR, OSR, NULL, STATUS, FLAGS, PC, CRC, LINE, LR = range(15)
 LOC_NAMES = ["r0", "r1", "r2", "r3", "pins", "pindirs", "isr", "osr",
-             "null", "status", "flags", "pc", "crc", "line"]
+             "null", "status", "flags", "pc", "crc", "line", "lr"]
 
-# OUT can write these; OUT to OSR/STATUS/FLAGS would only discard, so the assembler rejects them
+# OUT can write these; OUT to OSR/STATUS/FLAGS/LR would only discard, so the assembler rejects them
 OUT_DSTS = {R0, R1, R2, R3, PINS, PINDIRS, ISR, NULL, PC, CRC, LINE}
 
 
@@ -70,12 +70,12 @@ def disasm(word):
     """Human-readable form (side/delay field shown raw)."""
     op, sd, x = fields(word)
     sfx = f"  ; sd={sd}" if sd else ""
-    if op == OP_JMP:
+    if op in (OP_JMP, OP_CALL):
         cond, sel, addr = bits(x, 18, 15), bits(x, 14, 10), bits(x, 9, 0)
         cs = ["", "!r{r}", "r{r}", "r{r}--", "pin {s}", "!pin {s}", "z", "!z",
               "c", "!c", "t", "!osre", "txne", "rxf", "f {f}", "!f {f}"][cond]
         cs = cs.format(r=sel & 3, s=sel, f=sel & 7)
-        return f"jmp {cs + ', ' if cs else ''}{addr}{sfx}"
+        return f"{OPNAMES[op]} {cs + ', ' if cs else ''}{addr}{sfx}"
     if op == OP_WAIT:
         kind, idx = bits(x, 18, 16), bits(x, 15, 11)
         to, treg, clr = bits(x, 10, 10), bits(x, 9, 8), bits(x, 7, 7)
