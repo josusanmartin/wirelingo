@@ -614,8 +614,10 @@ Timing, in system clocks (clk), at any phase between SCK and clk:
 Global reset aborts a selected transaction, including pending reads. Keep CS_n
 high for five clk cycles after reset release. If held low through reset, all
 continuing SCK activity is ignored until CS_n returns high. Reset assertion
-works with SCK stopped; deassertion of SCK-domain state occurs during the idle
-CS interval, with at least one clk of margin before the first SCK edge.
+works with SCK stopped. After reset release the clk side accepts host-port
+events only once it has seen CS_n high for three clk cycles, which the
+five-cycle interval covers; the SCK side resets when CS_n rises, as between
+any two transactions.
 
 Words cross from the SCK domain to clk through 2-flop synchronizers, and their
 data is held for at least 8 SCK, longer than the crossing. SDC bounds all
