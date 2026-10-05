@@ -67,12 +67,8 @@ module pe_hostport (
   reg [31:0] w_hold;
   reg        a_tog, w_tog, r_tog;
 
-  // After global reset, require an idle CS interval in clk before accepting
-  // SCK. A transaction held selected across reset is ignored until CS rises.
-  reg host_ready;
-  wire parser_reset = cs_n || !rst_n || !host_ready;
-  always @(posedge sck or posedge parser_reset) begin
-    if (parser_reset) begin
+  always @(posedge sck or posedge cs_n) begin
+    if (cs_n) begin
       phase <= PH_CMD;
       cnt <= 6'd0;
       cmd <= 8'd0;
@@ -126,7 +122,7 @@ module pe_hostport (
       a_tog <= 1'b0;
       w_tog <= 1'b0;
       r_tog <= 1'b0;
-    end else if (!cs_n && host_ready) begin
+    end else if (!cs_n) begin
       if (phase == PH_ADDR && cnt == addr_len) begin
         a_hold <= sh_n[15:0];
         m_hold <= {rd, inc};
@@ -145,26 +141,30 @@ module pe_hostport (
   // output side: changes on SCK fall, half a period before the host samples
   reg [31:0] osh;
   reg [31:0] buf0, buf1;                      // clk domain, stable when used
-  always @(negedge sck or posedge parser_reset) begin
-    if (parser_reset) osh <= 32'd0;
+  always @(negedge sck or posedge cs_n) begin
+    if (cs_n) osh <= 32'd0;
     else if (phase == PH_DATA && rd)
       osh <= (cnt == 6'd0) ? (wpar ? buf1 : buf0) : (quad ? {osh[27:0], 4'd0} : {osh[30:0], 1'b0});
   end
-  assign io_out = (!parser_reset && phase == PH_DATA && rd) ? (quad ? osh[31:28] : {osh[31], 3'b000}) : 4'd0;
-  assign io_oe  = !parser_reset && phase == PH_DATA && rd && quad;
+  // A transaction already selected when reset ends is ignored: the SCK side
+  // keeps parsing it (it resets only when CS rises), but its events are
+  // dropped and the quad drivers stay off until CS has been seen high.
+  reg host_ready;
+  assign io_out = (phase == PH_DATA && rd) ? (quad ? osh[31:28] : {osh[31], 3'b000}) : 4'd0;
+  assign io_oe  = host_ready && !cs_n && phase == PH_DATA && rd && quad;
 
   // ---------------------------------------------------------------- clk domain
   (* async_reg = "true", keep = 1 *) reg [2:0] a_s, w_s, r_s, cs_s;
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) host_ready <= 1'b0;
-    else if (cs_n && &cs_s) host_ready <= 1'b1;
+    else if (&cs_s) host_ready <= 1'b1;
   end
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       a_s <= 3'd0;
       w_s <= 3'd0;
       r_s <= 3'd0;
-      cs_s <= 3'b111;
+      cs_s <= 3'b000;                       // CS counts as selected until seen high
     end else begin
       a_s <= {a_s[1:0], a_tog};
       w_s <= {w_s[1:0], w_tog};
@@ -172,9 +172,9 @@ module pe_hostport (
       cs_s <= {cs_s[1:0], cs_n};
     end
   end
-  wire a_ev = a_s[2] != a_s[1];
-  wire w_ev = w_s[2] != w_s[1];
-  wire r_ev = r_s[2] != r_s[1];
+  wire a_ev = host_ready && a_s[2] != a_s[1];
+  wire w_ev = host_ready && w_s[2] != w_s[1];
+  wire r_ev = host_ready && r_s[2] != r_s[1];
 
   // read state: snap_addr is the next word to fetch, com_addr the oldest unsent
   reg        active, c_rd, c_inc;
