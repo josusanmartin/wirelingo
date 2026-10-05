@@ -9,8 +9,9 @@
 ; packet is never sent half-pushed). The packet is: word 0 = number of bits
 ; (including the SYNC byte), then the bytes packed little-endian, 4 per word
 ; (at most 3 data words: SYNC + PID + 8 data bytes + CRC16). F_STAGED is
-; cleared when the packet is taken; usb_ls_rx sets F_GOTACK when the host
-; acknowledges it, so the host software can re-stage it if that never comes.
+; cleared when the packet is taken and F_SENT set; usb_ls_rx then sets F_GOTACK
+; when the host acknowledges it, so the host software can re-stage it if that
+; never comes.
 ;
 ; Each data bit takes exactly 32 ticks; a transition always lands 4 ticks into
 ; its bit cell, whichever path is taken (see the tick comments).
@@ -28,6 +29,7 @@ send_nak:
     jmp const16
 staged:
     flag clr F_STAGED
+    flag set F_SENT
     pull block                     ; header: bit count
     mov r0, osr
     out null, 32                   ; empty the OSR: the data words autopull

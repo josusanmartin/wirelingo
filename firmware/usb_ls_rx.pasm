@@ -16,7 +16,10 @@
 ; and tokens with a bad CRC5. Then:
 ;   IN          -> set F_IN (usb_ls_tx sends the staged packet or NAK)
 ;   SETUP / OUT -> set F_EXP (a DATA packet follows); SETUP also sets F_SETUP
-; An ACK from the host (after our DATA packet) sets F_GOTACK.
+; An ACK sets F_GOTACK only while F_SENT is set: usb_ls_tx sets F_SENT when it
+; sends a staged DATA packet, and any token to us clears it. The device's own
+; ACK of a SETUP/OUT data packet is also heard here and must not count as the
+; host's ACK of a packet the host software may already have staged.
 ;
 ; DATA records (RX FIFO, ISR shifts right, autopush 24): every DATA packet
 ; received while F_EXP is set gives one record, CRC good or bad:
@@ -140,6 +143,8 @@ rx_skip:
     jmp pin DM, rx_skip
     cmp r3, 0x14B                  ; SYNC + ACK: the host took our DATA packet
     jmp !z, eop_skip
+    jmp !f F_SENT, eop_skip        ; (or it is our own ACK)
+    flag clr F_SENT
     flag set F_GOTACK
     jmp eop_skip
 ; -- end of packet: raise the response flags first (the TX core must answer
@@ -198,14 +203,17 @@ trailer_out:
     in r0, 16                      ; [31:16] = bit count; ISR_CNT = 32: autopushed
     jmp idle
 got_in:
+    flag clr F_SENT                ; before F_IN: the TX core sets it again
     flag set F_IN
     jmp eop_skip
 got_setup:
+    flag clr F_SENT
     flag clr F_STAGED              ; abort the preceding transfer immediately
     flag clr F_GOTACK
     flag set F_SETUP
     jmp expect_data
 got_out:
+    flag clr F_SENT
     flag clr F_SETUP
 expect_data:
     flag set F_EXP

@@ -58,8 +58,12 @@ def test_usb_rx_packets(ppm):
     drive(mh, usb.encode(usb.data_packet(usb.PID_DATA0, setup)), tpb, rng.random())
     assert rx_record(mh) == usbdev.Record(True, setup, 16 + 8 * 10, setup=True)
     assert mh.chip.flags & 0b0110 == 0b0010  # F_ACK set, F_EXP cleared
+    # Our own ACK of that packet comes back through the receiver: not the host's.
     drive(mh, usb.encode(usb.handshake(usb.PID_ACK)), tpb, rng.random())
-    assert rx_record(mh) is None and mh.chip.flags & usbdev.F_GOTACK
+    assert rx_record(mh) is None and not mh.chip.flags & usbdev.F_GOTACK
+    mh.write(sim.A_FSET, usbdev.F_SENT)       # as usb_ls_tx does when it sends DATA
+    drive(mh, usb.encode(usb.handshake(usb.PID_ACK)), tpb, rng.random())
+    assert rx_record(mh) is None and mh.chip.flags & (usbdev.F_GOTACK | usbdev.F_SENT) == usbdev.F_GOTACK
     drive(mh, usb.encode(usb.token(usb.PID_OUT, 0, 0)), tpb, rng.random())
     ones = bytes([0xFF] * 8)  # lots of stuffing
     drive(mh, usb.encode(usb.data_packet(usb.PID_DATA1, ones)), tpb, rng.random())

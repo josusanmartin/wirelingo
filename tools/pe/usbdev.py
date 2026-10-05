@@ -12,8 +12,8 @@ re-staging after a lost ACK, the address filter after SET_ADDRESS).
 """
 from . import sim, usb
 
-FLAGS = dict(F_IN=0, F_ACK=1, F_EXP=2, F_SETUP=3, F_STAGED=4, F_GOTACK=5, F_RESET=6)
-F_SETUP, F_STAGED, F_GOTACK = (1 << FLAGS[k] for k in ("F_SETUP", "F_STAGED", "F_GOTACK"))
+FLAGS = dict(F_IN=0, F_ACK=1, F_EXP=2, F_SETUP=3, F_STAGED=4, F_GOTACK=5, F_RESET=6, F_SENT=7)
+F_SETUP, F_STAGED, F_GOTACK, F_SENT = (1 << FLAGS[k] for k in ("F_SETUP", "F_STAGED", "F_GOTACK", "F_SENT"))
 CRCCTRL = 0x8005 | (15 << 16) | (1 << 20)   # CRC16, 16 bits, IN tap
 TRAILER = 0x80
 F_RESET = 1 << FLAGS["F_RESET"]
