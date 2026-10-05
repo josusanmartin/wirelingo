@@ -471,7 +471,8 @@ async def test_wait_diff(dut):
             uio ^= 1 << rng.randrange(4)               # pulses: often for a single clock
         k = rng.random()
         if k < 0.003:
-            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(rng.randrange(2), sim.C_PC), wdata=0)
+            c = rng.randrange(2)                       # back to its loop (its own bank)
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(c, sim.C_PC), wdata=c * 256)
             uio = 0
         elif k < 0.006:
             await h.cycle_step(0, uio, we=True, addr=sim.A_CTRL, wdata=3 | (rng.randrange(1, 4) << 8))
@@ -536,7 +537,8 @@ async def test_call_ret(dut):
         k = rng.random()
         uio = rng.getrandbits(1)
         if k < 0.004:
-            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(rng.randrange(2), sim.C_PC), wdata=0)
+            c = rng.randrange(2)                       # back to its program start (its own bank)
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(c, sim.C_PC), wdata=c * 256)
         elif k < 0.008:
             await h.cycle_step(0, uio, we=True, addr=sim.A_CTRL, wdata=3 | (rng.randrange(1, 4) << 8))
         else:
