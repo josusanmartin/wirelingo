@@ -46,6 +46,12 @@ for:
 - **A CRC tap** (any polynomial up to 16 bits) fed by the shift registers, and
   **FIFO join** (RXF as a second TX stage) for line rates above what the SPI
   host port can stream.
+- **A line unit** beside core 0: NRZI, bit stuffing, end-of-packet detection
+  and Manchester decoding with a phase-tracking loop, so one core runs a whole
+  low-speed USB device, and 10BASE-T receive meets 802.3's ±13.5 ns edge
+  jitter.
+- **A host link that keeps up:** quad SPI at SCK = clk, 193 Mbit/s of payload
+  in simulation and 193.6 Mbit/s measured on the FPGA.
 
 **Reviewers:** [docs/guide.md](docs/guide.md) maps each claim to its evidence
 and the command that reproduces it.
@@ -120,7 +126,8 @@ make -C formal                                                   # proofs
   exceptions remain at typ.
 * The signed-off netlist passes all 20 top-level tests at gate level
   (`flow/gl_test.sh`: main suite 16, compiled PIO 2, Ethernet capture 2;
-  functional, no SDF).
+  functional, no SDF), and the GDS passes Tiny Tapeout's precheck
+  (`tt/precheck`).
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 63 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
   the current RTL routable ([docs/physical.md](docs/physical.md)).
@@ -136,11 +143,12 @@ make -C formal                                                   # proofs
 
 | Path | What |
 |------|------|
-| `docs/` | `isa.md` (spec), `asm.md` (assembler), `verification.md`, `physical.md`, `info.md` (TT datasheet) |
+| `docs/` | `isa.md` (spec), `asm.md` (assembler), `methodology.md` (AI-assisted design and verification), `verification.md`, `physical.md`, `info.md` (TT datasheet) |
 | `src/` | RTL: `pe_core`, `pe_fifos`/`pe_fifo`, `pe_chip` (cores + IMEM + pins), `pe_imem`, `pe_hostport` (SPI, 1-bit or quad), TT top `project.v` |
 | `tools/pe/` | `isa`, `asm` (assembler), `sim` (golden model), `host` (register writes), `modelhost`, `randprog`, USB/CAN helpers |
 | `tools/micropython/` | demo-board driver and generated firmware bundle |
 | `firmware/` | `.pasm` programs |
 | `test/` | cocotb top-level and lockstep tests; `test/model/` pytest firmware tests |
 | `formal/` | SymbiYosys proofs |
+| `fpga/kv260/` | Kria KV260 build, app packaging, fabric SPI master and hardware bring-up tests |
 | `flow/`, `librelane_plugin_protoemu.py` | hardening config generator, SRAM power stripes, experiment and GL scripts |
