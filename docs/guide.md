@@ -98,8 +98,6 @@ board measurements still need their own evidence.
 * Protocol timing is checked in clock cycles against behavioural device models,
   not against electrical specifications.
 * Gate-level simulation is functional (no SDF); delay validation needs STA.
-* The full two-core ECP5 profile fits but reaches only 24.02 MHz in routed
-  timing against a 48-MHz target. This is not a USB-ready FPGA or board image.
 
 ## Where things are
 
