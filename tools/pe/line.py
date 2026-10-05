@@ -5,8 +5,16 @@ Every decision uses start-of-cycle state; Chip.step calls core 0 first (which
 may push or pop through `push`/`take`), then `step`, then `commit` applies the
 cycle's queue changes."""
 
+import os
+
 M16 = 0xFFFF
 NRZ, NRZI, MANCH = 0, 1, 2
+# PROPOSAL (docs/usb-full-speed.md, not in the signed-off chip): an NRZ/NRZI
+# transition seen by the half-cycle sample (before the falling edge) starts
+# the bit counter one clock shorter, so the sample lands 1.5-2.5 clocks after
+# the edge instead of 2-3. Off by default; PE_LINE_NRZI_HALF=1 turns it on (the
+# RTL's matching define is PE_LINE_NRZI_HALF).
+NRZI_HALF = os.environ.get("PE_LINE_NRZI_HALF", "0") not in ("", "0")
 
 
 def _bit(p):
@@ -275,7 +283,7 @@ class Line:
                     self._deliver(rx)
                 else:
                     self.rlast = self.rprev
-                    self.rcnt = ((p >> 1) - 1) & M16
+                    self.rcnt = ((p >> 1) - 1 - self._early(h)) & M16
         elif self.code == MANCH:
             p12 = p & 0xFFF
             q = self.q + 128                                # one clock
@@ -297,7 +305,7 @@ class Line:
                 self.q = q
         else:
             if trans:
-                self.rcnt = ((p >> 1) - 1) & M16
+                self.rcnt = ((p >> 1) - 1 - self._early(h)) & M16
                 self.quiet = 0
             elif self.rcnt == 0:
                 self.rcnt = (p - 1) & M16
@@ -305,6 +313,10 @@ class Line:
             else:
                 self.rcnt = (self.rcnt - 1) & M16
         self.rprev = rx
+
+    def _early(self, h):
+        """PROPOSAL: 1 if this cycle's edge came before the half-cycle sample."""
+        return int(NRZI_HALF and h != self.rprev)
 
     def _sample(self, rx, rxn):
         if self.diff and rx == 0 and rxn == 0:

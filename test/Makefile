@@ -39,6 +39,13 @@ endif
 
 export PYTHONPATH := $(PWD)/../tools:$(PYTHONPATH)
 
+# PROPOSAL (docs/usb-full-speed.md): PE_LINE_NRZI_HALF=1 builds the line unit's
+# half-cycle NRZI sample point; the model reads the same variable.
+ifneq ($(filter-out 0,$(PE_LINE_NRZI_HALF)),)
+COMPILE_ARGS += -DPE_LINE_NRZI_HALF
+endif
+export PE_LINE_NRZI_HALF
+
 ifneq ($(GATES),yes)
 
 # RTL simulation:

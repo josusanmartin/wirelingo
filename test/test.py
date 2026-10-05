@@ -776,6 +776,145 @@ async def test_usb_ls_device(dut):
     assert ta < 7.5 * 32, ta
 
 
+# ------------------------------------------------------------------ USB full speed (study)
+
+@cocotb.test()
+async def test_usb_fs_device(dut):
+    """USB FULL-SPEED device (docs/usb-full-speed.md): usb_fs_dev on core 0 with
+    the line unit at 4 clocks per bit, clk = 48 MHz. A pins-only host places
+    its edges in continuous time (random phase against clk, duty-cycle
+    distortion). SETUP + DATA0 -> ACK, IN -> NAK, IN -> pre-staged DATA1, the
+    host's ACK -> F_GOTACK; turnaround measured on the bus from the host's
+    SE0 -> J to the device's first K (USB 2.0: 2 to 6.5 bit times). Then OUT
+    packets at the spec's consecutive-edge jitter (DCD 9.25 ns = 18.5 ns between
+    edges) must all be ACKed, and at DCD 14 ns the signed-off receiver must
+    start missing them while the PE_LINE_NRZI_HALF proposal must not."""
+    import random
+    from pe import usb, usbdev
+    half = os.environ.get("PE_LINE_NRZI_HALF", "0") not in ("", "0")
+    T = 20.834                                     # 48 MHz (ps-quantized)
+    TBIT = 1000 / 12
+    spi = await setup(dut, clock_ns=T)
+    dut.pull_up.value = 0b10                       # 1.5k on D+ (uio1); D- = uio0
+    prog = load_fw("usb_fs_dev", **usbdev.defines())
+    await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [usbdev.CRCCTRL])
+    await spi.write(sim.A_LINEDIV, [(4 << 16) | (4 << 8)])
+    await spi.write(sim.A_LINEPINS, [0])
+    await spi.write(sim.A_LINECFG, [0x49F3])
+    await run_program(spi, 0, prog, clkdiv=1 << 8)
+    await ClockCycles(dut.clk, 50)
+    rng = random.Random(7)
+    PADS = {"J": (0, 1), "K": (1, 0), "0": (0, 0)}
+    bus = {"edges": [], "last": None}
+
+    async def monitor():                           # the device's pads change after a rising edge
+        while True:
+            await FallingEdge(dut.clk)
+            v = {2: "J", 1: "K", 0: "0"}.get(int(dut.uio_in.value) & 3, "?")
+            if v != bus["last"]:
+                bus["edges"].append((get_sim_time(unit="ps") / 1000 - T / 2, v))
+                bus["last"] = v
+    mon = cocotb.start_soon(monitor())
+
+    async def send(packet, gap_bits=4.0, dcd=0.0, after=None):
+        """Drive a packet starting gap_bits after `after` (a bus time, ns) plus
+        a random phase; returns the time of its SE0 -> J."""
+        now = get_sim_time(unit="ps") / 1000
+        t0 = max(now, (after or now) + gap_bits * TBIT) + rng.random() * T
+        states = usb.encode(packet)
+        prev, t = "J", t0
+        for i, s in enumerate(states):
+            te = t0 + i * TBIT + ((dcd if s == "K" else -dcd) if s != prev and s != "0" else 0)
+            if te > now:
+                await Timer(round((te - now) * 1000), unit="ps")
+                now = te
+            EXT.set(0, True, PADS[s][0])
+            EXT.set(1, True, PADS[s][1])
+            if prev == "0" and s == "J":
+                t = te
+            prev = s
+        await Timer(round(TBIT * 1000), unit="ps")
+        EXT.set(0, False)
+        EXT.set(1, False)
+        return t
+
+    async def response(t_eop, bits=20):
+        """The device's packet after the host's EOP at t_eop: (bytes, turnaround
+        in bit times) or (None, None)."""
+        start = len(bus["edges"])
+        await Timer(round(bits * TBIT * 1000), unit="ps")
+        while True:
+            ev = [e for e in bus["edges"][start:] if e[0] > t_eop]
+            if not ev or ev[0][1] != "K":
+                return None, None
+            if any(a[1] == "0" and b[1] == "J" for a, b in zip(ev, ev[1:])):
+                break
+            await ClockCycles(dut.clk, 20)
+        states = ["J"]
+        for (t, s), (t2, _) in zip(ev, ev[1:]):
+            states += [s] * max(1, round((t2 - t) / TBIT))
+            if s == "0" and _ == "J":
+                break
+        states.append("J")
+        try:
+            return usb.decode(states), (ev[0][0] - t_eop) / TBIT
+        except ValueError:
+            return b"?", (ev[0][0] - t_eop) / TBIT
+
+    async def records():
+        st = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0]
+        n = (st >> 4) & 15
+        words = await spi.read(sim.core_reg(0, sim.C_FIFO), n, fixed=True) if n else []
+        recs, rest = usbdev.parse_records(words)
+        assert not rest, words
+        return recs
+
+    tas = {}
+    req = bytes([0x80, 6, 0, 1, 0, 0, 0x40, 0])
+    t = await send(usb.token(usb.PID_SETUP, 0, 0))
+    t = await send(usb.data_packet(usb.PID_DATA0, req), after=t)
+    r, tas["ACK"] = await response(t)
+    assert r == usb.handshake(usb.PID_ACK), r
+    await ClockCycles(dut.clk, 100)
+    assert await records() == [usbdev.Record(True, req, 16 + 8 * 10, setup=True)]
+    t = await send(usb.token(usb.PID_IN, 0, 0))
+    r, tas["NAK"] = await response(t)
+    assert r == usb.handshake(usb.PID_NAK), r
+    desc = usbdev.DEVICE_DESC[:8]
+    await spi.write(sim.core_reg(0, sim.C_FIFO), usbdev.stage_words(usb.PID_DATA1, desc), fixed=True)
+    await spi.write(sim.A_FSET, [usbdev.F_STAGED])
+    t = await send(usb.token(usb.PID_IN, 0, 0))
+    r, tas["DATA1"] = await response(t, 120)
+    assert r == usb.data_packet(usb.PID_DATA1, desc), r
+    eop = [b for a, b in zip(bus["edges"], bus["edges"][1:]) if a[1] == "0" and b[1] == "J"][-1]
+    await send(usb.handshake(usb.PID_ACK), gap_bits=2.5, after=eop[0])
+    await ClockCycles(dut.clk, 100)
+    flags = (await spi.read(sim.A_FSET))[0]
+    assert flags & usbdev.F_GOTACK and not flags & usbdev.F_STAGED, hex(flags)
+    for k, v in tas.items():
+        dut._log.info(f"turnaround {k}: {v:.2f} bit times = {v * 4:.1f} clocks (spec 2-6.5)")
+        assert 2.0 <= v <= 6.5, (k, v)
+
+    async def out_burst(dcd, n):
+        ok = 0
+        for i in range(n):
+            p = bytes(rng.choice((0xFF, 0x00, 0x55, rng.randrange(256))) for _ in range(rng.randrange(1, 9)))
+            t = await send(usb.token(usb.PID_OUT, 0, 0), dcd=dcd, gap_bits=8)
+            t = await send(usb.data_packet(usb.PID_DATA0, p), dcd=dcd, after=t)
+            r, ta = await response(t)
+            recs = await records()
+            ok += r == usb.handshake(usb.PID_ACK) and [(x.ok, x.data) for x in recs] == [(True, p)]
+        return ok
+    n = 24
+    spec = await out_burst(9.25, n)
+    wide = await out_burst(14.0, n)
+    dut._log.info(f"{'PROPOSAL half-cycle NRZI sample' if half else 'signed-off line unit'}: "
+                  f"DCD 9.25 ns (18.5 ns edge-to-edge): {spec}/{n} ACKed; DCD 14 ns (28 ns): {wide}/{n} ACKed")
+    mon.cancel()
+    assert spec == n
+    assert (wide == n) if half else (wide < n)
+
+
 @cocotb.test()
 async def test_eth10_tx(dut):
     """10BASE-T TX with FIFO join: a 64-byte frame from one 16-word FIFO burst.
