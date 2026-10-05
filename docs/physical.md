@@ -7,9 +7,9 @@ gate-level tests on the result. The routability experiments below used a
 flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
 bd07aa5; see git history).
 
-**Status:** the signoff table at the end lists the runs so far; the current
-RTL (fixed banks, latch FIFOs, the dual-edge line receiver and the host-port
-reset fix) has not finished a signoff run yet. A run is a commit:
+**Status:** run **g4** (2026-10-05, the current RTL: fixed banks, latch FIFOs,
+the dual-edge line receiver and the host-port reset guard) passes signoff; see
+the table at the end. A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -86,18 +86,34 @@ logic pulled between both corners. Same RTL otherwise (t7, which congested:
 
 `BANK_OWNER` is gone (docs/isa.md §3); 256 words per core.
 
-### Placement is chaotic near this congestion (2026-10-05)
+### Global routing's reserve decides routability here (2026-10-05)
 
-The host port's reset fix (docs/review.md, R3) changes a few dozen gates, yet
-global routing went from 9 overflows to 236 (2.27M → 2.60M µm of wire).
-Reverting one change at a time on that run: the CDC constraint change alone
-(same 236), the host-port RTL alone (back to exactly 9: identical to before),
-the `async_reg`/`keep` attributes alone (49). The host-port change moved
-placement so the SRAM-to-core fetch paths started at −16.8 ns instead of
-−8.4 ns before repair; repair buffered twice as much (385 vs 194 buffers) and
-routing congested. Nothing in the change is at fault: at Metal3 ≈ 70 % the
-outcome swings with any perturbation, so candidates are compared over a few
-deterministic placement variations (`gen_config.py --set`).
+The host-port reset fix (docs/review.md, R3) changes a few dozen gates. Every
+netlist with any version of it ended global routing with 80–240 overflows at
+the default `GRT_ADJUSTMENT` of 0.15 (15 % of each layer held back for
+detailed routing), over a dozen runs and every placement perturbation tried
+(wire-length coefficient, density, resizer corners, synthesis strategy and
+hierarchy). The one such run taken through detailed routing (t13) stalled at
+8 violations after six hours.
+The netlist without the fix ended with 1–11 overflows in every perturbation.
+
+What does *not* explain it: cell count, area and total Metal3 demand are the
+same within 1 % in clean and congested runs, and detailed-placement HPWL
+doesn't separate them either (h5 placed at 1.442M µm, below every clean run,
+and congested). At ≈ 68 % Metal3 the outcome depends on where local hotspots
+land, and FastRoute's rip-up and reroute either untangles them or doesn't.
+Nor is the cost in any one part of the fix: removing the write guard or the
+CS-synchronizer change each brought placement HPWL back from 1.52M to 1.46M µm,
+yet the leaner netlist (6e7a82b) still congested at 0.15.
+
+What fixed it: `GRT_ADJUSTMENT` 0.10. Global routing then ends with 15–39
+overflows, and detailed routing clears them: g3, g4 and r2 all reached 0
+violations, antenna repair included. (0.05 was no better than 0.10.) The
+setting also changes placement, since routability-driven global placement
+estimates congestion with the same adjustment. Of the clean runs, g4 (density
+44) met hold at every corner; r2 (wire-length coefficient 0.2) missed
+fast-corner hold by 8 ps on two paths. `gen_config.py` defaults are g4's.
+`PL_TIMING_DRIVEN=false` changed nothing (identical placement).
 
 ### Hold buffers came from the constraint (2026-10-04)
 
@@ -223,9 +239,13 @@ Synthesis already shares well; the wiring is in what the core does.
 | final4 | 6a563dc: 8-deep FIFOs, registered CTRL, FIFO join; post-GRT repair, 400 µm max wire | 0 (19 iterations) | 0 | clean | 0 | +3.19 / −4.93 ns* (−7.12 ns with the slow SRAM view) | +0.19 ns | 9 / 10 |
 | final5 | bd2d6d0: + FIFO read snapshot, pe_fifos; PVT-matched SRAM views | 0 | 0 | clean | 0 | +3.12 / −6.90 ns | +0.21 ns (fast +0.05) | 3 / 11 |
 | t3 | 0ceca69: + line unit, quad host port, write-only configuration; measured wire capacitance, post-GRT timing repair | 0 | 0 | clean | 0 | +4.56 / −4.64 ns | +0.15 ns (**fast −0.024**, 1 path) | 3 / 2 |
-| **t5** | t3 + post-GRT hold margin 0.25 ns | 0 | 0 | clean | 0 | **+4.77 / −4.10 ns** | +0.32 ns (fast +0.12) | 1 / 2 |
+| t5 | t3 + post-GRT hold margin 0.25 ns | 0 | 0 | clean | 0 | +4.77 / −4.10 ns | +0.32 ns (fast +0.12) | 1 / 2 |
+| **g4** | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | **0 (met) / −2.88 ns** | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
 
-t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
+g4 is the current candidate (netlist sha256 `4db31a01877b1977…`, GDS
+`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). Its typ
+setup slack is exactly 0 because the FIFO latches borrow time; every flop path
+meets. The slow corner allows about 44 MHz. t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
 gate-level log passes 9/9 top-level tests. The slow corner allows
 about 41 MHz. final5's DOUT capacitance exceptions are gone; t5 has one
 slew and two capacitance exceptions at typ.

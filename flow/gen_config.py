@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate src/config.json for the SRAM build.
 
-    python3 flow/gen_config.py --banks 2 [--density 45] [--grt-adjust 0.15]
+    python3 flow/gen_config.py --banks 2 [--density 44] [--grt-adjust 0.10]
 
 The submission preset uses swapped bottom corners; signoff times the real latch arcs.
 Experimental overrides must be named and recorded separately from submission.
@@ -76,8 +76,12 @@ def main():
                     default=pathlib.Path(__file__).resolve().parents[1] / "src/config.json")
     ap.add_argument("--check", action="store_true", help="fail if output differs; never write")
     ap.add_argument("--banks", type=int, choices=range(1, 5), default=2)
-    ap.add_argument("--density", type=int, default=34)
-    ap.add_argument("--grt-adjust", type=float, default=0.15)
+    # Signed off (run g4, 2026-10-05). At 0.15 global routing reserved too much
+    # Metal3 and ended with ~100 overflows that detailed routing couldn't clear;
+    # 0.10 leaves ~30, which it does. Density also steers routability-driven
+    # placement here (docs/physical.md).
+    ap.add_argument("--density", type=int, default=44)
+    ap.add_argument("--grt-adjust", type=float, default=0.10)
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
                     help="extra SRAM array stripe pairs (prism's setting)")

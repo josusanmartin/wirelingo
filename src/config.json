@@ -10,8 +10,8 @@
   "//generator": {
     "preset": "submission",
     "banks": 2,
-    "density": 34,
-    "grt_adjust": 0.15,
+    "density": 44,
+    "grt_adjust": 0.1,
     "threads": 8,
     "every_other": true,
     "layout": "corners-swap",
@@ -23,7 +23,7 @@
     "pnr_latch_flops": true,
     "grt_iters": null
   },
-  "PL_TARGET_DENSITY_PCT": 34,
+  "PL_TARGET_DENSITY_PCT": 44,
   "CLOCK_PERIOD": 20,
   "PL_RESIZER_SETUP_SLACK_MARGIN": 0,
   "GRT_RESIZER_SETUP_SLACK_MARGIN": 0,
@@ -75,7 +75,7 @@
     }
   },
   "RUN_POST_GRT_RESIZER_TIMING": 1,
-  "GRT_ADJUSTMENT": 0.15,
+  "GRT_ADJUSTMENT": 0.1,
   "MACROS": {
     "RM_IHPSG13_1P_256x32_c2_bm_bist": {
       "instances": {
