@@ -2,7 +2,14 @@
 """protoemu hardware bring-up on the KV260 (run as root on the Kria with the
 protoemu app loaded):
 
-    sudo python3 fpga/kv260/host/bringup_kria.py [--only NAME ...] [--model]
+    sudo python3 fpga/kv260/host/bringup_kria.py [--only NAME ...] [--model] [--expect REV]
+
+The first step reads the bitstream's identity from pe_lab (RTL revision, build
+time, digest; fpga/kv260/build_id.py) and fails unless the RTL revision is the
+expected one: --expect (a commit, or a unique prefix), else expected_build.json
+next to this script, which install.sh writes from the checkout it installs
+(the RTL revision that checkout's tools, firmware and host software belong
+to). A bitstream built from uncommitted RTL fails too (--allow-dirty).
 
 Programs are assembled from firmware/*.pasm with tools/pe and loaded through
 the bit-banged SPI host port (tools/micropython/protoemu.py over pe_kria.Board).
@@ -14,6 +21,9 @@ import argparse
 import random
 import sys
 import time
+
+import json
+import pathlib
 
 from pe_kria import ROOT, Board, QuadTransport, ID
 
@@ -38,6 +48,29 @@ def check(cond, msg):
 
 
 # ---- steps -------------------------------------------------------------------
+
+def expected_rev(arg):
+    if arg:
+        return arg.lower(), "--expect"
+    f = pathlib.Path(__file__).resolve().parent / "expected_build.json"
+    if f.exists():
+        return json.loads(f.read_text())["rtl_rev"], f.name
+    return None, None
+
+
+def step_build(ctx):
+    from pe_lab import Lab
+    ident = Lab().identity()
+    print(f"  bitstream RTL revision {ident['rtl_rev']}" + (" (DIRTY: uncommitted RTL)" if ident["dirty"] else ""))
+    print(f"  built {ident['build_utc']} UTC from HEAD {ident['head'][:12]}, "
+          f"RTL digest {ident['digest']}, clk_div {ident['clk_div']}")
+    want, src = expected_rev(ctx.expect)
+    check(want is not None, "no expected revision: pass --expect REV or install with install.sh")
+    print(f"  expected RTL revision {want} ({src})")
+    check(len(want) >= 7 and ident["rtl_rev"].startswith(want),
+          f"loaded bitstream is RTL revision {ident['rtl_rev'][:12]}, expected {want[:12]}")
+    check(not ident["dirty"] or ctx.allow_dirty, "bitstream built from uncommitted RTL (--allow-dirty)")
+
 
 def step_clock(ctx):
     hz = ctx.board.clk_hz()
@@ -240,10 +273,10 @@ def step_quad(ctx, n=50):
     print(f"  quad: {n} burst write/read rounds on core 1 R0..R3, cross-checked over 1-bit")
 
 
-STEPS = [("clock", step_clock), ("id", step_id), ("regs", step_regs), ("pins", step_pins),
+STEPS = [("build", step_build), ("clock", step_clock), ("id", step_id), ("regs", step_regs), ("pins", step_pins),
          ("loopback", step_loopback), ("uart_tx_pin", step_uart_tx_pin),
          ("uart_rx_pin", step_uart_rx_pin), ("quad", step_quad)]
-WALL_CLOCK = {"clock", "uart_tx_pin", "uart_rx_pin", "quad"}
+WALL_CLOCK = {"build", "clock", "uart_tx_pin", "uart_rx_pin", "quad"}
 
 
 class ModelRegs:
@@ -280,11 +313,14 @@ def main():
     ap.add_argument("--model", action="store_true", help="run against the cycle model")
     ap.add_argument("--mhz", type=float, default=50.0, help="nominal protoemu clock")
     ap.add_argument("--settle", type=int, default=1, help="extra GPIO input reads per sample")
+    ap.add_argument("--expect", help="expected RTL revision (default: expected_build.json)")
+    ap.add_argument("--allow-dirty", action="store_true", help="accept a bitstream built from uncommitted RTL")
     a = ap.parse_args()
     ctx = Ctx()
     ctx.board = Board(ModelRegs() if a.model else None, settle=a.settle)
     ctx.pe = ctx.board.protoemu()
     ctx.f_nominal = ctx.f_clk = a.mhz * 1e6
+    ctx.expect, ctx.allow_dirty = a.expect, a.allow_dirty
     names = a.only or [n for n, _ in STEPS]
     failed = 0
     for name, fn in STEPS:
