@@ -7,7 +7,10 @@
 # routing (weak drivers such as an a21oi_1 on A_ADDR, buf_1 fanout buffers on
 # A_DIN), and timing repair sizes a DOUT's first buffer up to buf_16. So:
 #   * each driven SRAM input pin gets its own buffer placed at the pin (it
-#     drives only the pin and the pin's antenna diode, over a few microns);
+#     drives only the pin and the pin's antenna diode, over a few microns),
+#     except A_ADDR (on the fetch loop), whose _1 drivers are swapped for the
+#     _2 cell where the library has one (and only _1 drivers without one get
+#     the buffer);
 #   * a buf_16 that timing repair put on a DOUT is sized down to buf_8 (its
 #     input capacitance took DOUT[17] 1-3 % over the limit in t48ad).
 # Constant (tied) inputs are left alone. Detailed placement legalizes next.
@@ -41,6 +44,7 @@ namespace eval protoemu_sram_pins {
         set block [ord::get_db_block]
         set nin 0
         set nout 0
+        set nup 0
         foreach inst [$block getInsts] {
             if {![string match RM_IHPSG13_* [[$inst getMaster] getName]]} { continue }
             foreach it [$inst getITerms] {
@@ -53,6 +57,21 @@ namespace eval protoemu_sram_pins {
                     if {$drv eq ""} { continue }
                     set dm [[[$drv getInst] getMaster] getName]
                     if {[string match sg13cmos5l_tie* $dm]} { continue }
+                    # A_ADDR is on the fetch loop (SRAM -> next PC -> SRAM): a
+                    # stronger driver rather than one more stage where the
+                    # library has one
+                    if {[string match A_ADDR* $m]} {
+                        regsub {_1$} $dm {_2} up
+                        if {$up ne $dm && [[ord::get_db] findMaster $up] ne "NULL"} {
+                            set cell [get_cells [string map [list "\\\[" ? "\\\]" ? "\[" ? "\]" ?] [[$drv getInst] getName]]]
+                            if {[llength $cell] != 1} { error "cell lookup failed: [[$drv getInst] getName]" }
+                            replace_cell $cell [lindex [get_lib_cells */$up] 0]
+                            puts "SRAM_PIN_BUFFERS [$inst getName]/$m: driver $dm -> $up"
+                            incr nup
+                            continue
+                        }
+                        if {![string match *_1 $dm]} { continue }
+                    }
                     # the pin and its antenna diode move behind the new buffer
                     set loads [list [pname $it]]
                     foreach o [$net getITerms] {
@@ -75,7 +94,7 @@ namespace eval protoemu_sram_pins {
                         if {$om eq "sg13cmos5l_buf_16"} {
                             set cell [get_cells [string map [list "\\\[" ? "\\\]" ? "\[" ? "\]" ?] [[$o getInst] getName]]]
                             if {[llength $cell] != 1} { error "cell lookup failed: [[$o getInst] getName]" }
-                            replace_cell $cell [get_lib_cells */$out_cell]
+                            replace_cell $cell [lindex [get_lib_cells */$out_cell] 0]
                             set fixed 1
                         }
                     }
@@ -86,6 +105,6 @@ namespace eval protoemu_sram_pins {
                 }
             }
         }
-        puts "SRAM_PIN_BUFFERS_COMPLETE $nin inputs buffered, $nout output loads sized down"
+        puts "SRAM_PIN_BUFFERS_COMPLETE $nin inputs buffered, $nup address drivers upsized, $nout output loads sized down"
     }
 }
