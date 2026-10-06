@@ -1009,6 +1009,186 @@ async def test_usb_ls_device(dut):
     assert ta < 7.5 * 32, ta
 
 
+# ------------------------------------------------------------------ USB autonomous enumeration
+
+LAST_USB_HOST = None
+
+def rtl_control_host(dut, **kw):
+    """pe.usbhost.ControlHost (the model tests' host controller: toggles,
+    retries, STALL, keep-alives, faults) on the RTL pads. Its transaction logic
+    runs in a bridge() thread; each bus operation is one resume() into the
+    simulator: drive a packet, wait, or record the device's answer."""
+    import types
+    from pe import usb
+    from pe.usbhost import ControlHost
+
+    class RtlControlHost(ControlHost):
+        def __init__(self):
+            super().__init__(types.SimpleNamespace(pull_up=0, chip=types.SimpleNamespace(cycle=0)), **kw)
+
+        def _lengths(self, bits):
+            out = []
+            for _ in range(bits):
+                self.frac += self.tpb
+                out.append(int(self.frac))
+                self.frac -= out[-1]
+            return out
+
+        @resume
+        async def _clocks(self, n):
+            await ClockCycles(dut.clk, n)
+            self.mh.chip.cycle += n
+
+        @resume
+        async def _drive_rtl(self, states, lengths):
+            for s, n in zip(states, lengths):
+                dp, dm = USB_LINE[s]
+                EXT.set(0, True, dp)
+                EXT.set(1, True, dm)
+                await ClockCycles(dut.clk, n)
+            EXT.set(0, False)
+            EXT.set(1, False)
+            self.mh.chip.cycle += sum(lengths)
+
+        def _steps(self, bits):
+            n = sum(self._lengths(bits))
+            if n:
+                self._clocks(n)
+
+        def _drive(self, states):
+            self._drive_rtl(states, self._lengths(len(states)))
+
+        @resume
+        async def _response(self):
+            trace, start, i = [], None, 0
+            while True:
+                await RisingEdge(dut.clk)
+                s = {2: usb.J, 1: usb.K, 0: usb.SE0}.get(int(dut.uio_in.value) & 3, "?")
+                i += 1
+                if start is None:
+                    if s == usb.K:
+                        start = i
+                        self.turnarounds.append(1 + (i - 1) / self.bit)
+                    elif i >= self.TIMEOUT_BITS * self.bit:
+                        self.mh.chip.cycle += i
+                        return None
+                if start is not None:
+                    trace.append(s)
+                    if len(trace) > 2 and trace[-1] == usb.J and trace[-2] == usb.SE0:
+                        break
+            self.mh.chip.cycle += i
+            return self._decode(trace)
+
+        @resume
+        async def _reset_rtl(self, cycles, recovery):
+            EXT.set(0, True, 0)
+            EXT.set(1, True, 0)
+            await ClockCycles(dut.clk, cycles)
+            EXT.set(0, False)
+            EXT.set(1, False)
+            await ClockCycles(dut.clk, recovery)
+            self.mh.chip.cycle += cycles + recovery
+
+        def bus_reset(self, cycles=48 * 100, recovery=48 * 1000):
+            """100 us of SE0 (the device must act on 2.5 us; hosts send 10 ms)."""
+            self._reset_rtl(cycles, recovery)
+            self.next_keepalive = self.mh.chip.cycle
+
+    return RtlControlHost()
+
+
+@cocotb.test()
+async def test_usb_autonomous(dut):
+    """Autonomous USB low-speed enumeration (docs/usb-enumeration.md): the host
+    loads usb_enum and the line unit, then stays off the bus (CS_n high, SCK
+    still: checked on the pads) while the host controller model enumerates the
+    chip to Configured: a SETUP whose ACK is lost, a host ACK lost in a data
+    stage, damaged DATA, a STALLed string descriptor and SET_FEATURE, a bus
+    reset in the middle of a configuration read, then the whole flow again at a
+    new address with SET_ADDRESS's status ACK lost. Only then does the host
+    read the outcome over SPI. D+ = uio0, D- = uio1 (pull-up)."""
+    await usb_autonomous(dut, "low")
+
+
+@cocotb.test()
+async def test_usb_autonomous_fs(dut):
+    """test_usb_autonomous at full speed (12 Mbit/s, 4 clocks per bit): the
+    same firmware with a shorter turnaround delay. D- = uio0, D+ = uio1
+    (pull-up), so the pads show the same J/K patterns. Bit-exact edges here;
+    jitter and frequency offset are covered on the model (test_usb_autonomous.py)."""
+    await usb_autonomous(dut, "full")
+
+
+async def usb_autonomous(dut, speed):
+    from cocotb.triggers import ValueChange
+    from pe import usb, usbdev, usbenum
+    from pe.usbhost import Stall
+    DEV, CFG = usbdev.DEVICE_DESC, usbdev.CONFIG_DESC
+    spi = await setup(dut, clock_ns=20.834)       # 48 MHz
+    dut.pull_up.value = 0b10                      # the device's pull-up: J
+    await spi.apply(usbenum.load_writes(usbenum.assemble(speed), speed))
+    await ClockCycles(dut.clk, 100)
+
+    host_port = []                                # any change of CS_n/SCK/MOSI
+
+    async def watch():
+        last = int(dut.ui_in.value) >> 5
+        while True:
+            await ValueChange(dut.ui_in)
+            v = int(dut.ui_in.value) >> 5
+            if v != last:
+                host_port.append((get_sim_time(unit="ns"), v))
+                last = v
+    watcher = cocotb.start_soon(watch())
+    global LAST_USB_HOST
+    h = LAST_USB_HOST = rtl_control_host(dut, bit=usbenum.CLOCKS_PER_BIT[speed],
+                                         keepalive=speed == "low")   # test_sigrok compares its record of the bus
+
+    def flow():
+        h.faults["lose_handshake"] = 1            # the first SETUP is sent twice
+        assert h.get_descriptor(0, 1, 8) == DEV[:8]
+        h.control_write(0, bytes([0x00, 5, 5, 0, 0, 0, 0, 0]))
+        h.faults["lose_host_ack"] = 1
+        assert h.get_descriptor(5, 1, 18) == DEV
+        h.faults["bad_data"] = 1
+        assert h.get_descriptor(5, 2, 9) == CFG[:9]
+        try:
+            h.get_descriptor(5, 3, 255)
+            raise AssertionError("string descriptor not STALLed")
+        except Stall:
+            pass
+        h.setup(5, bytes([0x80, 6, 0, 2, 0, 0, 18, 0]))
+        assert h.data_in(5, 1) == CFG[:8]         # mid-transfer:
+        h.bus_reset()
+        h._send(usb.token(usb.PID_IN, 5, 0))           # the old address is gone
+        assert h._response() is None
+        assert h.get_descriptor(0, 1, 8) == DEV[:8]
+        h.faults["lose_host_ack"] = 1             # SET_ADDRESS's status ACK lost
+        h.control_write(0, bytes([0x00, 5, 9, 0, 0, 0, 0, 0]))
+        assert h.get_descriptor(9, 1, 18) == DEV
+        assert h.get_descriptor(9, 2, 9) == CFG[:9]
+        assert h.get_descriptor(9, 2, 18) == CFG
+        try:
+            h.control_write(9, bytes([0x00, 3, 1, 0, 0, 0, 0, 0]))
+            raise AssertionError("SET_FEATURE not STALLed")
+        except Stall:
+            pass
+        h.control_write(9, bytes([0x00, 9, 1, 0, 0, 0, 0, 0]))
+        assert h.control_read(9, bytes([0x80, 0, 0, 0, 0, 0, 2, 0])) == b"\0\0"
+
+    await bridge(flow)()
+    watcher.cancel()
+    assert not host_port, host_port[:4]
+    assert h.injected == {"lose_handshake": 1, "lose_host_ack": 2, "bad_data": 1}, h.injected
+    assert all(2.0 <= t <= 6.5 for t in h.turnarounds), (min(h.turnarounds), max(h.turnarounds))
+    st = usbenum.decode_state((await spi.read(sim.A_FSET))[0],
+                              (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0])
+    assert st == dict(address=9, configured=True, pending_address=False, stalled=False), st
+    dut._log.info(f"autonomous USB ({speed} speed): {len(h.log)} transactions, {h.mh.chip.cycle} cycles "
+                  f"({h.mh.chip.cycle / 48e3:.1f} ms), turnaround {min(h.turnarounds):.2f}-"
+                  f"{max(h.turnarounds):.2f} bit times, host port idle throughout; state {st}")
+
+
 # ------------------------------------------------------------------ USB full speed (study)
 
 @cocotb.test()

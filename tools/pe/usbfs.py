@@ -20,6 +20,7 @@ import bisect
 import random
 
 from . import usb
+from .usbhost import ControlHost
 
 J, K, SE0 = usb.J, usb.K, usb.SE0
 PADS = {J: 0b10, K: 0b01, SE0: 0b00}
@@ -230,6 +231,50 @@ class FsHost:
         self.setup(addr, req)
         pid, payload = self.data_in(addr, 0)
         assert payload == b""
+
+
+class FsControlHost(ControlHost):
+    """pe.usbhost.ControlHost's control transfers (DATA toggles, retries,
+    STALL, injected faults) over FsHost's full-speed bus: edges in continuous
+    time with frequency offset and jitter, its own clock recovery, the
+    turnaround measured on the bus, and a SOF token every millisecond.
+    fs_kw go to FsHost (ppm, jitter_ns, dcd_ns, seed, ...)."""
+
+    def __init__(self, mh, gap_bits=4, retries=3, sof=True, **fs_kw):
+        self.fs = FsHost(mh, **fs_kw)
+        super().__init__(mh, bit=4, gap_bits=gap_bits, keepalive=sof, retries=retries)
+        self.frame = 0
+
+    def _steps(self, bits):
+        self.fs.wait_bits(bits)
+
+    def _send(self, packet):
+        self.wire.append(bytes(packet))
+        self.fs.send(packet)
+
+    def _response(self):
+        r = self.fs.listen(self.fs.last_eop_j)
+        if r is not None:
+            self.turnarounds.append(self.fs.turnarounds[-1][1] / self.fs.tnom)
+            self.wire.append(r)
+        return r
+
+    def gap(self, bits=None):
+        self._steps(self.gap_bits if bits is None else bits)
+        if self.keepalive and self.mh.chip.cycle >= self.next_keepalive:
+            self._send(usb.token(0x5, self.frame & 0x7F, (self.frame >> 7) & 0xF))   # SOF
+            self.frame = (self.frame + 1) & 0x7FF
+            self.next_keepalive = self.mh.chip.cycle + 48000
+            self._steps(self.gap_bits)
+
+    def bus_reset(self, cycles=480000, recovery=48000):
+        """SE0 for `cycles` (10 ms by default), then J and recovery."""
+        for _ in range(cycles):
+            self.fs._edge(0b00)
+        for _ in range(recovery):
+            self.fs._edge()
+        self.fs.last_eop_j = None
+        self.next_keepalive = self.mh.chip.cycle
 
 
 # ------------------------------------------------------------------ SPI host timing

@@ -173,8 +173,7 @@ async def sigrok_i2c_master(dut):
 
 # ------------------------------------------------------------------ USB
 
-def usb_summary(pk):
-    return [(p.pid, p.addr, p.ep, p.data.hex() if p.data is not None else None) for p in pk]
+usb_summary = sigrok.usb_summary
 
 
 @cocotb.test(skip=SKIP)
@@ -221,3 +220,29 @@ async def sigrok_usb_fs_device(dut):
     assert len(bursts) == 48 and all(spec) and not all(wide)
     assert all(p.crc_ok for p in pk) and not err, err
     check_host_port(dut, rec, "usb_fs")
+
+
+@cocotb.test(skip=SKIP)
+async def sigrok_usb_autonomous(dut):
+    """test_usb_autonomous (D+ = uio0, D- = uio1, 48 MHz): sigrok decodes
+    exactly the packets the test's host controller model sent and received, in
+    order (retransmissions and STALLs included), with no SYNC, stuffing, CRC5
+    or CRC16 error. The host port carries only the load and the final reads."""
+    await sigrok_usb_autonomous_at(dut, T.test_usb_autonomous, "uio0", "uio1", "low-speed")
+
+
+@cocotb.test(skip=SKIP)
+async def sigrok_usb_autonomous_fs(dut):
+    """test_usb_autonomous_fs (D+ = uio1, D- = uio0): as sigrok_usb_autonomous."""
+    await sigrok_usb_autonomous_at(dut, T.test_usb_autonomous_fs, "uio1", "uio0", "full-speed")
+
+
+async def sigrok_usb_autonomous_at(dut, test, dp, dm, speed):
+    rec = await run_recorded(dut, test)
+    pk, err = sigrok.usb(rec.trace, dp, dm, speed, keep=keep("usb_autonomous_" + speed))
+    got, want = usb_summary(pk), sigrok.usb_expect(T.LAST_USB_HOST.wire)
+    diff = next((i for i, (g, w) in enumerate(zip(got, want)) if g != w), None)
+    assert got == want, (len(got), len(want), diff, got[diff:diff + 3] if diff is not None else None)
+    assert not err and all(p.crc_ok for p in pk), err[:5]
+    dut._log.info(f"sigrok usb autonomous ({speed}): {len(pk)} packets, identical to the host model's, no errors")
+    check_host_port(dut, rec, "usb_autonomous_" + speed)
