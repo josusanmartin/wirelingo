@@ -372,30 +372,121 @@ and SRAM models (no `FUNCTIONAL`), Icarus Verilog with `-gspecify
 -ginterconnect`, and this checkout's `test/test.py` with its clock set by
 `PE_CLK_NS`. Each case gets a fresh directory under
 `test/sim_build/gl_sdf.*`; the run directory is only read, and the script
-refuses a run whose `src/` differs from the checkout's. The standard cases
-run in parallel:
+refuses a run whose `src/` differs from the checkout's. The external devices
+on the uio pins drive 4 ns after the clock edge at which cocotb sets them
+(`TB_EXT_DELAY`, the input delay STA assumes; see the limits below). The
+standard cases run in parallel:
 
-| Corner | Clock | Tests | Required | g4 |
-|--------|-------|-------|----------|----|
-| typ | 20 ns (50 MHz) | test_id, test_uart_tx, test_spi_master, test_host_port_fast, test_fetch_to_pin | pass | 5/5 pass |
-| slow | 23 ns (43.5 MHz; STA needs 22.88) | same | pass | 5/5 pass |
-| slow | 12.5 ns (80 MHz) | test_fetch_to_pin | fail | fails |
-| slow | 20 ns (single case, not in the standard set) | the five | — | 5/5 pass (see below) |
-| fast | 20 ns (single case) | the five | — | 5/5 pass |
+| Corner | Clock | Tests | Required | g4 | v2c |
+|--------|-------|-------|----------|----|-----|
+| typ | 20 ns (50 MHz) | test_id, test_uart_tx, test_spi_master, test_host_port_fast, test_fetch_to_pin | pass | 5/5 pass | 5/5 pass |
+| slow | 23 ns (43.5 MHz; STA needs 22.88 for g4, 21.57 for v2c) | same | pass | 5/5 pass | 5/5 pass |
+| slow | 12.5 ns (80 MHz) | test_fetch_to_pin | fail | fails | fails |
+| slow | 20 ns (single case, not in the standard set) | the five | — | 5/5 pass (see below) | |
+| fast | 20 ns (single case) | the five | — | 5/5 pass | |
 
 ```
-$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-g4
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-g4        # before the 4 ns external-device delay
 [typ_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0   933950.00   498.61   1873.10 ** (537 s)
 [slow_23ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  1074042.50   455.90   2355.88 ** (495 s)
 [slow_12.5ns_fail] FAILS as required: ** TESTS=1 PASS=0 FAIL=1 SKIP=0  110918.75   342.31   324.03 ** (382 s)
 gl_sdf_test: all cases as required        (9 min wall on a loaded 16-core box)
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c
+[typ_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  933950.00  780.44  1196.70 ** (851 s)
+[slow_23ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  1074042.50  756.60  1419.57 ** (831 s)
+[slow_12.5ns_fail_fetch_to_pin] FAILS as required: ** TESTS=1 PASS=0 FAIL=1 SKIP=0  109331.25  536.63  203.74 ** (609 s)
+gl_sdf_test (standard): all cases as required        (14 min wall, load average ~28 on 16 cores)
 ```
 
-One case is `flow/gl_sdf_test.sh <run> CORNER CLK_NS [fail]`; `TESTS=` picks
+One case is `flow/gl_sdf_test.sh <run> CORNER CLK_NS [fail|report]`
+(`report` prints the result without requiring either); `TESTS=` picks
 other tests and `MODULE=test_sigrok` the sigrok oracle (sigrok_uart_tx,
 sigrok_spi_master and sigrok_i2c_master pass at typ, 50 MHz). Most of a
 case's ~4 minutes is Icarus reading the SDF; the simulation itself runs at
 roughly 2 µs of chip time per second.
+
+**The v2 features** (`flow/gl_sdf_test.sh <run> v2`, five cases in
+parallel, ~30 minutes, the USB cases set it). Two of the tests are short
+directed ones written for this (their RTL runs take seconds; full-length
+originals in `v2long` below):
+
+| Feature | Test | What it checks |
+|---------|------|----------------|
+| `SYNC_BYPASS` | test_spi_master_fast | SPI master at 4 clocks per SCK reads every byte with MISO bypassed; without the bypass (or with spi_master) every bit one late |
+| WAIT kind 7 | test_la_capture_ticks (new, 0.2 ms) | la_capture at CLKDIV 1 on three channels: 32 pin changes (spaced 7-30 ticks, the 7-tick square wave, two-channel pairs 1-6 ticks apart, 1- and 2-clock pulses); decoded edges and pulses equal the cycle model's, spaced edges exact to the tick |
+| CALL/RET | test_call_ret (new, 0.26 ms) | conditional calls taken and not, nesting through a saved LR, a CALL on the wrap's last word, RET with side-set and delay, CLKDIV 1: side-set edges clock-exact, pushed links and final PC/status/R0-R3 equal the model's (kills `rtl-call-link-ignores-wrap` and `rtl-call-no-link` at RTL) |
+| half-cycle NRZI sample | test_usb_fs_device (3.3 ms) | USB full-speed device: SETUP/IN/OUT handshakes, turnaround, 2 × 24 OUT packets at DCD 9.25 and 14 ns |
+
+| Corner | Clock | Tests | Required | v2c |
+|--------|-------|-------|----------|-----|
+| typ | 20 ns | spi_master_fast, la_capture_ticks, call_ret | pass | 3/3 pass (690 s) |
+| typ | 20.834 ns (48 MHz, USB's clock) | usb_fs_device | pass | pass (1823 s) |
+| slow | 23 ns | spi_master_fast, la_capture_ticks, call_ret | pass | 3/3 pass (641 s) |
+| slow | 23 ns, USB bus scaled to the clock | usb_fs_device | pass | pass (1797 s) |
+| slow | 20.834 ns (48 MHz) | usb_fs_device | report only (STA needs 21.57 ns) | passes (1877 s) |
+| slow | 12.5 ns (80 MHz, single cases) | each of the three short tests | report only | each fails (spi_master_fast: X on a pin; la_capture_ticks: gaps; call_ret: no side-set edges) |
+
+```
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c v2
+[typ_20ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0  1043820.00  633.88  1646.72 ** (690 s)
+[typ_20.834ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3264021.11  1770.75  1843.30 ** (1823 s)
+[slow_23ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0  1200393.00  583.22  2058.21 ** (641 s)
+[slow_23ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3602904.00  1741.99  2068.27 ** (1797 s)
+[slow_20.834ns_report_usb_fs_device] PASSES (report only): ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3264021.11  1823.60  1789.88 ** (1877 s)
+gl_sdf_test (v2): all cases as required        (31 min wall, load average ~28 on 16 cores)
+```
+
+The 80 MHz cases show the annotation is in effect for these tests too, not
+that they target the feature's own paths: at that clock much more breaks
+(test_call_ret never saw a side-set edge).
+
+USB full speed needs exactly 48 MHz, which the slow corner doesn't meet in
+STA (−1.57 ns at 20 ns, so 21.57 ns); the slow/48 MHz case is reported, not
+required. It passes, as g4's five passed at slow/50 MHz (below): a pass
+shows only that the transitions the test exercises met timing, not that the
+184 failing endpoints are unreachable. For a required slow
+case, `PE_USB_FS_CLK_NS` (set to the case clock) runs the same test with the
+host's bit time and DCD scaled to the clock, still 4 clocks per bit (10.9
+Mbit/s at 23 ns: the same logic, not USB). At gate level the turnaround is
+2.89 bit times for the ACK (RTL 2.64: the 4 ns input delay moves the EOP's
+arrival past one more clock edge for that packet's phase); 24/24 OUT packets
+are ACKed at each DCD, at every clock.
+
+`flow/gl_sdf_test.sh <run> v2long` runs the full-length tests the directed
+ones stand in for, each its own case, at typ 20 ns and slow 23 ns:
+test_la_capture_rate (3.2 ms of chip time: the rate sweeps and their exact
+burst-rate assertions) and test_reverse_engineering (5.4 ms: la_capture on
+I2C, then i2c_device, which uses CALL/RET, cloning the EEPROM). v2c passes
+all four (about 50 minutes each under the same load), with the RTL's
+results: gap-free capture down to an edge every 80 clocks (1-bit SPI), 12
+(quad, 8-word bursts) and 9 (32-word bursts) at both corners, and the clone
+answers the same with SCL stretched 2935 clocks.
+
+```
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c v2long
+[typ_20ns_pass_la_capture_rate] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3155480.00  2902.85  1087.03 ** (2958 s)
+[typ_20ns_pass_reverse_engineering] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  5431940.00  2900.97  1872.46 ** (2955 s)
+[slow_23ns_pass_la_capture_rate] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3628802.00  2949.92  1230.14 ** (3006 s)
+[slow_23ns_pass_reverse_engineering] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  6246731.00  2944.59  2121.42 ** (3002 s)
+gl_sdf_test (v2long): all cases as required
+```
+
+**A testbench race the v2 tests exposed.** test_spi_master_fast first
+failed at typ/50 MHz: with MISO not bypassed it read every byte right
+instead of one bit late. Its device model answers at the clock edge after it
+sees SCK fall, and cocotb set MISO at that edge with no delay. STA (v2c,
+typ) gives the pad-to-first-synchronizer path `uio_in[4]` → `input13` →
+`_37309_/D` as 0.12 ns and that flop's clock latency as 0.85 ns (slow: 0.19
+and 1.29 ns): a pin change made at the clock port's edge reaches D before
+the delayed edge, so the synchronizer takes it at that edge, a clock earlier
+than RTL. That is outside what STA signs off: the SDC sets 4 ns of input
+delay (`IO_DELAY_CONSTRAINT` 20 %), and with it the path has 3.22 ns of hold
+slack. The testbench now delays the external devices' outputs by 4 ns under
+SDF (`tb.v`, `TB_EXT_DELAY`, a transport delay; RTL is unchanged with it:
+the v2 tests and test_reverse_engineering pass with the delay compiled in),
+and the test passes at typ and slow. No chip finding: the bypass itself (the
+positive check) passed either way, and test_usb_fs_device, whose host
+places edges at random phase, passed at typ without the delay as well.
 
 **Getting Icarus to annotate this netlist.** Out of the box, Icarus 14
 (devel) silently annotated only part of it: its SDF reader stops at the first
@@ -459,9 +550,18 @@ slow-corner chip is specified at 43.5 MHz.
   `ifnone` edge-sensitive arcs (68 of them in 17 cell types; their
   conditional arcs, which get the unconditional SDF delay, still cover every
   0/1 input, so only X inputs are affected).
-* The testbench drives inputs at clock edges (the host port's SCK/MOSI/CS_n
-  go through synchronizers, so any phase is legal there); the board-level
-  input/output delays STA constrains aren't modelled.
+* Board timing, partly: the external devices on uio drive 4 ns after the
+  clock edge (STA's input delay; above), but the host port's ui inputs are
+  set at cocotb's own times (SCK/MOSI/CS_n go through synchronizers, so any
+  phase is legal there), and no output delay is modelled (the testbench
+  reads outputs at the next clock edge or at its own SPI timing).
+* Features: the v2 set covers each v2 feature with one test (the
+  half-cycle NRZI sample at the spec's DCD and beyond, `SYNC_BYPASS` on one
+  pin at 4 clocks per SCK, WAIT kind 7 at CLKDIV 1 on three channels,
+  CALL/RET in one program on one core). Kind 7 on fractional dividers, host
+  restarts mid-WAIT or mid-CALL and the bypass on other pins are left to
+  RTL lockstep (test_wait_diff, test_call_ret in `test_lockstep.py`, which
+  probe internal state and so don't run on the netlist).
 
 ## Area reductions applied
 

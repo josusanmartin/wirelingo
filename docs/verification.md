@@ -299,13 +299,31 @@ one-period bound and the clock-gating, pulse-width and recovery/removal checks
 with the run's extracted SDF (Icarus; `flow/sdf_prep.py` works around its SDF
 reader), five top-level tests at typ/50 MHz and slow/43.5 MHz must pass, and
 `test_fetch_to_pin` at slow/80 MHz must fail, which shows the delays are in
-effect. g4 passes all three cases. This checks that the exercised
+effect. g4 and v2c pass all three cases. This checks that the exercised
 transitions meet the clock with real cell, wire, clock-tree and SRAM delays.
 It does not check setup/hold windows (Icarus has no timing checks), and it
 covers only the paths the tests sensitize. g4's slow corner also passes the
 five tests at 50 MHz, although STA says −2.88 ns, because no test reaches
 STA's worst path. Details and limits:
 [physical.md](physical.md#timing-annotated-gate-level-sdf).
+
+The v2 features have their own set (`flow/gl_sdf_test.sh <run> v2`): the
+fast SPI master with MISO in `SYNC_BYPASS` (test_spi_master_fast), WAIT kind 7
+at 1-tick resolution (test_la_capture_ticks, new: decoded edges and pulses
+must equal the cycle model's), CALL/RET (test_call_ret, new: side-set edges,
+pushed links and registers must equal the model's) at typ 20 ns and slow
+23 ns, and the full-speed USB device with the half-cycle NRZI sample point
+(test_usb_fs_device) at typ 48 MHz and, with its bus scaled to the clock,
+slow 23 ns; slow at 48 MHz, which STA doesn't meet (21.57 ns), is reported.
+v2c passes all of it, slow/48 MHz included. `v2long` runs the full-length
+test_la_capture_rate and test_reverse_engineering (v2c: pass at typ and slow, ~50 minutes each). Under SDF the
+external uio devices drive 4 ns after the clock edge, STA's input delay:
+driven at the edge, a pad synchronizer whose clock arrives 0.85 ns late
+took the value a clock early, which first failed test_spi_master_fast's
+negative check (a testbench race, not the chip; physical.md has the
+numbers). Kind 7 on fractional dividers, restarts mid-WAIT or mid-CALL, and
+the bypass on other pins stay with RTL lockstep, which can't run on the
+netlist.
 
 ## v2 regression (2026-10-05, RTL not yet hardened)
 

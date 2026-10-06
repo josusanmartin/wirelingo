@@ -753,6 +753,177 @@ async def test_la_capture_rate(dut):
     assert best["quad SPI, SCK = clk, 32-word bursts"] == 9, best
 
 
+@cocotb.test()
+async def test_la_capture_ticks(dut):
+    """WAIT kind 7 (`wait pins != r0 mask m`) at 1-tick resolution, short and
+    directed (for the SDF gate-level set, flow/gl_sdf_test.sh; ~0.2 ms):
+    la_capture at CLKDIV 1 on three channels while the testbench changes them
+    between clock edges at known clocks: edges 7 to 30 ticks apart, the
+    7-tick square wave, pairs on two channels 1 to 6 ticks apart, 1- and
+    2-clock pulses; drained between batches of at most 7 records. The decoded
+    edges and pulses, relative to the first edge, must equal the cycle
+    model's for the same stimulus, and edges >= 7 ticks apart must be
+    timestamped exactly (their drive-time differences)."""
+    from pe import la
+    from pe.modelhost import ModelHost
+    await setup(dut)
+    T = CLK_NS
+    spi = TimedSpi(dut, period=2 * T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    MASK = 0b111
+    prog = load_fw("la_capture", MASK=MASK)
+    await spi.apply(host.load_program(0, prog, 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
+    for p in range(3):
+        EXT.set(p, True, 0)
+    fifo = sim.core_reg(0, sim.C_FIFO)
+    cyc = [0]
+
+    async def count():
+        while True:
+            await RisingEdge(dut.clk)
+            cyc[0] += 1
+    counter = cocotb.start_soon(count())
+    state, log, words = 0, [], []
+
+    async def drive(events):                       # (clocks after the previous change, channels to flip)
+        nonlocal state
+        for d, flip in events:
+            await ClockCycles(dut.clk, d)
+            await FallingEdge(dut.clk)             # mid-cycle: no race with the input synchronizers
+            state ^= flip
+            for p in range(3):
+                EXT.set(p, True, (state >> p) & 1)
+            log.append((cyc[0], state))
+
+    async def drain():
+        await ClockCycles(dut.clk, 60)
+        for _ in range(2):
+            words.extend(w for w in await spi.read(fifo, 8, fixed=True) if w)
+
+    await spi.write(sim.A_CTRL, [1 | (1 << 8) | (1 << 16)])
+    await drain()                                  # the first record
+    spaced = [(5, 1), (7, 2), (8, 4), (9, 1), (12, 2), (7, 4), (30, 3)]
+    batches = [spaced, [(5, 1)] + [(7, 1)] * 6]    # 7-tick square wave on channel 0
+    for ds in ((1, 2, 3), (4, 5, 6)):              # channel 0, then channel 1 d ticks later
+        batches.append([e for d in ds for e in ((40, 1), (d, 2))])
+    batches.append([(40, 4), (1, 4), (40, 4), (2, 4), (40, 3), (1, 3)])   # 1-, 2- and 1-clock pulses
+    for b in batches:
+        await drive(b)
+        await drain()
+    counter.cancel()
+    await spi.write(sim.A_CTRL, [0])
+
+    # the cycle model, same stimulus at the same relative clocks
+    mh = ModelHost()
+    mh.apply(host.load_program(0, prog, 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
+    mh.ext_oe = 0b111
+    mh.start(1)
+    mh.step(30)
+    mwords = []
+    t = log[0][0]
+    for c, s in log + [(log[-1][0] + 200, log[-1][1])]:
+        while t < c:
+            mh.step()
+            mwords += mh.chip.cores[0].rxf
+            mh.chip.cores[0].rxf.clear()
+            t += 1
+        mh.uio = s
+
+    def rel(cap):
+        e = cap.edges[1:]
+        return [(t - e[0][0], s) for t, s in e], [t - e[0][0] for t in cap.pulses]
+    cap, mcap = la.decode_records(words, MASK), la.decode_records(mwords, MASK)
+    assert cap.exact and mcap.exact, (cap.gaps, mcap.gaps)
+    got, want = rel(cap), rel(mcap)
+    dut._log.info(f"{len(log)} pin changes -> {len(got[0])} edges, {len(got[1])} pulses; "
+                  f"edges (tick, state) relative to the first: {got[0]}; pulses {got[1]}")
+    assert got == want, (got, want)
+    n = len(spaced)
+    assert [t for t, _ in got[0][:n]] == [c - log[0][0] for c, _ in log[:n]], got[0][:n]
+    assert [s for _, s in got[0][:n]] == [s for _, s in log[:n]]
+    assert len(got[1]) == 2                        # the two 1-clock pulses
+
+
+CALL_RET_SRC = """
+.side_set 1 opt
+.shift_in left autopush 32
+    ldi r0, 6
+.wrap_target
+top:
+    call !r1, leaf [1]          ; taken when r1 == 0 (every other pass)
+    call outer side 1           ; nested: outer saves LR, calls leaf
+    jmp r0--, more              ; r0 counts the passes
+    halt
+more:
+    call leaf side 0            ; the wrap's last word: links to top
+.wrap
+outer:
+    mov r3, lr
+    call leaf [2]
+    mov r2, lr                  ; leaf's link
+    mov lr, r3
+    in r1, 8
+    in r0, 8
+    in r2, 8
+    in r3, 8                    ; autopush: r1, r0, leaf's link, outer's link
+    ret side 0
+leaf:
+    add r1, 1
+    and r1, 3
+    ret side 1 [1]
+"""
+
+
+@cocotb.test()
+async def test_call_ret(dut):
+    """CALL / RET at the top level, short and directed (for the SDF gate-level
+    set, flow/gl_sdf_test.sh; ~0.1 ms): conditional calls taken and not taken,
+    nesting through a saved LR, a CALL on the wrap's last word, RET with
+    side-set and delay, at CLKDIV 1. The side-set pin's edges (clock-exact
+    intervals), the pushed words (r1, r0 and both links), and PC, status and
+    R0-R3 at the halt must equal the cycle model's."""
+    from pe.modelhost import ModelHost
+    spi = await setup(dut)
+    prog = asm.assemble(CALL_RET_SRC)
+    PIN = UO(0)
+    mh = ModelHost()
+    mh.apply(host.load_program(0, prog, 0, profile=PROFILE, side_pins=PIN, clkdiv=1 << 8))
+    mh.start(1)
+    medges, prev = [], 0
+    for cyc in range(400):
+        mh.step()
+        v = mh.chip.outputs()[0] & 1
+        if v != prev:
+            medges.append(cyc)
+            prev = v
+    assert mh.chip.cores[0].halted
+    mwords = mh.pop_all(0)
+    mregs = [mh.chip.cores[0].read_reg(sim.C_PC), mh.chip.cores[0].read_reg(sim.C_STATUS)] + mh.chip.cores[0].r[:4]
+
+    edges = []
+
+    async def monitor():
+        prev, cyc = int(dut.uo_out.value) & 1, 0
+        while True:
+            await RisingEdge(dut.clk)
+            cyc += 1
+            v = int(dut.uo_out.value) & 1
+            if v != prev:
+                edges.append(cyc)
+                prev = v
+    mon = cocotb.start_soon(monitor())
+    await run_program(spi, 0, prog, side_pins=PIN, clkdiv=1 << 8)
+    await ClockCycles(dut.clk, 400)
+    mon.cancel()
+    words = await spi.read(sim.core_reg(0, sim.C_FIFO), len(mwords), fixed=True)
+    regs = [(await spi.read(sim.core_reg(0, off)))[0] for off in (sim.C_PC, sim.C_STATUS, sim.C_R0, sim.C_R0 + 1,
+                                                                   sim.C_R0 + 2, sim.C_R0 + 3)]
+    diffs = lambda e: [b - a for a, b in zip(e, e[1:])]
+    dut._log.info(f"side-set pin: {len(edges)} edges, intervals {diffs(edges)}; pushed {[hex(w) for w in words]}")
+    assert len(edges) == len(medges) and diffs(edges) == diffs(medges), (diffs(edges), diffs(medges))
+    assert words == mwords, ([hex(w) for w in words], [hex(w) for w in mwords])
+    assert regs == mregs, ([hex(r) for r in regs], [hex(r) for r in mregs])
+
+
 # ------------------------------------------------------------------ USB low speed
 
 USB_LINE = {"J": (0, 1), "K": (1, 0), "0": (0, 0)}
@@ -851,11 +1022,15 @@ async def test_usb_fs_device(dut):
     packets at the spec's consecutive-edge jitter (DCD 9.25 ns = 18.5 ns between
     edges) must all be ACKed, and so must those at DCD 14 ns (28 ns), which
     the g4 receiver (sample 2-3 clocks after an edge) missed half of: the
-    half-cycle NRZI sample point (docs/isa.md §4.7) centres the sample."""
+    half-cycle NRZI sample point (docs/isa.md §4.7) centres the sample.
+    PE_USB_FS_CLK_NS (flow/gl_sdf_test.sh) runs it at another clock with the
+    bus scaled to match (4 clocks per bit; bit time and DCD scale with the
+    clock): not USB's 12 Mbit/s, the same logic at a slower clock."""
     import random
     from pe import usb, usbdev
-    T = 20.834                                     # 48 MHz (ps-quantized)
-    TBIT = 1000 / 12
+    T = float(os.environ.get("PE_USB_FS_CLK_NS", "20.834"))   # 48 MHz (ps-quantized)
+    TBIT = 1000 / 12 * T / 20.834
+    dcd_scale = T / 20.834
     spi = await setup(dut, clock_ns=T)
     dut.pull_up.value = 0b10                       # 1.5k on D+ (uio1); D- = uio0
     prog = load_fw("usb_fs_dev", **usbdev.defines())
@@ -968,9 +1143,11 @@ async def test_usb_fs_device(dut):
             ok += r == usb.handshake(usb.PID_ACK) and [(x.ok, x.data) for x in recs] == [(True, p)]
         return ok
     n = 24
-    spec = await out_burst(9.25, n)
-    wide = await out_burst(14.0, n)
-    dut._log.info(f"half-cycle NRZI sample point: DCD 9.25 ns (18.5 ns edge-to-edge): {spec}/{n} ACKed; DCD 14 ns (28 ns): {wide}/{n} ACKed")
+    spec = await out_burst(9.25 * dcd_scale, n)
+    wide = await out_burst(14.0 * dcd_scale, n)
+    dut._log.info(f"half-cycle NRZI sample point, clk {T} ns: DCD {9.25 * dcd_scale:.2f} ns "
+                  f"({18.5 * dcd_scale:.1f} ns edge-to-edge): {spec}/{n} ACKed; DCD {14 * dcd_scale:.2f} ns "
+                  f"({28 * dcd_scale:.1f} ns): {wide}/{n} ACKed")
     mon.cancel()
     assert spec == n
     assert wide == n
