@@ -110,7 +110,7 @@ class SramClockAdvanceTcl(OpenROADStep):
     id = "Project.SramClockAdvanceTcl"
     name = "Advance the SRAM Clocks"
 
-    config_vars = [
+    config_vars = OpenROADStep.config_vars + [
         Variable("PROTOEMU_CLOCK_FANOUT_FIX", bool,
                  "Also split clock branches over the IHP fanout limit of eight (flow/clock_fanout_repair.tcl).",
                  default=False),
