@@ -171,13 +171,15 @@ async def test_lab(dut):
     pattern generator's edge times as protoemu's pins see them, and short
     runs of v2_demo.py's demos (call, la, spi, i2c) through the fabric."""
     await start(dut)
-    seen = []
+    seen, done = [], False
 
     async def watch_uio():                  # uio_in as protoemu's synchroniser samples it
         prev, n = None, 0
-        while True:
+        while not done:
             await RisingEdge(dut.pe_clk)
             n += 1
+            if not dut.dut.u_pe.uio_in.value.is_resolvable:
+                continue
             v = int(dut.dut.u_pe.uio_in.value)
             if v != prev:
                 seen.append((n, v))
@@ -202,6 +204,8 @@ async def test_lab(dut):
         rel = [(c - got[0][0] + 5, v) for c, v in got]
         dut._log.info(f"pattern generator -> uio_in: {rel}")
         assert rel == sched, rel
+        nonlocal done
+        done = True
         lab.mode(Lab.GPIO)
         spim = Spim(SimSpimMem(dut))
         hw = v2_demo.Hw(board, spim, lab, f_clk=50e6, timeout=1e9)
