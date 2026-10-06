@@ -255,6 +255,18 @@ setup/hold, every STA corner reports the SCK↔clk crossings against their
 one-period bound and the clock-gating, pulse-width and recovery/removal checks
 (`src/timing_checks.tcl`).
 
+**With delays** (`flow/gl_sdf_test.sh <run>`): the same netlist back-annotated
+with the run's extracted SDF (Icarus; `flow/sdf_prep.py` works around its SDF
+reader), five top-level tests at typ/50 MHz and slow/43.5 MHz must pass, and
+`test_fetch_to_pin` at slow/80 MHz must fail, which shows the delays are in
+effect. g4 passes all three cases. This checks that the exercised
+transitions meet the clock with real cell, wire, clock-tree and SRAM delays.
+It does not check setup/hold windows (Icarus has no timing checks), and it
+covers only the paths the tests sensitize. g4's slow corner also passes the
+five tests at 50 MHz, although STA says −2.88 ns, because no test reaches
+STA's worst path. Details and limits:
+[physical.md](physical.md#timing-annotated-gate-level-sdf).
+
 ## Bugs found by this flow (selection)
 
 | Where | Bug | Caught by |

@@ -315,6 +315,106 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
 * Run g4's final netlist passes all 20 top-level tests (main 16, compiled
   PIO 2, Ethernet capture 2), functional, no SDF.
 
+### Timing-annotated gate level (SDF)
+
+`flow/gl_sdf_test.sh <run dir>` simulates the same final netlist
+back-annotated with the run's own extracted SDF (`final/sdf/nom_<corner>_*`,
+written by OpenSTA from the SPEF), using the timing views of the PDK cell
+and SRAM models (no `FUNCTIONAL`), Icarus Verilog with `-gspecify
+-ginterconnect`, and this checkout's `test/test.py` with its clock set by
+`PE_CLK_NS`. Each case gets a fresh directory under
+`test/sim_build/gl_sdf.*`; the run directory is only read, and the script
+refuses a run whose `src/` differs from the checkout's. The standard cases
+run in parallel:
+
+| Corner | Clock | Tests | Required | g4 |
+|--------|-------|-------|----------|----|
+| typ | 20 ns (50 MHz) | test_id, test_uart_tx, test_spi_master, test_host_port_fast, test_fetch_to_pin | pass | 5/5 pass |
+| slow | 23 ns (43.5 MHz; STA needs 22.88) | same | pass | 5/5 pass |
+| slow | 12.5 ns (80 MHz) | test_fetch_to_pin | fail | fails |
+| slow | 20 ns (single case, not in the standard set) | the five | — | 5/5 pass (see below) |
+| fast | 20 ns (single case) | the five | — | 5/5 pass |
+
+```
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-g4
+[typ_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0   933950.00   498.61   1873.10 ** (537 s)
+[slow_23ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  1074042.50   455.90   2355.88 ** (495 s)
+[slow_12.5ns_fail] FAILS as required: ** TESTS=1 PASS=0 FAIL=1 SKIP=0  110918.75   342.31   324.03 ** (382 s)
+gl_sdf_test: all cases as required        (9 min wall on a loaded 16-core box)
+```
+
+One case is `flow/gl_sdf_test.sh <run> CORNER CLK_NS [fail]`; `TESTS=` picks
+other tests and `MODULE=test_sigrok` the sigrok oracle (sigrok_uart_tx,
+sigrok_spi_master and sigrok_i2c_master pass at typ, 50 MHz). Most of a
+case's ~4 minutes is Icarus reading the SDF; the simulation itself runs at
+roughly 2 µs of chip time per second.
+
+**Getting Icarus to annotate this netlist.** Out of the box, Icarus 14
+(devel) silently annotated only part of it: its SDF reader stops at the first
+syntax error (the SRAM's bit-selected `IOPATH A_CLK A_DOUT[0]`, which left
+both SRAMs and 832 buffers after them unannotated), cannot resolve the
+netlist's escaped hierarchical names, cannot place a net delay on one bit of
+a vector net or into an antenna diode, ignores `COND` entries, and needs over
+15 minutes for 62k `INTERCONNECT`s. `flow/sdf_prep.py` writes private copies
+of the netlist and SDF that avoid all of this (its docstring has the
+details): renamed identifiers, split vector wires, dropped TIMINGCHECKs and
+dead-end diode delays; net delays into cell inputs folded into the sink
+cell's IOPATHs (adding the larger of the wire's rise/fall, at most 6 ps
+apart in g4); each SRAM's 32 per-bit clock-to-output delays merged into one
+(their max), and each arc's unconditional delay raised to the slowest of its
+COND variants (up to +0.11 ns on mux selects), both pessimistic. The script
+fails on any `SDF ERROR` (except the header's empty typ voltage and
+temperature fields) or VPI error in the log. Verilator was not needed (it
+does not read SDF).
+
+**Is the annotation real?** In the slow-corner waveform (g4, test_fetch_to_pin
+at 20 ns), arrival times along the start of STA's worst path follow the STA
+report. Core 1's instruction bit 29 (bank 1 SRAM output) changes 6.60 ns
+after the clock edge (STA: 6.91 ns), and the next two nets change at 6.91
+and 7.21 ns (STA, at their sinks: 7.26 and 7.56 ns), so each stage adds the
+same ~0.3 ns. The constant 0.3 ns offset is the SRAM's own arc: the STA
+report gives 5.52 ns from A_CLK to DOUT[29], while the SDF OpenSTA wrote in
+the same step gives 5.26 ns (we haven't found why; the simulation uses the
+SDF). The clock-to-uio5 delay is 1.71/2.07 ns (rise/fall) at typ and
+2.63/3.20 ns at slow. test_fetch_to_pin passes at slow down to 14.25 ns and fails at
+13.5 ns; at typ it passes at 9 ns and fails at 8.5 ns: the ratio, ~1.56,
+is the slow/typ delay ratio. Functional GL and RTL pass it at any period.
+
+**Why the slow corner passes these tests at 50 MHz.** STA reports −2.88 ns
+there (worst path: bank 1 SRAM DOUT[29] through ~35 gates to the pin output
+register `pin_out_cur[5]`, arriving at 23.40 ns against 20.51 required). No
+test sensitizes that path: test_fetch_to_pin writes that pin from that bank
+every cycle with SET, PIN, MOV and OUT, yet the nets past the eighth gate
+of the path toggle only during setup, and the endpoint's D input settles by
+14.05 ns. So the five tests pass at slow corner and 50 MHz, and the
+deliberate failure needs 12.5 ns. A passing timing simulation shows only that
+the exercised transitions meet timing; STA remains the signoff, and the
+slow-corner chip is specified at 43.5 MHz.
+
+**What SDF GL with Icarus checks, and what it doesn't.**
+
+* Checks: the mapped logic with every cell and net delay STA computed for
+  that corner, including clock-tree skew, the SRAM's clock-to-output, the
+  clock gates and latch FIFOs, and the SCK domain and host-port synchronizers
+  at their real delays; a value that arrives after its capturing clock edge
+  on an exercised transition gives a wrong result.
+* Doesn't check timing windows: Icarus implements no timing checks
+  (`$setuphold`, `$width`, recovery/removal; it warns "Timing checks are not
+  supported"), so a flop samples D at its delayed clock edge with a zero-width
+  window. Setup and hold violations smaller than the library's setup/hold
+  times pass silently, and metastability isn't modelled (the 0.25 ns clock
+  uncertainty STA adds isn't there either). Those stay STA's job, including
+  the hold margins (fast corner +0.05 ns).
+* Only the paths the tests exercise, with the data they use (above).
+* Approximations, all small and mostly pessimistic: the merged SRAM bits and
+  COND variants, the folded net delays, and Icarus dropping the cell models'
+  `ifnone` edge-sensitive arcs (68 of them in 17 cell types; their
+  conditional arcs, which get the unconditional SDF delay, still cover every
+  0/1 input, so only X inputs are affected).
+* The testbench drives inputs at clock edges (the host port's SCK/MOSI/CS_n
+  go through synchronizers, so any phase is legal there); the board-level
+  input/output delays STA constrains aren't modelled.
+
 ## Area reductions applied
 
 * Clock-gated FIFO storage (one `lgcp` per entry instead of a hold mux per bit):

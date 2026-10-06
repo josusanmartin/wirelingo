@@ -70,7 +70,7 @@ board measurements still need their own evidence.
 | FIFOs (incl. join) are correct for all input sequences | k-induction against reference queues, depths 4 and 8 | `make -C formal fifos` |
 | The host port is fast and safe | 193 Mbit/s simulated quad payload at SCK = clk; phase/duty sweeps and reset aborts; formal bus safety | `cd test && make COCOTB_TEST_FILTER=test_host_port_fast`; `make -C formal hostport` |
 | Protocols work through the real host port | RTL UART, SPI, I2C, concurrent USB service, full Ethernet RX frames and overflow recovery | `cd test && make` |
-| The routed netlist does the same | Run g4's final netlist passes the 20 top-level tests at gate level (functional, no SDF) | `flow/gl_test.sh <run>` |
+| The routed netlist does the same | Run g4's final netlist passes the 20 top-level tests at gate level (functional, no SDF); with its SDF, a five-test subset passes at typ/50 MHz and slow/43.5 MHz, and a control case fails at slow/80 MHz | `flow/gl_test.sh <run>`; `flow/gl_sdf_test.sh <run>` |
 | USB device service, on two cores or one | Concurrent RTL service at 48 MHz; address changes, lost ACK, malformed PID/CRC/stuffing, duplicate OUT, interrupted SETUP and reset | `cd test && make COCOTB_TEST_FILTER=test_usb_concurrent_service`; model USB tests |
 | Capture, understand, impersonate (reverse engineering) | core 0 captures a master and an EEPROM; the host decodes the transcript and register image; core 1 clones the EEPROM at the decoded address: same answers, same transcript; then a man in the middle changes a register. Capture timestamps within one 5-tick sample; sustained edge rate measured through the port | [reverse-engineering.md](reverse-engineering.md); `cd test && make COCOTB_TEST_FILTER=test_reverse_engineering`; `pytest test/model/test_reverse_engineering.py` |
 | I2C can't hang | SCL stuck low at every one of 19 releases, plus before START | `pytest test/model/test_i2c_timeout.py` |
@@ -101,7 +101,9 @@ board measurements still need their own evidence.
   not a full controller (no error counters or bus-off).
 * Protocol timing is checked in clock cycles against behavioural device models,
   not against electrical specifications.
-* Gate-level simulation is functional (no SDF); delay validation needs STA.
+* Gate-level simulation is functional (no SDF) in TT's CI. The SDF-annotated
+  runs (Icarus) have no setup/hold checks and cover only exercised paths, so
+  delay validation needs STA.
 
 ## Where things are
 

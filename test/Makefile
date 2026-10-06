@@ -5,6 +5,7 @@
 #   make TB=chip              # lockstep RTL-vs-model tests on pe_chip (tb_chip.v)
 #   make TB=chip IMEM=flop    # same, flop IMEM with 16-word banks (faster)
 #   make GATES=yes            # gate-level top-level tests
+#   make GATES=yes SDF=<file> # ... with SDF timing (prepared by flow/gl_sdf_test.sh)
 
 # defaults
 SIM ?= icarus
@@ -63,8 +64,18 @@ else
 # Gate level simulation:
 SIM_BUILD				= sim_build/gl
 COMPILE_ARGS    += -DGL_TEST
-COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DSIM
+ifeq ($(SDF),)
+COMPILE_ARGS    += -DFUNCTIONAL
+else
+# Timing-annotated (flow/gl_sdf_test.sh): SDF=<file> back-annotates cell and
+# net delays; the SRAM model's timing view (no FUNCTIONAL) has its clock-to-
+# output path. Icarus ignores timing checks ($setuphold, ...: see
+# docs/physical.md). SDF_MTM=min|typ|max picks the SDF triple (typ).
+COMPILE_ARGS    += -gspecify -ginterconnect -T $(or $(SDF_MTM),typ) -s sdf_annotate
+VERILOG_SOURCES += $(PWD)/sdf_annotate.v
+COCOTB_PLUSARGS += +SDF_FILE=$(SDF)
+endif
 VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v
 VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_udp.v
 VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v

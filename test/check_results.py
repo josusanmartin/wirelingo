@@ -3,17 +3,19 @@
 number of passing tests (no failures, errors or skips).
 
     python3 check_results.py top.xml 8
+    python3 check_results.py top.xml 2 test_id test_uart_tx   # only these
+                                     # (the others were filtered out: skipped)
 """
 import sys
 import xml.etree.ElementTree as ET
 
 
-def main(path, expected):
+def main(path, expected, names=()):
     try:
         cases = ET.parse(path).getroot().iter("testcase")
     except (OSError, ET.ParseError) as e:
         sys.exit(f"{path}: {e}")
-    cases = list(cases)
+    cases = [c for c in cases if not names or c.get("name") in names]
     bad = [c.get("name") for c in cases if any(c.find(t) is not None for t in ("failure", "error", "skipped"))]
     print(f"{path}: {len(cases)} tests, {len(bad)} not passing")
     if bad or len(cases) != expected:
@@ -21,4 +23,4 @@ def main(path, expected):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], int(sys.argv[2]))
+    main(sys.argv[1], int(sys.argv[2]), sys.argv[3:])

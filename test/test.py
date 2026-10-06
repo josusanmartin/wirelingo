@@ -21,7 +21,7 @@ BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
 core = lambda i: i % NCORES  # tests spread over the cores that exist
 PROFILE = Profile("simulation", NCORES, int(os.environ.get("PE_NBANKS", str(NCORES))), 1 << BANK_AW)
-CLK_NS = 20  # 50 MHz
+CLK_NS = float(os.environ.get("PE_CLK_NS", "20"))  # 50 MHz (flow/gl_sdf_test.sh varies it)
 SCK_HALF = 4  # SPI SCK half period in clk cycles: clk/8 (the port allows up to clk; test_host_port_fast)
 
 # logical pins (docs/isa.md §2)
@@ -997,6 +997,44 @@ async def test_eth10_rx_jitter(dut):
         # link pulse; software drops fragments (test_eth10's receive helpers do)
         frames = [b for b in eth.rx_bits(words) if len(b) > 64]
         assert frames == [bits], (f, [len(b) for b in eth.rx_bits(words)], words)
+
+
+@cocotb.test()
+async def test_fetch_to_pin(dut):
+    """The last core writes uio5 every cycle, alternating the pin-writing
+    instructions (SET, PIN, MOV pins, OUT pins after MOV osr) and toggles,
+    which read the pin's own output register: a write that misses its clock
+    edge changes the pattern rather than delaying it. In the signed-off
+    netlist the slow-corner STA critical path runs from that core's SRAM bank
+    through decode to the pin output register; flow/gl_sdf_test.sh runs this
+    test with SDF timing."""
+    spi = await setup(dut)
+    P = UIO(5)
+    # (instruction, the pin after it: 0, 1, "t" toggle or None unchanged)
+    body = [("mov osr, ~r1", None), ("out pins, 1", 1), ("pin {p}, toggle", "t"), ("mov pins, r0", 1),
+            ("mov osr, r1", None), ("out pins, 1", 0), ("pin {p}, toggle", "t"), ("mov pins, ~r0", 0),
+            ("set pins, 1", 1), ("pin {p}, toggle", "t"), ("pin {p}, toggle", "t"), ("pin {p}, hi", 1),
+            ("pin {p}, toggle", "t"), ("set pins, 1", 1), ("pin {p}, lo", 0), ("pin {p}, toggle", "t")]
+    src = "    ldi r0, 1\n    ldi r1, 0\n.wrap_target\n"
+    src += "".join(f"    {i.format(p=P)}\n" for i, _ in body) + ".wrap\n"
+    prog = asm.assemble(src)
+    want, v = [], 0                     # the pin after each body instruction, in steady state
+    for _, e in body * 2:
+        v = 1 - v if e == "t" else v if e is None else e
+        want.append(v)
+    want = want[len(body):]
+    c = NCORES - 1
+    await spi.apply(host.pin_owner_writes({P: c}, profile=PROFILE))
+    await spi.write(sim.A_POE, [1 << P])
+    await run_program(spi, c, prog, out_pins=(P, 1), set_pins=(P, 1), clkdiv=1 << 8)
+    await ClockCycles(dut.clk, 20)
+    got = []
+    for _ in range(8 * len(body)):
+        await FallingEdge(dut.clk)
+        got.append((int(dut.uio_out.value) >> P) & 1)
+    n = len(body)
+    phases = [r for r in range(n) if all(g == want[(i + r) % n] for i, g in enumerate(got))]
+    assert phases, f"uio5 per cycle {''.join(map(str, got))}, expected a rotation of {''.join(map(str, want))}"
 
 
 @cocotb.test()

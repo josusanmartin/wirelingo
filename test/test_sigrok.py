@@ -13,7 +13,10 @@ MISO = uo7, mode 0) and compares it byte for byte with what test.py's
 bit-banged master sent and sampled.
 
     make COCOTB_TEST_MODULES=test_sigrok                 # RTL
-    flow/gl_test.sh / flow/gl_sdf_test.sh                # gate level (+SDF)
+    make GATES=yes GATE_LEVEL_NETLIST=<run>/runs/wokwi/final/nl/<top>.nl.v \
+         COCOTB_TEST_MODULES=test_sigrok                 # gate level, functional
+    MODULE=test_sigrok TESTS="sigrok_uart_tx sigrok_spi_master" \
+         flow/gl_sdf_test.sh <run> typ 20                # gate level with SDF
 
 Without sigrok-cli every test is skipped (see tools/pe/sigrok.py for how to
 install it). SIGROK_KEEP=dir keeps each test's VCD and sigrok output.
@@ -117,7 +120,7 @@ async def run_recorded(dut, test):
 async def sigrok_uart_tx(dut):
     """test_uart_tx: uo0 at 16 clocks per bit (3.125 Mbaud at 50 MHz)."""
     rec = await run_recorded(dut, T.test_uart_tx)
-    data, warn = sigrok.uart(rec.trace, "uo0", 50_000_000 // 16, keep=keep("uart_tx"))
+    data, warn = sigrok.uart(rec.trace, "uo0", round(1e9 / (16 * T.CLK_NS)), keep=keep("uart_tx"))
     got = bytes(b for _, b in data)
     dut._log.info(f"sigrok uart (uo0): {got!r} warnings={warn}")
     assert got == b"Hello, protoemu!" and not warn
@@ -128,7 +131,7 @@ async def sigrok_uart_tx(dut):
 async def sigrok_uart_rx(dut):
     """test_uart_rx: the test's sender on ui0 at 24 clocks per bit."""
     rec = await run_recorded(dut, T.test_uart_rx)
-    data, warn = sigrok.uart(rec.trace, "ui0", 50_000_000 // 24, keep=keep("uart_rx"))
+    data, warn = sigrok.uart(rec.trace, "ui0", round(1e9 / (24 * T.CLK_NS)), keep=keep("uart_rx"))
     got = bytes(b for _, b in data)
     dut._log.info(f"sigrok uart (ui0): {got!r} warnings={warn}")
     assert got == b"\x55\xAA\x00\xFFok" and not warn
