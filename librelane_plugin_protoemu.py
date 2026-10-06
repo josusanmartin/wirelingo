@@ -114,6 +114,12 @@ class SramClockAdvanceTcl(OpenROADStep):
         Variable("PROTOEMU_CLOCK_FANOUT_FIX", bool,
                  "Also split clock branches over the IHP fanout limit of eight (flow/clock_fanout_repair.tcl).",
                  default=False),
+        Variable("PROTOEMU_LATE_CLOCK_REGS", Optional[List[str]],
+                 "Glob patterns of Q net names whose registers get a delayed clock (flow/sram_clock_advance.tcl).",
+                 default=None),
+        Variable("PROTOEMU_LATE_CLOCK_STAGES", int,
+                 "Clock buffers inserted in front of the PROTOEMU_LATE_CLOCK_REGS registers.",
+                 default=2),
     ]
 
     def get_script_path(self):

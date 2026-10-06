@@ -97,3 +97,56 @@ namespace eval protoemu_sram_clk {
         return $count
     }
 }
+
+# Late clocks for chosen capture registers (more useful skew). The registers
+# whose Q net matches one of the patterns get their clock pins moved behind a
+# chain of `stages` buffers inserted on their current clock net, so they
+# capture later. The worst slow-corner setup paths end at the chip's pin
+# registers (pin_out, pin_oe), whose own outputs have slack to spare (pin_oe
+# only drives pads; pin_out also feeds the cores' pin inputs). Hold into them
+# shrinks by the same amount and is left to post-CTS hold repair.
+namespace eval protoemu_late_clk {
+    variable buffer_cell sg13cmos5l_buf_8
+
+    proc run {patterns stages} {
+        variable buffer_cell
+        set block [ord::get_db_block]
+        # group the matched registers' clock pins by their current clock net
+        set groups [dict create]
+        set count 0
+        foreach inst [$block getInsts] {
+            set q [$inst findITerm Q]
+            set ck [$inst findITerm CLK]
+            if {$q eq "NULL" || $ck eq "NULL"} { continue }
+            set qn [$q getNet]
+            if {$qn eq "NULL"} { continue }
+            set name [$qn getName]
+            set hit 0
+            foreach p $patterns { if {[string match $p $name]} { set hit 1; break } }
+            if {!$hit} { continue }
+            set cn [$ck getNet]
+            if {$cn eq "NULL"} { continue }
+            dict lappend groups [$cn getName] "[$inst getName]/CLK"
+            incr count
+        }
+        foreach netname [dict keys $groups] {
+            set names [dict get $groups $netname]
+            set net [$block findNet $netname]
+            set ndr [$net getNonDefaultRule]
+            set first [[$block findITerm [lindex $names 0]] getInst]
+            lassign [$first getLocation] px py
+            for {set s 0} {$s < $stages} {incr s} {
+                set pins [get_pins $names]
+                if {[llength $pins] != [llength $names]} { error "pin lookup failed: $names" }
+                insert_buffer -buffer_cell $buffer_cell -load_pins $pins \
+                    -buffer_name clkbuf_late_ -net_name clknet_late_ \
+                    -location [list [ord::dbu_to_microns $px] [ord::dbu_to_microns $py]]
+                set new [[$block findITerm [lindex $names 0]] getNet]
+                $new setSigType CLOCK
+                if {$ndr ne "NULL"} { $new setNonDefaultRule $ndr }
+            }
+            puts "LATE_CLOCK $netname: [llength $names] registers behind $stages buffers"
+        }
+        puts "LATE_CLOCK_COMPLETE $count registers [dict size $groups] branches"
+    }
+}
