@@ -244,6 +244,31 @@ def usb(trace, dp, dm, speed="low-speed", **kw):
     return pk, err
 
 
+USB_PIDS = {0xE1: "OUT", 0x69: "IN", 0x2D: "SETUP", 0xA5: "SOF", 0xC3: "DATA0", 0x4B: "DATA1",
+            0xD2: "ACK", 0x5A: "NAK", 0x1E: "STALL"}
+
+
+def usb_summary(pk):
+    """sigrok.usb packets as (pid, addr, ep, data hex) tuples."""
+    return [(p.pid, p.addr, p.ep, p.data.hex() if p.data is not None else None) for p in pk]
+
+
+def usb_expect(packets):
+    """Packet bytes (PID first, no SYNC; tools/pe/usb.py) in usb_summary's
+    terms, to compare a test's own record of the bus with sigrok's decode."""
+    out = []
+    for p in packets:
+        pid = USB_PIDS.get(p[0], "?")
+        if pid in ("OUT", "IN", "SETUP"):
+            v = p[1] | p[2] << 8
+            out.append((pid, v & 0x7F, (v >> 7) & 15, None))
+        elif pid.startswith("DATA"):
+            out.append((pid, None, None, p[1:-2].hex()))
+        else:
+            out.append((pid, None, None, None))
+    return out
+
+
 def can(trace, pin, bitrate, sample_point=70.0, **kw):
     """sigrok's can decoder (classic frames). Returns (frames, warnings);
     each frame is a dict: t, id, rtr, dlc, data (bytes), crc (the CRC-15
