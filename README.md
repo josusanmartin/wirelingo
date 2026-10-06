@@ -1,4 +1,8 @@
-# protoemu — a programmable protocol emulator ASIC
+# Wirelingo — a programmable protocol emulator ASIC
+
+*(Formerly protoemu; code identifiers such as the Tiny Tapeout module
+`tt_um_josusanmartin_protoemu` and `tools/micropython/protoemu.py` keep the old
+name until the next re-harden.)*
 
 An entry for the [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/),
 targeting IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles).

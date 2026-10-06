@@ -1,6 +1,6 @@
 # Tiny Tapeout project information
 project:
-  title:        "protoemu: programmable protocol emulator"
+  title:        "Wirelingo: programmable protocol emulator"
   author:       "Josu San Martin"
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
   description:  "PIO-style bit-banging cores with timeouts, edge waits, ALU, CRC tap and SRAM IMEM: UART/SPI/I2C, USB-LS, 10BASE-T TX, CAN"

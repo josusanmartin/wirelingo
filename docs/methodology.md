@@ -1,16 +1,42 @@
-# Building an ASIC with AI agents, without chip-design experience
+# Wirelingo: building an ASIC with AI agents, without chip-design experience
 
-This chip was designed by one person with no prior ASIC or RTL experience,
-working with AI agents that wrote nearly all of the specification, RTL,
-models, firmware, tests and flow scripts. In the author's words: "I'm using
-Opus 5.5 and Astra, and let them lead." The project started on 2026-09-30, the
-date of the first commit, and the author checked in on it while working on
-other projects.
+## In the author's words
 
-The interesting question isn't whether an AI can write Verilog. It is how you
-can trust a chip you couldn't have written yourself. This page describes what
-the agents did, what the human did, and the evidence that stands between an
-agent's claim and the GDS.
+I'm not a chip designer.
+
+My background is in software and entrepreneurship, and before starting Wirelingo I had no experience designing an ASIC. I had never taken a chip through synthesis, place and route, timing closure, DRC, LVS, antenna checks, or any of the other steps between RTL and something that can actually be manufactured.
+
+I started the project on September 30, 2026.
+
+The unusual part is that I did not first spend months learning semiconductor design and then build the chip. I started building immediately, using frontier AI models and autonomous coding agents as the domain experts.
+
+In practice, I let the agents lead. They propose architectures, write RTL, build verification infrastructure, investigate timing failures, work through physical-design problems, and review each other's work. I supervise the project, make the higher-level decisions, question assumptions, and decide what evidence I need before accepting that something works. Much of the time I am working on other projects while the agents continue pushing the design forward.
+
+That makes Wirelingo partly an ASIC project and partly an experiment in a new way of doing engineering.
+
+The interesting question for me is not whether an AI can generate Verilog. It obviously can.
+
+The question is what happens when AI allows someone to operate far outside their existing field of expertise.
+
+I cannot personally inspect thousands of gates and determine that the design is correct. I cannot rely on reading the RTL and saying that it looks reasonable. And asking another AI whether the first AI did a good job does not solve the problem either.
+
+So the project quickly became about evidence.
+
+Instead of trusting the implementation, I try to construct independent ways for it to fail: two implementations of the specification compared cycle by cycle, formal proofs, mutation testing, independent protocol decoders, FPGA execution, gate-level simulation, timing analysis, physical verification, and a separate AI agent whose job is to attack the assumptions made by the others.
+
+That distinction has become the most interesting part of the project for me.
+
+AI gives me access to expertise I do not personally have. But access to expertise is not the same thing as knowing that the answer is correct.
+
+Wirelingo is my attempt to find out whether sufficiently strong verification can bridge that gap.
+
+If it can, the larger implication is much more interesting than this particular chip: the limiting factor in highly technical engineering work may increasingly become not whether a person knows how to produce the implementation themselves, but whether they know how to specify the problem, direct capable agents, and construct enough independent evidence to know when the result can be trusted.
+
+## How it was built
+
+The author worked with Claude Opus 5.5 and Astra. The rest of this page is the record behind the
+statement above: what the agents did, what the author did, and the evidence
+that stands between an agent's claim and the GDS.
 
 ## Who did what
 
@@ -21,7 +47,7 @@ agent's claim and the GDS.
 | Independent review | Codex | read the repo cold, reproduced bugs with tests and proposed fixes ([review.md](review.md)) |
 | Parallel work | Claude sub-agents | self-contained tasks in their own git worktrees (FPGA bring-up, the reverse-engineering demo), reporting measured results back |
 
-129 of the repository's 149 commits are co-authored by Claude.
+146 of the repository's 166 commits on `main` are co-authored by Claude.
 
 ## The rule: no claim without independent evidence
 
