@@ -17,6 +17,9 @@ on the Tiny Tapeout SG13CMOS5L tile:
   comes from a buffer on the clock tree's root net instead of CTS's balanced
   (delay-buffered) branch, so reads launch earlier (flow/sram_clock_advance.tcl);
   with PROTOEMU_CLOCK_FANOUT_FIX it also runs the clock branch repair.
+* Project.SramPinBuffers: opt-in, after post-GRT timing repair: a buffer at
+  each driven SRAM input pin, and no buf_16 on a DOUT (the macro's 0.595 ns /
+  0.064 pF limits; flow/sram_pin_buffers.tcl).
 
 LibreLane imports modules named librelane_plugin_* from the working directory
 (the repo root, both locally and in the TT GDS action).
@@ -131,6 +134,22 @@ class SramClockAdvance(CompositeStep):
     id = "Project.SramClockAdvance"
     name = "Advance the SRAM Clocks and Legalize"
     Steps = [SramClockAdvanceTcl, DetailedPlacement]
+
+
+@Step.factory.register()
+class SramPinBuffersTcl(OpenROADStep):
+    id = "Project.SramPinBuffersTcl"
+    name = "Buffer the SRAM Pins"
+
+    def get_script_path(self):
+        return os.path.join(HERE, "sram_pin_buffers_step.tcl")
+
+
+@Step.factory.register()
+class SramPinBuffers(CompositeStep):
+    id = "Project.SramPinBuffers"
+    name = "Buffer the SRAM Pins and Legalize"
+    Steps = [SramPinBuffersTcl, DetailedPlacement]
 
 
 # --- netgen writes the IHP SRAM's power pin names (VDD!, VSS!, VDDARRAY!) into
