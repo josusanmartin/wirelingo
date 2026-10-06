@@ -7,9 +7,9 @@ gate-level tests on the result. The routability experiments below used a
 flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
 bd07aa5; see git history).
 
-**Status:** run **g4** (2026-10-05, the current RTL: fixed banks, latch FIFOs,
-the dual-edge line receiver and the host-port reset guard) passes signoff; see
-the table at the end. A run is a commit:
+**Status:** run **v2c** (2026-10-06, the v2 RTL: g4's design plus the
+half-cycle NRZI sample point, `SYNC_BYPASS`, WAIT kind 7 and CALL/RET) passes
+signoff; see the table at the end. A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -276,10 +276,23 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 | final5 | bd2d6d0: + FIFO read snapshot, pe_fifos; PVT-matched SRAM views | 0 | 0 | clean | 0 | +3.12 / −6.90 ns | +0.21 ns (fast +0.05) | 3 / 11 |
 | t3 | 0ceca69: + line unit, quad host port, write-only configuration; measured wire capacitance, post-GRT timing repair | 0 | 0 | clean | 0 | +4.56 / −4.64 ns | +0.15 ns (**fast −0.024**, 1 path) | 3 / 2 |
 | t5 | t3 + post-GRT hold margin 0.25 ns | 0 | 0 | clean | 0 | +4.77 / −4.10 ns | +0.32 ns (fast +0.12) | 1 / 2 |
-| **g4** | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | **0 (met) / −2.88 ns** | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
+| g4 | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | 0 (met) / −2.88 ns | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
+| m10 | g4's RTL, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | 0 (met) / −2.98 ns | +0.17 ns (slow +0.32, fast +0.08) | 0 / 0 |
+| **v2c** | cbeae96: + NRZI half-cycle sample, `SYNC_BYPASS`, WAIT kind 7, CALL/RET; density 34, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | **0 (met) / −1.57 ns** | +0.10 ns (slow +0.20, fast +0.04) | 0 / 0 |
 
-g4 is the current candidate (netlist sha256 `4db31a01877b1977…`, GDS
-`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). The
+v2c is the current candidate (netlist sha256 `929524418e3d4227…`, GDS
+`6d9787524c08a854…`; 44 % stdcell utilization, 50 % with the macros; global
+routing ended with 8 overflows, Metal3 63.8 %). It passes Tiny Tapeout's
+precheck and all 24 top-level tests at gate level. Two more placements of the
+same RTL passed too: v2a (density 44: slow −1.82 ns, fast hold +0.03 ns) and
+v2b (wire-length coefficient 0.2: slow −1.53 ns, fast hold +0.04 ns, 3/1
+slew/cap exceptions). The v2 features cost about 1.6 % more wire per core
+(table above), yet all three v2 runs routed with fewer global-routing
+overflows than g4 (8–13 against 39): at this congestion the placement varies
+more than the netlist does.
+
+g4 was the previous candidate (netlist sha256 `4db31a01877b1977…`, GDS
+`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). Its
 build is reproducible on a GitHub runner's budget: a fresh `flow/harden.sh` of
 the same tree with its container capped to 4 CPUs and 16 GB (a public-repo
 runner; the official action uses the same tt-support-tools, PDK and LibreLane
@@ -287,7 +300,9 @@ revisions) finished in 1 h 56 min, passed signoff, and produced the same
 netlist and, with GDS timestamps zeroed, a byte-identical GDS. Tiny
 Tapeout's precheck (`tt/precheck`) passes on it. Its typ
 setup slack is exactly 0 because the FIFO latches borrow time; every flop path
-meets. The slow corner allows about 44 MHz. t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
+meets. Its slow corner allows about 44 MHz. m10 is g4's RTL re-hardened with
+the post-GRT hold margin raised from 0.05 to 0.10 ns: fast-corner hold +0.08 ns
+and no typ slew exceptions, which is why v2 uses 0.10. t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
 gate-level log passes 9/9 top-level tests. The slow corner allows
 about 41 MHz. final5's DOUT capacitance exceptions are gone; t5 has one
 slew and two capacitance exceptions at typ.

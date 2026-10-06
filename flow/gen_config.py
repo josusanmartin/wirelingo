@@ -76,11 +76,11 @@ def main():
                     default=pathlib.Path(__file__).resolve().parents[1] / "src/config.json")
     ap.add_argument("--check", action="store_true", help="fail if output differs; never write")
     ap.add_argument("--banks", type=int, choices=range(1, 5), default=2)
-    # Signed off (run g4, 2026-10-05). At 0.15 global routing reserved too much
-    # Metal3 and ended with ~100 overflows that detailed routing couldn't clear;
-    # 0.10 leaves ~30, which it does. Density also steers routability-driven
-    # placement here (docs/physical.md).
-    ap.add_argument("--density", type=int, default=44)
+    # Signed off (run v2c, 2026-10-06). At GRT_ADJUSTMENT 0.15 global routing
+    # reserved too much Metal3 and ended with ~100 overflows that detailed
+    # routing couldn't clear; 0.10 leaves ~10-40, which it does. Density also
+    # steers routability-driven placement here (docs/physical.md).
+    ap.add_argument("--density", type=int, default=34)
     ap.add_argument("--grt-adjust", type=float, default=0.10)
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
@@ -138,7 +138,10 @@ def main():
     # TNS pass then ran 2000 more (t11s: 1 h 54 m for -2.003 -> -2.003 ns).
     c["GRT_RESIZER_SETUP_REPAIR_TNS_PCT"] = a.grt_tns
     c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
-    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
+    # 0.05 left fast-corner hold at +0.04-0.05 ns after extraction, and two of
+    # three clean runs missed it by ~10 ps; 0.10 (runs m10, v2a-c) keeps it
+    # positive and cleared the typ slew exceptions.
+    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.10
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
     c["//clocks"] = "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both"

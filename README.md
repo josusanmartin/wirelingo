@@ -24,9 +24,10 @@ describes how, and what it caught.
 
 **Where it stands:**
 
-* Signed off (run g4): DRC, LVS and antenna clean, 50 MHz at the typical
-  corner, hold met at every corner, Tiny Tapeout precheck passed; the netlist
-  passes all 20 top-level tests at gate level ([docs/physical.md](docs/physical.md)).
+* Signed off (run v2c): DRC, LVS and antenna clean, 50 MHz at the typical
+  corner, hold met at every corner, no slew/capacitance exceptions, Tiny
+  Tapeout precheck passed; the netlist passes all 24 top-level tests at gate
+  level ([docs/physical.md](docs/physical.md)).
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
@@ -36,13 +37,11 @@ describes how, and what it caught.
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
-* **Branch `v2`** (RTL changed, to be re-hardened and signed off): four small
-  additions, each in the spec, RTL, model, assembler, lockstep, formal where an
+* **v2** (signed off as run v2c): four small additions over g4, each in the spec, RTL, model, assembler, lockstep, formal where an
   invariant applies, and a firmware that uses it. The line unit's NRZI sample
   point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
-  packets at 28 ns edge-to-edge distortion, g4 11/24; running at 48 MHz still
-  depends on the re-hardened chip's timing, since g4's slow corner reaches
-  about 44 MHz); `SYNC_BYPASS` reads chosen pad inputs through one
+  packets at 28 ns edge-to-edge distortion, g4 11/24; v2c meets 48 MHz at the
+  typical corner, and its slow corner reaches about 46 MHz); `SYNC_BYPASS` reads chosen pad inputs through one
   synchroniser flop (SPI master at 4 clocks per SCK, like PIO, if the pads and
   the device answer within 2 clocks); WAIT kind 7 waits until any of 8 pins
   differs from a register (logic analyzer timestamps to the tick instead of
@@ -144,13 +143,14 @@ make -C formal                                                   # proofs
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs, the line unit and the quad host port; 44 % standard-cell
   utilization, 50 % with the macros.
-* **Run g4 passes signoff** (`flow/signoff.py`): 0 routing violations,
+* **Run v2c passes signoff** (`flow/signoff.py`): 0 routing violations,
   0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the typical
-  corner, and hold is met at every corner (+0.15 / +0.30 / +0.05 ns typ / slow /
-  fast). The slow corner reaches about 44 MHz (−2.88 ns at 50 MHz). Two slew
-  exceptions remain at typ.
-* The signed-off netlist passes all 20 top-level tests at gate level
-  (`flow/gl_test.sh`: main suite 16, compiled PIO 2, Ethernet capture 2;
+  corner, and hold is met at every corner (+0.10 / +0.20 / +0.04 ns typ / slow /
+  fast). The slow corner reaches about 46 MHz (−1.57 ns at 50 MHz). No slew or
+  capacitance exceptions at typ. Two other placements of the same RTL (v2a,
+  v2b) also pass.
+* The signed-off netlist passes all 24 top-level tests at gate level
+  (`flow/gl_test.sh`: main suite 20, compiled PIO 2, Ethernet capture 2;
   functional, no SDF), and the GDS passes Tiny Tapeout's precheck
   (`tt/precheck`).
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 63 %. Global
@@ -158,7 +158,7 @@ make -C formal                                                   # proofs
   the current RTL routable ([docs/physical.md](docs/physical.md)).
 * [External review](docs/review.md): the bugs an independent review found and
   how they were fixed and tested. `flow/gen_config.py --check` verifies that
-  `src/config.json` is the generator's (g4's settings).
+  `src/config.json` is the generator's (v2c's settings).
 * [Optional board transport](docs/board-transport.md): RP2350 PIO/DMA quad
   SPI; board throughput and sampling margin remain unmeasured.
 * [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service

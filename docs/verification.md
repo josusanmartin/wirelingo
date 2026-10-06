@@ -322,7 +322,8 @@ On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
 * formal: all seven jobs pass (fifos 4/8 + cover, hostport + cover, core, line);
 * mutation runner: 34 of 34 mutants killed (17 of them new for the v2 features).
 
-Not yet: gate level (needs a v2 netlist) and STA.
+Gate level and STA: run v2c's netlist passes all 24 top-level tests (functional
+GL) and signoff STA at every corner ([physical.md](physical.md)).
 
 ## Bugs found by this flow (selection)
 
