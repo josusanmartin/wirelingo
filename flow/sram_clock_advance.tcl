@@ -108,10 +108,12 @@ namespace eval protoemu_sram_clk {
 namespace eval protoemu_late_clk {
     variable buffer_cell sg13cmos5l_buf_8
 
+    # patterns: glob patterns of Q net names, each optionally "pattern=N" for
+    # its own number of stages (default: stages)
     proc run {patterns stages} {
         variable buffer_cell
         set block [ord::get_db_block]
-        # group the matched registers' clock pins by their current clock net
+        # group the matched registers' clock pins by clock net and stage count
         set groups [dict create]
         set count 0
         foreach inst [$block getInsts] {
@@ -122,15 +124,20 @@ namespace eval protoemu_late_clk {
             if {$qn eq "NULL"} { continue }
             set name [$qn getName]
             set hit 0
-            foreach p $patterns { if {[string match $p $name]} { set hit 1; break } }
+            foreach p $patterns {
+                set n $stages
+                if {[regexp {^(.*)=([0-9]+)$} $p -> p n]} {}
+                if {[string match $p $name]} { set hit $n; break }
+            }
             if {!$hit} { continue }
             set cn [$ck getNet]
             if {$cn eq "NULL"} { continue }
-            dict lappend groups [$cn getName] "[$inst getName]/CLK"
+            dict lappend groups [list [$cn getName] $hit] "[$inst getName]/CLK"
             incr count
         }
-        foreach netname [dict keys $groups] {
-            set names [dict get $groups $netname]
+        foreach key [dict keys $groups] {
+            lassign $key netname stages
+            set names [dict get $groups $key]
             set net [$block findNet $netname]
             set ndr [$net getNonDefaultRule]
             set first [[$block findITerm [lindex $names 0]] getInst]
