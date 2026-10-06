@@ -34,6 +34,7 @@ set_false_path -to [get_ports {pmod[*]}]
 create_clock -name clk_pl_0 -period 10.000 [get_pins -hierarchical -filter {NAME =~ *PS8_i/PLCLK[0]}]
 set clk_pe  [get_clocks -of_objects [get_pins u_mmcm/CLKOUT1]]
 set clk_alt [get_clocks -of_objects [get_pins u_mmcm/CLKOUT0]]
+set clk_d   [get_clocks -of_objects [get_pins u_mmcm/CLKOUT2]]
 set period  [get_property PERIOD $clk_pe]
 
 # master clock: protoemu's clock or the alternate one (BUFGMUX_CTRL)
@@ -61,9 +62,25 @@ set_max_delay -datapath_only $period -from $clk_pe -to [get_clocks mclk_alt]
 set_false_path -hold -from [get_clocks mclk_alt] -to $clk_pe
 set_false_path -hold -from $clk_pe -to [get_clocks mclk_alt]
 
+# pe_lab's pattern generator clock: protoemu's clock (its edges then reach
+# protoemu's synchronisers as ordinary synchronous paths) or the alternate one
+# (asynchronous to protoemu, like a real outside signal: no hold check, and a
+# bounded delay so the 8 outputs arrive within a few ns of each other).
+create_generated_clock -name gclk_pe -divide_by 1 \
+    -source [get_pins u_gclk_mux/I0] [get_pins u_gclk_mux/O]
+create_generated_clock -name gclk_alt -divide_by 1 -add -master_clock $clk_alt \
+    -source [get_pins u_gclk_mux/I1] [get_pins u_gclk_mux/O]
+set_clock_groups -physically_exclusive -group gclk_pe -group gclk_alt
+set_max_delay -datapath_only 5.0 -from [get_clocks gclk_alt] -to $clk_pe
+set_false_path -hold -from [get_clocks gclk_alt] -to $clk_pe
+# pe_lab's SPI device runs on clk_d (8 x protoemu's clock, same MMCM, aligned):
+# SCK/MOSI -> device and MISO -> protoemu's first synchroniser flop are timed
+# as ordinary synchronous paths (2.5 ns), so the device's view of SCK and the
+# MISO edge it launches land on known dclk edges.
+
 # AXI side <-> everything else: GPIO inputs to protoemu are synchronised (or
 # held by software around SCK edges), the GPIO input channel has its own
 # synchroniser, the cycle counter is Gray-coded, pe_spim's registers are
 # quasi-static and its start/done handshakes are synchronised.
 set_clock_groups -asynchronous -group [get_clocks clk_pl_0] \
-    -group [list $clk_pe $clk_alt [get_clocks {mclk_pe mclk_alt sck}]]
+    -group [list $clk_pe $clk_alt $clk_d [get_clocks {mclk_pe mclk_alt sck gclk_pe gclk_alt}]]
