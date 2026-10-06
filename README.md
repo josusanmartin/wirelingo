@@ -24,16 +24,22 @@ describes how, and what it caught.
 
 **Where it stands:**
 
-* Signed off (run v2c): DRC, LVS and antenna clean, 50 MHz at the typical
-  corner, hold met at every corner, no slew/capacitance exceptions, Tiny
-  Tapeout precheck passed; the netlist passes all 24 top-level tests at gate
-  level ([docs/physical.md](docs/physical.md)).
+* Signed off (run v2c), i.e. it passes the Tiny Tapeout acceptance criteria
+  `flow/signoff.py` checks: DRC, LVS and antenna clean, 50 MHz at the typical
+  corner, hold met at every corner, Tiny Tapeout precheck passed; the netlist
+  passes all 24 top-level tests at gate level. Remaining exceptions: the slow
+  corner misses 50 MHz by 1.57 ns (about 46 MHz), with 3 slew violations
+  there, and 85 clock-tree leaf buffers exceed the cells' fanout limit of 8
+  at every corner ([docs/physical.md](docs/physical.md)).
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
-* A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core** of the
-  signed-off chip, with handshakes 11.5 clocks after the host's packet
-  (spec: 8–26), in RTL and gate-level simulation ([docs/usb-full-speed.md](docs/usb-full-speed.md)).
+* A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
+  handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
+  gate-level simulation of the signed-off netlist
+  ([docs/usb-full-speed.md](docs/usb-full-speed.md)). 48 MHz is met at the
+  typical corner; the slow corner reaches about 46 MHz, so closing 48 MHz
+  there is the next timing target.
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
@@ -96,7 +102,7 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit |
-| `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter margin about 2 ns past the spec | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 11.5 clocks (spec 8–26), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model |
+| `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter tolerance about 31 ns edge to edge, 12 ns past the spec's 18.5 (g4: about 21 ns) | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 10.5 clocks (spec 8–26; g4 11.5), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores |
@@ -125,7 +131,7 @@ configuration and the 4-core build. SymbiYosys proves the FIFO pair (with
 join) against reference queues at depths 4 and 8, SPI-slave bus safety, and
 core safety invariants. Firmware is developed against device models on the
 model, and the key cases repeat on the RTL through the SPI port. The
-signed-off netlist passes the same 20 top-level tests at gate level
+signed-off netlist passes the same top-level tests at gate level
 (functional, no SDF). Deliberately injected bugs are caught. Details, limits and
 the bugs this found: [docs/verification.md](docs/verification.md).
 
@@ -146,9 +152,12 @@ make -C formal                                                   # proofs
 * **Run v2c passes signoff** (`flow/signoff.py`): 0 routing violations,
   0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the typical
   corner, and hold is met at every corner (+0.10 / +0.20 / +0.04 ns typ / slow /
-  fast). The slow corner reaches about 46 MHz (−1.57 ns at 50 MHz). No slew or
-  capacitance exceptions at typ. Two other placements of the same RTL (v2a,
-  v2b) also pass.
+  fast). The slow corner reaches about 46 MHz (−1.57 ns at 50 MHz), with 3 slew
+  violations; the typical and fast corners have none, and no capacitance
+  violations anywhere. 85 clock-tree leaf buffers drive 9–14 flops against
+  the IHP cells' fanout limit of 8, at every corner (g4: 79);
+  `gen_config.py --clock-fanout-fix` exists for that but isn't used yet. Two
+  other placements of the same RTL (v2a, v2b) also pass.
 * The signed-off netlist passes all 24 top-level tests at gate level
   (`flow/gl_test.sh`: main suite 20, compiled PIO 2, Ethernet capture 2;
   functional, no SDF), and the GDS passes Tiny Tapeout's precheck

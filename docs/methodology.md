@@ -47,7 +47,7 @@ that stands between an agent's claim and the GDS.
 | Independent review | Codex | read the repo cold, reproduced bugs with tests and proposed fixes ([review.md](review.md)) |
 | Parallel work | Claude sub-agents | self-contained tasks in their own git worktrees (FPGA bring-up, the reverse-engineering demo), reporting measured results back |
 
-146 of the repository's 166 commits on `main` are co-authored by Claude.
+At commit 19ebe98, 164 of the repository's 184 commits are co-authored by Claude.
 
 ## The rule: no claim without independent evidence
 
@@ -60,8 +60,11 @@ assumptions:
 * **Two implementations of one spec.** [isa.md](isa.md) is normative. A
   cycle-accurate Python model and the RTL implement it separately, and
   constrained-random programs, pins and host traffic run on both, compared
-  every cycle ([verification.md](verification.md) §2). An agent that
-  misreads the spec has to misread it the same way twice, in two languages.
+  every cycle ([verification.md](verification.md) §2). This catches an
+  implementation slip on either side, but it is weaker against a
+  misunderstanding of the spec itself: the same agents wrote both, and two
+  languages don't make two minds. The checks below that don't share the
+  spec's assumptions are what cover that.
 * **Formal proofs** for the parts where a random test can miss a corner: the
   FIFOs against reference queues, host-port bus safety, core invariants, the
   line unit's phase tracking.
@@ -69,6 +72,11 @@ assumptions:
   firmware and assembler must each make a named test fail
   (`test/mutants.py`, 34 of 34 killed). Tests that pass whatever the code
   does are worthless, and agents write those too.
+* **Third-party oracles.** sigrok's protocol decoders, written by other
+  people for logic analyzers, decode the waveforms of the UART, SPI, I2C,
+  USB (low and full speed) and CAN tests and must agree with what each test
+  expected. They share no code or assumptions with our device models, so a
+  bug common to the firmware and its model still shows up.
 * **Device models that see only pins.** Firmware is tested against
   independent models of a UART, an I2C EEPROM, a USB host and so on, not
   against the code that drives them.
