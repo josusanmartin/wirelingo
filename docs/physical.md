@@ -145,7 +145,67 @@ margins, instead of a 0.25 ns typ margin standing in for it. (The earlier
 "fast-corner hold took 3200 buffers" was the same uncertainty.)
 `CTS_BALANCE_LEVELS` changed nothing (same tree, same violators).
 
-## Routability is the constraint (not cell area)
+### Slow corner: useful skew around the SRAMs (2026-10-06)
+
+Full-speed USB needs exactly 48 MHz (20.833 ns), so the slow corner
+(`nom_slow_1p08V_125C`) must reach it. v2c: −1.57 ns at 20 ns, **−0.74 ns at
+20.833 ns** (91 violating endpoints). STA with `CLOCK_PERIOD` 20.833 on the
+same netlist and SPEF (the I/O delays scale with it).
+
+**What limits it.** Every violator starts at an SRAM output and ends in a
+flop of the same cycle's execute stage: 64 of the 91 are the chip's pin
+registers (`pin_out`, `pin_oe`), the rest core 0's R0–R3, CRC and PC. v2c's
+worst path (bank 1 DOUT[29] → `pin_out[3]`): the SRAM's clock pin at 1.32 ns
+(CTS balanced it to the register tree with five delay buffers), clock to
+DOUT 5.44 ns (the slow view; 5.13–5.26 ns before the 5 % derate, set by the
+macro), then 15.6 ns through 44 cells (0.2 ns of it net RC; 3.6 ns in ten
+fanout/repeater buffers; one `a221oi_1`, the only drive strength the library
+has, takes 1.39 ns into 0.09 pF), capture clock 1.19 ns, 0.25 ns uncertainty,
+0.17 ns setup. The first 5.3 ns of that path is instruction decode alone
+(nothing but SRAM bits in its fan-in), then the source select, the funnel and
+pin rotators, the side-set merge and the pin-owner mux. The paths that don't
+start at an SRAM had ≥ +1.6 ns; paths into the SRAM from flops ≥ +2.8 ns; the
+SRAM → logic → SRAM fetch-address loop +0.33 ns (bank 0). Upsizing every
+buf_1/buf_2 on the violating paths to buf_4 (STA what-if) gained 0.035 ns:
+the weak complex gates before them are the limit. Post-GRT repair stalls
+(v2c: −1.65 ns, 680 passes without progress).
+
+**What helped** (`flow/gen_config.py`, all opt-in):
+
+* `--sram-clock-advance` (`Project.SramClockAdvance`, after CTS): each SRAM's
+  `A_CLK` is driven by one buf_8 on the macro tree's root net, and CTS's
+  delay buffers for it are removed. The SRAMs launch at ≈ 0.4 ns instead of
+  1.2–1.3 ns; paths into the SRAMs trade that setup slack for hold slack (the
+  SRAM address hold buffers mostly disappear); the fetch loop starts and ends
+  on the same pin and is unchanged.
+* `--late-clock N` (same step): the 64 pin registers clock behind N extra
+  buf_8 (≈ 0.09 ns each at slow). `pin_oe` only drives pads (+12 ns from its
+  outputs), `pin_out` feeds the cores' pin inputs (+3.3 ns). Hold into them
+  (from `bus_wdata` and the static `pin_owner`/side-set configuration flops)
+  shrinks by the same amount; N = 12 left fast-corner hold at −0.016 ns (t48u).
+* `--clock-fanout-fix` (CTS sinks in clusters of 8, overloaded branches split):
+  clears the 85 clock-tree fanout violations; with the SRAM advance it also
+  changed the tree enough to help timing (t48e vs t48f).
+* `--pnr-setup-margin` (`src/protoemu_pnr_margin.sdc`): PnR repairs against
+  1.0 ns setup uncertainty instead of 0.25 (signoff unchanged). Unlike a
+  resizer setup margin it leaves the FIFO latches' borrowed slack at 0.
+
+What didn't: a post-GRT hold margin of 0.15 ns (450–840 hold buffers, +2.6–3.3 %
+area; two runs never finished detailed routing, one lost 1.2 ns of slow setup);
+`PL_WIRE_LENGTH_COEF` 0.2 with the above (detailed routing stalled at 6–7
+violations); densities ≤ 43 % (global placement clamps to 0.43: t48h placed
+exactly as t48f, same netlist hash); density 46 with `--clock-fanout-fix`
+(OpenROAD CTS left one FIFO clock gate's CLK unconnected: t48l/n/o/q; the SRAM
+clock step now stops on that). An RTL precompute of IN's autopush compare and
+the JMP/WAIT zero tests (branch `t48-rtl`, formally equivalent, full
+regression passing) congested global routing (Metal3 70 %, 400–440
+overflows, against 62–64 % and ~10): at this utilization any netlist change is
+a routability gamble. Synthesis `DELAY` strategies: deeper unplaced paths and
++4–32 % area.
+
+Slow-corner setup at 20 ns varies by ±0.4 ns between placements of the same
+configuration, so the runs below are samples, not a ranking of settings.
+
 
 Numbers are quick global-routing runs (5 iterations) on placed databases.
 Metal3 is the only horizontal layer.
