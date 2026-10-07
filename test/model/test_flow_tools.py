@@ -142,3 +142,57 @@ def test_fpga_profile_replaces_asic_primitives(tmp_path):
     assert "`define PE_FLOP_IMEM" in project and "`define PE_NCORES 1" in project
     with pytest.raises(ValueError):
         fpga.stage(tmp_path / "fpga")                    # never overwrites
+
+
+@pytest.mark.parametrize("fault", [None, "slow-at-50", "slew", "waived-slew", "no-gl", "gl-other-netlist",
+                                   "gl-failed", "no-sdf-log"])
+def test_release_check(tmp_path, fault):
+    """Stricter than signoff.py: setup at every corner (or the slow corner at
+    --slow-mhz), no electrical violations unless waived, and gate-level
+    receipts for this exact netlist plus SDF and precheck logs."""
+    spec = importlib.util.spec_from_file_location("release_check", ROOT / "flow/release_check.py")
+    rel = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rel)
+    gate = rel.signoff
+    wt = tmp_path / "wt"
+    run = wt / "runs/wokwi"
+    for d in ("final/nl", "final/gds"):
+        (run / d).mkdir(parents=True)
+    (run / "final/nl/design.nl.v").write_text("module design; endmodule\n")
+    (run / "final/gds/design.gds").write_bytes(b"fixture")
+    metrics = {k: 0 for _, k in gate.KEYS}
+    for c, view in gate.CORNERS.items():
+        metrics[f"timing__setup__ws__corner:{c}"] = 0.2
+        metrics[f"timing__hold__ws__corner:{c}"] = 0.1
+        for key in rel.ELECTRICAL.values():
+            metrics[f"{key}__corner:{c}"] = 0
+        log = run / "99-openroad-stapostpnr" / c / "sta.log"
+        log.parent.mkdir(parents=True)
+        log.write_text(f"RM_IHPSG13_1P_256x32_c2_bm_bist_{view}.lib\n")
+    slow = [c for c in gate.CORNERS if c.startswith("nom_slow")][0]
+    args = []
+    if fault == "slow-at-50":
+        metrics[f"timing__setup__ws__corner:{slow}"] = -0.5      # fails at 50 MHz ...
+    if fault in ("slew", "waived-slew"):
+        metrics[f"design__max_slew_violation__count__corner:{slow}"] = 2
+    if fault == "waived-slew":
+        args += ["--waive", "slew=2"]
+    (run / "final/metrics.json").write_text(json.dumps(metrics))
+    if fault != "no-gl":
+        gl = wt / "test/sim_build/gl.abc"
+        gl.mkdir(parents=True)
+        (gl / "netlist.v").write_text("module other; endmodule\n" if fault == "gl-other-netlist"
+                                      else "module design; endmodule\n")
+        bad = "<failure/>" if fault == "gl-failed" else ""
+        (gl / "test.xml").write_text(f'<testsuites><testsuite><testcase name="a">{bad}</testcase>'
+                                     '<testcase name="b"/></testsuite></testsuites>')
+    sdf = tmp_path / "sdf.log"
+    sdf.write_text("gl_sdf_test: all cases as required\n")
+    pre = tmp_path / "pre.log"
+    pre.write_text("INFO: Precheck passed for x.gds!\n")
+    if fault != "no-sdf-log":
+        args += ["--sdf-log", str(sdf)]
+    args += ["--precheck-log", str(pre)]
+    assert rel.main([str(wt)] + args) == (0 if fault in (None, "waived-slew") else 1)
+    if fault == "slow-at-50":                                   # ... but meets 48 MHz
+        assert rel.main([str(wt), "--slow-mhz", "48"] + args) == 0
