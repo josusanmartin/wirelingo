@@ -1,8 +1,8 @@
 `default_nettype none
 `timescale 1ns / 1ps
 // Simulation harness for kv260_top: the PS block design and the Xilinx
-// primitives are replaced by the models below; cocotb drives the GPIO words
-// and pe_spim's AXI4-Lite port.
+// primitives are replaced by the models below; cocotb drives the GPIO words,
+// pe_spim's AXI4-Lite port and what is wired to the PMOD pads.
 module tb_kv260 ();
   reg         pl_clk, pe_clk, alt_clk, d_clk, aresetn;
   reg  [31:0] gpio0_o;
@@ -19,7 +19,23 @@ module tb_kv260 ();
   wire        l_awready = dut.l_awready, l_wready = dut.l_wready, l_bvalid = dut.l_bvalid;
   wire        l_arready = dut.l_arready, l_rvalid = dut.l_rvalid;
   wire [31:0] l_rdata = dut.l_rdata;
+  // PMOD J2 pads as the outside world sees them: ext_oe/ext_val = a strong
+  // driver (a USB host's D+/D-), pull_up/pull_dn = resistors (the device's
+  // 1.5k pull-up; the host's 15k pull-downs), and a weak keeper per pin: an
+  // open pin keeps the level it was last driven to (its charge), so a pin
+  // that is driven low and released reads low unless something pulls it.
+  reg  [7:0]  ext_oe = 8'd0, ext_val = 8'd0, pull_up = 8'd0, pull_dn = 8'd0;
+  reg  [7:0]  keep = 8'd0;
   wire [7:0]  pmod;
+  genvar gp;
+  generate
+    for (gp = 0; gp < 8; gp = gp + 1) begin : g_pad
+      assign pmod[gp] = ext_oe[gp] ? ext_val[gp] : 1'bz;
+      assign (pull1, pull0) pmod[gp] = pull_up[gp] ? 1'b1 : pull_dn[gp] ? 1'b0 : 1'bz;
+      assign (weak1, weak0) pmod[gp] = keep[gp];
+      always @(pmod[gp]) if (pmod[gp] === 1'b0 || pmod[gp] === 1'b1) keep[gp] = pmod[gp];
+    end
+  endgenerate
   kv260_top dut (.fan_en_b(), .pmod(pmod));
   assign gpio0_i = dut.gpio0_i;
   assign gpio1_i = dut.gpio1_i;
