@@ -12,7 +12,9 @@ from test_release_evidence import ROOT, candidate
 
 @pytest.mark.parametrize("behavior", ["pass", "missing-xml", "failed", "skipped", "duplicate",
                                      "annotation-error", "annotation-warning", "no-annotation", "negative-assert",
-                                     "negative-x", "negative-runtime", "changed-candidate", "hostile-environment"])
+                                     "negative-x", "negative-runtime", "changed-candidate", "hostile-environment",
+                                     "changed-helper", "changed-pio-fixture", "external-validation",
+                                     "external-hardware-mismatch"])
 def test_sdf_runner_emits_receipt_only_for_completed_outcome(tmp_path, behavior):
     wt = candidate(tmp_path)
     (wt / "flow").mkdir()
@@ -24,12 +26,27 @@ def test_sdf_runner_emits_receipt_only_for_completed_outcome(tmp_path, behavior)
         "Path(sys.argv[3]).write_bytes(Path(sys.argv[1]).read_bytes())\n"
         "Path(sys.argv[4]).write_bytes(Path(sys.argv[2]).read_bytes())\n")
     subprocess.run(["git", "init", "-q", str(wt)], check=True)
+    (wt / "test/model").mkdir()
+    (wt / "test/model/test_eth10.py").write_text("# original helper\n")
+    (wt / "test/pio_program.json").write_text('{"instructions":[1]}')
+    validation = wt
+    tests = "test_a test_b"
+    if behavior.startswith("external-"):
+        validation = tmp_path / "frozen-shipping-head"
+        shutil.copytree(wt / "src", validation / "src")
+        shutil.copytree(wt / "test", validation / "test")
+        with (validation / "test/test.py").open("a") as f:
+            f.write("@cocotb.test()\nasync def test_shipping_only(dut): pass\n")
+        tests = "test_shipping_only"
+        if behavior == "external-hardware-mismatch":
+            (validation / "src/project.v").write_text("different hardware\n")
     fake = wt / "fakebin"
     fake.mkdir()
     make = fake / "make"
     make.write_text('''#!/usr/bin/env python3
 import os, sys, pathlib, xml.etree.ElementTree as ET
 a = dict(x.split('=', 1) for x in sys.argv[1:] if '=' in x)
+assert pathlib.Path.cwd() == pathlib.Path(os.environ['EXPECTED_TEST_CWD'])
 assert {k: a[k] for k in ('SIM', 'TB', 'IMEM', 'SDF_MTM', 'TB_EXT_DELAY')} == dict(SIM='icarus', TB='top', IMEM='sram', SDF_MTM='typ', TB_EXT_DELAY='4')
 b = os.environ['FAKE_BEHAVIOR']
 if b != 'no-annotation': print('sdf_annotate: ' + a['SDF'] + ' -> tb.user_project')
@@ -50,17 +67,20 @@ if b != 'missing-xml': ET.ElementTree(r).write(a['COCOTB_RESULTS_FILE'])
 print('** TESTS=' + str(len(names)) + ' **')
 if b == 'changed-candidate':
     pathlib.Path('../runs/wokwi/final/nl/design.nl.v').write_text('changed')
+if b == 'changed-helper': pathlib.Path('model/test_eth10.py').write_text('# changed helper')
+if b == 'changed-pio-fixture': pathlib.Path('pio_program.json').write_text('{"instructions":[2]}')
 sys.exit(2 if b == 'failed' or b.startswith('negative-') else 0)
 ''')
     make.chmod(0o755)
     env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ["PATH"],
-               TESTS="test_a test_b", FAKE_BEHAVIOR=behavior)
+               TESTS=tests, FAKE_BEHAVIOR=behavior, VALIDATION_ROOT=str(validation),
+               EXPECTED_TEST_CWD=str(validation / "test"))
     if behavior == "hostile-environment":
         env.update(SIM="another-simulator", TB="chip", IMEM="flop", SDF_MTM="min", TB_EXT_DELAY="0")
     expectation = "fail" if behavior.startswith("negative-") else "pass"
     result = subprocess.run(["bash", str(wt / "flow/gl_sdf_test.sh"), str(wt), "slow", "10", expectation],
                             capture_output=True, text=True, env=env)
-    good = behavior in ("pass", "negative-assert", "negative-x", "hostile-environment")
+    good = behavior in ("pass", "negative-assert", "negative-x", "hostile-environment", "external-validation")
     assert (result.returncode == 0) == good, result.stdout + result.stderr
     receipts = list((wt / "test/sim_build").glob("gl_sdf.*/receipt.json"))
     assert len(receipts) == int(good)

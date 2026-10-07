@@ -304,6 +304,39 @@ def test_validator_hardware_change_during_sdf_is_rejected(tmp_path):
         module("release_receipts").finish(out)
 
 
+@pytest.mark.parametrize("kind", ["gl", "sdf"])
+@pytest.mark.parametrize("dependency", ["test/model/test_eth10.py", "test/pio_program.json"])
+@pytest.mark.parametrize("phase", ["during-run", "after-receipt"])
+def test_imported_helpers_and_pio_fixture_are_bound(tmp_path, kind, dependency, phase):
+    wt = candidate(tmp_path)
+    root = wt if kind == "gl" else wt.parent / "validator"
+    helper = root / dependency
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("original test input\n")
+    out = gl_output(wt) if kind == "gl" else sdf_output(wt)
+    rec = module("release_receipts")
+    receipt = rec.finish(out) if phase == "after-receipt" else None
+    helper.write_text("changed test input\n")
+    with pytest.raises(ValueError):
+        if receipt is None:
+            rec.finish(out)
+        else:
+            rec.verify(receipt, wt, kind, root)
+
+
+def test_generated_simulator_files_do_not_invalidate_input_snapshot(tmp_path):
+    wt = candidate(tmp_path)
+    out = gl_output(wt)
+    # Private precheck copies and simulator output may have source suffixes.
+    for name in ("test/sim_build/precheck.other/tt/precheck/precheck.py",
+                 "test/sim_build/gl.other/netlist.v", "test/sim_build/gl.other/status.json",
+                 "test/model/__pycache__/generated.py"):
+        p = wt / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("generated output\n")
+    assert module("release_receipts").finish(out).exists()
+
+
 @pytest.mark.parametrize("kind,value", [("sdf", False), ("sdf", "0"), ("precheck", False), ("precheck", "0")])
 def test_receipt_requires_numeric_process_status(tmp_path, kind, value):
     wt = candidate(tmp_path)

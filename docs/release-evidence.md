@@ -22,6 +22,18 @@ PDK_ROOT="$HOME/ttpdk" .venv-flow/bin/python flow/precheck_test.py "$RUN" \
   --tt-root /path/to/tt-support-tools
 ```
 
+If the runner tools are newer than the frozen shipping checkout, keep the
+shipping files unchanged and select them explicitly for both simulations:
+
+```sh
+flow/gl_test.sh "$RUN" "$SHIPPING"
+VALIDATION_ROOT="$SHIPPING" flow/gl_sdf_test.sh "$RUN" standard
+VALIDATION_ROOT="$SHIPPING" flow/gl_sdf_test.sh "$RUN" v2
+```
+
+The receipt records the runner scripts and validation sources separately.
+Use the same `--validation-root "$SHIPPING"` when checking the release.
+
 Each command prints its fresh output directory and, only after success, its
 `receipt.json`. Keep the complete output directories. The GL/SDF runners need
 Icarus and cocotb. Precheck needs the flow Python packages and a `klayout`
@@ -109,6 +121,16 @@ mixed, missing or subsequently altered evidence. Full output directories can
 be archived or moved while preserving their relative artifact paths. Preserve
 the selected validation checkout as well (or reproduce its exact file hashes)
 and point `--validation-root` to it after relocation.
+
+Validation inputs include the nested test sources and JSON fixtures. The
+Ethernet tests import `test/model/test_eth10.py`, and the PIO test machine
+loads `test/pio_program.json`; hashing only top-level Python/Verilog files
+missed both. Regression cases demonstrate rejection when either changes
+during a run or after its receipt. Generated `sim_build` and cache directories
+are excluded, including private precheck copies with source-file suffixes.
+GL/SDF receipts made with the earlier, incomplete input list do not match
+the repaired verifier's selected validation checkout: rerun the simulations;
+do not add missing hashes to an old receipt after execution.
 
 Old logs remain useful historical evidence. They cannot be converted into a
 new receipt after the fact: rerun the corresponding wrapper. Fixtures and

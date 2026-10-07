@@ -11,6 +11,7 @@ from collections import Counter
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
@@ -83,10 +84,16 @@ def hardware_files(root):
 def validation_files(root, *, include_hardware=False):
     root = Path(root)
     files = []
-    for directory, suffixes in (("test", (".py", ".v", ".sv")),
+    for directory, suffixes in (("test", (".py", ".v", ".sv", ".vh", ".svh", ".json")),
                                 ("tools", (".py",)), ("firmware", (".pasm",))):
-        paths = (root / directory).glob("*") if directory == "test" else (root / directory).rglob("*")
-        files.extend(p for p in paths if p.is_file() and p.suffix in suffixes)
+        # GL imports test/model helpers and loads the compiled PIO JSON fixture.
+        # Prune generated output before traversal: private precheck copies and
+        # simulator netlists also have source suffixes, but are not inputs.
+        for parent, directories, names in os.walk(root / directory):
+            directories[:] = [name for name in directories
+                              if name not in {"sim_build", "__pycache__", ".pytest_cache", ".git"}]
+            files.extend(Path(parent) / name for name in names
+                         if Path(name).suffix in suffixes and (Path(parent) / name).is_file())
     if (root / "test/Makefile").exists():
         files.append(root / "test/Makefile")
     if include_hardware:

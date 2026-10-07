@@ -28,8 +28,10 @@
 # requires complete results and a clean annotation. It never counts toward
 # release coverage. An infrastructure failure cannot be a negative control.
 #
-# Tests: this checkout's test/test.py on the run's netlist, so its source RTL
-# and hardware profile must equal this checkout's. CLK_NS sets every test's clock
+# Tests: this checkout's test/test.py, or VALIDATION_ROOT's, on the run's netlist.
+# The validation source RTL and hardware profile must equal the candidate's.
+# An external validation root lets repaired tooling check a frozen release head.
+# CLK_NS sets every test's clock
 # (PE_CLK_NS), test_usb_fs_device's too (PE_USB_FS_CLK_NS: its bus keeps 4
 # clocks per bit, so away from 20.834 ns it is not 12 Mbit/s).
 # TESTS="test_id test_uart_tx" overrides the standard subset (and a single
@@ -43,6 +45,7 @@
 set -euo pipefail
 W=$(realpath "${1:-$PWD}")
 REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+VALIDATION=$(realpath "${VALIDATION_ROOT:-$REPO}")
 shopt -s nullglob
 NETLISTS=("$W"/runs/wokwi/final/nl/*.nl.v)
 [[ ${#NETLISTS[@]} == 1 ]] || { echo "expected exactly one final netlist in $W"; exit 2; }
@@ -78,7 +81,7 @@ run_case() {
   local testcase
   testcase=$(echo "$tests" | xargs | tr ' ' ',')
   count=$(echo "$tests" | wc -w)
-  (cd "$REPO/test" && PE_CLK_NS=$clk PE_USB_FS_CLK_NS=$clk PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL I2C_STRETCH=40 make GATES=yes SIM=icarus TB=top IMEM=sram SDF_MTM=typ TB_EXT_DELAY=4 \
+  (cd "$VALIDATION/test" && PE_CLK_NS=$clk PE_USB_FS_CLK_NS=$clk PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL I2C_STRETCH=40 make GATES=yes SIM=icarus TB=top IMEM=sram SDF_MTM=typ TB_EXT_DELAY=4 \
       SDF="$dir/annotate.sdf" GATE_LEVEL_NETLIST="$dir/netlist.v" COCOTB_TEST_MODULES="$MODULE" \
       COCOTB_TESTCASE="$testcase" SIM_BUILD="$dir/build" COCOTB_RESULTS_FILE="$dir/results.xml" \
       > "$dir/sim.log" 2>&1) || rc=$?
@@ -153,7 +156,7 @@ for line in sys.argv[3].splitlines():
 with open(sys.argv[1], "x") as f:
     json.dump(cases, f, allow_nan=False)
 PY
-python3 "$REPO/flow/release_receipts.py" begin sdf "$W" "$OUT" --validation-root "$REPO" --plan "$OUT/plan.json"
+python3 "$REPO/flow/release_receipts.py" begin sdf "$W" "$OUT" --validation-root "$VALIDATION" --plan "$OUT/plan.json"
 [[ $SET == standard ]] || echo "set $SET"
 pids=() outs=() i=0
 while read -r corner clk expect tests; do
