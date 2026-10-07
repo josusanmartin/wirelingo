@@ -32,14 +32,17 @@ def main():
         # 1. pairs
         for top in range(4):
             spim.pmod({top: UO0})
+            # Undriven PMOD pads float (no pull-ups), so one toggle can make an
+            # unconnected pad look like a partner: require it to follow every time.
             seen = []
-            for level in (0, 1):
+            for level in (0, 1, 0, 1, 0, 1):
                 pe.write(sim.A_POUT, level << 8)
                 time.sleep(0.001)
                 seen.append(spim.pmod_in())
-            partner = [p for p in range(8) if p != top and (seen[0] >> p & 1) == 0 and (seen[1] >> p & 1) == 1]
+            partner = [p for p in range(8) if p != top
+                       and all((s >> p & 1) == lv for s, lv in zip(seen, (0, 1, 0, 1, 0, 1)))]
             print(f"  J2 pin {top + 1} driven: follows on pmod{partner} (expected [{top + 4}], J2 pin {top + 7}); "
-                  f"PMODIN low 0x{seen[0]:02X} high 0x{seen[1]:02X}")
+                  f"PMODIN low 0x{seen[0]:02X} high 0x{seen[1]:02X} (6 toggles)")
             ok &= partner == [top + 4]
         pe.write(sim.A_POUT, 0)
         # 2. UART through the jumper
@@ -72,9 +75,11 @@ def main():
             pe.write(sim.A_POUT, v << 2)
             time.sleep(0.001)
             levels.append((pe.read(sim.A_PINS) >> 3) & 1)
+        pullup = "--pullup" in sys.argv
         print(f"  uio2 open drain 0/release/0 on J2 pin 2 -> uio3 on pin 8 reads {levels} "
-              f"(released level needs a pull-up; FPGA pins have none here)")
-        ok &= levels[0] == 0 and levels[2] == 0
+              + ("(pull-up fitted: released must read 1)" if pullup else
+                 "(released level checked only with --pullup and a resistor from pin 8 to 3.3 V; FPGA pins have none)"))
+        ok &= levels[0] == 0 and levels[2] == 0 and (levels[1] == 1 or not pullup)
     finally:
         spim.pmod({})
         pe.write(sim.A_OD, 0)

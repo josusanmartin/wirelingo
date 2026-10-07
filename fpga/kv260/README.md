@@ -349,65 +349,44 @@ id/regs/pins/loopback/quad.
 
 ## PMOD J2
 
-**Hardware result (2026-10-07, v2 build, jumpers placed by the user on J2
-1-7, 2-8, 3-9, 4-10): two of the four pairs connect.** Staged: (a) all pins
-disabled, PMODIN reads 0xBB/0xFF (floating; no pull-ups); (b) only pmod0
-driven from uo0: its own pad follows (0/1), pmod4 does not; (c) each pin
-driven alone for 2 ms, the rest inputs: every pin's own pad follows its
-drive (none is tied to a rail), pmod2 <-> pmod6 and pmod3 <-> pmod7 follow
-each other, pmod0, pmod1, pmod4, pmod5 follow nothing. `pmod_test.py`:
+**Hardware result (2026-10-07, v2 build): `pmod_test.py` PASSES.** All four
+loopback pairs connect (each pin toggled six times, the partner must follow
+every time), UART at 115200 from core 0 on pmod0 reaches core 1 on pmod4
+over the jumper, and the open-drain pair reads low when driven low:
 
-    J2 pin 1 driven: follows on pmod[] (expected [4], J2 pin 7); PMODIN low 0xBA high 0xBB
-    J2 pin 2 driven: follows on pmod[] (expected [5], J2 pin 8); PMODIN low 0xFD high 0xFF
-    J2 pin 3 driven: follows on pmod[6] (expected [6], J2 pin 9); PMODIN low 0xBB high 0xFF
-    J2 pin 4 driven: follows on pmod[7] (expected [7], J2 pin 10); PMODIN low 0x77 high 0xFF
-    UART 115200 J2 pin 1 -> pin 7: sent b'PMOD ok' got b''
-    uio2 open drain 0/release/0 on J2 pin 2 -> uio3 on pin 8 reads [1, 1, 1]
-    FAIL
+    J2 pin 1 driven: follows on pmod[4] (expected [4], J2 pin 7); PMODIN low 0xEE high 0xFF (6 toggles)
+    J2 pin 2 driven: follows on pmod[5] (expected [5], J2 pin 8); PMODIN low 0xDD high 0xFF (6 toggles)
+    J2 pin 3 driven: follows on pmod[6] (expected [6], J2 pin 9); PMODIN low 0x22 high 0xFF (6 toggles)
+    J2 pin 4 driven: follows on pmod[7] (expected [7], J2 pin 10); PMODIN low 0x44 high 0xEE (6 toggles)
+    UART 115200 J2 pin 1 -> pin 7: sent b'PMOD ok' got b'PMOD ok'
+    uio2 open drain 0/release/0 on J2 pin 2 -> uio3 on pin 8 reads [0, 1, 0] (released level checked only with --pullup ...)
+    PASS
 
-So D10/C11 and D11/B11 are J2 3-4 and 9-10 as inferred (or at least paired
-as inferred). The 1-7 and 2-8 jumpers join no two FPGA PMOD pins: they are
-not making contact, or they sit on other header positions, or H12/E10/B10/E12
-are not J2 1, 2, 7, 8. To check: reseat those two jumpers and rerun
-`pmod_test.py`, whose first step drives each top-row pin alone and reports
-where its level shows up. The UART and open-drain steps depend on those two pairs;
-the open-drain step also needs an external pull-up for its released level.
+**Header numbering.** The KV260's silkscreen numbers J2 in columns, not the
+Digilent way: odd pins on the top row, even below, pin 1 at the top right,
+11/12 at the left; the two left columns (9/10, 11/12) are GND and 3.3 V.
+"J2-n" in the scripts and below uses the Digilent numbering (1-4 top signal
+row, 7-10 bottom); the silkscreen equivalents are J2-1 = 1, J2-2 = 3,
+J2-3 = 5, J2-4 = 7, J2-7 = 2, J2-8 = 4, J2-9 = 6, J2-10 = 8. The first
+attempt put the jumpers in the four left columns by the Digilent picture,
+so two of them joined GND to GND and 3.3 V to 3.3 V (harmless) and only two
+pairs connected. Wiring diagram with the silkscreen numbers:
+[img/pmod_loopback.png](img/pmod_loopback.png). The pairs are verified on
+hardware; which signal column is pmod0..3 follows the Digilent order (pin 1
+farthest from the power pins), which the loopback can't distinguish.
 
+`pmod_test.py`'s first version checked each pairing with one toggle; an
+undriven pair floats (no pull-ups), so a floating pad once looked like a
+partner. It now requires six consistent toggles, and the open-drain released
+level is only checked with `--pullup` and a resistor from J2-8 (silkscreen 4)
+to 3.3 V.
 
-Each of the 8 PMOD signal pins can carry one TT pin, chosen by `pe_spim`'s
-PMOD0/PMOD1 registers (`Spim.pmod({pmod_index: tt_pin})`, `tt_pin` 0-7 =
-uio[0..7], 8-14 = uo[0..6], 16-20 = ui[0..4]). Nothing drives a PMOD pin
-unless it is enabled: at load every pin is an input (high impedance) and the
-TT pins keep the GPIO-modelled behaviour. An enabled uio pin is driven while
-protoemu's uio_oe is 1 and protoemu reads the pad's level (open drain works
-with an external pull-up); a uo pin is always driven; a ui pin replaces the
-GPIO bit. `Spim.pmod_in()` reads the 8 pad levels. LVCMOS33, 4 mA, slow slew,
-no internal pull-ups.
-
-| pmod index | package pin | J2 pin |
-|---|---|---|
-| 0 | H12 | 1 |
-| 1 | E10 | 2 |
-| 2 | D10 | 3 |
-| 3 | C11 | 4 |
-| - | GND | 5 |
-| - | 3.3 V | 6 |
-| 4 | B10 | 7 |
-| 5 | E12 | 8 |
-| 6 | D11 | 9 |
-| 7 | B11 | 10 |
-| - | GND | 11 |
-| - | 3.3 V | 12 |
-
-Package pins and IOSTANDARD are AMD's (Kria-Vitis-Platforms
-`kv260/platforms/kv260_bist/xdc/pin.xdc`, PMOD_GPIO[0..7]; the XilinxBoardStore
-KV260 carrier board files describe only the SOM connector, not the PMOD). The
 J2 pin numbers are inferred from AMD's `kv260_ispMipiRx_vcu_DP` platform,
 which puts a Digilent Pmod I2S2 on these pins (H12/E10/D10/C11 = its TX
 MCLK/LRCK/SCLK/SDIN on pins 1-4, B10/E12/D11/B11 = RX on pins 7-10); the
 jumper self-test below checks the row pairing.
 
-**(i) Jumper loopback self-test.** Four jumpers: J2 1-7, 2-8, 3-9, 4-10.
+**(i) Jumper loopback self-test.** Four jumpers: J2 1-7, 2-8, 3-9, 4-10 (silkscreen 1-2, 3-4, 5-6, 7-8).
 Then `sudo python3 protoemu/fpga/kv260/host/pmod_test.py`: drives each
 top-row pin from uo0 and checks that only its partner follows (PMODIN),
 runs UART at 115200 from core 0 on uo0 (J2-1) to core 1 on ui0 (J2-7), and
