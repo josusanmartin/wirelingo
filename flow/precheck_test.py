@@ -50,6 +50,9 @@ def main(argv=None):
                             ignore=shutil.ignore_patterns("reports", "__pycache__", ".git"))
         if tool_files(out / "tt") != before or tool_files(tt) != before:
             raise ValueError("precheck support tools changed while copying")
+        # Upstream writes reports here but assumes the directory already exists.
+        # Keep the directory, while excluding every previous run's report files.
+        (out / "tt/precheck/reports").mkdir()
         # Its info.yaml search walks upward from GDS; preserve final/gds + lef.
         for path in data["candidate"]:
             if path == "info.yaml" or path.endswith((".gds", ".lef")):

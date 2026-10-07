@@ -76,7 +76,8 @@ def test_precheck_runner_keeps_shared_reports_and_binds_its_own_run(tmp_path, be
 from pathlib import Path
 b = os.environ['FAKE_BEHAVIOR']
 gds = sys.argv[sys.argv.index('--gds') + 1]
-Path('reports').mkdir()
+assert Path('reports').is_dir(), 'upstream precheck requires a reports directory'
+assert not list(Path('reports').iterdir()), 'previous reports must not be copied'
 if b != 'missing-xml':
     Path('reports/results.xml').write_text('<testsuites><testsuite><testcase name="drc"/></testsuite></testsuites>')
 print('INFO: Precheck passed for ' + ('another.gds' if b == 'wrong-gds' else gds) + '!')
