@@ -237,6 +237,7 @@ Settings: A = `--sram-clock-advance`, F = `--clock-fanout-fix`, Ln =
 | t48al | t48ak, d44 | −0.748 / +0.085 | +0.062 | 0/1/2 · 0/1/2 · 0/1/2 | 66.4 % / 48 |
 | t48aq | A F L5 M C h0.12, pin buffers (A_ADDR drivers upsized), GRT cap/antenna margins 30 % | −0.552 / +0.281 | +0.060 | 0/0/3 · 3/0/3 · 0/0/3 | 63.7 % / 19 |
 | t48ao | t48aq with L8 | +0.077 / +0.910 | **−0.003** (fails) | 0/0/1 · 0/0/1 · 0/0/1 | 63.7 % / 20 |
+| t48ar | t48aq with L6, DRT antenna margin 0 | −0.001 / +0.832 | +0.038 | 0/0/2 · 0/0/2 · 0/0/2 | 63.7 % / 19 |
 
 The remaining exceptions are of two kinds. Slew: always pins of bank 1
 (A_ADDR[5], A_ADDR[0], A_DIN[*]), driven by an `a21oi_1` or a `buf_1` fanout
@@ -249,6 +250,21 @@ steps) attached 6–11 antenna diodes to a net the resizer had left at ≤ 8 (or
 ≤ 6). Shorter repair wires (`GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH` 250) to avoid
 the antenna violations cost 0.5–1 ns of slow setup and 360–400 hold buffers
 (t48am/an, stopped after global routing).
+A post-GRT hold margin of 0.14 ns (t48as) and density 44 with the pin buffers
+(t48ap) stalled detailed routing; both were stopped.
+
+**Candidate: t48ag** (commit e96cb69, `flow/harden.sh NAME -- --sram-clock-advance
+--clock-fanout-fix --late-clock 8 --pnr-setup-margin --set MAX_FANOUT_CONSTRAINT=8
+--set GRT_DESIGN_REPAIR_MAX_SLEW_PCT=30 --set DESIGN_REPAIR_MAX_SLEW_PCT=30
+--set GRT_RESIZER_HOLD_SLACK_MARGIN=0.12`): signoff passes; setup is met at
+every corner at 50 MHz, the slow corner's worst flop/SRAM-pin slack is
++0.054 ns at 20 ns and +0.887 ns at 20.833 ns; hold +0.186 / +0.353 / +0.079 ns
+(typ / slow / fast); no capacitance violations; 2 slow-corner slew violations
+(bank 1 A_ADDR[5] 0.692 ns, A_ADDR[0] 0.597 ns, limit 0.595) and 1 fanout
+violation at every corner (11 loads, antenna diodes included). Netlist sha256
+`b2cb0a1a619ad1bf`, GDS `90040c26d13fb390`; Metal3 64.0 %, 8 overflows after
+global routing; 52.5 % utilization with the macros. Functional gate level: all
+25 top-level tests (test.py 21, test_pio 2, test_eth_service 2).
 
 
 Numbers are quick global-routing runs (5 iterations) on placed databases.
