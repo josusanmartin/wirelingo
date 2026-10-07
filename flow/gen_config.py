@@ -76,7 +76,8 @@ def main():
                     default=pathlib.Path(__file__).resolve().parents[1] / "src/config.json")
     ap.add_argument("--check", action="store_true", help="fail if output differs; never write")
     ap.add_argument("--banks", type=int, choices=range(1, 5), default=2)
-    # Signed off (run v2c, 2026-10-06). At GRT_ADJUSTMENT 0.15 global routing
+    # Release candidate: run t48ba (2026-10-07); the clock-tree and repair
+    # options below default to its settings. Earlier: v2c (2026-10-06). At GRT_ADJUSTMENT 0.15 global routing
     # reserved too much Metal3 and ended with ~100 overflows that detailed
     # routing couldn't clear; 0.10 leaves ~10-40, which it does. Density also
     # steers routability-driven placement here (docs/physical.md).
@@ -100,23 +101,23 @@ def main():
                     help="global-routing overflow iterations (quick routability experiments: 5)")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=JSON",
                     help="override any LibreLane variable (e.g. PL_WIRE_LENGTH_COEF=0.2)")
-    ap.add_argument("--clock-fanout-fix", action="store_true",
+    ap.add_argument("--clock-fanout-fix", action=argparse.BooleanOptionalAction, default=True,
                     help="opt-in CTS clusters of eight and IHP clock branch repair; requires fresh physical validation")
-    ap.add_argument("--pnr-setup-margin", action="store_true",
+    ap.add_argument("--pnr-setup-margin", action=argparse.BooleanOptionalAction, default=True,
                     help="PnR SDC with 0.75 ns more setup uncertainty (src/protoemu_pnr_margin.sdc); signoff unchanged")
     ap.add_argument("--final-design-repair", action="store_true",
                     help="repeat post-GRT design repair (slew/cap/fanout) after post-GRT timing repair")
     ap.add_argument("--pnr-electrical-margins", action="store_true",
                     help="with --pnr-setup-margin: PnR fanout limit 6 (src/protoemu_pnr_elec.sdc)")
-    ap.add_argument("--sram-pin-buffers", action="store_true",
+    ap.add_argument("--sram-pin-buffers", action=argparse.BooleanOptionalAction, default=True,
                     help="buffer each SRAM input pin after post-GRT timing repair (implies --final-design-repair)")
-    ap.add_argument("--late-clock", type=int, default=0, metavar="STAGES",
+    ap.add_argument("--late-clock", type=int, default=6, metavar="STAGES",
                     help="with --sram-clock-advance: delay the chip's pin registers' clocks by STAGES buffers")
     ap.add_argument("--late-clock-oe", type=int, default=0, metavar="STAGES",
                     help="with --late-clock: pin_oe gets STAGES buffers instead (it only drives pads)")
     ap.add_argument("--late-clock-core", type=int, default=0, metavar="STAGES",
                     help="with --late-clock: also delay core 0's R0-R3 and CRC registers by STAGES buffers")
-    ap.add_argument("--sram-clock-advance", action="store_true",
+    ap.add_argument("--sram-clock-advance", action=argparse.BooleanOptionalAction, default=True,
                     help="clock each SRAM from the clock root (useful skew: reads launch earlier, flow/sram_clock_advance.tcl)")
     a = ap.parse_args()
     if a.pnr_latch_flops is None:
@@ -178,9 +179,10 @@ def main():
     c["GRT_RESIZER_SETUP_REPAIR_TNS_PCT"] = a.grt_tns
     c["PL_RESIZER_HOLD_SLACK_MARGIN"] = 0.05
     # 0.05 left fast-corner hold at +0.04-0.05 ns after extraction, and two of
-    # three clean runs missed it by ~10 ps; 0.10 (runs m10, v2a-c) keeps it
-    # positive and cleared the typ slew exceptions.
-    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.10
+    # three clean runs missed it by ~10 ps; 0.10 (runs m10, v2a-c) kept it
+    # positive; with the SRAM clock advance and late pin clocks, 0.13 (run
+    # t48ba) gives +0.095 ns at the fast corner.
+    c["GRT_RESIZER_HOLD_SLACK_MARGIN"] = 0.13
     c["RUN_LINTER"] = 1
     c["LINTER_INCLUDE_PDK_MODELS"] = 1
     c["//clocks"] = "clk, and the host port's SCK on ui_in[6]; src/protoemu.sdc constrains both"
@@ -274,6 +276,15 @@ def main():
     c["FP_PDN_MULTILAYER"] = 0
     c["MAGIC_DEF_LABELS"] = 0
     c["MAGIC_WRITE_LEF_PINONLY"] = 1
+    # Release repair settings (run t48ba, docs/physical.md): electrical limits
+    # enforced with margin during repair, so the slow corner ends with no
+    # slew/cap violations; antenna repair keeps GRT margin and adds no DRT margin.
+    c["MAX_FANOUT_CONSTRAINT"] = 8
+    c["GRT_DESIGN_REPAIR_MAX_SLEW_PCT"] = 30
+    c["DESIGN_REPAIR_MAX_SLEW_PCT"] = 30
+    c["GRT_DESIGN_REPAIR_MAX_CAP_PCT"] = 30
+    c["GRT_ANTENNA_REPAIR_MARGIN"] = 30
+    c["DRT_ANTENNA_REPAIR_MARGIN"] = 0
     for item in a.set:
         key, value = item.split("=", 1)
         c[key] = json.loads(value)
