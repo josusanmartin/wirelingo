@@ -206,6 +206,50 @@ a routability gamble. Synthesis `DELAY` strategies: deeper unplaced paths and
 Slow-corner setup at 20 ns varies by ±0.4 ns between placements of the same
 configuration, so the runs below are samples, not a ranking of settings.
 
+All on v2c's RTL (cbeae96's `src/`), signoff by `flow/signoff.py` (all pass
+unless noted). "Worst flop" is the slow corner's worst setup slack at a flop
+or SRAM pin (the summary's WS is 0 when only the FIFO latches' borrowing is
+left); 48 MHz is STA at 20.833 ns on the same netlist and SPEF. Exceptions
+are max slew / max cap / max fanout violations per corner (typ, slow, fast).
+Settings: A = `--sram-clock-advance`, F = `--clock-fanout-fix`, Ln = 
+`--late-clock n`, M = `--pnr-setup-margin`, C = `MAX_FANOUT_CONSTRAINT` 8 and
+30 % slew margins in design repair, h = post-GRT hold margin (ns), d = density.
+
+| Run | Settings | Slow worst flop, 50 / 48 MHz | Fast hold | Exceptions typ · slow · fast | GRT Metal3 / overflow |
+|-----|----------|------------------------------|-----------|------------------------------|-----------------------|
+| v2c | — | −1.569 / −0.736 | +0.041 | 0/0/85 · 3/0/85 · 0/0/85 | 63.8 % / 8 |
+| t48a | F | −1.627 / −0.794 | +0.048 | 0/0/1 · 8/0/1 · 0/0/1 | 63.8 % / 11 |
+| t48e | A | −1.496 / −0.663 | +0.054 | 0/0/82 · 10/0/82 · 0/0/82 | 63.9 % / 7 |
+| t48g | A M | −0.801 / +0.032 | +0.046 | 0/0/83 · 9/0/83 · 0/0/83 | 63.9 % / 8 |
+| t48f | A F | −0.716 / +0.117 | +0.015 | 0/0/2 · 3/0/2 · 0/0/2 | 63.9 % / 11 |
+| t48i | A F L5 | −0.673 / +0.160 | +0.055 | 0/0/3 · 9/0/3 · 0/0/3 | 64.0 % / 12 |
+| t48m | A F L5 M | −0.597 / +0.236 | +0.046 | 0/0/5 · 7/0/5 · 0/0/5 | 64.1 % / 11 |
+| t48s | A F L5 M d44 | −0.439 / +0.394 | +0.063 | 0/0/2 · 3/0/2 · 0/0/2 | 63.8 % / 9 |
+| t48r | A F L8 M | −0.325 / +0.508 | +0.050 | 0/0/5 · 9/0/5 · 0/0/5 | 64.1 % / 12 |
+| t48v | A F L12 M | −0.275 / +0.558 | +0.014 | 0/0/1 · 4/0/1 · 0/0/1 | 64.2 % / 12 |
+| t48u | A F L12 M d44 | −0.112 / +0.721 | **−0.016** (fails) | 0/0/2 · 3/0/2 · 0/0/2 | 63.8 % / 9 |
+| t48z | t48u, h 0.15 | −1.311 / −0.478 | +0.059 | 0/0/2 · 6/0/2 · 0/0/2 | 64.1 % / 10 |
+| t48ad | A F L8 M C | −0.289 / +0.544 | +0.060 | 0/1/1 · 1/1/1 · 0/1/1 | 64.0 % / 8 |
+| t48ag | A F L8 M C h0.12 | **+0.054 / +0.887** | +0.079 | 0/0/1 · 2/0/1 · 0/0/1 | 64.0 % / 8 |
+| t48af | A F L8 M C d44 | +0.243 / +1.076 | +0.041 | 2/0/3 · 4/0/3 · 0/0/3 | 63.7 % / 10 |
+| t48aj | t48ag + `--final-design-repair` | −0.021 / +0.812 | +0.060 | 0/0/2 · 3/0/2 · 0/0/2 | 64.0 % / 10 |
+| t48ak | t48ag + `--sram-pin-buffers`, PnR fanout 6 | −0.882 / −0.049 | +0.043 | 0/0/2 · 0/0/2 · 0/0/2 | 66.9 % / 35 |
+| t48al | t48ak, d44 | −0.748 / +0.085 | +0.062 | 0/1/2 · 0/1/2 · 0/1/2 | 66.4 % / 48 |
+| t48aq | A F L5 M C h0.12, pin buffers (A_ADDR drivers upsized), GRT cap/antenna margins 30 % | −0.552 / +0.281 | +0.060 | 0/0/3 · 3/0/3 · 0/0/3 | 63.7 % / 19 |
+| t48ao | t48aq with L8 | +0.077 / +0.910 | **−0.003** (fails) | 0/0/1 · 0/0/1 · 0/0/1 | 63.7 % / 20 |
+
+The remaining exceptions are of two kinds. Slew: always pins of bank 1
+(A_ADDR[5], A_ADDR[0], A_DIN[*]), driven by an `a21oi_1` or a `buf_1` fanout
+buffer; global routing estimated them inside the 0.595 ns limit with margin,
+extraction gave up to 0.8 ns. `--sram-pin-buffers` cleared them (t48ak/al:
+0 slew violations at every corner) at the cost of congestion when combined
+with the PnR fanout limit of 6. Fanout: 1–3 nets per run end with 9–13
+loads, every one because detailed routing's antenna repair (after all resizer
+steps) attached 6–11 antenna diodes to a net the resizer had left at ≤ 8 (or
+≤ 6). Shorter repair wires (`GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH` 250) to avoid
+the antenna violations cost 0.5–1 ns of slow setup and 360–400 hold buffers
+(t48am/an, stopped after global routing).
+
 
 Numbers are quick global-routing runs (5 iterations) on placed databases.
 Metal3 is the only horizontal layer.
