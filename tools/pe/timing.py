@@ -22,7 +22,7 @@ Annotations live in comments, so the assembled words do not change:
     ; @assume clkdiv=D fifo_stall=N line_stall=N core=C
     ; @deadline NAME from=P[.enter|.done|.cond] to=P[.enter|.done] [max=N] [min=N]
     ;     [unit=clk|tick] [adjust=A[..B]] [avoid=P,P] [stall=P:LO..HI,...]
-    ;     [after=P[.enter|.done]:LO..HI] ["why"]
+    ;     [after=P[.enter|.done]:LO..HI] [reach=required|conditional] ["why"]
 
 Times are in ticks inside (one tick = one divider period), reported in ticks
 and clocks. A point's `enter` is the tick of the instruction's first attempt,
@@ -127,6 +127,7 @@ class Deadline:
     stalls: list = field(default_factory=list)   # [(point, lo, hi)]: @stall for this deadline only
     why: str = ""
     line: int = 0
+    reach: str = "required"   # required: a reachable path that never gets to `to` fails the deadline
 
 
 @dataclass
@@ -269,7 +270,7 @@ def _parse_one(ann, kw, rest, lineno, instr_at, pending):
             raise TimingError(f"line {lineno}: @deadline NAME from=P to=P ...")
         d = Deadline(bare[0], _event(kv["from"], "done"), _event(kv["to"], "done"), line=lineno)
         d.why = " ".join(bare[1:])
-        unknown = set(kv) - {"from", "to", "max", "min", "unit", "adjust", "avoid", "after", "stall"}
+        unknown = set(kv) - {"from", "to", "max", "min", "unit", "adjust", "avoid", "after", "stall", "reach"}
         if unknown:
             raise TimingError(f"line {lineno}: unknown deadline option(s) {sorted(unknown)}")
         if "max" in kv:
@@ -283,6 +284,10 @@ def _parse_one(ann, kw, rest, lineno, instr_at, pending):
             d.adjust = _range(kv["adjust"].lstrip("+"))
         if "avoid" in kv:
             d.avoid = [a for a in kv["avoid"].split(",") if a]
+        if "reach" in kv:
+            d.reach = kv["reach"]
+            if d.reach not in ("required", "conditional"):
+                raise TimingError(f"line {lineno}: reach is required or conditional")
         if "stall" in kv:
             for item in kv["stall"].split(","):
                 p, _, rng = item.rpartition(":")
@@ -323,6 +328,7 @@ class Result:
     best: list = field(default_factory=list)
     assumptions: list = field(default_factory=list)
     escapes: list = field(default_factory=list)
+    nonreaching: list = field(default_factory=list)   # reachable paths that never get to `to`
     errors: list = field(default_factory=list)
     checker: object = None
 
@@ -360,6 +366,13 @@ class Result:
         if d.max is not None:
             req.append(f"<= {f(d.max)}")
         out.append(f"  required: {' and '.join(req) or 'nothing'} {d.unit}  ->  {self.status}")
+        if self.nonreaching:
+            if d.reach == "conditional":
+                out.append(f"  CONDITIONAL: bounds only paths that reach {d.to.point}; these never do:")
+            else:
+                out.append(f"  some reachable paths never reach {d.to.point} (fails; use avoid= or reach=conditional "
+                           "if that is intended):")
+            out += [f"    {e}" for e in self.nonreaching]
         if self.hi == INF and self.why_unbounded:
             out.append(f"  UNBOUNDED because {self.why_unbounded}")
         if self.worst:
@@ -909,8 +922,10 @@ class Checker:
             r.status = "NO PATH"
         elif (d.max is not None and hi > d.max) or (d.min is not None and lo < d.min):
             r.status = "FAIL"
+        elif r.nonreaching and d.reach == "required":
+            r.status = "FAIL (MAY NEVER REACH)"
         else:
-            r.status = "PASS"
+            r.status = "PASS (conditional)" if r.nonreaching else "PASS"
         if r.status == "FAIL" and hi == INF:
             r.status = "FAIL (UNBOUNDED)"
         return r
@@ -949,6 +964,10 @@ class Checker:
                         edges[key] = []
                         if d.to.kind == "done":
                             outs = self.step(npc, st)
+                            halts = [o.sink for o in outs if o.sink and o.sink.startswith("HALT")]
+                            if halts:
+                                raise TimingError(f"{d.to.point}.done: {halts[0]} never completes "
+                                                  f"(use {d.to.point}.enter)")
                             wlo = min(o.wlo for o in outs)
                             whi = max(o.whi for o in outs)
                             why = next((o.why for o in outs if o.whi == INF), None)
@@ -994,7 +1013,11 @@ class Checker:
             dS = self.delay(s0)
             if not cond and skind == "enter" and d.to.kind == "done" and s0 in B:
                 # the interval ends when this same instruction completes: its stall
-                for o in self.step(s0, self.entry_state[s0]):
+                outs = self.step(s0, self.entry_state[s0])
+                halts = [o.sink for o in outs if o.sink and o.sink.startswith("HALT")]
+                if halts:
+                    raise TimingError(f"{d.to.point}.done: {halts[0]} never completes (use {d.to.point}.enter)")
+                for o in outs:
                     notes_all.update(o.notes)
                     edges[START].append((END, "add", o.wlo, o.whi, s0, o.why))
                 continue
@@ -1047,6 +1070,10 @@ class Checker:
                     if v not in live and isinstance(v[0], int):
                         escapes.add(f"never reaches {d.to.point} from {self.where(v[0])}")
         r.escapes = sorted(escapes)
+        # Paths that stop for good without reaching `to`: an endless loop, or a HALT.
+        # Explicit exclusions (avoid=, @loop bounds, the cond-mode early arrival) are not counted.
+        r.nonreaching = sorted(e for e in escapes
+                               if e.startswith("never reaches") or e.startswith("HALT"))
         if START not in live:
             return
         lo_win, hi_win = d.window if cond else (0, 0)

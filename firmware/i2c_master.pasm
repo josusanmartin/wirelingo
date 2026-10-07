@@ -21,11 +21,11 @@
 ; stretching (stall=scl_wait:0, which needs CLKDIV >= 3) it is 4 ticks inside a
 ; byte and 6 for the START (its `ldi r3` sits between the release and the WAIT).
 ; @assume clkdiv=60                               ; 100 kHz at 48 MHz: 1 tick = 1.25 us
-; @deadline scl_high from=scl_hi to=scl_lo avoid=top min=4 max=2006 unit=tick "high, stretching up to the timeout"
-; @deadline scl_high_ns from=scl_hi to=scl_lo avoid=top stall=scl_wait:0 min=4 max=6 unit=tick "high, no stretching"
-; @deadline scl_low from=scl_lo to=scl_hi avoid=top min=4 max=8 unit=tick "low phase inside a command"
-; @deadline t_high from=scl_hi to=scl_lo avoid=top min=192 "100 kHz: tHIGH >= 4.0 us (192 clk)"
-; @deadline t_low from=scl_lo to=scl_hi avoid=top min=226 "100 kHz: tLOW >= 4.7 us (226 clk)"
+; @deadline scl_high from=scl_hi to=scl_lo avoid=top min=4 max=2006 unit=tick reach=conditional "high, stretching up to the timeout"
+; @deadline scl_high_ns from=scl_hi to=scl_lo avoid=top stall=scl_wait:0 min=4 max=6 unit=tick reach=conditional "high, no stretching"
+; @deadline scl_low from=scl_lo to=scl_hi avoid=top min=4 max=8 unit=tick reach=conditional "low phase inside a command"
+; @deadline t_high from=scl_hi to=scl_lo avoid=top min=192 reach=conditional "100 kHz: tHIGH >= 4.0 us (192 clk)"
+; @deadline t_low from=scl_lo to=scl_hi avoid=top min=226 reach=conditional "100 kHz: tLOW >= 4.7 us (226 clk)"
 .program i2c_master
 .shift_out left
 .shift_in left

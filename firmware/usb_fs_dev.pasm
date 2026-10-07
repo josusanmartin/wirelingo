@@ -45,11 +45,11 @@
 ; stall=...:0: the line transmitter is idle when a response starts, and an IN finds the
 ; staged packet in the TX FIFO (the host sets F_STAGED after pushing it).
 ; @deadline ack_ta from=ack_wait.cond after=dend:2..6 to=ack_out avoid=data_bad stall=ack_out:0 min=8 max=26 adjust=3..4 "DATA0/1 -> ACK"
-; @deadline in_nak_ta from=resp_wait.cond after=tok_end:2..6 to=resp_out avoid=idle,got_setup,send_data stall=resp_out:0 min=8 max=26 adjust=3..4 "IN -> NAK"
-; @deadline in_data_ta from=data_wait.cond after=tok_end:2..6 to=data_out avoid=idle,got_setup,send16,echo stall=staged_pull:0,data_out:0 min=8 max=26 adjust=3..4 "IN -> staged DATA (F_STAGED: the packet is in the TX FIFO)"
+; @deadline in_nak_ta from=resp_wait.cond after=tok_end:2..6 to=resp_out avoid=idle,got_setup,send_data stall=resp_out:0 min=8 max=26 adjust=3..4 reach=conditional "IN -> NAK"
+; @deadline in_data_ta from=data_wait.cond after=tok_end:2..6 to=data_out avoid=idle,got_setup,send16,echo stall=staged_pull:0,data_out:0 min=8 max=26 adjust=3..4 reach=conditional "IN -> staged DATA (F_STAGED: the packet is in the TX FIFO)"
 ; @deadline out_nak_ta from=resp_wait.cond after=nak_send:2..6 to=resp_out stall=resp_out:0 min=8 max=26 adjust=3..4 "OUT DATA without room -> NAK"
-; @deadline rx_bit from=rx_bit to=rx_bit.enter avoid=dend max=4 "DATA receive loop keeps up: a bit every 4 clocks"
-; @deadline tx_byte from=data_out to=data_out.enter avoid=echo max=32 "DATA transmit loop: the next byte within a byte time"
+; @deadline rx_bit from=rx_bit to=rx_bit.enter avoid=dend max=4 reach=conditional "DATA receive loop keeps up: a bit every 4 clocks"
+; @deadline tx_byte from=data_out to=data_out.enter avoid=echo max=32 reach=conditional "DATA transmit loop: the next byte within a byte time"
 ; Registers: r0 = bit/byte count, r1 = token tail, r2 = scratch, r3 = SYNC+PID.
 .program usb_fs_dev
 .define F_UNDERRUN F_IN            ; flags 0 and 1 are unused by the one-core firmware

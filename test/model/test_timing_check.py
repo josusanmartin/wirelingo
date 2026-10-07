@@ -82,7 +82,10 @@ def test_firmware_deadlines_pass(name):
     for r in results:
         print(r.report())
     assert not chk.errors
-    assert results and all(r.status == "PASS" for r in results), [(r.deadline.name, r.status) for r in results]
+    # A deadline may pass conditionally only where it says so (reach=conditional):
+    # then the paths it excludes are listed in the report.
+    assert results and all(r.status == ("PASS (conditional)" if r.deadline.reach == "conditional" else "PASS")
+                           for r in results), [(r.deadline.name, r.status) for r in results]
 
 
 # ---------------------------------------------------------------- UART TX
@@ -294,7 +297,8 @@ def test_usb_enum_deadlines():
         print(r.report())
     st = {r.deadline.name: r for r in results}
     assert not chk.errors
-    assert all(st[n].status == "PASS" for n in ("in_ta", "data_ta", "rx_bit"))
+    assert st["data_ta"].status == "PASS"
+    assert all(st[n].status == "PASS (conditional)" for n in ("in_ta", "rx_bit"))
     assert st["in_ta_any"].status == "FAIL" and st["in_ta_any"].total()[1] == 30
 
 
@@ -595,3 +599,28 @@ def test_random_programs_sound():
     print(f"\nrandom programs: {checked} deadlines with a path ({bounded} with a finite max), "
           f"{nmeas} measured intervals, all inside the bounds")
     assert checked > 50 and bounded > 20 and nmeas > 1000
+
+
+# ---------------------------------------------------------------- contract regressions (Codex review)
+def test_halt_done_is_not_a_completion():
+    """HALT never completes, so `to=P.done` on a HALT is an error; P.enter is fine."""
+    src = "; @deadline d from=start to=end max=2\nstart: nop\nend: halt\n"
+    _, (r,) = timing.check_source(src)
+    assert r.status == "ERROR" and "never completes" in r.errors[0]
+    _, (r,) = timing.check_source(src.replace("to=end", "to=end.enter"))
+    assert r.status == "PASS" and (r.lo, r.hi) == (1, 1)
+
+
+def test_nonreaching_path_fails_unless_declared():
+    """A reachable path that never gets to the endpoint (a forever loop here)
+    fails a deadline by default; reach=conditional passes it but lists the path."""
+    src = ("; @deadline d from=start to=end max=3\nstart: nop\njmp pin 0, lost\n"
+           "end: nop\nhalt\nlost: jmp lost\n")
+    _, (r,) = timing.check_source(src)
+    assert r.status == "FAIL (MAY NEVER REACH)" and r.nonreaching
+    assert "never reach" in r.report()                  # shown without -v
+    _, (r,) = timing.check_source(src.replace("max=3", "max=3 reach=conditional"))
+    assert r.status == "PASS (conditional)" and "CONDITIONAL" in r.report()
+    src2 = src.replace("jmp pin 0, lost", "jmp pin 0, stop").replace("lost: jmp lost", "stop: halt")
+    _, (r,) = timing.check_source(src2)
+    assert r.status == "FAIL (MAY NEVER REACH)"         # a HALT on the way counts too

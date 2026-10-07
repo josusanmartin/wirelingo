@@ -164,6 +164,28 @@ A **sidecar file** holds the same items, one per line without the leading
 `;`, for firmware that should not be edited: `firmware/usb_enum.timing` has
 `@point in_wait at=got_in` and its deadlines.
 
+### Paths that never arrive, and HALT
+
+A deadline is a promise about every occurrence of its start: each one must be
+followed by the end within the bound. So by default a reachable path that
+never gets to the end (an endless loop, or a HALT on the way) fails the
+deadline as `FAIL (MAY NEVER REACH)`, and the report lists those paths
+without `-v`. Where that exclusion is intended (a phase deadline that a
+timeout or an end of packet may leave, a response deadline for one token type
+that other tokens never reach), say so: `avoid=P,...` names the exits, or
+`reach=conditional` passes the deadline as `PASS (conditional)` and still
+lists every excluded path. The firmware deadlines that use it are the I2C
+phase lengths (the clock-stretch timeouts leave them), usb_fs_dev's IN
+responses (other tokens take other paths) and its bit/byte loops (the end of
+the packet leaves them), and usb_enum's `in_ta` and bit loop.
+
+`P.done` on a HALT is an error: HALT never completes, so there is no such
+moment. Use `P.enter`.
+
+(Both rules came from a review by Codex on 2026-10-07: before them, a HALT's
+"completion" counted as a finite end and a branch into a forever-loop was
+silently left out of a PASS.)
+
 ## 3. Assumptions
 
 **Always assumed** (not checkable in an annotation; the soundness runs
