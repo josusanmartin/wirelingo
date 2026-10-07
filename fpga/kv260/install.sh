@@ -2,11 +2,14 @@
 # Install the protoemu app on the Kria, load it, and copy the host software.
 #
 #   fpga/kv260/install.sh            # after build.sh; KRIA (default ubuntu@kria.[tailnet domain redacted])
+#   APP=protoemu48 fpga/kv260/install.sh   # a second app (e.g. the 48 MHz build), the first one kept
 #
-# On the Kria: /lib/firmware/xilinx/protoemu/{protoemu.bit.bin,protoemu.dtbo,shell.json}
-# (dtbo compiled there from protoemu.dtsi), `xmutil unloadapp; xmutil loadapp
-# protoemu`, and ~/protoemu/{tools,firmware,fpga/kv260/host} for bringup_kria.py,
-# with host/expected_build.json = this checkout's RTL revision (build_id.py info).
+# On the Kria: /lib/firmware/xilinx/$APP/{$APP.bit.bin,$APP.dtbo,shell.json}
+# (dtbo compiled there from protoemu.dtsi, firmware-name = $APP.bit.bin),
+# `xmutil unloadapp; xmutil loadapp $APP` (LOAD=0 skips it), and
+# ~/$APP/{tools,firmware,fpga/kv260/host} for bringup_kria.py, with
+# host/expected_build.json = this checkout's RTL revision (build_id.py info).
+# APP defaults to protoemu.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
@@ -23,16 +26,25 @@ print("bitstream RTL revision", built.get("rtl_rev", "unknown")[:12], "(dirty)" 
 if built.get("rtl_rev") != want["rtl_rev"] or want["dirty"]:
     print("WARNING: out/protoemu.bit.bin was not built from this checkout's RTL; bringup_kria.py will fail its build step")
 PY
-ssh "$kria" "mkdir -p protoemu-app protoemu/fpga/kv260"
-rsync -a "$here/out/protoemu.bit.bin" "$here/protoemu.dtsi" "$here/shell.json" "$kria:protoemu-app/"
-rsync -a --delete --exclude __pycache__ "$root/tools" "$root/firmware" "$kria:protoemu/"
-rsync -a --delete --exclude __pycache__ "$here/host" "$kria:protoemu/fpga/kv260/"
-printf '%s\n' "$want" | ssh "$kria" "cat > protoemu/fpga/kv260/host/expected_build.json"
-ssh "$kria" 'set -e; cd protoemu-app
-  dtc -q -@ -I dts -O dtb -o protoemu.dtbo protoemu.dtsi
-  sudo mkdir -p /lib/firmware/xilinx/protoemu
-  sudo cp protoemu.bit.bin protoemu.dtbo shell.json /lib/firmware/xilinx/protoemu/
-  sudo xmutil unloadapp || true
-  sudo xmutil loadapp protoemu
-  sudo xmutil listapps | grep -E "protoemu|Accelerator"'
-echo "loaded; test with: ssh $kria sudo python3 protoemu/fpga/kv260/host/bringup_kria.py"
+app=${APP:-protoemu}
+case "$app" in *[!A-Za-z0-9_-]*|"") echo "APP must be a plain name" >&2; exit 1;; esac
+ssh "$kria" "mkdir -p $app-app $app/fpga/kv260"
+rsync -a "$here/out/protoemu.bit.bin" "$kria:$app-app/$app.bit.bin"
+sed "s/firmware-name = \"protoemu.bit.bin\"/firmware-name = \"$app.bit.bin\"/" "$here/protoemu.dtsi" | ssh "$kria" "cat > $app-app/$app.dtsi"
+rsync -a "$here/shell.json" "$kria:$app-app/"
+rsync -a --delete --exclude __pycache__ "$root/tools" "$root/firmware" "$kria:$app/"
+rsync -a --delete --exclude __pycache__ "$here/host" "$kria:$app/fpga/kv260/"
+printf '%s\n' "$want" | ssh "$kria" "cat > $app/fpga/kv260/host/expected_build.json"
+ssh "$kria" "set -e; cd $app-app
+  grep -q 'firmware-name = \"$app.bit.bin\"' $app.dtsi
+  dtc -q -@ -I dts -O dtb -o $app.dtbo $app.dtsi
+  sudo mkdir -p /lib/firmware/xilinx/$app
+  sudo cp $app.bit.bin $app.dtbo shell.json /lib/firmware/xilinx/$app/"
+if [ "${LOAD:-1}" = 1 ]; then
+  ssh "$kria" "set -e; sudo xmutil unloadapp || true
+    sudo xmutil loadapp $app
+    sudo xmutil listapps | grep -E \"$app|Accelerator\""
+  echo "loaded; test with: ssh $kria sudo python3 $app/fpga/kv260/host/bringup_kria.py"
+else
+  echo "installed $app (not loaded): ssh $kria 'sudo xmutil unloadapp; sudo xmutil loadapp $app'"
+fi
