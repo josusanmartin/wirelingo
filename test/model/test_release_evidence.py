@@ -117,6 +117,7 @@ def precheck_output(wt):
     report = out / "tt/precheck/reports/results.xml"
     report.parent.mkdir(parents=True)
     report.write_text(xml(("drc", "pin_check")))
+    (out / "tt/precheck/precheck.py").write_text("fixture support tool\n")
     (out / "status.json").write_text('{"returncode":0}')
     (out / "precheck.log").write_text(f"INFO: Precheck passed for {copy}!\n")
     return out
@@ -134,13 +135,13 @@ def test_complete_release_and_relocation(tmp_path):
     args = complete_receipts(wt)
     assert module("release_check").main(args) == 0
     # Relative artifact hashes remain useful when the whole evidence is archived.
-    moved = tmp_path / "archive"
+    moved = tmp_path / "reports/archive"
     shutil.copytree(wt, moved)
     relocated = [s.replace(str(wt), str(moved)) for s in args]
     assert module("release_check").main(relocated) == 0
 
 
-@pytest.mark.parametrize("fault", ["missing-suite", "missing-case", "duplicate-case", "wrong-name", "failed", "skipped", "malformed", "wrong-netlist", "changed-source", "changed-candidate"])
+@pytest.mark.parametrize("fault", ["missing-suite", "missing-case", "duplicate-case", "wrong-name", "unlisted-skip", "failed", "skipped", "malformed", "wrong-netlist", "changed-source", "changed-candidate"])
 def test_gl_receipt_rejects_incomplete_or_changed_run(tmp_path, fault):
     wt = candidate(tmp_path)
     out = gl_output(wt)
@@ -153,6 +154,8 @@ def test_gl_receipt_rejects_incomplete_or_changed_run(tmp_path, fault):
         path.write_text(xml(("test_a", "test_a")))
     elif fault == "wrong-name":
         path.write_text(xml(("test_a", "something_else")))
+    elif fault == "unlisted-skip":
+        path.write_text(xml().replace('</testsuite>', '<testcase name="unlisted"><skipped/></testcase></testsuite>'))
     elif fault in ("failed", "skipped"):
         tag = "failure" if fault == "failed" else "skipped"
         path.write_text(xml().replace('/>', f'><{tag}/></testcase>', 1))
@@ -269,6 +272,54 @@ def test_sdf_coverage_does_not_count_slow_or_report_only_cases(tmp_path):
     for case in plan:
         case["expect"] = "report"
     assert len(rel.sdf_coverage([{"plan": plan}], 50, "v2")) >= 4
+
+
+@pytest.mark.parametrize("fault", ["clock-report", "40mhz-run", "nan", "missing-clock"])
+def test_fresh_receipts_cannot_hide_invalid_timing_constraint(tmp_path, fault):
+    wt = candidate(tmp_path)
+    report = wt / "runs/wokwi/99-openroad-stapostpnr/nom_slow_1p08V_125C/clock.rpt"
+    if fault == "clock-report":
+        report.write_text("Clock: clk\nPeriod: 25.000000\n")
+    elif fault == "40mhz-run":
+        (wt / "runs/wokwi/resolved.json").write_text('{"CLOCK_PERIOD":25}')
+        for p in (wt / "runs/wokwi").glob("*-openroad-stapostpnr/*/clock.rpt"):
+            p.write_text("Clock: clk\nPeriod: 25.000000\n")
+    elif fault == "nan":
+        p = wt / "runs/wokwi/final/metrics.json"
+        metrics = json.loads(p.read_text())
+        metrics["timing__setup__ws__corner:nom_slow_1p08V_125C"] = float("nan")
+        p.write_text(json.dumps(metrics))
+    else:
+        report.write_text("Clock: sck\nPeriod: 20.000000\n")
+    assert module("release_check").main(complete_receipts(wt)) == 1
+
+
+def test_validator_hardware_change_during_sdf_is_rejected(tmp_path):
+    wt = candidate(tmp_path)
+    out = sdf_output(wt)
+    (wt.parent / "validator/src/project.v").write_text("changed validation hardware profile")
+    with pytest.raises(ValueError, match="validation inputs changed"):
+        module("release_receipts").finish(out)
+
+
+@pytest.mark.parametrize("kind,value", [("sdf", False), ("sdf", "0"), ("precheck", False), ("precheck", "0")])
+def test_receipt_requires_numeric_process_status(tmp_path, kind, value):
+    wt = candidate(tmp_path)
+    out = sdf_output(wt) if kind == "sdf" else precheck_output(wt)
+    status = out / ("typ/status.json" if kind == "sdf" else "status.json")
+    status.write_text(json.dumps({"returncode": value}))
+    with pytest.raises(ValueError):
+        module("release_receipts").finish(out)
+
+
+@pytest.mark.parametrize("attributes", ['errors="1"', 'tests="3"'])
+def test_incomplete_xml_suite_is_not_a_pass(tmp_path, attributes):
+    wt = candidate(tmp_path)
+    out = gl_output(wt)
+    p = out / "test.xml"
+    p.write_text(p.read_text().replace('<testsuite>', f'<testsuite {attributes}>'))
+    with pytest.raises(ValueError):
+        module("release_receipts").finish(out)
 
 
 @pytest.mark.parametrize("fault", ["partial-gl", "unbound-logs", "wrong-period", "nan-slack"])

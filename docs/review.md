@@ -44,10 +44,12 @@ tests now cover each fix. Finding codes are the review's.
 
 ## Review recommendations not adopted
 
-* A hash-bound "release gate" requiring setup slack at the slow corner and a
-  hand-assembled evidence file. Tiny Tapeout signs off at the typical corner;
-  `flow/signoff.py` checks DRC/LVS/antenna, typical setup, hold at every
-  corner and the SRAM timing view per corner, and reports the slow corner.
+* The original hand-assembled release evidence file was not adopted.
+  `flow/signoff.py` remains the minimum physical check. A separate
+  [release check](release-evidence.md) now uses receipts generated automatically
+  by the verification runners, including setup at the claimed clock and
+  explicit electrical limits. It preserves the distinction between minimum
+  acceptance and the stronger release claim.
 * Real latch arcs during placement and routing. The FIFO latches receive data
   while open, and STA's time borrowing through them made each repair step
   take hours. The PnR SDC (`src/protoemu_pnr.sdc`) times them like flops; the

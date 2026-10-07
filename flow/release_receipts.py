@@ -73,7 +73,7 @@ def hardware_files(root):
             if p.is_file() and p.suffix in (".v", ".sv")}
 
 
-def validation_files(root):
+def validation_files(root, *, include_hardware=False):
     root = Path(root)
     files = []
     for directory, suffixes in (("test", (".py", ".v", ".sv")),
@@ -82,6 +82,8 @@ def validation_files(root):
         files.extend(p for p in paths if p.is_file() and p.suffix in suffixes)
     if (root / "test/Makefile").exists():
         files.append(root / "test/Makefile")
+    if include_hardware:
+        files += [p for p in (root / "src").rglob("*") if p.is_file() and p.suffix in (".v", ".sv")]
     return {str(p.relative_to(root)): digest(p) for p in sorted(files)}
 
 
@@ -102,15 +104,20 @@ def test_names(path):
     return names
 
 
-def check_xml(path, names=None, expect="pass"):
+def check_xml(path, names=None, expect="pass", *, allow_filtered=False):
     root = ET.parse(path).getroot()
+    for suite in root.iter("testsuite"):
+        if suite.get("errors") is not None and suite.get("errors") != "0":
+            raise ValueError(f"{path}: suite reports infrastructure errors")
+        if suite.get("tests") is not None and int(suite.get("tests")) != len(list(suite.iter("testcase"))):
+            raise ValueError(f"{path}: suite count disagrees with its test cases")
     cases = list(root.iter("testcase"))
     if names is not None:
         selected = [c for c in cases if c.get("name") in names]
         if Counter(c.get("name") for c in selected) != Counter(names):
             raise ValueError(f"{path}: expected each test exactly once: {names}")
         # Cocotb may include filtered tests as skips, never as extra executions.
-        if any(c.get("name") not in names and c.find("skipped") is None for c in cases):
+        if any(c.get("name") not in names and (not allow_filtered or c.find("skipped") is None) for c in cases):
             raise ValueError(f"{path}: unexpected executed test")
         cases = selected
     if not cases or any(c.find("error") is not None or c.find("skipped") is not None for c in cases):
@@ -147,7 +154,11 @@ def begin(worktree, out, kind, validation_root, plan=None):
             raise ValueError("duplicate SDF output directory")
     out.mkdir(parents=True, exist_ok=True)
     data = dict(schema=SCHEMA, kind=kind, worktree=str(wt), validation_root=str(root), output_directory=str(out),
-                candidate=candidate_files(wt), validation=validation_files(root), plan=plan)
+                candidate=candidate_files(wt), validation=validation_files(root, include_hardware=kind == "sdf"), plan=plan)
+    if kind == "sdf":
+        hardware = lambda files: {p: h for p, h in files.items() if p.startswith("src/") and Path(p).suffix in (".v", ".sv")}
+        if hardware(data["candidate"]) != hardware(data["validation"]):
+            raise ValueError("SDF hardware inputs changed while being captured")
     write_new(out / "inputs.json", data)
     return data
 
@@ -181,6 +192,8 @@ def outputs(out, data):
         for case in plan:
             d = safe_artifact(out, case["directory"])
             rc = read_json(d / "status.json")["returncode"]
+            if type(rc) is not int:
+                raise ValueError(f"{d}: invalid simulator exit status")
             text = (d / "sim.log").read_text(errors="replace")
             # Match the exact annotation path emitted by the testbench.
             annotation = Path(data["output_directory"]) / case["directory"] / "annotate.sdf"
@@ -190,10 +203,12 @@ def outputs(out, data):
                 if re.search(r"SDF ERROR|VPI error|Could not insert|Cannot find", line) and not re.search(r"annotate.sdf:(9|11): Chosen value not defined", line):
                     raise ValueError(f"{d}: annotation error: {line}")
             expectation = case["expect"]
-            count, failed = check_xml(d / "results.xml", case["tests"], expectation)
+            count, failed = check_xml(d / "results.xml", case["tests"], expectation, allow_filtered=True)
             if expectation == "pass" and rc != 0:
                 raise ValueError(f"{d}: simulator command failed ({rc})")
             if expectation == "fail":
+                if rc not in (1, 2):
+                    raise ValueError(f"{d}: negative control has unexpected process status {rc}")
                 failed_cases = [c for c in ET.parse(d / "results.xml").getroot().iter("testcase")
                                 if c.get("name") in case["tests"] and c.find("failure") is not None]
                 for c in failed_cases:
@@ -208,7 +223,8 @@ def outputs(out, data):
                 raise ValueError(f"{d}: simulator infrastructure failure")
             files += [d / p for p in ("status.json", "results.xml", "sim.log", "sdf_prep.log", "netlist.v", "annotate.sdf")]
     elif kind == "precheck":
-        if read_json(out / "status.json")["returncode"] != 0:
+        rc = read_json(out / "status.json")["returncode"]
+        if type(rc) is not int or rc != 0:
             raise ValueError("precheck process failed")
         check_xml(out / "tt/precheck/reports/results.xml")
         gds = one((p for p in data["candidate"] if p.endswith(".gds")), "receipt GDS")
@@ -221,7 +237,8 @@ def outputs(out, data):
             raise ValueError("precheck did not report this GDS passed")
         files = [out / "status.json", out / "precheck.log", out / "tt/precheck/reports/results.xml", copy]
         files += [p for p in (out / "design").rglob("*") if p.is_file() and p != copy]
-        files += [p for p in (out / "tt").rglob("*") if p.is_file() and "reports" not in p.parts and "__pycache__" not in p.parts]
+        files += [p for p in (out / "tt").rglob("*") if p.is_file()
+                  and not {"reports", "__pycache__"}.intersection(p.relative_to(out / "tt").parts)]
     else:
         raise ValueError(f"unknown receipt kind {kind}")
     return {str(p.relative_to(out)): digest(p) for p in files}
@@ -232,7 +249,7 @@ def finish(out):
     data = read_json(out / "inputs.json")
     if candidate_files(data["worktree"]) != data["candidate"]:
         raise ValueError("candidate changed during verification")
-    if validation_files(data["validation_root"]) != data["validation"]:
+    if validation_files(data["validation_root"], include_hardware=data["kind"] == "sdf") != data["validation"]:
         raise ValueError("validation inputs changed during verification")
     data["artifacts"] = outputs(out, data)
     data["status"] = "complete"
