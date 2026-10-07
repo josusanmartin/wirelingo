@@ -91,6 +91,7 @@ itself, excluding Linux's buffer fill and register accesses.
 
     fpga/kv260/build.sh              # stage, rsync to runner1, Vivado batch, bootgen; fetch to out/
     fpga/kv260/install.sh            # copy to the Kria, dtc the overlay, xmutil loadapp protoemu
+    fpga/kv260/build.sh 25 && APP=protoemu48 fpga/kv260/install.sh   # the 48 MHz build (USB) as a second app
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 protoemu/fpga/kv260/host/bringup_kria.py
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 protoemu/fpga/kv260/host/spim_test.py
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 protoemu/fpga/kv260/host/v2_demo.py call la spi i2c --save la.json
@@ -392,20 +393,8 @@ top-row pin from uo0 and checks that only its partner follows (PMODIN),
 runs UART at 115200 from core 0 on uo0 (J2-1) to core 1 on ui0 (J2-7), and
 pulls uio2 (open drain, J2-2) low and reads it on uio3 (J2-8).
 
-**(ii) USB low-speed device on the Kria's own USB-A port.** Rebuild at 48 MHz
-(`build.sh 25`: the USB firmware assumes 48 MHz; at 50 MHz it would signal
-4 % fast, outside low speed's 1.5 % tolerance). Cut a USB-A cable or use a
-USB-A breakout:
-* J2-1 (pmod0 = uio0) -> 27 ohm -> D+ (green)
-* J2-2 (pmod1 = uio1) -> 27 ohm -> D- (white)
-* 1.5 kohm from D- (connector side of its resistor) to 3.3 V (J2-6): marks a low-speed device
-* J2-5 (GND) -> GND (black); leave VBUS (red) unconnected.
-
-Software: `spim.pmod({0: 0, 1: 1})`, then `tools/micropython/bringup.usb_setup(pe)`
-with `pe = board.protoemu()` (preferably with `pe.transport = spim` on the
-fabric path) and call `sw.service()` in a loop; watch `dmesg` on the Kria.
-Caveat: the FPGA's edges are a few ns, far faster than low speed's
-75-300 ns rise/fall specification; short wires help.
+**(ii) USB device on the Kria's own USB-A port**: the autonomous USB
+firmware with three connections; see the next section.
 
 **(iii) I2C device** (3.3 V breakout, e.g. an EEPROM or sensor):
 * J2-1 (pmod0 = uio0) = SDA, J2-2 (pmod1 = uio1) = SCL
@@ -416,7 +405,268 @@ Software: `spim.pmod({0: 0, 1: 1})`, `OD_MASK` = 0x03 and `PIN_OUT` bits 0-1 = 1
 (release the lines) before starting `firmware/i2c_master.pasm` (`I2C_MASTER`
 in `tools/micropython/protoemu_fw.py`, 100 kHz at 48 MHz; recompute CLKDIV for 50 MHz).
 
-(ii) and (iii) have not been wired or run.
+(iii) has not been wired or run.
+
+## USB device on the Kria's own USB port (`host/usb_demo.py`)
+
+The chip's autonomous USB firmware (`firmware/usb_enum.pasm`,
+docs/usb-enumeration.md: one core and the line unit answer every control
+request themselves) runs in the FPGA and is wired through PMOD J2 to one of
+the Kria's own USB-A ports. After the host software has loaded the firmware
+and started the core, nothing touches the chip's host port: the Kria's Linux
+USB stack (xHCI, through the carrier's USB5744 hub) enumerates and configures
+the device, and `lsusb`/`dmesg` show it. Low speed (1.5 Mbit/s) first. The
+build must run protoemu at exactly 48 MHz: `build.sh 25`, installed as the
+separate app `protoemu48` (the 50 MHz app `protoemu` stays installed).
+
+### Wiring (three connections; silkscreen numbers)
+
+| What | Wire | J2 silkscreen | Scripts' J2-n (Digilent) | pmod[] (package pin) if the columns run as kv260.xdc assumes / the other way | Chip pin, low speed | Chip pin, full speed |
+|---|---|---|---|---|---|---|
+| USB D+ (usually green) | through a 27 ohm resistor | **1** (top row, right end) | J2-1 | pmod[0] (H12) / pmod[3] (C11) | uio0 (line unit TXP/RXP) | uio1 |
+| USB D- (usually white) | through a 27 ohm resistor | **3** (top row, next to 1) | J2-2 | pmod[1] (E10) / pmod[2] (D10) | uio1 (line unit TXN/RXN) | uio0 |
+| 1.5 kohm pull-up | from D- (cable side of its 27 ohm) to 3.3 V | **11** (top row, left end), expected 3.3 V | J2-6 | - | marks a low-speed device | (moves to D+) |
+| USB GND (black), VBUS (red) | **not connected**: tape both off | - | - | - | - | - |
+
+```
+   J2 (socket) seen from above, board edge to the right:
+
+      11    9    7    5    3    1        <- top row
+      12   10    8    6    4    2        <- bottom row
+      |                     |    |
+    3.3 V (expected)       27R  27R      (27 ohm in series, one per line)
+      |                     |    |
+      +-------- 1k5 --------+    |       (1.5 kohm: D- to 3.3 V)
+                            |    |
+                           D-   D+   -> cut USB-A cable: white (pin 2), green (pin 3);
+                                        red VBUS (pin 1) and black GND (pin 4) taped off
+```
+
+The 1.5 kohm goes from the cable side of D-'s 27 ohm to silkscreen 11 (the
+top pin of the outermost left column; 12 below it should be the same rail).
+That the left column is 3.3 V and the one next to it GND follows the
+Digilent Pmod convention (pins 6/12 VCC, 5/11 GND) mapped to the silkscreen;
+it is not verified on this board. If it is the other way round, the resistor
+pulls D- to GND: the hub sees nothing and the device never attaches, and
+`usb_demo.py` stops with "no pulled-up pin" before enabling anything; move
+the resistor's end to silkscreen 9 and rerun.
+
+**Why these pins.** Silkscreen 1 and 3 are the two signal pins at the right
+end of the top row, farthest from the power columns. The line unit needs
+its two pins adjacent (TXP = LINEPINS, TXN = the next pin) and J (idle) to be
+the second pin high: at low speed D+ is uio0 and D- (pulled up) uio1, at full
+speed the other way round (docs/usb-full-speed.md). The PMOD routing in
+`kv260_top.v` maps any uio pin to any PMOD pin, so the same two wires serve
+both speeds; only the pull-up moves. The jumper loopback verified which pins
+pair vertically but not which signal column is pmod[0] (README above): either
+way, `usb_demo.py` finds the pulled-up pin and maps the chip's pins to match.
+
+**Parts.** Two 27 ohm resistors (22-33 ohm is fine), one 1.5 kohm (5 %), a
+USB cable with an A plug to cut (or an A-plug breakout), male-to-male jumper
+wires (J2 is a socket), optionally a small breadboard for the resistors.
+Wire colours are a convention, not a guarantee: check with a meter (A plug,
+contacts facing you, from the left: 1 VBUS, 2 D-, 3 D+, 4 GND).
+
+**Safety.**
+* No GND wire: the USB port and J2 are on the same board, so the grounds are
+  already common. No VBUS wire: the port's 5 V must never reach a 3.3 V FPGA
+  pin, so tape the red wire's end (and the black one's) individually.
+* The 27 ohm resistors limit the current if the FPGA and the host ever drive
+  a line at the same time; the FPGA pins are LVCMOS33, 4 mA, slow slew.
+* Wire with the Kria powered off if convenient. With the pull-up in place
+  the hub sees a device whenever the board is on, even before any app is
+  loaded: Linux then logs a failed enumeration (`device descriptor read/64,
+  error -71`, `unable to enumerate USB device`). That is harmless; the demo
+  makes the kernel try again (soft detach and attach, below). Loading or
+  unloading an app may also cause such lines (FPGA pins during
+  reconfiguration).
+* Every PMOD pin is disabled (high impedance) after an app loads, and stays
+  so unless a script enables it: `bringup_kria.py` never does. Don't run
+  `pmod_test.py` with this wiring (it drives the top-row pins as a loopback).
+* What `usb_demo.py` drives: each top-row signal pin low for a few
+  microseconds (the wiring check), then the pulled-up line low (2.2 mA through
+  the 1.5 kohm: a soft detach) while it loads the firmware, then only the line
+  unit, which drives D+/D- just for its answers to host packets.
+* Low speed specifies 75-300 ns edges; the FPGA's are a few ns. Keep the
+  wires short.
+
+### Run
+
+On the Kria (one process on the board at a time):
+
+    sudo xmutil unloadapp; sudo xmutil loadapp protoemu48
+    sudo python3 protoemu48/fpga/kv260/host/bringup_kria.py --mhz 48       # optional: build identity + chip checks
+    sudo python3 protoemu48/fpga/kv260/host/usb_demo.py                     # the demo
+    lsusb -d 1209:5634; sudo dmesg | tail
+    sudo python3 protoemu48/fpga/kv260/host/usb_demo.py --stop              # again, detaching at the end
+    sudo xmutil unloadapp; sudo xmutil loadapp protoemu                     # back to the 50 MHz app
+
+`usb_demo.py` checks the bitstream is the 48 MHz build and measures the clock
+(within 0.1 %), reads the wiring (each top-row pin pulsed low and read back
+at once: only a pulled-up pin is high again; that gives the column order and
+whether the pull-up is on D- or D+), holds the pulled-up line low (the hub
+sees a disconnect), loads `usb_enum`, CRCCTRL and the line unit over the
+fabric SPI master, maps the two PMOD pins to uio0/uio1, which releases the
+line (the hub sees a new device), starts core 0, and from then on only reads
+the Kria's kernel log and sysfs until the device 1209:5634 is configured
+(`bConfigurationValue` 1) or 20 s pass (`--timeout`). Then it prints the
+verdict with the kernel's lines, `lsusb -d 1209:5634` and `lsusb -t`, and
+only then reads the chip's state over the host port (address, Configured
+flag). The device stays attached and running; `--stop` detaches it (core
+stopped, pulled-up line held low until the app is reloaded). Exit status 0 =
+PASS, 1 = FAIL, 2 = wiring refused (nothing enabled, core not started). Other
+options: `--speed full`, `--order normal|reversed` (assert the column order),
+`--dry-run` (identity, clock, load and start with every PMOD pin disabled),
+`--model` (no hardware, below).
+
+VID:PID 1209:5634 is pid.codes' VID with the repository's placeholder PID
+(`pe.usbdev.DEVICE_DESC`, bcdDevice 0.01, no strings, one configuration with
+one vendor-specific interface and no endpoints besides 0, 100 mA); a real
+product needs its own PID. Linux binds no driver to it, which is expected.
+
+Expected output (the kernel lines are the format Linux 6.8 prints; the port
+`1-1.N` is the hub port of the USB-A socket used, the device number Linux's):
+
+    [identity] RTL revision 60b06926cb1d, clk_div 25, built 2026-10-07 03:15:05 UTC
+    [clock] protoemu clk measured 47.9993 MHz
+    [wiring]
+      pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
+      pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
+      holding D- (pmod[1]) low: detached
+      loaded usb_enum (240 words, low speed) into core 0, CRCCTRL, line unit
+      attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
+    [kernel] waiting up to 20 s for 1209:5634 (no host-port access meanwhile)
+      [  ...] usb 1-1.2: new low-speed USB device number 4 using xhci-hcd
+      [  ...] usb 1-1.2: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+      [  ...] usb 1-1.2: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+    PASS: Linux enumerated 1209:5634 at low speed and configured it (1-1.2: devnum 4, speed 1.5 Mbit/s,
+      bConfigurationValue 1, bMaxPacketSize0 8, bcdDevice 0001)
+      $ lsusb -d 1209:5634
+        Bus 001 Device 004: ID 1209:5634 Generic ...
+    [chip] after the verdict, over the host port: address N, configured True, pending address False, stalled False
+      left running and attached (--stop detaches)
+
+With the columns the other way round the wiring lines say `pmod[2] 5` and
+`columns reversed` and the pins are mapped to pmod[3]/pmod[2]. On failure the
+verdict names the kernel's error and a likely cause (no "new low-speed USB
+device" line: the hub never saw the attach, so check the pull-up; `device
+descriptor read/64, error -71`: answers missing or garbled, so check D+/D-
+and the clock; `device not accepting address`; `can't set config`).
+
+**Full speed later**: move the 1.5 kohm from D- to D+ (the cable side of D+'s
+27 ohm, to the same 3.3 V pin) and run `usb_demo.py --speed full`: the same
+two wires, the chip's pins swapped by the PMOD map (D- = uio0, D+ = uio1),
+4 clocks per bit. The 48 MHz clock is the PS's 100 MHz (99.999 MHz from its
+IOPLL) x 12 / 25, about -10 ppm, inside full speed's 0.25 %. Not simulated
+on this design (the chip RTL test `test_usb_autonomous_fs` covers the
+firmware at full speed); an FPGA pin with 27 ohm is probably also
+outside full speed's driver-impedance window (28-44 ohm); keep the wires short.
+
+### Build and staging (2026-10-07, branch `kv260-usb`)
+
+Branch `kv260-usb` = `v2` (this FPGA flow) + the `usb-enum` commit
+(firmware/usb_enum.pasm, pe.usbenum, pe.usbhost, docs/usb-enumeration.md;
+no `src/` change). `build.tcl` cuts the SPI device's crossings when its
+clock is not 8x protoemu's (clk_div 25: 400 MHz against 48 MHz, edges as
+close as 0.83 ns), so the SPI device demo is untimed in the 48 MHz build;
+the 50 MHz build is unaffected.
+
+`REMOTE_DIR=protoemu-flow/fpga-kusb fpga/kv260/build.sh 25`: RTL revision
+`60b0692`, digest `036faa21`, Vivado 2026.1 BASIC on runner1, about 15 min.
+Timing met, 0 critical warnings in the log (methodology: the existing
+TIMING-4, and TIMING-47 for the deliberate clk_d/clk cut): design WNS
++0.479 ns (inside the SPI device's own 400 MHz domain), WHS +0.010 ns.
+
+| Clock | WNS | WHS |
+|---|---|---|
+| protoemu clk (48 MHz) | +4.807 ns | +0.010 ns |
+| mclk_pe / mclk_alt (fabric master) | +3.901 / +4.370 ns | +0.043 ns |
+| SPI device clock (400 MHz, internal) | +0.479 ns | +0.057 ns |
+| mclk_pe <-> protoemu clk | +6.179 / +11.663 ns | +0.349 / +0.389 ns |
+| GPIO SCK / pl_clk0 | +7.671 / +4.656 ns | +0.101 / +0.017 ns |
+
+Utilization: 10015 LUTs (protoemu 6536, pe_lab 1223, pe_spim 581), 6052 FFs
+(protoemu 2545), 4 RAMB36 + 2 RAMB18, 9 IOBs, 0 DSP.
+
+Staged on the Kria (no PMOD pin driven; the loopback jumpers may still be
+in J2: remove them before wiring USB): `APP=protoemu48 LOAD=0
+fpga/kv260/install.sh` (app in /lib/firmware/xilinx/protoemu48 with
+`protoemu48.bit.bin`, host software in ~/protoemu48; ~/protoemu and the
+`protoemu` app untouched), `xmutil loadapp protoemu48`, then:
+
+    $ sudo python3 protoemu48/fpga/kv260/host/bringup_kria.py --mhz 48
+    [build]   bitstream RTL revision 60b06926cb1df7c3c4a75ddcfe8f7329d4603dc0
+              built 2026-10-07 03:15:05 UTC from HEAD 60b06926cb1d, RTL digest 036faa21, clk_div 25
+              expected RTL revision 60b06926... (expected_build.json)  PASS
+    [clock]   protoemu clk measured 48.0004 MHz
+    [id] [regs] [pins] [loopback] [uart_tx_pin] [uart_rx_pin] [quad]: PASS
+    ALL PASS
+    clock over 2 / 5 / 10 s: 47.99929 / 47.99943 / 47.99953 MHz (pl0_ref 99999999 Hz; Linux's clock as reference)
+    $ sudo python3 protoemu48/fpga/kv260/host/usb_demo.py --dry-run
+    [identity] RTL revision 60b06926cb1d, clk_div 25, built 2026-10-07 03:15:05 UTC
+    [clock] protoemu clk measured 47.9993 MHz
+    [dry run] usb_enum loaded (240 words) and started with every PMOD pin disabled: CTRL 0x001, uio_oe 0x00
+      (idle bus: the device never drives), state {'address': 0, 'configured': False, ...}; PMOD 00000000 00000000; core stopped
+    PASS (dry run)
+
+The clock is 48 MHz within 10 ppm against Linux's clock (the 0.5 s figure of
+`bringup_kria.py` carries Python's timing noise). Then the 50 MHz app was
+loaded again (`xmutil loadapp protoemu`; `bringup_kria.py --only build clock
+id`: RTL revision d1aa46f, 49.9981 MHz, PASS) and left loaded, PMOD pins
+disabled. The USB wiring itself and `usb_demo.py` without `--dry-run` have
+not run on hardware.
+
+### Validation (no hardware)
+
+    python3 fpga/kv260/host/usb_demo.py --model
+    make -C fpga/kv260/sim COCOTB_TEST_FILTER=test_usb_demo
+
+`--model`: the cycle model loads the firmware exactly as the script does
+(`pe.usbenum.load_writes`), then the independent host controller model
+`pe.usbhost.ControlHost` (pins only; toggles, retries, STALL, keep-alive
+EOPs) runs Linux's sequence (`usb_demo.linux_flow`: 64-byte device
+descriptor read at address 0, 10 ms bus reset, SET_ADDRESS 7, device
+descriptor, configuration header, whole configuration, SET_CONFIGURATION 1,
+GET_CONFIGURATION) with every host-transport operation refused after the
+start, at 0 and +-1.5 % clock offset:
+
+    [model, clock offset +0.0 %] 26 transactions, 1070913 cycles (22.31 ms at 48 MHz), turnaround 2.16-2.16 bit times; chip state {'address': 7, 'configured': True, 'pending_address': False, 'stalled': False}: PASS
+    [model, clock offset +1.5 %] 26 transactions, 1071965 cycles (22.33 ms at 48 MHz), turnaround 2.12-2.16 bit times; ... PASS
+    [model, clock offset -1.5 %] 26 transactions, 1069862 cycles (22.29 ms at 48 MHz), turnaround 2.16-2.19 bit times; ... PASS
+
+RTL (`fpga/kv260/sim`, the whole KV260 design: `kv260_top`, `pe_spim`,
+`pe_lab` and the staged chip RTL, protoemu clock 20.834 ns = 48 MHz). The
+testbench models what is wired to the PMOD pads: a strong driver per pin
+(the USB host), pull-ups/pull-downs (the 1.5 kohm; the host's 15 kohm), and a
+weak keeper per pin, so an open pin keeps the level it was last driven to.
+`test_usb_demo` runs the script's own `prepare()` (wiring check, soft
+detach, load over the fabric master, attach, start) unchanged through the
+simulated AXI ports, then `ControlHost` runs `linux_flow` on the PMOD pads
+(bus reset shortened to 100 us); CS_n/SCK/MOSI are watched from the start
+to the end of enumeration:
+
+    pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
+    pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
+    holding D- (pmod[1]) low: detached
+    loaded usb_enum (240 words, low speed) into core 0, CRCCTRL, line unit
+    attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
+    usb_demo on the KV260 RTL at 48 MHz: device descriptor 120110010000000809123456010000000001; 27 transactions,
+      168540 cycles (3.51 ms), turnaround 2.16-2.16 bit times, host port idle after the start;
+      chip state {'address': 7, 'configured': True, 'pending_address': False, 'stalled': False}
+
+It also checks that D- was low (detached) during the load and J (attached)
+before the first host packet. `test_usb_demo_wiring`: (a) the columns the
+other way round (D+ on pmod[3], D- on pmod[2]): detected (`pmod[2] 5`,
+`columns reversed`), mapped to pmod[3] = uio0 / pmod[2] = uio1, and the
+device answers the first GET_DESCRIPTOR; (b) the pull-up to GND (the power
+columns swapped): `no pulled-up pin`, refused; (c) the pull-up on D+ for a
+low-speed run: refused. In (b) and (c) both PMOD map registers end at 0, the
+core is not started, and no PMOD pin is ever driven high. Both tests pass
+(77 s of Icarus); the whole `make -C fpga/kv260/sim` is 5/5 (test_bringup_steps,
+test_spim, test_lab unchanged by the new pad model).
+
+What simulation can't show: the pads' analogue behaviour (edge rates,
+ringing, the hub's receivers), the hub and the Linux host stack themselves.
 
 ## FPGA vs ASIC differences
 
