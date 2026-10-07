@@ -31,7 +31,7 @@ def test_sdf_runner_emits_receipt_only_for_completed_outcome(tmp_path, behavior)
 import os, sys, pathlib, xml.etree.ElementTree as ET
 a = dict(x.split('=', 1) for x in sys.argv[1:] if '=' in x)
 b = os.environ['FAKE_BEHAVIOR']
-if b != 'no-annotation': print('sdf_annotate: ' + a['SDF'])
+if b != 'no-annotation': print('sdf_annotate: ' + a['SDF'] + ' -> tb.user_project')
 if b == 'annotation-error': print('SDF ERROR: unknown cell')
 names = a['COCOTB_TESTCASE'].split(',')
 if b == 'duplicate': names = [names[0]] * len(names)

@@ -61,6 +61,7 @@ def main(argv=None):
     ap.add_argument("--waive", action="append", default=[], metavar="KIND=N")
     ap.add_argument("--waiver-reason", help="documented justification for all explicit electrical waivers")
     ap.add_argument("--gl-receipt", help="otherwise discover completed gl.*/receipt.json in this run")
+    ap.add_argument("--validation-root", help="shipping firmware/test checkout; requires identical candidate RTL/profile")
     ap.add_argument("--sdf-receipt", action="append", default=[], help="repeat for separate SDF sets")
     ap.add_argument("--precheck-receipt")
     ap.add_argument("--sdf-profile", choices=("standard", "v2"), default="v2")
@@ -123,7 +124,7 @@ def main(argv=None):
     valid_gl = False
     for path in gl_paths:
         try:
-            receipts.verify(path, wt, "gl")
+            receipts.verify(path, wt, "gl", a.validation_root)
             print(f"GL verified: {path}")
             valid_gl = True
         except EVIDENCE_ERRORS as e:
@@ -133,7 +134,7 @@ def main(argv=None):
     sdf = []
     for path in a.sdf_receipt:
         try:
-            sdf.append(receipts.verify(path, wt, "sdf"))
+            sdf.append(receipts.verify(path, wt, "sdf", a.validation_root))
             print(f"SDF verified: {path}")
         except EVIDENCE_ERRORS as e:
             failures.append(f"SDF receipt rejected: {e}")

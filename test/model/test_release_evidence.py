@@ -93,7 +93,7 @@ def sdf_output(wt, *, profile="v2"):
         d = out / case["directory"]
         d.mkdir()
         result = xml(case["tests"])
-        log = f"sdf_annotate: {d}/annotate.sdf\n** TESTS={len(case['tests'])}\n"
+        log = f"sdf_annotate: {d}/annotate.sdf -> tb.user_project\n** TESTS={len(case['tests'])}\n"
         rc = 0
         if case["expect"] == "fail":
             result = result.replace('/>', '><failure error_type="AssertionError" error_msg="wrong value"/></testcase>', 1)
@@ -320,6 +320,50 @@ def test_incomplete_xml_suite_is_not_a_pass(tmp_path, attributes):
     p.write_text(p.read_text().replace('<testsuite>', f'<testsuite {attributes}>'))
     with pytest.raises(ValueError):
         module("release_receipts").finish(out)
+
+
+def test_actual_testbench_annotation_banner(tmp_path):
+    import re
+    wt = candidate(tmp_path)
+    out = sdf_output(wt)
+    template = re.search(r'\$display\("(sdf_annotate: [^"]*%0s[^"]*)"',
+                         (ROOT / "test/sdf_annotate.v").read_text())[1]
+    for d in out.iterdir():
+        if d.is_dir():
+            p = d / "sim.log"
+            lines = p.read_text().splitlines()
+            lines[0] = template.replace("%0s", str(d / "annotate.sdf"))
+            p.write_text("\n".join(lines) + "\n")
+    assert module("release_receipts").finish(out).exists()
+
+
+@pytest.mark.parametrize("fault", [None, "old-software", "changed-software", "different-rtl"])
+def test_gl_can_validate_new_firmware_with_identical_hardware(tmp_path, fault):
+    wt = candidate(tmp_path)
+    newer = tmp_path / "new-software"
+    shutil.copytree(wt, newer)
+    p = newer / "test/test.py"
+    p.write_text(p.read_text() + "@cocotb.test()\nasync def test_new_firmware(dut): pass\n")
+    out = wt / "test/sim_build/gl.new-software"
+    rec = module("release_receipts")
+    rec.begin(wt, out, "gl", newer)
+    shutil.copyfile(wt / "runs/wokwi/final/nl/design.nl.v", out / "netlist.v")
+    for m in rec.GL_MODULES:
+        (out / f"{m}.xml").write_text(xml(rec.test_names(newer / "test" / f"{m}.py")))
+        (out / f"{m}.log").write_text("complete\n")
+    receipt = rec.finish(out)
+    selected = newer
+    if fault == "old-software":
+        selected = wt
+    elif fault == "changed-software":
+        p.write_text(p.read_text() + "# changed after verification\n")
+    elif fault == "different-rtl":
+        (newer / "src/project.v").write_text("different hardware profile\n")
+    if fault is None:
+        assert rec.verify(receipt, wt, "gl", selected)["status"] == "complete"
+    else:
+        with pytest.raises(ValueError):
+            rec.verify(receipt, wt, "gl", selected)
 
 
 @pytest.mark.parametrize("fault", ["partial-gl", "unbound-logs", "wrong-period", "nan-slack"])

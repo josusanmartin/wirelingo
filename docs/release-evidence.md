@@ -11,10 +11,11 @@ Passing tests do not override a failed physical check.
 Run these commands on the compute runner. `RUN` is a completed hardening
 worktree with `runs/wokwi/final`, not an intermediate checkpoint. The SDF
 runner uses the verification checkout's tests; its RTL and hardware profile
-must match the candidate. Functional GL uses the candidate worktree's tests.
+must match the candidate. Functional GL accepts that checkout as a second
+argument too. Use it when firmware/tests advanced after the hardening run.
 
 ```sh
-flow/gl_test.sh "$RUN"
+flow/gl_test.sh "$RUN" "$PWD"
 flow/gl_sdf_test.sh "$RUN" standard
 flow/gl_sdf_test.sh "$RUN" v2
 PDK_ROOT="$HOME/ttpdk" .venv-flow/bin/python flow/precheck_test.py "$RUN" \
@@ -33,6 +34,7 @@ Then check the release:
 
 ```sh
 python3 flow/release_check.py "$RUN" \
+  --validation-root "$PWD" \
   --gl-receipt /path/to/gl.XXXXXX/receipt.json \
   --sdf-receipt /path/to/gl_sdf.STANDARD/receipt.json \
   --sdf-receipt /path/to/gl_sdf.V2/receipt.json \
@@ -41,6 +43,10 @@ python3 flow/release_check.py "$RUN" \
 
 The default SDF profile is `v2`. `--sdf-profile standard` is an explicit,
 narrower contract for a pre-v2 release; the final verdict names the profile.
+`--validation-root` binds GL and SDF to the selected shipping tests/firmware.
+Without it, GL must match the candidate worktree's own suite, and SDF records
+the separate verification checkout used by its runner. The older candidate's
+tests do not establish coverage of firmware added later.
 Without `--gl-receipt`, the checker searches completed GL receipts in the
 candidate worktree. An old failed attempt can remain alongside a newer,
 complete passing attempt; partial attempts are never combined into a pass.
@@ -92,7 +98,9 @@ netlist, GDS, LEF, three SDFs, source/profile/configuration files, final metrics
 resolved configuration and each final STA clock report and log. Result files
 are hashed and rechecked by the release gate. This catches stale, partial,
 mixed, missing or subsequently altered evidence. Full output directories can
-be archived or moved while preserving their relative artifact paths.
+be archived or moved while preserving their relative artifact paths. Preserve
+the selected validation checkout as well (or reproduce its exact file hashes)
+and point `--validation-root` to it after relocation.
 
 Old logs remain useful historical evidence. They cannot be converted into a
 new receipt after the fact: rerun the corresponding wrapper. Fixtures and

@@ -136,6 +136,8 @@ def begin(worktree, out, kind, validation_root, plan=None):
         raise ValueError(f"unknown receipt kind {kind}")
     if kind == "gl":
         plan = {m: test_names(root / "test" / f"{m}.py") for m in GL_MODULES}
+        if hardware_files(wt) != hardware_files(root):
+            raise ValueError("GL validation RTL/profile differs from the candidate")
     if kind == "sdf":
         if hardware_files(wt) != hardware_files(root):
             raise ValueError("SDF validation RTL/profile differs from the candidate")
@@ -154,11 +156,11 @@ def begin(worktree, out, kind, validation_root, plan=None):
             raise ValueError("duplicate SDF output directory")
     out.mkdir(parents=True, exist_ok=True)
     data = dict(schema=SCHEMA, kind=kind, worktree=str(wt), validation_root=str(root), output_directory=str(out),
-                candidate=candidate_files(wt), validation=validation_files(root, include_hardware=kind == "sdf"), plan=plan)
-    if kind == "sdf":
+                candidate=candidate_files(wt), validation=validation_files(root, include_hardware=kind in ("gl", "sdf")), plan=plan)
+    if kind in ("gl", "sdf"):
         hardware = lambda files: {p: h for p, h in files.items() if p.startswith("src/") and Path(p).suffix in (".v", ".sv")}
         if hardware(data["candidate"]) != hardware(data["validation"]):
-            raise ValueError("SDF hardware inputs changed while being captured")
+            raise ValueError("hardware inputs changed while being captured")
     write_new(out / "inputs.json", data)
     return data
 
@@ -197,7 +199,7 @@ def outputs(out, data):
             text = (d / "sim.log").read_text(errors="replace")
             # Match the exact annotation path emitted by the testbench.
             annotation = Path(data["output_directory"]) / case["directory"] / "annotate.sdf"
-            if f"sdf_annotate: {annotation}" not in text.splitlines():
+            if f"sdf_annotate: {annotation} -> tb.user_project" not in text.splitlines():
                 raise ValueError(f"{d}: SDF annotation did not run")
             for line in text.splitlines():
                 if re.search(r"SDF ERROR|VPI error|Could not insert|Cannot find", line) and not re.search(r"annotate.sdf:(9|11): Chosen value not defined", line):
@@ -249,7 +251,7 @@ def finish(out):
     data = read_json(out / "inputs.json")
     if candidate_files(data["worktree"]) != data["candidate"]:
         raise ValueError("candidate changed during verification")
-    if validation_files(data["validation_root"], include_hardware=data["kind"] == "sdf") != data["validation"]:
+    if validation_files(data["validation_root"], include_hardware=data["kind"] in ("gl", "sdf")) != data["validation"]:
         raise ValueError("validation inputs changed during verification")
     data["artifacts"] = outputs(out, data)
     data["status"] = "complete"
@@ -258,7 +260,7 @@ def finish(out):
     return out / "receipt.json"
 
 
-def verify(path, worktree, kind):
+def verify(path, worktree, kind, validation_root=None):
     path = Path(path)
     data = read_json(path)
     if data.get("schema") != SCHEMA or data.get("kind") != kind or data.get("status") != "complete":
@@ -268,9 +270,15 @@ def verify(path, worktree, kind):
     if not data.get("artifacts") or outputs(path.parent, data) != data["artifacts"]:
         raise ValueError(f"{path}: evidence changed after receipt was written")
     if kind == "gl":
-        expected = {m: test_names(Path(worktree) / "test" / f"{m}.py") for m in GL_MODULES}
-        if data["plan"] != expected or data["validation"] != validation_files(worktree):
-            raise ValueError(f"{path}: GL tests no longer match the run worktree")
+        root = Path(validation_root or worktree)
+        expected = {m: test_names(root / "test" / f"{m}.py") for m in GL_MODULES}
+        if data["plan"] != expected or data["validation"] != validation_files(root, include_hardware=True):
+            raise ValueError(f"{path}: GL tests no longer match the selected validation checkout")
+        if hardware_files(root) != hardware_files(worktree):
+            raise ValueError(f"{path}: selected validation RTL/profile differs from the candidate")
+    if kind == "sdf" and validation_root is not None:
+        if data["validation"] != validation_files(validation_root, include_hardware=True):
+            raise ValueError(f"{path}: SDF tests no longer match the selected validation checkout")
     return data
 
 
