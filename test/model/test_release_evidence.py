@@ -184,13 +184,15 @@ def test_changed_sdf_output_invalidates_receipt(tmp_path, artifact):
         rec.verify(receipt, wt, "sdf")
 
 
-@pytest.mark.parametrize("fault", ["annotation-error", "no-annotation", "simulator-crash", "negative-runtime-error", "negative-passes", "missing-test", "command-fails"])
+@pytest.mark.parametrize("fault", ["annotation-error", "annotation-warning", "no-annotation", "simulator-crash", "negative-runtime-error", "negative-passes", "missing-test", "command-fails"])
 def test_sdf_receipt_requires_real_executed_outcomes(tmp_path, fault):
     wt = candidate(tmp_path)
     out = sdf_output(wt)
     log = out / ("negative" if fault.startswith("negative") else "typ") / "sim.log"
     if fault == "annotation-error":
         log.write_text(log.read_text() + "SDF ERROR: bad cell\n")
+    elif fault == "annotation-warning":
+        log.write_text(log.read_text() + "SDF WARNING: annotate.sdf:100: COND not supported.\n")
     elif fault == "no-annotation":
         log.write_text("simulation passed\n")
     elif fault == "simulator-crash":

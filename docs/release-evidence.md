@@ -68,6 +68,9 @@ complete passing attempt; partial attempts are never combined into a pass.
   with an assertion or the explicit cocotb unresolved-logic read error. An
   arbitrary Python exception, simulator crash, missing XML or bad annotation
   is a failed verification run, not a successful negative control.
+  Unsupported SDF annotation warnings also fail; only the two known empty
+  voltage/temperature header diagnostics are accepted. Compiler warnings that
+  Icarus lacks setup/hold checks remain an explicit simulator limitation.
 - v2 SDF additionally: fast SPI, timestamp capture and CALL/RET at 20 ns at
   every corner, and the full-speed USB device test at 20.834 ns at every corner.
 - Precheck: successful process exit, a complete passing results file and the

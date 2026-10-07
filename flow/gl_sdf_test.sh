@@ -87,7 +87,7 @@ run_case() {
   # a clean annotation: no SDF errors (the header's empty typ VOLTAGE and
   # TEMPERATURE fields aside) and no VPI errors (e.g. an unplaceable net delay)
   local bad
-  bad=$(grep -E "SDF ERROR|VPI error|Could not insert|Cannot find" "$dir/sim.log" | grep -vE "annotate.sdf:(9|11): Chosen value not defined" | head -5 || true)
+  bad=$(grep -E "SDF (ERROR|WARNING)|VPI error|Could not insert|Cannot find" "$dir/sim.log" | grep -vE "annotate.sdf:(9|11): Chosen value not defined" | head -5 || true)
   if [[ -n $bad ]]; then echo "[$name] annotation errors (log $dir/sim.log):"; echo "$bad"; return 1; fi
   grep -q "^sdf_annotate: $dir/annotate.sdf" "$dir/sim.log" || { echo "[$name] \$sdf_annotate did not run (log $dir/sim.log)"; return 1; }
   local summary

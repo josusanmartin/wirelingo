@@ -210,7 +210,7 @@ def outputs(out, data):
             if f"sdf_annotate: {annotation} -> tb.user_project" not in text.splitlines():
                 raise ValueError(f"{d}: SDF annotation did not run")
             for line in text.splitlines():
-                if re.search(r"SDF ERROR|VPI error|Could not insert|Cannot find", line) and not re.search(r"annotate.sdf:(9|11): Chosen value not defined", line):
+                if re.search(r"SDF (ERROR|WARNING)|VPI error|Could not insert|Cannot find", line) and not re.search(r"annotate.sdf:(9|11): Chosen value not defined", line):
                     raise ValueError(f"{d}: annotation error: {line}")
             expectation = case["expect"]
             count, failed = check_xml(d / "results.xml", case["tests"], expectation, allow_filtered=True)

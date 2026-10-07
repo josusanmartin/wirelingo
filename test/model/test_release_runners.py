@@ -11,7 +11,7 @@ from test_release_evidence import ROOT, candidate
 
 
 @pytest.mark.parametrize("behavior", ["pass", "missing-xml", "failed", "skipped", "duplicate",
-                                     "annotation-error", "no-annotation", "negative-assert",
+                                     "annotation-error", "annotation-warning", "no-annotation", "negative-assert",
                                      "negative-x", "negative-runtime", "changed-candidate", "hostile-environment"])
 def test_sdf_runner_emits_receipt_only_for_completed_outcome(tmp_path, behavior):
     wt = candidate(tmp_path)
@@ -34,6 +34,7 @@ assert {k: a[k] for k in ('SIM', 'TB', 'IMEM', 'SDF_MTM', 'TB_EXT_DELAY')} == di
 b = os.environ['FAKE_BEHAVIOR']
 if b != 'no-annotation': print('sdf_annotate: ' + a['SDF'] + ' -> tb.user_project')
 if b == 'annotation-error': print('SDF ERROR: unknown cell')
+if b == 'annotation-warning': print('SDF WARNING: annotate.sdf:100: COND not supported.')
 names = a['COCOTB_TESTCASE'].split(',')
 if b == 'duplicate': names = [names[0]] * len(names)
 r = ET.Element('testsuites'); suite = ET.SubElement(r, 'testsuite')
