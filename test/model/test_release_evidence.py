@@ -388,3 +388,18 @@ def test_legacy_pass_text_cannot_release(tmp_path, fault):
     sdf.write_text("A DIFFERENT CANDIDATE: gl_sdf_test: all cases as required\n")
     pre.write_text("INFO: Precheck passed for unrelated.gds!\n")
     assert module("release_check").main([str(wt), "--sdf-log", str(sdf), "--precheck-log", str(pre)]) == 1
+
+
+def test_verification_runner_change_during_execution_is_rejected(tmp_path, monkeypatch):
+    rec = module("release_receipts")
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    script = runner / "sdf_prep.py"
+    script.write_text("original preparation code\n")
+    monkeypatch.setattr(rec, "RUNNER_ROOT", runner)
+    wt = candidate(tmp_path)
+    out = wt / "test/sim_build/gl.runner-change"
+    rec.begin(wt, out, "gl", wt)
+    script.write_text("different preparation code\n")
+    with pytest.raises(ValueError, match="runner changed"):
+        rec.finish(out)

@@ -12,7 +12,7 @@ from test_release_evidence import ROOT, candidate
 
 @pytest.mark.parametrize("behavior", ["pass", "missing-xml", "failed", "skipped", "duplicate",
                                      "annotation-error", "no-annotation", "negative-assert",
-                                     "negative-x", "negative-runtime", "changed-candidate"])
+                                     "negative-x", "negative-runtime", "changed-candidate", "hostile-environment"])
 def test_sdf_runner_emits_receipt_only_for_completed_outcome(tmp_path, behavior):
     wt = candidate(tmp_path)
     (wt / "flow").mkdir()
@@ -30,6 +30,7 @@ def test_sdf_runner_emits_receipt_only_for_completed_outcome(tmp_path, behavior)
     make.write_text('''#!/usr/bin/env python3
 import os, sys, pathlib, xml.etree.ElementTree as ET
 a = dict(x.split('=', 1) for x in sys.argv[1:] if '=' in x)
+assert {k: a[k] for k in ('SIM', 'TB', 'IMEM', 'SDF_MTM', 'TB_EXT_DELAY')} == dict(SIM='icarus', TB='top', IMEM='sram', SDF_MTM='typ', TB_EXT_DELAY='4')
 b = os.environ['FAKE_BEHAVIOR']
 if b != 'no-annotation': print('sdf_annotate: ' + a['SDF'] + ' -> tb.user_project')
 if b == 'annotation-error': print('SDF ERROR: unknown cell')
@@ -53,10 +54,12 @@ sys.exit(2 if b == 'failed' or b.startswith('negative-') else 0)
     make.chmod(0o755)
     env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ["PATH"],
                TESTS="test_a test_b", FAKE_BEHAVIOR=behavior)
+    if behavior == "hostile-environment":
+        env.update(SIM="another-simulator", TB="chip", IMEM="flop", SDF_MTM="min", TB_EXT_DELAY="0")
     expectation = "fail" if behavior.startswith("negative-") else "pass"
     result = subprocess.run(["bash", str(wt / "flow/gl_sdf_test.sh"), str(wt), "slow", "10", expectation],
                             capture_output=True, text=True, env=env)
-    good = behavior in ("pass", "negative-assert", "negative-x")
+    good = behavior in ("pass", "negative-assert", "negative-x", "hostile-environment")
     assert (result.returncode == 0) == good, result.stdout + result.stderr
     receipts = list((wt / "test/sim_build").glob("gl_sdf.*/receipt.json"))
     assert len(receipts) == int(good)

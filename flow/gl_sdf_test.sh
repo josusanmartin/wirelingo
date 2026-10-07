@@ -78,7 +78,7 @@ run_case() {
   local testcase
   testcase=$(echo "$tests" | xargs | tr ' ' ',')
   count=$(echo "$tests" | wc -w)
-  (cd "$REPO/test" && PE_CLK_NS=$clk PE_USB_FS_CLK_NS=$clk PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL make GATES=yes \
+  (cd "$REPO/test" && PE_CLK_NS=$clk PE_USB_FS_CLK_NS=$clk PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL I2C_STRETCH=40 make GATES=yes SIM=icarus TB=top IMEM=sram SDF_MTM=typ TB_EXT_DELAY=4 \
       SDF="$dir/annotate.sdf" GATE_LEVEL_NETLIST="$dir/netlist.v" COCOTB_TEST_MODULES="$MODULE" \
       COCOTB_TESTCASE="$testcase" SIM_BUILD="$dir/build" COCOTB_RESULTS_FILE="$dir/results.xml" \
       > "$dir/sim.log" 2>&1) || rc=$?

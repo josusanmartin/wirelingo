@@ -93,7 +93,12 @@ non-finite timing values. Regression tests reproduced all four false passes.
 
 The runners now snapshot candidate and validation inputs before execution,
 reject changes during execution, validate the named results, and write a
-receipt after successful completion. The candidate identity includes the
+receipt after successful completion. They also record the runner scripts' hashes
+and reject edits to those scripts during a run. Simulation uses the top-level
+Icarus/SRAM configuration explicitly; SDF uses the typical value from each
+corner's delay triples and a 4 ns external-driver delay. Inherited shell
+settings cannot select another simulator, testbench, SRAM mode or SDF triple.
+The candidate identity includes the
 netlist, GDS, LEF, three SDFs, source/profile/configuration files, final metrics,
 resolved configuration and each final STA clock report and log. Result files
 are hashed and rechecked by the release gate. This catches stale, partial,

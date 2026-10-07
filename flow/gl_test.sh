@@ -30,7 +30,7 @@ VENV=$REPO/.venv
 export PATH=$HOME/tools/oss-cad-suite/bin:$VENV/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk}
 for module in test test_pio test_eth_service; do
   count=$(grep -c '^@cocotb.test()' "$module.py")
-  if ! PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL make GATES=yes \
+  if ! PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL PE_CLK_NS=20 PE_USB_FS_CLK_NS=20.834 I2C_STRETCH=40 make GATES=yes SIM=icarus TB=top IMEM=sram SDF= \
       GATE_LEVEL_NETLIST="$OUT/netlist.v" COCOTB_TEST_MODULES="$module" \
       SIM_BUILD="$OUT/$module" COCOTB_RESULTS_FILE="$OUT/$module.xml" > "$OUT/$module.log" 2>&1; then
     tail -30 "$OUT/$module.log"; echo "GL suite $module failed (log: $OUT/$module.log)"; exit 1

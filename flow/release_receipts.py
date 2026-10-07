@@ -20,6 +20,13 @@ GL_MODULES = ("test", "test_pio", "test_eth_service")
 CORNERS = ("nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C")
 BASIC_TESTS = ("test_id", "test_uart_tx", "test_spi_master", "test_host_port_fast", "test_fetch_to_pin")
 V2_TESTS = ("test_spi_master_fast", "test_la_capture_ticks", "test_call_ret")
+RUNNER_ROOT = Path(__file__).resolve().parent
+
+
+def runner_files(root):
+    return {name: digest(Path(root) / name) for name in
+            ("release_receipts.py", "gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "sdf_prep.py")
+            if (Path(root) / name).is_file()}
 
 
 def digest(path):
@@ -156,6 +163,7 @@ def begin(worktree, out, kind, validation_root, plan=None):
             raise ValueError("duplicate SDF output directory")
     out.mkdir(parents=True, exist_ok=True)
     data = dict(schema=SCHEMA, kind=kind, worktree=str(wt), validation_root=str(root), output_directory=str(out),
+                runner_root=str(RUNNER_ROOT), runner=runner_files(RUNNER_ROOT),
                 candidate=candidate_files(wt), validation=validation_files(root, include_hardware=kind in ("gl", "sdf")), plan=plan)
     if kind in ("gl", "sdf"):
         hardware = lambda files: {p: h for p, h in files.items() if p.startswith("src/") and Path(p).suffix in (".v", ".sv")}
@@ -249,6 +257,8 @@ def outputs(out, data):
 def finish(out):
     out = Path(out)
     data = read_json(out / "inputs.json")
+    if runner_files(data["runner_root"]) != data["runner"]:
+        raise ValueError("verification runner changed during execution")
     if candidate_files(data["worktree"]) != data["candidate"]:
         raise ValueError("candidate changed during verification")
     if validation_files(data["validation_root"], include_hardware=data["kind"] in ("gl", "sdf")) != data["validation"]:
