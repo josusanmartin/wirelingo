@@ -7,14 +7,15 @@ gate-level tests on the result. The routability experiments below used a
 flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
 bd07aa5; see git history).
 
-**Release check.** `flow/signoff.py` is Tiny Tapeout's minimum. A release
-candidate must also pass `flow/release_check.py <run worktree>`: setup at
-every corner at 50 MHz (or the slow corner at `--slow-mhz`), no slew,
-capacitance or fanout violation unless each kind is waived explicitly
-(`--waive fanout=1`, with the reason written here), a passing functional
-gate-level receipt for the run's exact netlist (`flow/gl_test.sh`), and SDF
-gate-level and precheck logs that report a pass. v2c fails it at 50 MHz
-(slow corner −1.57 ns, 3 slew and 85 fanout violations).
+**Release check.** `flow/signoff.py` is the minimum check. A release candidate
+must also pass `flow/release_check.py <run worktree>` with automatic GL, SDF
+and precheck receipts. It requires finite, clean setup/hold at the actual
+clock constraint, no slew/capacitance/fanout violations without explicit
+documented waivers, complete functional suites and the required SDF cases.
+Receipts bind the candidate and result files by full SHA-256. Unrelated pass
+logs, partial suites and arithmetic estimates at another clock cannot pass.
+[Release evidence](release-evidence.md) gives the commands, coverage and limits.
+v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
 
 **Status:** run **v2c** (2026-10-06, the v2 RTL: g4's design plus the
 half-cycle NRZI sample point, `SYNC_BYPASS`, WAIT kind 7 and CALL/RET) passes

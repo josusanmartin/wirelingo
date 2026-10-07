@@ -11,23 +11,25 @@
 #
 # Standard set (run in parallel, ~6-15 minutes):
 #   typ  20 ns (50 MHz)     $TESTS              must pass  (STA: setup met at typ)
-#   slow 23 ns (43.5 MHz)   $TESTS              must pass  (STA, v2c: -1.57 ns at 20 ns)
-#   slow 12.5 ns (80 MHz)   test_fetch_to_pin   must FAIL  (the annotation is in effect)
-# v2 set (the v2 features; in parallel, ~35 minutes, the USB cases set it):
-#   typ  20 ns       test_spi_master_fast test_la_capture_ticks test_call_ret   must pass
-#   typ  20.834 ns   test_usb_fs_device (48 MHz, USB's own clock)              must pass
-#   slow 23 ns       test_spi_master_fast test_la_capture_ticks test_call_ret   must pass
-#   slow 23 ns       test_usb_fs_device, bus scaled to the clock               must pass
-#   slow 20.834 ns   test_usb_fs_device at 48 MHz        report only (STA, v2c: needs 21.57 ns)
+#   slow 20 ns (50 MHz)     $TESTS              must pass
+#   fast 20 ns (50 MHz)     $TESTS              must pass
+#   slow 10 ns (100 MHz)    test_fetch_to_pin   must FAIL  (the annotation is in effect)
+# SLOW_CLK_NS (default 20) and NEGATIVE_CLK_NS (default 10) can select other
+# explicit cases. A slower diagnostic run does not satisfy release coverage.
+# v2 set: typ, slow and fast each run the directed fast-SPI, capture and
+# CALL/RET cases at 20 ns, and USB full speed at 20.834 ns. All must pass.
 # v2long (the full-length originals the directed tests shorten; ~45-60 minutes):
-#   typ 20 ns and slow 23 ns, each of test_la_capture_rate, test_reverse_engineering   must pass
+#   typ 20 ns and slow $SLOW_CLK_NS, each of test_la_capture_rate,
+#   test_reverse_engineering must pass.
 # CORNER is typ, slow or fast (final/sdf/nom_<corner>_*). A "fail" case passes
-# only if the simulation ran with a clean annotation and at least one test
-# failed an assertion; a "report" case prints its result and never fails the
-# script (a clean annotation is still required).
+# only if the simulation completed with a clean annotation and a functional
+# failure (an assertion or an explicit unresolved-logic read); a "report"
+# case prints its result and does not require a functional pass, but still
+# requires complete results and a clean annotation. It never counts toward
+# release coverage. An infrastructure failure cannot be a negative control.
 #
-# Tests: this checkout's test/test.py on the run's netlist, so the run's src/
-# must equal this checkout's (configs aside). CLK_NS sets every test's clock
+# Tests: this checkout's test/test.py on the run's netlist, so its source RTL
+# and hardware profile must equal this checkout's. CLK_NS sets every test's clock
 # (PE_CLK_NS), test_usb_fs_device's too (PE_USB_FS_CLK_NS: its bus keeps 4
 # clocks per bit, so away from 20.834 ns it is not 12 Mbit/s).
 # TESTS="test_id test_uart_tx" overrides the standard subset (and a single
@@ -45,9 +47,8 @@ shopt -s nullglob
 NETLISTS=("$W"/runs/wokwi/final/nl/*.nl.v)
 [[ ${#NETLISTS[@]} == 1 ]] || { echo "expected exactly one final netlist in $W"; exit 2; }
 NL=${NETLISTS[0]}
-if ! diff -rq -x 'config*.json' -x user_config.json "$W/src" "$REPO/src" > /dev/null; then
-  echo "$W/src differs from $REPO/src: the tests here would not describe that netlist"; exit 2
-fi
+# release_receipts.py checks RTL/profile equality before starting any cases;
+# PnR-only Tcl/SDC additions in the candidate do not change the testbench RTL.
 def() { { grep -o "define $1 [0-9]" "$W/src/project.v" || true; } | awk '{print $3}' | head -1; }
 NC=$(def PE_NCORES); FL=$(def PE_FIFO_LOG2); FL=${FL:-2}
 NB=$(grep -q 'define PE_NBANKS `PE_NCORES' "$W/src/project.v" && echo "$NC" || def PE_NBANKS)
@@ -81,6 +82,7 @@ run_case() {
       SDF="$dir/annotate.sdf" GATE_LEVEL_NETLIST="$dir/netlist.v" COCOTB_TEST_MODULES="$MODULE" \
       COCOTB_TESTCASE="$testcase" SIM_BUILD="$dir/build" COCOTB_RESULTS_FILE="$dir/results.xml" \
       > "$dir/sim.log" 2>&1) || rc=$?
+  printf '{"returncode":%s}\n' "$rc" > "$dir/status.json"
   local secs=$(( $(date +%s) - t0 ))
   # a clean annotation: no SDF errors (the header's empty typ VOLTAGE and
   # TEMPERATURE fields aside) and no VPI errors (e.g. an unplaceable net delay)
@@ -109,30 +111,49 @@ run_case() {
   echo "[$name] required to fail, but: ${summary:-no results} (${secs} s, log $dir/sim.log)"; return 1
 }
 
-if [[ $# -ge 3 ]]; then
-  expect=pass
-  [[ ${4:-} == fail || ${4:-} == report ]] && expect=$4
-  run_case "$2" "$3" "$expect" "$TESTS"
-  exit
-fi
 # the cases of a set: "corner clk expect tests...", one per line
 SET=${2:-standard}
+SLOW_CLK_NS=${SLOW_CLK_NS:-20}
+NEGATIVE_CLK_NS=${NEGATIVE_CLK_NS:-10}
+if [[ $# -ge 3 ]]; then
+  SET=single
+  expect=${4:-pass}
+  [[ $expect == pass || $expect == fail || $expect == report ]] || { echo "invalid expectation $expect"; exit 2; }
+  CASES="$2 $3 $expect $TESTS"
+fi
 case $SET in
   standard) CASES="typ 20 pass $TESTS
-slow 23 pass $TESTS
-slow 12.5 fail test_fetch_to_pin" ;;
+slow $SLOW_CLK_NS pass $TESTS
+fast 20 pass $TESTS
+slow $NEGATIVE_CLK_NS fail test_fetch_to_pin" ;;
   v2) V2="test_spi_master_fast test_la_capture_ticks test_call_ret"
       CASES="typ 20 pass $V2
 typ 20.834 pass test_usb_fs_device
-slow 23 pass $V2
-slow 23 pass test_usb_fs_device
-slow 20.834 report test_usb_fs_device" ;;
+slow $SLOW_CLK_NS pass $V2
+slow 20.834 pass test_usb_fs_device
+fast 20 pass $V2
+fast 20.834 pass test_usb_fs_device" ;;
   v2long) CASES="typ 20 pass test_la_capture_rate
 typ 20 pass test_reverse_engineering
-slow 23 pass test_la_capture_rate
-slow 23 pass test_reverse_engineering" ;;
+slow $SLOW_CLK_NS pass test_la_capture_rate
+slow $SLOW_CLK_NS pass test_reverse_engineering" ;;
+  single) ;;
   *) echo "unknown set $SET (standard, v2, v2long; or CORNER CLK_NS [fail|report])"; exit 2 ;;
 esac
+python3 - "$OUT/plan.json" "$MODULE" "$CASES" <<'PY'
+import json, sys
+cases = []
+for line in sys.argv[3].splitlines():
+    corner, clk, expect, *tests = line.split()
+    name = f"{corner}_{clk}ns_{expect}"
+    if len(tests) == 1:
+        name += "_" + tests[0].removeprefix("test_")
+    cases.append(dict(corner=corner, period_ns=float(clk), expect=expect,
+                      module=sys.argv[2], tests=tests, directory=name))
+with open(sys.argv[1], "x") as f:
+    json.dump(cases, f, allow_nan=False)
+PY
+python3 "$REPO/flow/release_receipts.py" begin sdf "$W" "$OUT" --validation-root "$REPO" --plan "$OUT/plan.json"
 [[ $SET == standard ]] || echo "set $SET"
 pids=() outs=() i=0
 while read -r corner clk expect tests; do
@@ -143,5 +164,6 @@ done <<< "$CASES"
 status=0
 for p in "${pids[@]}"; do wait "$p" || status=1; done
 cat "${outs[@]}"
+[[ $status != 0 ]] || python3 "$REPO/flow/release_receipts.py" finish "$OUT" || status=1
 [[ $status == 0 ]] && echo "gl_sdf_test ($SET): all cases as required" || echo "gl_sdf_test ($SET): FAILED"
 exit $status

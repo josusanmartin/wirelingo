@@ -18,10 +18,13 @@ NC=$(def PE_NCORES); FL=$(def PE_FIFO_LOG2); FL=${FL:-2}
 NB=$(grep -q 'define PE_NBANKS `PE_NCORES' "$W/src/project.v" && echo "$NC" || def PE_NBANKS)
 mkdir -p "$W/test/sim_build"
 OUT=$(mktemp -d "$W/test/sim_build/gl.XXXXXX")
+python3 "$REPO/flow/release_receipts.py" begin gl "$W" "$OUT" --validation-root "$W"
 cp "$NL" "$OUT/netlist.v"
 echo "netlist $(sha256sum "$NL" | cut -c1-16)  cores=$NC banks=$NB fifo_log2=$FL  outputs $OUT"
 cd "$W/test"
-export PATH=$HOME/tools/oss-cad-suite/bin:$REPO/.venv/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk}
+VENV=$REPO/.venv
+[[ -d $VENV ]] || VENV=$(git -C "$REPO" worktree list --porcelain | awk 'NR==1{print $2}')/.venv
+export PATH=$HOME/tools/oss-cad-suite/bin:$VENV/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk}
 for module in test test_pio test_eth_service; do
   count=$(grep -c '^@cocotb.test()' "$module.py")
   if ! PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL make GATES=yes \
@@ -31,3 +34,4 @@ for module in test test_pio test_eth_service; do
   fi
   python3 check_results.py "$OUT/$module.xml" "$count"
 done
+python3 "$REPO/flow/release_receipts.py" finish "$OUT"
