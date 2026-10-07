@@ -11,7 +11,7 @@ SET_ADDRESS.
 ## Bottom line
 
 **It fits on one core, at low speed and at full speed, with the same
-firmware.** `firmware/usb_enum.pasm` is 240 of core 0's 256 instruction words
+firmware.** `firmware/usb_enum.pasm` is 241 of core 0's 256 instruction words
 (36 of them the descriptors), uses the line unit, and leaves core 1 free.
 `pe.usbenum.load_writes()` is the whole host side: the program, CRCCTRL, the
 line unit's three registers and the start. From then on the host transport is
@@ -19,12 +19,14 @@ idle (the tests fail on any host bus access, and the RTL test watches CS_n,
 SCK and MOSI on the pads) until the host chooses to read the outcome: the
 address is in core 0's r3, and flag F5 means Configured.
 
-The binding constraint is **instruction memory** (16 words to spare), then
+The binding constraint is **instruction memory** (15 words to spare), then
 **registers** (four 16-bit registers hold the token filter, the transfer state
 and the prepared answer; every other bit of state is a global flag). Cycles
 are not the limit at low speed (32 clocks per bit). At full speed (4 clocks
 per bit) they shaped the design in three places, all with margin now: the IN
-turnaround (the answer's PID is prepared before the token arrives), the
+turnaround (the answer's PID is prepared before the token arrives, and
+nothing else sits on the token's path, not even a pending address's commit:
+see [the turnaround fix](#the-lost-status-ack-and-an-in-first) below), the
 receive loop (3 instructions per bit) and the transmit loop (3 per bit plus 4
 between table entries, which the line unit's 2-entry queue absorbs).
 
@@ -33,8 +35,9 @@ between table entries, which the line unit's 2-entry queue absorbs).
 | Model: full enumeration to Configured, transport idle | 109,397 cycles (2.28 ms at 48 MHz), 26 transactions, every one through first time | 14,169 cycles (0.30 ms), same 26 |
 | Clock offset / edges | ±1.5 % (the low-speed tolerance) | ±0.25 %, ±3 ns jitter, 2 ns duty-cycle distortion, the host's shortest gaps (2 bit times) |
 | Turnaround (spec 2-6.5 bit times) | 2.12-2.19 bit times | 3.10-4.16 bit times |
+| SET_ADDRESS's status ACK lost, then an IN first (the address is committed on it) | 2.16 bit times | 4.67 bit times = 18.7 clocks (limit 26; was 27.4-28.2 before `enum-ta`); static checker: 10-21 clocks, PASS |
 | Lost ACKs (both directions), damaged DATA, bus resets mid-enumeration, 9 unsupported requests STALLed, wLength 0-255, bad CRC5/CRC16, other addresses | model | model |
-| RTL (cocotb, Icarus): the flow with faults and a mid-enumeration reset | `test_usb_autonomous`: PASS, turnaround 2.16 bit times | `test_usb_autonomous_fs`: PASS, 3.25-4.00 |
+| RTL (cocotb, Icarus): the flow with faults and a mid-enumeration reset | `test_usb_autonomous`: PASS, turnaround 2.16 bit times | `test_usb_autonomous_fs`: PASS, 3.25-4.75 (4.75: the IN after a lost status ACK) |
 | sigrok (usb_signalling + usb_packet) | model and RTL: every packet identical to the host model's record, no errors | model and RTL: same |
 
 ## The target
@@ -122,7 +125,53 @@ while the status stage's zero-length packet goes out (68 clocks; the packet
 and its EOP take 140 at full speed). The address takes effect when the host
 ACKs that packet, or, if that ACK is lost, on the first token to the new
 address (the host has moved on; a device waiting for the ACK would never
-answer again).
+answer again). That commit is three instructions inline on the token path
+and needs no `prep`: r1 is DATA1 while the address is pending and DATA1
+after it (no transfer), so an IN that is that first token is answered within
+the turnaround ([below](#the-lost-status-ack-and-an-in-first)).
+
+### The lost status ACK and an IN first
+
+The static timing checker ([timing-check.md](timing-check.md)) found a real
+full-speed bug here. Until branch `enum-ta`, the commit on the first token
+to the new address was `call commit`, which fell into `prep` and returned:
+11 instructions between the token's end and the IN's WAIT. If that token is
+an IN (SET_ADDRESS's status ACK lost, and the host's next transaction to the
+new address an IN rather than a SETUP), the answer started up to 30 clocks
+after the host's EOP (checker, pads) and 27.4–28.2 clocks on the model's
+bus, over the 26 clocks (6.5 bit times) USB 2.0 §7.1.18.1 allows. Low speed
+has 8 times the slack and was fine.
+
+Two fixes were considered: NAK that IN at once, commit, and serve the retry
+(the host retries a NAKed IN; it costs a NAK path and a flag), or take the
+commit off the path. The second is smaller and answers the IN itself:
+
+* `prep` was redundant on the commit: while F_ADDR is set r1 is always
+  DATA1 (written by `prep` after SET_ADDRESS's ACK and after the status
+  ZLP; `addr_filter` borrows r1 but the `prep` after it restores it before
+  any token is handled), and after the commit the answer is the
+  no-transfer zero-length DATA1 (r2 = dev, bit 3 clear): the same word. So
+  `commit` no longer falls into `prep`; at `tok_end` it is inline
+  (`mov r3, r2`, `flag clr F_ADDR`, `ldi r2, dev`), and `ack_addr` is the
+  same three plus `jmp idle`.
+* The one way r1 could change while F_ADDR was set was a SETUP's DATA
+  (`d_cap` overwrites r1 and r2) that then failed its CRC or length check:
+  F_ADDR stayed set until a good SETUP. A SETUP token now clears F_ADDR
+  itself (a SETUP abandons any control transfer, SET_ADDRESS's included),
+  and the clear in the request decoder, now redundant, is gone.
+
+Toggles and the status stage are unchanged: the status ZLP still goes out
+as DATA1 with the old address in force, the commit still happens on the
+host's ACK or on the first token to the new address, and that token is
+served exactly as before, only sooner: a SETUP as a SETUP, an IN with a
+zero-length DATA1 (what the device answers any IN with no transfer under
+way). Net cost: one word (241).
+
+| Path (full speed, pads) | Before | After |
+|---|---|---|
+| IN → answer (`in_ta`) | 10–15 clk | 10–15 clk |
+| IN → answer incl. the lost-ACK commit (`in_ta_any`) | 10–30 clk, FAIL | 10–21 clk, PASS |
+| the forced case on the model's bus (5 sessions, jitter, ±0.25 %) | 27.4–28.2 clk | 18.4–19.0 clk |
 
 ### Cycle budget
 
@@ -132,6 +181,7 @@ PC over a full enumeration with a lost ACK):
 | Path | Clocks | Limit at full speed |
 |---|---|---|
 | token's end → the IN's answer queued (incl. the 4-tick turnaround delay) | 9 | 26 (6.5 bit times) |
+| the same, the first token to the new address after a lost status ACK (inline commit) | 15 | 26 |
 | DATA's end → handshake decision (CRC residue, length, flags) | 9-10 | 26 |
 | SETUP request processing, while our ACK goes out | 16-32 | 76 (the ACK and its EOP) |
 | status ZLP's CRC queued → the address filter computed | 68 | 140 |
@@ -171,7 +221,8 @@ free for a second job (a data endpoint's data source, or another protocol).
 * **One CRC configuration, set by the host**: CRC5 in software.
 * **No `jmp !t`** (only `t`): two instructions where one would do.
 * **No flag toggle**: the DATA toggle comes from the table address instead.
-* **One link register**: `commit` falls into `prep` rather than calling it.
+* **One link register**: a subroutine can't call another; `prep` and
+  `addr_filter` are leaves, and `commit` is inline where it is timed.
 * **The line unit's receive queue has no frame boundaries**, and the firmware
   can't flush it (LINECFG is host-only). A frame's end must be consumed before
   the next frame starts, or the next frame's bits are read as the old one's.
@@ -180,11 +231,14 @@ free for a second job (a data endpoint's data source, or another protocol).
 
 ## Tests
 
-`test/model/test_usb_autonomous.py` (model, both speeds; 63 tests):
+`test/model/test_usb_autonomous.py` (model, both speeds; 65 tests):
 enumeration with clock offsets and jitter (every transaction through first
 time), the Linux flow with a 10 ms reset, wLength 0-255 on both descriptors,
 each fault kind sprinkled randomly over the flow (3 seeds × 3 kinds × 2
-speeds), SET_ADDRESS's status ACK lost, a repeated and an abandoned
+speeds), SET_ADDRESS's status ACK lost (then a SETUP first, or an IN first:
+`test_set_address_status_ack_lost_then_in_first` asserts the IN's answer within
+6.5 bit times, ≤ 26 clocks at full speed, and enumeration to Configured
+afterwards), a repeated and an abandoned
 SET_ADDRESS, bus resets in the data stage / after the address / after
 configuration (then enumeration at a new address), a 3 µs reset (just over
 the 2.5 µs threshold) unconfiguring the device, 9 unsupported requests
@@ -193,7 +247,8 @@ control write), tokens to other addresses/endpoints, a bad CRC5 and a bad
 CRC16 ignored, and sigrok's decode of a whole enumeration with faults.
 
 `test/test.py::test_usb_autonomous` and `test_usb_autonomous_fs` (RTL):
-load over SPI, then the whole flow with a lost SETUP ACK, a lost host ACK,
+load over SPI, then the whole flow with a lost SETUP ACK, SET_ADDRESS's
+status ACK lost followed by an IN to the new address, a lost host ACK,
 damaged DATA, a STALLed string descriptor and SET_FEATURE, a bus reset in the
 middle of a configuration read, enumeration again at a new address with
 SET_ADDRESS's status ACK lost; the pads show no host port activity from the
@@ -201,27 +256,33 @@ load to the end; then the host reads address 9 and Configured.
 `test/test_sigrok.py::sigrok_usb_autonomous` and `_fs` run those tests and
 check that sigrok decodes exactly the packets the host model recorded.
 
-Results (2026-10-06):
+Results (2026-10-07, branch `enum-ta`, after the turnaround fix):
 
 ```
-pytest test/model/test_usb_autonomous.py          63 passed in 168.93s
-  low {'ppm': 0}: configured in 109413 cycles (2.28 ms at 48 MHz), 26 transactions, turnaround 2.16-2.16 bit times
-  low {'ppm': 15000}: ... 110492 cycles, turnaround 2.12-2.16;  {'ppm': -15000}: 108331 cycles, 2.16-2.19
+pytest test/model/test_usb_autonomous.py          65 passed
+  low {'ppm': 0}: configured in 109414 cycles (2.28 ms at 48 MHz), 26 transactions, turnaround 2.16-2.16 bit times
+  low {'ppm': 15000}: ... 110493 cycles, turnaround 2.12-2.16;  {'ppm': -15000}: 108332 cycles, 2.16-2.19
   full {'ppm': 0}: configured in 14169 cycles (0.30 ms at 48 MHz), 26 transactions, turnaround 3.17-4.09 bit times
-  full {'ppm': 2500, 'jitter_ns': 3}: 14137 cycles, 3.12-4.10;  {'ppm': -2500, 'jitter_ns': 3, 'dcd_ns': 2}: 14226 cycles, 3.10-4.16
+  full {'ppm': 2500, 'jitter_ns': 3}: 14138 cycles, 3.12-4.10;  {'ppm': -2500, 'jitter_ns': 3, 'dcd_ns': 2}: 14227 cycles, 3.10-4.16
+  low: lost status ACK + IN first: answered 2.16 bit times after the EOP; configured at 77
+  full: lost status ACK + IN first: answered 4.67 bit times (18.7 clocks) after the EOP; configured at 77
+    (the v2 firmware fails this test: 6.92 bit times, 27.7 clocks)
   sigrok (low speed): 81 packets, identical to the host model's, no errors
   sigrok (full speed): 81 packets, identical to the host model's, no errors
-pytest test/model                                  300 passed (whole suite)
+pytest test/model/test_timing_check.py            usb_enum: in_ta_any PASS, 10-21 clk (was FAIL, 10-30);
+  the forced lost-ACK IN on the bus: 18.65, 18.77, 18.36, 19.02, 18.93 clocks (5 sessions); none later than 26
+pytest test/model                                  355 passed (whole suite, on v2 c49f973)
 
-make COCOTB_TEST_FILTER=test_usb_autonomous        (RTL, Icarus)
-  autonomous USB (low speed): 47 transactions, 254266 cycles (5.3 ms), turnaround 2.16-2.16 bit times,
-    host port idle throughout; state {'address': 9, 'configured': True, 'pending_address': False, 'stalled': False}
-  autonomous USB (full speed): 47 transactions, 78179 cycles (1.6 ms), turnaround 3.25-4.00 bit times,
-    host port idle throughout; state {'address': 9, 'configured': True, ...}
+make COCOTB_TEST_FILTER=test_usb_autonomous        (RTL, Icarus; run before the rebase onto c49f973,
+                                                    which changed no firmware words and no RTL)
+  autonomous USB (low speed): 47 transactions, 256640 cycles (5.3 ms), turnaround 2.16-2.16 bit times
+    (the IN after a lost status ACK: 2.16), host port idle throughout; state {'address': 9, 'configured': True, ...}
+  autonomous USB (full speed): 47 transactions, 78487 cycles (1.6 ms), turnaround 3.25-4.75 bit times
+    (the IN after a lost status ACK: 4.75 = 19 clocks), host port idle throughout; state {'address': 9, 'configured': True, ...}
   TESTS=2 PASS=2 FAIL=0
 make COCOTB_TEST_MODULES=test_sigrok COCOTB_TEST_FILTER=sigrok_usb_autonomous
-  sigrok usb autonomous (low-speed): 137 packets, identical to the host model's, no errors
-  sigrok usb autonomous (full-speed): 137 packets, identical to the host model's, no errors
+  sigrok usb autonomous (low-speed): 139 packets, identical to the host model's, no errors
+  sigrok usb autonomous (full-speed): 139 packets, identical to the host model's, no errors
   TESTS=2 PASS=2 FAIL=0
 ```
 
@@ -236,7 +297,7 @@ GL flow would run these tests as-is).
   free to hold it, so it would be recomputed per token or kept elsewhere), its
   own toggle (a flag), and a data source: core 1 through virtual pins, or the
   host through the TX FIFO, which brings the host back for data, though not
-  for enumeration. The descriptor fits in the 16 spare words; the token
+  for enumeration. The descriptor fits in the 15 spare words; the token
   dispatch and data path need room made first (candidates: GET_CONFIGURATION,
   6 words; the interface/endpoint GET_STATUS range, 2; the SETUP length check,
   3).

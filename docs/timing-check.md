@@ -177,7 +177,9 @@ that other tokens never reach), say so: `avoid=P,...` names the exits, or
 lists every excluded path. The firmware deadlines that use it are the I2C
 phase lengths (the clock-stretch timeouts leave them), usb_fs_dev's IN
 responses (other tokens take other paths) and its bit/byte loops (the end of
-the packet leaves them), and usb_enum's `in_ta` and bit loop.
+the packet leaves them), and usb_enum's `in_ta` and bit loop. usb_enum's
+`in_ta_any` names its exits instead (`avoid=idle,not_in`: the token is not
+for us, or not an IN) and passes outright.
 
 `P.done` on a HALT is an error: HALT never completes, so there is no such
 moment. Use `P.enter`.
@@ -280,20 +282,41 @@ the EOP; with the measured window it is 10 or more.
 **usb_enum** (full speed, `TURN = 4`; annotations in
 `firmware/usb_enum.timing`):
 
-| Deadline | Checker, pads (clk) | |
-|---|---|---|
-| IN → DATA/STALL | 10–15 | PASS |
-| DATA0/1 → ACK/STALL | 11–20 | PASS |
-| IN → answer, including the lost-ACK commit path | 10–30 | **FAIL** |
+| Deadline | Checker, pads (clk) | Bus, measured (clk) | |
+|---|---|---|---|
+| IN → DATA/STALL, ordinary path (`in_ta`) | 10–15 | | PASS (conditional) |
+| DATA0/1 → ACK/STALL | 11–20 | | PASS |
+| IN → answer, including the lost-ACK commit path (`in_ta_any`) | 10–21 (was 10–30) | the forced case: 18.4–19.0 (was 27.4–28.2) | PASS (was **FAIL**) |
 
-The failing path: SET_ADDRESS's status-stage ACK is lost, so the device
-commits the new address on the first token to it (`call commit`, then
-`prep` and its RET). If that token is an IN, the core reaches the IN's
-WAIT 22 ticks after `tok_end` instead of 7. On the model, forcing that sequence gives
-bus turnarounds of 27.4–28.2 clocks (> 6.5 bit times; the host's timeout,
-16–18 bit times, still catches it). A host starts every control transfer
-with SETUP, which is why `in_ta` excludes the path (`avoid=lost_ack`); the
-assumption is stated there.
+**A real bug, found and fixed.** The checker's first run on `usb_enum` failed
+`in_ta_any`: if SET_ADDRESS's status-stage ACK is lost, the device commits
+the new address on the first token to it, and the commit (`call commit`,
+which fell into `prep` and its RET: 11 instructions) sat between the token's
+end and the IN's WAIT. If that token is an IN, the core reached the WAIT 22
+ticks after `tok_end` instead of 7, and the answer could start 30 clocks
+after the host's EOP, past full speed's 26 (6.5 bit times, USB 2.0
+§7.1.18.1). Forcing that sequence on the model (the host loses its status
+ACK, then sends an IN to the new address) gave bus turnarounds of
+27.4–28.2 clocks; the host's timeout (16–18 bit times) still caught the
+packet, so no test had noticed. A host starts every control transfer with
+SETUP, which is why `in_ta` excludes the path (`avoid=lost_ack`), but a
+device should not depend on it. Low speed, with 8 times the slack, was never
+affected; the firmware is the same.
+
+The fix (branch `enum-ta`, docs/usb-enumeration.md) removes the work rather
+than racing it: `prep` was redundant there, because r1 is DATA1 while the
+address is pending and DATA1 again after the commit (no transfer). The
+commit is now three instructions inline at `tok_end` (`mov r3, r2`, `flag
+clr F_ADDR`, `ldi r2, dev`), 6 ticks more than the ordinary IN path. To keep
+"r1 is DATA1 while F_ADDR is set" true, a SETUP token now clears F_ADDR
+before its DATA can overwrite r1 (previously a damaged SETUP DATA to the old
+address could leave F_ADDR set with r1 and r2 overwritten). Now `in_ta_any`
+is 10–21 clocks and PASSes with 5 clocks of margin, unconditionally: it
+excludes paths only by name (`idle`, a token not for us; `not_in`, a token
+that is not an IN), so it is the required deadline; `in_ta` is kept as the
+ordinary path's bound (`PASS (conditional)`). `test_usb_enum_sound_and_pad_turnaround` measures the
+forced case in all 5 sessions at 18.4–19.0 clocks on the bus, inside the
+checker's 10–21, and no response anywhere is later than 26.
 
 **Broken variants fail** (`test_broken_*`): `uart_tx` with `[5]` instead of
 `[6]` in the bit loop gives 7-tick bits (FAIL); `usb_fs_dev` with seven
@@ -319,7 +342,7 @@ pins), and lists the assumptions each interval broke.
 * usb_fs_dev against the pins-only full-speed host (`pe.usbfs.FsHost`), 8
   sessions, comparing the bus turnaround with bound + adjust;
 * usb_enum through enumeration with a lost handshake, and the forced
-  lost-ACK IN, 5 seeds;
+  lost-ACK IN (status ACK lost, then an IN first), 5 seeds;
 * 40 random programs (every instruction kind, side-set and delay fields,
   autopush/autopull, timed and untimed WAITs on toggling pins, flags and
   FIFO traffic from the host, dividers with fractions) with random

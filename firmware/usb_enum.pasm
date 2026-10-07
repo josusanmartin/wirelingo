@@ -37,6 +37,11 @@
 ;   r1  SYNC + PID of the answer to the next IN (STALL, DATA0 or DATA1),
 ;       prepared ahead (`prep`) so that an IN is answered within full speed's
 ;       turnaround: the answer is queued 11 clocks after the token ends.
+;       While F_ADDR is set it is DATA1 (only `prep` leaves it changed then;
+;       a SETUP clears F_ADDR before its DATA overwrites r1), so committing
+;       the address needs no `prep`: an IN that is the first token to the
+;       new address (its status ACK lost) is answered 6 clocks later, still
+;       within the turnaround (docs/timing-check.md).
 ;   F_STALL, F_ADDR, F_SENT (our DATA awaits the host's ACK), F_EXP/F_SETUP
 ;   (DATA expected after an OUT/SETUP to us), F_CFG (configured).
 ; The DATA toggle needs no state: a transfer's packets start at table
@@ -143,8 +148,10 @@ tok_end:
     jmp z, ours
     jmp !f F_ADDR, idle            ; another address or endpoint, a SOF, a bad CRC5
     cmp r0, r2                     ; the new address, before we saw the ACK of
-    jmp !z, idle                   ; SET_ADDRESS's status stage (it was lost)
-    call commit
+    jmp !z, idle                   ; SET_ADDRESS's status stage (it was lost):
+    mov r3, r2                     ; `commit`, inline: if this is an IN, its
+    flag clr F_ADDR                ; answer must still go out within full
+    ldi r2, dev                    ; speed's turnaround
 ours:
     mov r0, isr
     shr r0, 8                      ; the PID
@@ -157,6 +164,7 @@ ours:
     jmp expect                     ; OUT: its DATA is ACKed (or STALLed), not kept
 got_setup:
     flag set F_SETUP
+    flag clr F_ADDR                ; a SETUP abandons a pending SET_ADDRESS
 expect:
     flag set F_EXP
     jmp idle
@@ -219,12 +227,11 @@ ack_end:
     call prep
     jmp idle
 ack_addr:                          ; SET_ADDRESS's status stage completed
-    call commit
+commit:                            ; the new address takes effect (also inline
+    mov r3, r2                     ; at tok_end, without the jmp). r1 needs no
+    flag clr F_ADDR                ; `prep`: it is DATA1 while F_ADDR is set,
+    ldi r2, dev                    ; and DATA1 (r2 = dev, no transfer) after
     jmp idle
-commit:                            ; the new address takes effect
-    mov r3, r2
-    flag clr F_ADDR
-    ldi r2, dev                    ; no transfer (zero-length packets)
 prep:                              ; r1 = SYNC + the PID the next IN gets
     ldi r1, 0x1E80                 ; STALL
     jmp f F_STALL, prep_ret
@@ -308,7 +315,6 @@ handshake:
 ; through `done`.
     flag clr F_SETUP
     flag clr F_STALL
-    flag clr F_ADDR
     cmp r1, 0x0680                 ; GET_DESCRIPTOR
     jmp z, get_desc
     cmp r1, 0x0500                 ; SET_ADDRESS

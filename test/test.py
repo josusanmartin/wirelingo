@@ -1102,8 +1102,9 @@ async def test_usb_autonomous(dut):
     """Autonomous USB low-speed enumeration (docs/usb-enumeration.md): the host
     loads usb_enum and the line unit, then stays off the bus (CS_n high, SCK
     still: checked on the pads) while the host controller model enumerates the
-    chip to Configured: a SETUP whose ACK is lost, a host ACK lost in a data
-    stage, damaged DATA, a STALLed string descriptor and SET_FEATURE, a bus
+    chip to Configured: a SETUP whose ACK is lost, SET_ADDRESS's status ACK
+    lost with an IN as the first token to the new address, a host ACK lost in
+    a data stage, damaged DATA, a STALLed string descriptor and SET_FEATURE, a bus
     reset in the middle of a configuration read, then the whole flow again at a
     new address with SET_ADDRESS's status ACK lost. Only then does the host
     read the outcome over SPI. D+ = uio0, D- = uio1 (pull-up)."""
@@ -1144,10 +1145,19 @@ async def usb_autonomous(dut, speed):
     h = LAST_USB_HOST = rtl_control_host(dut, bit=usbenum.CLOCKS_PER_BIT[speed],
                                          keepalive=speed == "low")   # test_sigrok compares its record of the bus
 
+    lost_in = []                                  # the turnaround of that IN (bit times)
+
     def flow():
         h.faults["lose_handshake"] = 1            # the first SETUP is sent twice
         assert h.get_descriptor(0, 1, 8) == DEV[:8]
+        h.faults["lose_host_ack"] = 1             # SET_ADDRESS's status ACK lost,
         h.control_write(0, bytes([0x00, 5, 5, 0, 0, 0, 0, 0]))
+        h._send(usb.token(usb.PID_IN, 5, 0))      # then an IN first: the address is
+        assert h._response() == bytes([usb.pid_byte(usb.PID_DATA1), 0, 0])   # committed on it
+        lost_in.append(h.turnarounds[-1])
+        h._steps(2)
+        h._send(usb.handshake(usb.PID_ACK))
+        h.gap()
         h.faults["lose_host_ack"] = 1
         assert h.get_descriptor(5, 1, 18) == DEV
         h.faults["bad_data"] = 1
@@ -1179,14 +1189,16 @@ async def usb_autonomous(dut, speed):
     await bridge(flow)()
     watcher.cancel()
     assert not host_port, host_port[:4]
-    assert h.injected == {"lose_handshake": 1, "lose_host_ack": 2, "bad_data": 1}, h.injected
+    assert h.injected == {"lose_handshake": 1, "lose_host_ack": 3, "bad_data": 1}, h.injected
     assert all(2.0 <= t <= 6.5 for t in h.turnarounds), (min(h.turnarounds), max(h.turnarounds))
+    assert len(lost_in) == 1 and 2.0 <= lost_in[0] <= 6.5, lost_in
     st = usbenum.decode_state((await spi.read(sim.A_FSET))[0],
                               (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0])
     assert st == dict(address=9, configured=True, pending_address=False, stalled=False), st
     dut._log.info(f"autonomous USB ({speed} speed): {len(h.log)} transactions, {h.mh.chip.cycle} cycles "
                   f"({h.mh.chip.cycle / 48e3:.1f} ms), turnaround {min(h.turnarounds):.2f}-"
-                  f"{max(h.turnarounds):.2f} bit times, host port idle throughout; state {st}")
+                  f"{max(h.turnarounds):.2f} bit times (the IN after a lost status ACK: {lost_in[0]:.2f}), "
+                  f"host port idle throughout; state {st}")
 
 
 # ------------------------------------------------------------------ USB full speed (study)

@@ -288,9 +288,11 @@ def check_enum():
 
 
 def test_usb_enum_deadlines():
-    """usb_enum at full speed, from firmware/usb_enum.timing: every path but one
-    meets the turnaround; an IN that is the first token to the new address
-    after a lost SET_ADDRESS status ACK can be answered at 30 clocks."""
+    """usb_enum at full speed, from firmware/usb_enum.timing: every path meets
+    the turnaround, including an IN that is the first token to the new address
+    after a lost SET_ADDRESS status ACK (in_ta_any: the address is committed
+    inline on that token; before the fix it went through `call commit` and
+    `prep` and could be answered at 30 clocks)."""
     chk, results = check_enum()
     print()
     for r in results:
@@ -299,7 +301,10 @@ def test_usb_enum_deadlines():
     assert not chk.errors
     assert st["data_ta"].status == "PASS"
     assert all(st[n].status == "PASS (conditional)" for n in ("in_ta", "rx_bit"))
-    assert st["in_ta_any"].status == "FAIL" and st["in_ta_any"].total()[1] == 30
+    # in_ta_any is required outright: no path from a token's end is left out
+    # except by name (not for us, or not an IN), so it may not pass conditionally.
+    assert st["in_ta_any"].status == "PASS" and not st["in_ta_any"].nonreaching
+    assert st["in_ta"].total() == (10, 15) and st["in_ta_any"].total() == (10, 21)
 
 
 def enum_session(seed, jitter, ppm, lost_ack_in=False):
@@ -328,7 +333,7 @@ def enum_session(seed, jitter, ppm, lost_ack_in=False):
 def test_usb_enum_sound_and_pad_turnaround():
     chk, results = check_enum()
     st = {r.deadline.name: r for r in results}
-    late = []
+    late, lost_in = [], []
     for seed, jit, ppm in USB_RUNS[:4] + [(9, 9.25, 2500)]:
         for lost in (False, True):
             mh, tr, h = enum_session(seed, jit, ppm, lost)
@@ -343,8 +348,10 @@ def test_usb_enum_sound_and_pad_turnaround():
                 assert lo <= clk <= hi and 3 <= clk - m.clocks <= 4, (r.deadline.name, clk, m.clocks)
                 if clk > 26:
                     late.append(round(clk, 2))
-    print(f"\nusb_enum: responses later than 26 clocks (all after a lost status ACK + IN): {late}")
-    assert len(late) == 5                      # exactly the forced lost-ACK IN, once per session
+            if lost:                           # the forced IN: the last response
+                lost_in.append(round(h.fs.turnarounds[-1][1] / h.fs.tclk, 2))
+    print(f"\nusb_enum: the forced lost-ACK IN answered at {lost_in} clocks; later than 26: {late}")
+    assert not late and len(lost_in) == 5 and max(lost_in) <= 26
 
 
 # ---------------------------------------------------------------- broken variants fail

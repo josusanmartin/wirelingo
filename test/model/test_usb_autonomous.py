@@ -171,6 +171,44 @@ def test_set_address_status_ack_lost(speed):
 
 
 @pytest.mark.parametrize("speed", SPEEDS)
+def test_set_address_status_ack_lost_then_in_first(speed):
+    """As above, but the first token to the new address is an IN, not a SETUP:
+    the device commits the address on that token and must still answer within
+    the turnaround (6.5 bit times = 26 clocks at full speed, USB 2.0
+    §7.1.18.1). Before the fix the commit sat on the IN's path and full speed
+    answered at 27.4-28.2 clocks (docs/timing-check.md, deadline in_ta_any).
+    The answer is the no-transfer one, a zero-length DATA1; enumeration then
+    completes at the new address."""
+    mh, h = device(speed)
+    with TransportIdle(mh):
+        h.faults["lose_host_ack"] = 1
+        h.control_write(0, bytes([0x00, 5, 77, 0, 0, 0, 0, 0]))
+        assert h.injected == {"lose_host_ack": 1}
+        h._send(usb.token(usb.PID_IN, 77, 0))         # an IN first
+        r = h._response()
+        assert r == bytes([usb.pid_byte(usb.PID_DATA1), 0, 0]), r
+        ta_bits = h.turnarounds[-1]
+        ta_clk = h.fs.turnarounds[-1][1] / h.fs.tclk if speed == "full" else ta_bits * 32
+        h._steps(2)
+        h._send(usb.handshake(usb.PID_ACK))
+        h.gap()
+        h._send(usb.token(usb.PID_IN, 0, 0))          # the old address is gone
+        assert h._response() is None
+        h.gap()
+        assert h.get_descriptor(77, 1, 18) == DEV
+        assert h.get_descriptor(77, 2, CFG[2]) == CFG
+        h.control_write(77, bytes([0x00, 9, 1, 0, 0, 0, 0, 0]))
+        assert h.control_read(77, bytes([0x80, 0, 0, 0, 0, 0, 2, 0])) == b"\0\0"
+    assert usbenum.state(mh.read) == CONFIGURED(77)
+    assert 2.0 <= ta_bits <= 6.5, ta_bits
+    if speed == "full":
+        assert 8 <= ta_clk <= 26, ta_clk                   # 2 to 6.5 bit times at 48 MHz
+    assert all(2.0 <= t <= 6.5 for t in h.turnarounds), (min(h.turnarounds), max(h.turnarounds))
+    print(f"{speed}: lost status ACK + IN first: answered {ta_bits:.2f} bit times ({ta_clk:.1f} clocks) "
+          f"after the EOP; configured at 77, turnaround {min(h.turnarounds):.2f}-{max(h.turnarounds):.2f}")
+
+
+@pytest.mark.parametrize("speed", SPEEDS)
 def test_set_address_waits_for_the_status_stage(speed):
     """Until the status stage, the device still answers address 0 (a SETUP
     retried there is answered), and a new SETUP cancels the pending address."""
