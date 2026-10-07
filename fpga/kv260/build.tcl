@@ -96,6 +96,16 @@ set_property include_dirs [list $src_dir $here] [current_fileset]
 read_xdc $here/kv260.xdc
 
 synth_design -top kv260_top -part $part -include_dirs [list $src_dir $here] -generic CLK_DIV=$clk_div
+# kv260.xdc times pe_lab's SPI device crossings as synchronous 2.5 ns paths,
+# which holds only when its clock (1200 MHz / (clk_div / 8)) is 8x protoemu's.
+# Otherwise (clk_div 25: 400 MHz against 48 MHz) the two clocks' edges come as
+# close as one VCO period (0.83 ns), so cut those crossings instead: the SPI
+# device demo is untimed in such a build (nothing else crosses them).
+if {$clk_div % 8 != 0} {
+  set_clock_groups -name spid_not_8x -asynchronous \
+      -group [get_clocks -of_objects [get_pins u_mmcm/CLKOUT2]] \
+      -group [get_clocks -include_generated_clocks -of_objects [get_pins u_mmcm/CLKOUT1]]
+}
 report_utilization -file $out_dir/synth_utilization.rpt
 opt_design
 place_design
