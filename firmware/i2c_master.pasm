@@ -13,6 +13,19 @@
 ; timeout the master releases both lines, sets F1, and a WRITE or READ replies
 ; 0x100 (bit 8 set) instead, so the host is never left waiting.
 ; r0 = bit counter, r1 = command, r2 = command type, r3 = timeout budget.
+;
+; Timing annotations (python -m pe.timing firmware/i2c_master.pasm; docs/timing-check.md):
+; SCL phases as the master drives them, from each `pin SCL` to the next, inside a
+; command (avoid=top: SCL low between commands lasts as long as the host makes it).
+; Clock stretching lengthens the high phase, up to the TMO-tick timeout; with no
+; stretching (stall=scl_wait:0, which needs CLKDIV >= 3) it is 4 ticks inside a
+; byte and 6 for the START (its `ldi r3` sits between the release and the WAIT).
+; @assume clkdiv=60                               ; 100 kHz at 48 MHz: 1 tick = 1.25 us
+; @deadline scl_high from=scl_hi to=scl_lo avoid=top min=4 max=2006 unit=tick "high, stretching up to the timeout"
+; @deadline scl_high_ns from=scl_hi to=scl_lo avoid=top stall=scl_wait:0 min=4 max=6 unit=tick "high, no stretching"
+; @deadline scl_low from=scl_lo to=scl_hi avoid=top min=4 max=8 unit=tick "low phase inside a command"
+; @deadline t_high from=scl_hi to=scl_lo avoid=top min=192 "100 kHz: tHIGH >= 4.0 us (192 clk)"
+; @deadline t_low from=scl_lo to=scl_hi avoid=top min=226 "100 kHz: tLOW >= 4.7 us (226 clk)"
 .program i2c_master
 .shift_out left
 .shift_in left
@@ -29,38 +42,38 @@ top:
     jmp z, do_start
 do_stop:
     pin SDA, lo              [1]
-    pin SCL, hi
+    pin SCL, hi                   ; @point scl_hi
     ldi r3, TMO
-    wait 1 pin SCL timeout r3
+    wait 1 pin SCL timeout r3     ; @point scl_wait
     jmp t, stretch_timeout
     pin SDA, hi              [1]  ; STOP: SDA rises while SCL high
     jmp top
 do_start:
     pin SDA, hi              [1]
-    pin SCL, hi
+    pin SCL, hi                   ; @point scl_hi
     ldi r3, TMO
-    wait 1 pin SCL timeout r3
+    wait 1 pin SCL timeout r3     ; @point scl_wait
     jmp t, stretch_timeout
     pin SDA, lo              [1]  ; START: SDA falls while SCL high
-    pin SCL, lo              [1]
+    pin SCL, lo              [1]  ; @point scl_lo
     jmp top
 do_write:
     ldi r0, 7
 wbit:                             ; low: out, ldi (+ pin lo, jmp of the previous bit)
     out pins, 1                   ; SDA = next data bit (SCL is low)
     ldi r3, TMO
-    pin SCL, hi                   ; high: pin, wait, jmp [1]
-    wait 1 pin SCL timeout r3     ; clock stretching
+    pin SCL, hi                   ; high: pin, wait, jmp [1]  @point scl_hi
+    wait 1 pin SCL timeout r3     ; clock stretching  @point scl_wait
     jmp t, stretch_timeout   [1]
-    pin SCL, lo
+    pin SCL, lo                   ; @point scl_lo
     jmp r0--, wbit
     pin SDA, hi                   ; release SDA for the ACK
     ldi r3, TMO
-    pin SCL, hi
-    wait 1 pin SCL timeout r3
+    pin SCL, hi                   ; @point scl_hi
+    wait 1 pin SCL timeout r3     ; @point scl_wait
     jmp t, stretch_timeout
     in pins, 1                    ; sample ACK
-    pin SCL, lo
+    pin SCL, lo                   ; @point scl_lo
     push block
     jmp top
 do_read:
@@ -68,11 +81,11 @@ do_read:
     pin SDA, hi                   ; release SDA
 rbit:                             ; low: ldi (+ pin lo [1], jmp of the previous bit)
     ldi r3, TMO
-    pin SCL, hi                   ; high: pin, wait, jmp, in
-    wait 1 pin SCL timeout r3
+    pin SCL, hi                   ; high: pin, wait, jmp, in  @point scl_hi
+    wait 1 pin SCL timeout r3     ; @point scl_wait
     jmp t, stretch_timeout
     in pins, 1                    ; sample at the end of the high phase
-    pin SCL, lo              [1]
+    pin SCL, lo              [1]  ; @point scl_lo
     jmp r0--, rbit
     and r1, 4                     ; ack bit to send
     jmp !r1, send_ack
@@ -82,10 +95,10 @@ send_ack:
     pin SDA, lo
 ack_clk:
     ldi r3, TMO
-    pin SCL, hi
-    wait 1 pin SCL timeout r3
+    pin SCL, hi                   ; @point scl_hi
+    wait 1 pin SCL timeout r3     ; @point scl_wait
     jmp t, stretch_timeout   [1]
-    pin SCL, lo
+    pin SCL, lo                   ; @point scl_lo
     pin SDA, hi
     push block
     jmp top

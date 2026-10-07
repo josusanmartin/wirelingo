@@ -30,6 +30,26 @@
 ; Turnaround (USB 2.0 §7.1.18.1: 2 to 6.5 bit times = 8 to 26 clocks from the
 ; host's SE0 -> J to our first K): about 11-16 clocks; the delays on the
 ; responses keep it off the 2-bit minimum.
+;
+; Timing annotations (python -m pe.timing firmware/usb_fs_dev.pasm --defs pe.usbdev:defines;
+; docs/timing-check.md). Turnaround = from the host's SE0 -> J at the pads to our
+; first J -> K at the pads, 8 to 26 clocks. The core sees J (`ack_wait.cond` etc.)
+; 1 to 2 clocks after the pad edge (synchroniser, docs/isa.md §2), and our first K
+; reaches the pads 2 clocks after `out line` completes (the line unit starts on the
+; next cycle and its output register drives the pad the cycle after): adjust=3..4.
+; When J becomes visible is an assumption about the host and the line unit: 2..6
+; ticks after the frame end reaches the firmware (dend, tok_end and nak_send are each
+; 2 ticks after the `in line` that returned T = 1). The receiver samples the SE0 1.5-2.5
+; clocks after its edge (§4.7) and J follows 2 bits (8 clocks) later, which gives 3..4
+; for clean edges; one more clock each way covers the host's edge jitter.
+; stall=...:0: the line transmitter is idle when a response starts, and an IN finds the
+; staged packet in the TX FIFO (the host sets F_STAGED after pushing it).
+; @deadline ack_ta from=ack_wait.cond after=dend:2..6 to=ack_out avoid=data_bad stall=ack_out:0 min=8 max=26 adjust=3..4 "DATA0/1 -> ACK"
+; @deadline in_nak_ta from=resp_wait.cond after=tok_end:2..6 to=resp_out avoid=idle,got_setup,send_data stall=resp_out:0 min=8 max=26 adjust=3..4 "IN -> NAK"
+; @deadline in_data_ta from=data_wait.cond after=tok_end:2..6 to=data_out avoid=idle,got_setup,send16,echo stall=staged_pull:0,data_out:0 min=8 max=26 adjust=3..4 "IN -> staged DATA (F_STAGED: the packet is in the TX FIFO)"
+; @deadline out_nak_ta from=resp_wait.cond after=nak_send:2..6 to=resp_out stall=resp_out:0 min=8 max=26 adjust=3..4 "OUT DATA without room -> NAK"
+; @deadline rx_bit from=rx_bit to=rx_bit.enter avoid=dend max=4 "DATA receive loop keeps up: a bit every 4 clocks"
+; @deadline tx_byte from=data_out to=data_out.enter avoid=echo max=32 "DATA transmit loop: the next byte within a byte time"
 ; Registers: r0 = bit/byte count, r1 = token tail, r2 = scratch, r3 = SYNC+PID.
 .program usb_fs_dev
 .define F_UNDERRUN F_IN            ; flags 0 and 1 are unused by the one-core firmware
@@ -65,7 +85,7 @@ idle:
 ; the per-bit loop: 3 instructions, closed by the wrap (docs/isa.md §4.2)
 dbit:
 .wrap_target
-    in line, 1                     ; through the CRC tap
+    in line, 1                     ; through the CRC tap  @point rx_bit
     jmp t, dend
     add r0, 1
 .wrap
@@ -80,10 +100,10 @@ dend:
     cmp r3, 0x1D2                  ; exact SYNC + DATA1
     jmp !z, data_bad
 data_ok:
-    wait 1 pin DM                  ; the host's EOP is over (J)
+    wait 1 pin DM                  ; the host's EOP is over (J)  @point ack_wait
     ldi r2, 0xD280            [2]  ; SYNC + ACK
     mov osr, r2
-    out line, 16
+    out line, 16                   ; @point ack_out
     ldi r1, 0x81                   ; trailer status: good
     jmp trailer
 data_bad:
@@ -154,25 +174,25 @@ got_in:
     ldi r3, 0x5A80                 ; SYNC + NAK
 ; ---------------------------------------------------------------- responses
 send16:
-    wait 1 pin DM                  ; the host's EOP is over (J)
+    wait 1 pin DM                  ; the host's EOP is over (J)  @point resp_wait
     mov osr, r3               [4]
-    out line, 16
+    out line, 16                   ; @point resp_out
     jmp echo
 send_data:
     flag clr F_STAGED
-    pull block                     ; bit count
+    pull block                     ; bit count  @point staged_pull
     mov r0, osr
     shr r0, 3                      ; bytes
     sub r0, 1
     out null, 32                   ; empty the OSR: the bytes autopull
-    wait 1 pin DM
+    wait 1 pin DM                  ; @point data_wait
 sbyte:                             ; 4 instructions per byte at most (32 clocks)
     jmp !osre, sgo                 ; bytes left in the OSR
     jmp txne, sgo                  ; or the next word is in the TX FIFO (autopull)
     flag set F_UNDERRUN            ; a streamed packet whose host fell behind: stop
     jmp echo                       ; (the line unit ends the frame; bad CRC, no ACK)
 sgo:
-    out line, 8
+    out line, 8                    ; @point data_out
     jmp r0--, sbyte
 echo:                              ; our own packet comes back: drop it
     in line, 16

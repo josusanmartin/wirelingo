@@ -1,0 +1,20 @@
+; Timing annotations for usb_enum.pasm at FULL speed (48 MHz, TURN = 4), kept
+; beside the source so the firmware file stays untouched (docs/timing-check.md):
+;   python -m pe.timing firmware/usb_enum.pasm --timing firmware/usb_enum.timing -D DP=0 -D DM=1 -D TURN=4
+; Same conventions as usb_fs_dev.pasm: the core sees the host's J 2..6 ticks after
+; the frame end reaches the firmware (tok_end and d_end are 2 ticks after the
+; `in line` that returned T = 1); pads: adjust=3..4; the line transmitter is idle
+; when a response starts (stall=...:0).
+@point in_wait at=got_in              ; wait 1 pin DM
+@point in_out at=got_in+2             ; out line, 16: SYNC + DATA0/DATA1/STALL
+@point hs_wait at=handshake           ; wait 1 pin DM
+@point hs_out at=handshake+2          ; out line, 16: SYNC + ACK/STALL
+@point lost_ack at=tok_end+6          ; call commit: a token to the new address, status ACK lost
+; in_ta excludes `lost_ack`: it assumes the first token to the new address after
+; a lost status-stage ACK is a SETUP, as a host starts every control transfer.
+; in_ta_any includes it, and FAILS: an IN there is answered up to 30 clocks
+; after the host's EOP (measured on the model: 27.4-28.2), past 6.5 bit times.
+@deadline in_ta from=in_wait.cond after=tok_end:2..6 to=in_out avoid=idle,got_setup,expect,lost_ack stall=in_out:0 min=8 max=26 adjust=3..4 "IN token -> DATA/STALL (r1 prepared ahead)"
+@deadline in_ta_any from=in_wait.cond after=tok_end:2..6 to=in_out avoid=idle,got_setup,expect stall=in_out:0 min=8 max=26 adjust=3..4 "the same, with the lost-ACK commit path"
+@deadline data_ta from=hs_wait.cond after=d_end:2..6 to=hs_out avoid=idle stall=hs_out:0 min=8 max=26 adjust=3..4 "DATA0/1 -> ACK/STALL"
+@deadline rx_bit from=d_bit to=d_bit.enter avoid=d_end max=4 "DATA receive loop: a bit every 4 clocks"

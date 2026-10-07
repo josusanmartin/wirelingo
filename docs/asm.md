@@ -11,7 +11,9 @@ writes = host.load_program(core=1, prog=prog, in_pins=16, clkdiv=host.clkdiv_for
 
 ## Lexical rules
 
-* **Comments:** `;` or `//` to end of line.
+* **Comments:** `;` or `//` to end of line. Comments may carry `@point`,
+  `@deadline`, ... annotations for the timing checker
+  ([timing-check.md](timing-check.md)); the assembler ignores them.
 * **Labels:** `name:`, either on their own line or before an instruction.
 * **Numbers:** decimal, `0x…` or `0b…`. Operand fields accept simple
   expressions (`+ - * / % << >> | & ~`).
