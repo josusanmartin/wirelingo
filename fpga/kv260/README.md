@@ -1,7 +1,10 @@
-# protoemu on the Kria KV260
+# Wirelingo (protoemu) on the Kria KV260
 
-Hardware validation of the protoemu RTL (tapeout configuration: 2 cores,
-256-word bank each, 8-deep FIFOs) on a Kria KV260, before silicon.
+Hardware validation of the chip RTL (tapeout configuration: 2 cores,
+256-word bank each, 8-deep FIFOs) on a Kria KV260, before silicon. Since
+branch `kv260-v2` the design is built from the v2 RTL (NRZI half-cycle
+sample point, SYNC_BYPASS, WAIT kind 7, CALL/RET), and every bitstream says
+which RTL revision it is (below).
 
 ## Design
 
@@ -21,6 +24,38 @@ protoemu's clock is an MMCM output from pl_clk0 (100 MHz): 1200 MHz VCO / 24 =
 50 MHz (`build.sh 25` for 48 MHz). It is asynchronous to the AXI side, as the
 chip is to its host. Package pins: the carrier fan enable (A12, held on) and
 the PMOD header (below, disabled by default).
+
+### Build identity and demo fabric (`pe_lab.v`, AXI4-Lite at `0xA0030000`)
+
+**Revision identification.** `build.sh` runs `build_id.py`, which writes
+`build_id.vh` into the staged sources; `pe_lab` returns it as read-only
+registers: the *RTL revision* (the last commit that touched the RTL inputs:
+`src/`, `flow/fpga_profile.py`, `fpga/kv260/{build.tcl,kv260_top.v,pe_spim.v,pe_lab.v,kv260.xdc}`),
+the checkout's HEAD, a dirty flag, the build time and the first 32 bits of a
+SHA-256 over the exact staged RTL and fabric files. `build.sh` refuses to
+build from uncommitted RTL inputs (`ALLOW_DIRTY=1` builds one marked dirty).
+`install.sh` writes `host/expected_build.json` on the Kria from the checkout
+it installs, and `bringup_kria.py`'s first step (`build`) prints the
+identity and fails unless the bitstream's RTL revision equals it (or
+`--expect REV`) and is clean. Commits that change only docs, tests or host
+software keep the RTL revision, so they don't force a rebuild; one that
+changes RTL does. `host/pe_lab.py` reads it: `Lab().identity()`.
+
+**Demo fabric.** `MODE` chooses what drives the uio pads protoemu leaves
+undriven: the GPIO path (reset), a **pattern generator** (1024 entries of
+value + delay, played on protoemu's clock or the 45.93 MHz alternate MMCM
+clock; every change is one register, so its times are exact in its clock),
+an **SPI device** (mode 0, MISO on uio4 for SCK = uio2 / MOSI = uio3, on a
+400 MHz clock from the same MMCM, 8 cycles per protoemu clock and
+phase-aligned; it registers SCK/MOSI at every 2.5 ns edge and puts the next
+MISO bit out DELAY + 2 cycles after the protoemu clock edge that dropped SCK,
+DELAY = 0..31; it logs MOSI and the SCK period), or an **I2C bus** joining
+uio0/uio2 (SDA) and uio1/uio3 (SCL) as wired-AND lines with pull-ups, so the
+chip's two cores can talk I2C to each other. Register map in `pe_lab.v`.
+The SPI device's two crossings (protoemu's SCK/MOSI into its first flops,
+its MISO flop into protoemu's first synchroniser flop) are timed as ordinary
+2.5 ns synchronous paths and meet timing, so its behaviour is a fixed number
+of 2.5 ns steps, not a race; with clk_div 25 (48 MHz) its clock is not 8x.
 
 ### Fabric SPI master (`pe_spim.v`, AXI4-Lite at `0xA0020000`)
 
@@ -58,6 +93,8 @@ itself, excluding Linux's buffer fill and register accesses.
     fpga/kv260/install.sh            # copy to the Kria, dtc the overlay, xmutil loadapp protoemu
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 protoemu/fpga/kv260/host/bringup_kria.py
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 protoemu/fpga/kv260/host/spim_test.py
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 protoemu/fpga/kv260/host/v2_demo.py call la spi i2c --save la.json
+    scp ubuntu@kria.[tailnet domain redacted]:la.json /tmp/ && python3 fpga/kv260/host/v2_demo.py la-model /tmp/la.json  # off the board
 
 `build.tcl` is a non-project batch flow (in-memory project for the block
 design): PS + AXI interconnect + 2 AXI GPIO, then synth/place/route of
@@ -99,9 +136,130 @@ Offline checks of the same steps (no hardware):
 The simulation's `test_spim` runs `spim_test.py` (16-word bursts) through the
 fabric master at SCK = mclk/4, /2, /1, 1-bit and quad, on both clocks.
 
-## Status (2026-10-05, Vivado 2026.1 BASIC, clk_div 24)
+## Status (2026-10-07): v2 RTL, branch `kv260-v2`
 
-### Current build (fabric master + PMOD)
+### Build
+
+RTL revision `d1aa46f` (v2 7db7d61 + `pe_lab`), digest `3adc796c`,
+Vivado 2026.1 BASIC on runner1 (4 threads), clk_div 24. Timing met, 0
+critical warnings (`out/timing_summary.rpt`): design WNS +0.196 ns, WHS
++0.017 ns, both on the SPI device's 2.5 ns crossings.
+
+| Clock / crossing | WNS | WHS |
+|---|---|---|
+| protoemu clk (50 MHz) | +4.608 ns | +0.027 ns |
+| mclk_pe / mclk_alt (fabric master) | +3.977 / +4.861 ns | +0.040 ns |
+| SPI device clock (400 MHz) | +0.520 ns | +0.017 ns |
+| protoemu clk -> SPI device (SCK, MOSI; 2.5 ns) | +0.276 ns | +0.157 ns |
+| SPI device -> protoemu (MISO into sync1 / the line unit's falling-edge flop) | +0.474 / +0.196 ns | +0.219 ns |
+| pattern generator on protoemu's clock -> protoemu | +7.279 ns | +0.381 ns |
+| pattern generator on the alt clock -> protoemu (max delay 5 ns) | +2.288 ns | (cut) |
+| GPIO SCK / pl_clk0 | +7.523 / +4.467 ns | +0.085 / +0.021 ns |
+
+Utilization: 9996 LUTs (protoemu 6534, pe_lab 1233 of which 640 LUTRAM for
+the generator's table, pe_spim 550), 6046 FFs (protoemu 2545), 4 RAMB36
+(pe_spim's buffer) + 2 RAMB18 (protoemu's IMEM banks), 9 IOBs, 0 DSP.
+`flow/fpga_profile.py` from v2 (its global configuration conversion now
+includes SYNC_BYPASS) staged the v2 RTL unchanged.
+
+### Hardware (2026-10-07, after a power cycle)
+
+`install.sh` + `xmutil loadapp protoemu`: loaded (slot 0). Identity:
+
+    [build]
+      bitstream RTL revision d1aa46f7ed7e94adc36b895a591338be51da2b7b
+      built 2026-10-06 22:07:40 UTC from HEAD d1aa46f7ed7e, RTL digest 3adc796c, clk_div 24
+      expected RTL revision d1aa46f7ed7e94adc36b895a591338be51da2b7b (expected_build.json)
+      PASS
+
+and with `--expect 7db7d61`: `FAIL: loaded bitstream is RTL revision
+d1aa46f7ed7e, expected 7db7d61`. `bringup_kria.py`: ALL PASS (clock
+49.9983 MHz; id, regs, pins, loopback, uart_tx_pin, uart_rx_pin, quad).
+`spim_test.py`: ALL PASS, all 12 configurations, the same throughput as the
+g4 build below (quad at SCK = clk 199.9/199.8 Mbit/s, 64-word quad write
+193.6 Mbit/s in 529 clk; alt clock 183.6 Mbit/s, 64-word write 177.8 Mbit/s in 576 clk).
+
+### v2 features on hardware (`host/v2_demo.py`, all through protoemu's pins)
+
+Host traffic goes over pe_spim at SCK = clk, 1-bit. Everything below is
+FPGA fabric timing; the IHP pads, the TT mux and board traces are not in
+the loop.
+
+**CALL/RET, directed** (`call`): a program with a conditional CALL not taken,
+a CALL into a subroutine that saves LR in R3, calls another and restores it:
+hardware R0..R3 = `0x65 0x6 0x2 0x2`, the cycle model's values, core halted.
+
+**WAIT kind 7 / la_capture** (`la`): core 0 runs `la_capture` (MASK 0x0F) on
+uio0-7 driven by the pattern generator; the host drains RXF with blind
+8-word READ_FIXED bursts. Synchronous run (generator on protoemu's clock,
+435 entries, 2.35 M clocks, 422 records, no gap):
+
+    timestamps: 160 edges on 4 channels, 7-430 ticks apart (unwatched channels toggling):
+                capture tick - drive tick = [58860] for every edge
+    close edges (ch1 d ticks after ch0; lateness of ch1's timestamp, ticks):
+                d=1: [-1], d=2: [5], d=3: [4], d=4: [3], d=5: [2], d=6: [1], d=7..10: [0]
+    square waves on ch0: edge every 7 ticks: 35 of 35 edges captured, every 6 ticks: 30 of 40
+
+So: **1-tick resolution** (one constant offset for every edge; its value is
+the arbitrary start offset), **7-tick dead time** with exactly the firmware
+header's rule (an edge 1 tick after a record is folded into it, 1 tick
+early; 2-6 ticks after, stamped at W+7; from 7 on, exact; nothing lost but
+pulses), and the **7-tick edge-rate bound**. `v2_demo.py la-model` replays the
+same schedule on the cycle model: its 419 records after the first change are
+**identical, word for word**, to the hardware's. Asynchronous run (generator
+on the 45.93 MHz alternate clock, 240 edges on channel 0, >= 9 alt cycles
+apart): all captured; capture tick - ideal time (alt cycle x 26.125/24)
+spans **0.995 ticks**, spread evenly over the tick:
+
+    {0.0: 14, 0.1: 20, 0.2: 26, 0.3: 23, 0.4: 27, 0.5: 29, 0.6: 24, 0.7: 17, 0.8: 21, 0.9: 24, 1.0: 15}
+
+That is a sampled input resolved to the tick. Limits: the alternate clock
+comes from the same 1200 MHz VCO as protoemu's (its phase walks; it is not
+an independent oscillator); 8 records fit in RXF, so the schedule pauses
+30000 ticks between bursts for the Python host (the sustained rate is the
+host's, see docs/reverse-engineering.md).
+
+**SYNC_BYPASS / SPI at 4 clocks per SCK** (`spi`): core 1 runs
+`spi_master_fast` (CLKDIV 1) against pe_lab's SPI device, 8 rounds of 8
+random bytes per cell; MOSI was right in every round (the device's log), SCK
+rise to rise was 32 device cycles = 4 clocks (12.5 MHz) throughout.
+
+| DELAY | device MISO after the chip's SCK-fall clock edge | no bypass | SYNC_BYPASS |
+|---|---|---|---|
+| 0-5 | 5.0-17.5 ns | ok | ok |
+| 6-13 | 20.0-37.5 ns | 1 bit late | ok |
+| 14-19 | 40.0-52.5 ns | 1 bit late | 1 bit late |
+
+The window is less than 1 clock (17.5 ns of 20) without the bypass and less
+than 2 clocks (37.5 ns of 40) with it, as `test/model/test_spi_fast.py` and
+docs/pio-comparison.md state; the step is 2.5 ns, and both crossings meet
+timing, so the boundaries are exact for this placement. **Fabric timing is
+not the TT pads**: on silicon, the 40 ns must also cover the output pad and
+mux (clock to SCK at the pin), board flight both ways and the input pad to
+the first flop, none of which is modelled here.
+
+**CALL/RET in a real program** (`i2c`): core 1 runs `i2c_device` (88 words, 6
+CALLs: the bit loop, the event push with its stretch and the START/STOP
+check are subroutines) at 0x50 with the host as its register model
+(`pe.i2cdev`, a 256-byte image); core 0 runs `i2c_master` at 100 kHz;
+pe_lab's I2C bus mode joins their pins.
+
+    write 0x10, read 8   master replies ['0x0', '0x0', '0x0', '0xf1', '0x3f', '0xa6', '0xd', '0xe6', '0x28', '0x1c', '0x5f']
+    write 0x20: CA FE    master replies ['0x0', '0x0', '0x0', '0x0']
+    write 0x20, read 2   master replies ['0x0', '0x0', '0x0', '0xca', '0xfe']
+    address 0x51         master replies ['0x1']
+
+The answers are the image's bytes, the write lands, 0x51 is NACKed, no
+stretch timeout (F1). Both ends are this chip, so this checks the CALL/RET
+firmware and the two cores' bus behaviour against each other, not against
+an external I2C device or I2C's electrical timing.
+
+`make -C fpga/kv260/sim` runs the same demos (shortened) on the RTL:
+`test_lab` (plus `test_bringup_steps`, `test_spim`; 3/3 pass).
+
+## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
+
+### Fabric master + PMOD build
 
 Timing met (`out/timing_summary.rpt`): design WNS +2.078 ns, WHS +0.013 ns.
 
@@ -189,7 +347,32 @@ the AMS temperatures fell from about 31 to 28 C over two minutes.
 Offline: `--model` passes id/regs/pins/loopback; the RTL simulation passes
 id/regs/pins/loopback/quad.
 
-## PMOD J2 (prepared, not tested on hardware)
+## PMOD J2
+
+**Hardware result (2026-10-07, v2 build, jumpers placed by the user on J2
+1-7, 2-8, 3-9, 4-10): two of the four pairs connect.** Staged: (a) all pins
+disabled, PMODIN reads 0xBB/0xFF (floating; no pull-ups); (b) only pmod0
+driven from uo0: its own pad follows (0/1), pmod4 does not; (c) each pin
+driven alone for 2 ms, the rest inputs: every pin's own pad follows its
+drive (none is tied to a rail), pmod2 <-> pmod6 and pmod3 <-> pmod7 follow
+each other, pmod0, pmod1, pmod4, pmod5 follow nothing. `pmod_test.py`:
+
+    J2 pin 1 driven: follows on pmod[] (expected [4], J2 pin 7); PMODIN low 0xBA high 0xBB
+    J2 pin 2 driven: follows on pmod[] (expected [5], J2 pin 8); PMODIN low 0xFD high 0xFF
+    J2 pin 3 driven: follows on pmod[6] (expected [6], J2 pin 9); PMODIN low 0xBB high 0xFF
+    J2 pin 4 driven: follows on pmod[7] (expected [7], J2 pin 10); PMODIN low 0x77 high 0xFF
+    UART 115200 J2 pin 1 -> pin 7: sent b'PMOD ok' got b''
+    uio2 open drain 0/release/0 on J2 pin 2 -> uio3 on pin 8 reads [1, 1, 1]
+    FAIL
+
+So D10/C11 and D11/B11 are J2 3-4 and 9-10 as inferred (or at least paired
+as inferred). The 1-7 and 2-8 jumpers join no two FPGA PMOD pins: they are
+not making contact, or they sit on other header positions, or H12/E10/B10/E12
+are not J2 1, 2, 7, 8. To check: reseat those two jumpers and rerun
+`pmod_test.py`, whose first step drives each top-row pin alone and reports
+where its level shows up. The UART and open-drain steps depend on those two pairs;
+the open-drain step also needs an external pull-up for its released level.
+
 
 Each of the 8 PMOD signal pins can carry one TT pin, chosen by `pe_spim`'s
 PMOD0/PMOD1 registers (`Spim.pmod({pmod_index: tt_pin})`, `tt_pin` 0-7 =
@@ -254,7 +437,7 @@ Software: `spim.pmod({0: 0, 1: 1})`, `OD_MASK` = 0x03 and `PIN_OUT` bits 0-1 = 1
 (release the lines) before starting `firmware/i2c_master.pasm` (`I2C_MASTER`
 in `tools/micropython/protoemu_fw.py`, 100 kHz at 48 MHz; recompute CLKDIV for 50 MHz).
 
-None of (i)-(iii) has been wired or run; `pmod_test.py` itself has not been executed.
+(ii) and (iii) have not been wired or run.
 
 ## FPGA vs ASIC differences
 
@@ -267,6 +450,10 @@ None of (i)-(iii) has been wired or run; `pmod_test.py` itself has not been exec
   The fabric master reaches SCK = clk, but with SCK phase-locked to clk
   (shared) or derived from the same reference (alt), on FPGA routing; the IHP
   pads, board traces and a truly asynchronous host are not exercised.
+* The demo fabric (pattern generator, SPI device, I2C bus wiring) replaces
+  the outside world inside the FPGA: edges are clock-exact or come from a
+  clock of the same VCO, and the SPI device's delays are fabric routing plus
+  2.5 ns steps, not pad and trace delays.
 * The host must keep CS_n high for 5 clk after reset release (docs/isa.md §6.1);
   `Board.reset()` does. In simulation, starting a read 2-3 clk after reset
   release returns a wrong ID, as specified.

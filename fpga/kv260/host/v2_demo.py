@@ -284,7 +284,9 @@ def demo_la_model(path):
     if not same:
         k = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
         print(f"  first difference at record {k}: hw {a[k:k + 3]} model {b[k:k + 3]}")
-    check(same and res["ts_lags"] == d["sync"]["result"]["ts_lags"], "hardware differs from the model")
+    # (the lag's value includes the arbitrary start offset; each must be one constant)
+    check(same and len(res["ts_lags"]) == len(d["sync"]["result"]["ts_lags"]) == 1, "hardware differs from the model")
+    print("  the hardware's la_capture records equal the cycle model's, word for word")
 
 
 # ---------------------------------------------------------------- SPI / SYNC_BYPASS
