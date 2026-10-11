@@ -1,6 +1,6 @@
 name = "wirelingo"
 version = "0.1.0"
-defaultTargets = ["Wirelingo", "wait_probe", "event_probe"]
+defaultTargets = ["Wirelingo", "wait_probe", "event_probe", "gating_probe"]
 moreLeanArgs = ["-DwarningAsError=true"]
 
 [[lean_lib]]
@@ -13,3 +13,7 @@ root = "Main"
 [[lean_exe]]
 name = "event_probe"
 root = "EventMain"
+
+[[lean_exe]]
+name = "gating_probe"
+root = "GatingMain"

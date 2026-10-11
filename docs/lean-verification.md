@@ -1,8 +1,9 @@
 # Lean verification of WAIT execution
 
-This provides executable Lean specifications and 30 kernel-checked theorems:
+This provides executable Lean specifications and 46 kernel-checked theorems:
 15 for the **resolved-condition WAIT instruction-attempt boundary**, and 15
-for the **RISE/FALL/EDGE/DIFF tracker and condition-resolution projection**.
+for the **RISE/FALL/EDGE/DIFF tracker and condition-resolution projection**,
+plus 16 for a **closed divider/delay/gating projection**.
 They establish timeout progress, selected state invariants, event retention,
 first-entry/clear rules and selected cycle priorities. Executable differential
 checks connect the specifications to the Python instruction model.
@@ -234,6 +235,10 @@ are excluded or supplied as observations, not assumed equivalent to RTL.
 
 ## Refinement gap and next proof candidates
 
+The C2 extension below closes C1's observed execution-gate input for its
+fixed-configuration subset. The C1 interface/table above remains its precise
+historical contract; neither interface establishes RTL refinement.
+
 The initial differential test is exhaustive over the selected timeout input
 domain and uses level WAIT PIN1. The event extension adds bounded clock traces
 and abstract tracker properties. Neither proves Python equivalent to Lean or
@@ -251,3 +256,117 @@ lead-coordinated RTL lockstep slice. Reset/reload
 proofs would separately address the competition FAQ's nonzero initial-flop
 and power-down guidance. These are follow-up candidates, not established
 claims in this deliverable.
+
+## C2-EUCLID-GATING: closed execution permission
+
+Starting from accepted C1 commit `03bc2a6fae0fbce630fb2989681a6329e568ea81`,
+`Wirelingo/Gating.lean` adds a reusable projection containing C1's event/R/T
+state plus `cnt`, `facc`, `dcnt`, `halted`, and `fault`. Configuration is fixed:
+one WAIT RISE/FALL/EDGE/DIFF operand, `IN_BASE`, raw `DIV_INT/DIV_FRAC`, and
+instruction delay. The PC is in its own valid bank and wraps to the same
+WAIT; a PC cancellation writes that same address. No bank/fetch oracle is
+introduced: those properties are declared domain restrictions.
+
+The only cycle inputs are logical sampled pins, already-effective enable,
+already-registered restart, and PC cancellation. No later model counters,
+tick, exec, completion or projected state enter the transition. The model
+profile used for comparisons is explicitly **two cores, two banks, 256 words
+per bank, FIFO depth 8**. Only the selected core is enabled, with targets in
+both banks represented across traces.
+
+`gateActive = enable && !restart`. The transition derives `tick = cnt==0`
+and `gateExecute = active && tick && !halted && !fault && dcnt==0` internally.
+Every active clock advances the divider and C1 tracker, including while
+halted or faulted. Eligible ticks decrement a positive delay; only a zero-delay
+attempt can invoke the existing WAIT result and load instruction delay on
+completion. PC cancellation overrides the resulting delay to zero, including
+while disabled. Restart clears counters, delay, tracker, T and halt/fault
+even while disabled, preserving R through C1's restart projection. Simultaneous
+restart and PC cancellation is rejected by the probe contract.
+
+The divider uses natural arithmetic with explicit width reduction:
+
+```text
+if cnt == 0:
+    carry = (facc + DIV_FRAC) / 256
+    facc' = (facc + DIV_FRAC) mod 256
+    cnt' = (DIV_INT + 65535 + carry) mod 65536
+else:
+    cnt' = (cnt + 65535) mod 65536
+    facc' = facc
+```
+
+This supports **raw DIV_INT=0**. Without carry it reloads 65535; with carry
+it reloads 0, exactly as the source's 16-bit modular subtraction/addition.
+No clock-rate interpretation or wall-clock termination theorem is claimed.
+
+### C2 proofs and relation
+
+Sixteen new theorems establish counter/fraction bounds, carry at most one
+for valid 8-bit inputs, quotient/remainder conservation, fractional reload,
+positive countdown, raw-zero behavior with/without carry, inactive/non-tick
+execution exclusion, disabled freeze, active divider evolution, restart
+priority, delay width and preservation of all four registers on every
+non-attempt clock. `closed_sticky_completes` composes C1's sticky-event theorem
+with the **derived** execution gate, establishing completion whenever an
+eligible attempted WAIT has a sticky event. It does not assume completion.
+
+| Closed projection | Source correspondence to investigate | Remaining obligation |
+| --- | --- | --- |
+| `divider.cnt/facc`, `dividerStep` | `cnt/facc`, `tick`, `fsum`, `cnt_next`; `Core._divider` | Bitvector/source refinement and fractional-divider timing theorem |
+| `gateActive/gateExecute` | `active/attempt/exec`; `Core.step` gates | Own-bank/fetch/config domain relation, not bank-fault proof |
+| `dcnt`, WAIT-derived completion | Delay branch/complete commit; `Core.step` | Complete instruction-fetch/delay/PC relation |
+| `eventCycle` with derived permission | C1 tracker/WAIT source signals | RTL sequential correspondence; preserved C1 decode/rotation obligations |
+| Effective enable/restart inputs | `enable/restart`, registered CTRL boundary | Actual bus capture/latency and competing host writes |
+| Same-address PC cancellation | `host_pc_w`, final delay/latch priority | General PC values, fetch redirection and simultaneous restart/PC writes |
+
+### C2 finite validation
+
+From the repository root:
+
+```sh
+python3 formal/lean/validate_gating.py --evidence /tmp/wirelingo-gating-check
+```
+
+The focused script builds and audits the original 30 and new 16 theorems,
+then runs only the C2 corpus. It does not rerun the broader C1/legacy model
+corpora. `gating_probe` is stateful: command `0` initializes the fixed config
+and raw state once; each subsequent command `1` supplies only four external
+inputs. Its evolved state is held inside the executable, never overwritten
+from model snapshots. Output includes predicted state and execution/completion
+bits, compared against actual model state and model coverage-counter deltas.
+
+The comparison independently advances the two-clock pad history to generate
+the logical pin boundary, without reading `Chip.pins_in()` for probe inputs.
+Actual `Chip.step` advances the corresponding pads/synchronizers. Initial
+counter/register/flag values are declared cases, not freshly measured model
+outputs. Physical synchronization and arbitrary pin-source behavior remain
+outside the proved relation.
+
+The final invocation passed in **6.61 seconds**: 432 deterministic 24-cycle
+traces, 10,368 baseline model cycles plus 72 mutant cycles (**10,440 total**).
+Integer dividers 1/2/4; fractional configurations 1/1, 2/128, 4/255; raw-zero
+configurations 0/0, 0/128, 0/255; initial `facc` 0/128/254/255 and `cnt`
+0/1/65535; delays; enable gaps; seeded halt/fault and restart recovery;
+restart and PC cancellation while disabled; and short pulses between ticks
+are included. Seeded states are local domain cases, not reachability claims.
+
+Three new in-memory mutations were rejected: dropped fractional carry,
+advancing the divider while disabled, and suppressing restart while disabled.
+Concrete earliest mismatch prefixes and full dependency/probe fingerprints
+are under team-root `evidence/sol-euclid/C2-EUCLID-GATING/`. The accepted C1
+source packet and prior evidence hashes are recorded separately and unchanged.
+
+Two bounded implementation corrections were used: replace an over-recursive
+proof tactic with direct modular arithmetic, then rename a reserved Lean
+identifier in the probe. The first two invocations stopped at compilation
+with zero model cycles. The third passed; all three were below 90 seconds.
+No further C2 run or implementation revision is authorized by this packet.
+
+The result closes observed tick/exec feedback for this subset. It excludes
+configuration/imem/register/FIFO writes, simultaneous restart/PC cancellation,
+bank faults, general PC control, arbitrary instructions, side-set, concurrency,
+asynchronous reset and CTRL bus latency. No source correspondence or Python
+agreement is an RTL refinement proof. Next: a separate bounded bitvector/
+RTL relation experiment for the decoder and derived gates, with fetch and
+host-priority obligations made explicit.
