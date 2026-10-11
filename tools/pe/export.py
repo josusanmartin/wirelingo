@@ -11,6 +11,7 @@ from .profile import TAPEOUT, FULL
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("file")
+    ap.add_argument("--program", help="select a named .program from a multi-program file")
     ap.add_argument("--core", type=int, default=0)
     ap.add_argument("--base", type=int)
     ap.add_argument("--profile", choices=["tapeout", "full"], default="tapeout")
@@ -22,7 +23,15 @@ def main():
     ap.add_argument("--clkdiv", type=float)
     a = ap.parse_args()
     defs = {k: int(v, 0) for k, v in (d.split("=") for d in a.define)}
-    prog = asm.assemble(open(a.file).read(), defs)
+    with open(a.file) as source:
+        text = source.read()
+    if a.program is None:
+        prog = asm.assemble(text, defs)
+    else:
+        matches = [p for p in asm.assemble_all(text, defs) if p.name == a.program]
+        if len(matches) != 1:
+            ap.error(f"--program {a.program!r} must match exactly one .program (got {len(matches)})")
+        prog = matches[0]
     profile = TAPEOUT if a.profile == "tapeout" else FULL
     base = a.base if a.base is not None else (prog.origin if prog.origin is not None else a.core * 256)
     kw = {}
