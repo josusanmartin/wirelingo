@@ -1246,6 +1246,8 @@ class Tracer:
             if done:
                 out.append((pc, cur[1], cur[2], tick, cyc, cur[3]))
                 cur = None
+        if cur is not None:
+            out.append((cur[0], cur[1], cur[2], None, None, cur[3]))
         return out
 
 

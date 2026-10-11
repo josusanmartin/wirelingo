@@ -1,0 +1,22 @@
+; Applies to each compact or unrolled block in spi_master_modes.pasm.
+; Example: PYTHONPATH=tools python -m pe.timing firmware/spi_master_modes.pasm
+;   --program spi_master_cpha0 -D CPOL=0 --timing firmware/spi_master_modes.timing
+; Default exit 1 is intentional: no finite host refill/drain guarantee exists.
+; A selected frame is 34 ticks (compact) or 32 ticks (unrolled) without pauses.
+; CLKDIV may be overridden to 4; these bounds do NOT prove pad timing.
+@assume clkdiv=3
+
+; Completion of one PULL to completion of the next includes RX-full and
+; TX-empty pauses. Without service guarantees the upper bound is unbounded.
+@deadline byte_unserviced from=frame.done to=frame.done min=32 max=34 unit=tick "no host guarantee: expect FAIL (UNBOUNDED)"
+
+; Completion of one PULL to the first attempt of the next excludes waiting
+; for the next TX word. Zero RX stall is justified for the prefilled eight-byte
+; model batch with an initially empty depth8 RX FIFO, or adequate host draining.
+; It is not guaranteed for an arbitrary stream; a ninth undrained RX byte pauses.
+@deadline byte_no_rx_pause from=frame.done to=frame.enter stall=sample:0 min=32 max=34 unit=tick "conditional on RX room at every autopush, no TX refill assumption"
+
+; A sustainable byte cadence also requires a queued next word before PULL.
+; This assumption is deliberately local and printed with the result.
+; PASS under these assumptions is NOT runtime or external timing proof.
+@deadline byte_no_fifo_pause from=frame.done to=frame.done stall=sample:0,frame:0 min=32 max=34 unit=tick "conditional on queued TX and free RX, no unconditional host-service claim"

@@ -57,12 +57,14 @@ def program(mode):
                             {"CPOL": mode >> 1})[mode & 1]
 
 
-def setup(mode, divider=4 << 8, fifo_depth=8, delay=1):
+def setup(mode, divider=4 << 8, fifo_depth=8, delay=1, prog=None, response=None):
     mh = ModelHost(fifo_depth=fifo_depth)
+    # Exercise the actual two-core/two-bank tapeout profile, not spare cores.
+    mh.chip = sim.Chip(ncores=2, nbanks=2, fifo_depth=fifo_depth)
     mh.write(sim.A_POUT, (mode >> 1) << SCK)
-    mh.apply(host.load_program(0, program(mode), out_pins=(MOSI, 1),
+    mh.apply(host.load_program(0, prog if prog is not None else program(mode), out_pins=(MOSI, 1),
                                side_pins=SCK, in_pins=MISO, clkdiv=divider))
-    peer = SpiPeer(mode, RESP, delay)
+    peer = SpiPeer(mode, RESP if response is None else response, delay)
     mh.ui = peer.miso
     return mh, peer
 
@@ -105,8 +107,9 @@ def test_full_duplex_modes(mode, divider, delay):
               for i in range(0, len(peer.edges), 2)]
     idle = [peer.edges[i + 1][0] - peer.edges[i][0]
             for i in range(1, len(peer.edges) - 1, 2)]
-    assert set(active) == {2 * divider}
-    assert set(idle) == {3 * divider, 5 * divider}
+    assert set(active) == {(1 if mode & 1 else 2) * divider}
+    assert set(idle) == {(3 if mode & 1 else 2) * divider,
+                         (5 if mode & 1 else 4) * divider}
     assert ((mh.chip.pin_out >> SCK) & 1) == mode >> 1
     assert mh.chip.cores[0].stalled and not mh.chip.cores[0].fault
 
