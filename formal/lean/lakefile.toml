@@ -1,0 +1,11 @@
+name = "wirelingo"
+version = "0.1.0"
+defaultTargets = ["Wirelingo", "wait_probe"]
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_lib]]
+name = "Wirelingo"
+
+[[lean_exe]]
+name = "wait_probe"
+root = "Main"
