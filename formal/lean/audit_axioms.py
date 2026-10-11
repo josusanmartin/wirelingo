@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check every declared WAIT theorem's transitive Lean axiom dependencies."""
 from pathlib import Path
+import argparse
 import re
 import subprocess
 
@@ -9,10 +10,14 @@ ALLOWED = {"propext", "Classical.choice", "Quot.sound"}  # Standard Lean foundat
 
 
 def main():
-    result = subprocess.run(["lake", "env", "lean", "-DwarningAsError=true", "Audit.lean"],
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", default="Wirelingo/Wait.lean")
+    parser.add_argument("--audit", default="Audit.lean")
+    args = parser.parse_args()
+    result = subprocess.run(["lake", "env", "lean", "-DwarningAsError=true", args.audit],
                             cwd=HERE, text=True, capture_output=True, check=True, timeout=60)
     declared = {"Wirelingo." + name for name in
-                re.findall(r"^theorem (\w+)", (HERE / "Wirelingo/Wait.lean").read_text(), re.M)}
+                re.findall(r"^theorem (\w+)", (HERE / args.source).read_text(), re.M)}
     audited = {}
     for name, dependencies in re.findall(
             r"'([^']+)' depends on axioms: \[([^\]]*)\]", result.stdout):
