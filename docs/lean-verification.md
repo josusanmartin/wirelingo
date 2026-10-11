@@ -579,3 +579,164 @@ Python model is stepped. All 66 RTL row streams, Lean inputs/predictions,
 corpus, mutant source/counterexample and assumption diagnostic exactly match
 frozen C4. Only documented path/time/tool bookkeeping differs. Both focused
 checks are consumed; no additional native replay or old C4 ledger change.
+
+
+## C7: core side-set output contract
+
+C7 adds seven manual Lean pin-effect lemmas and a standalone actual-core
+comparison. `Wirelingo/SideSet.lean` is a manually written semantics, not a
+machine-checked translation of SV. It normalizes count/base/sd to 3/5/8 bits,
+clamps count to four, and selects each destination pin independently:
+local bit j maps to `(base+j) mod 32`. Optional encoding reserves sd[7];
+remaining side bits occupy the upper bits of sd above the delay field.
+Completion is an intentionally unused argument of `sideEffect`. Output and
+output-enable direction are separate channels. `sideExecute` composes the
+accepted `gateExecute` with explicit bank validity. The bridge example proves
+mandatory count2/base9/sd128 yields out mask `0x600`, value `0x400` with
+false completion. The other lemmas state completion independence, no side
+write without execution, optional disable, and direction separation.
+
+The new `flagSideCycle` is a separately explicit narrow executable projection
+for stable WAIT kind5/FLAG1, flag0, with qualifier, timeout and auto-clear bits
+all zero. It does not call `gatingWaitResult` or `decodeKind`: C1/C2's proved
+RISE/FALL/EDGE/DIFF contract is not extended to flags by this experiment.
+Flag0 is sampled only for completion at an executing tick. The raw divider,
+delay, fault/halt, PC and stalled projection is closed from one initial state
+and external enable/restart/F0 drives, never later DUT counters or results.
+No general sequential flag-WAIT theorem is claimed.
+
+The actual `pe_core.sv` source is pinned at SHA-256
+`00082387fba0b09c143e897e5c037d9d1784fa7e5893c7822ca100c7e71955e0`.
+The source-to-semantics map is:
+
+| Source signals/expressions | Manual projection / observation |
+| --- | --- |
+| instr[31:27], sd[26:19], x[18:0]; wkind/x[18:16], widx/x[15:11] | fixed op1, kind5, index0; exact word/LE bytes in corpus |
+| cnt==0; active=enable&&!restart; attempt=active&&tick&&!halted&&!fault&&dcnt==0; bank_ok=pc[9:8]==IDX; exec=attempt&&bank_ok (210–213) | accepted gateExecute plus explicit bank check; pre-edge exec |
+| sc=min(side_count,4), dbits=8-sc-side_opt; side_en=optional?sd[7]:1; side_v shifted/masked; rotl32 side_mask/side_val (216–224) | normalized fields and independent per-pin mask/value oracle |
+| side_act=exec&&sc!=0&&side_en (222) | sideEffect; completion has no input to activation |
+| W_FLAG1:wflag&&qual; OP_WAIT wbase/timeout branches (329–344,427–448) | unqualified timeout-free F0 completion, qualified pre-edge `exec&&complete` |
+| pw_out/pw_oe default0; pw_data/out_data; pw_val_out/pw_val_oe (394–401,631–634) | WAIT has no main write; reset OSR0, autopull0 imply main bus values0 in this domain |
+| side_to_out/side_to_oe; m_out/m_oe/s_mask; wr_out_en/val and wr_oe_en/val (635–644) | all four pre-edge buses; channel separation; no registered pad accumulator |
+| fsum[8], 16-bit cnt_next, fsum[7:0] (202–209,774–775) | accepted dividerStep; post-NBA cnt/facc |
+| restart first; else active; eligible tick delay decrement/bank fault/exec, stalled and complete delay load (754–797) | separate flagSideCycle; post-NBA dcnt/halt/fault/stalled |
+| fetch_addr restart then host PC then commit; pc_seq/self-wrap (659–668); pc<=fetch_addr (753) | fixed entry/wrap/PC own-bank slot0; post-NBA PC; host writes excluded |
+
+`rtl_sideset_tb.sv` instantiates unchanged core plus real FIFO/clock-gate
+dependencies at FIFO_LOG2=3, primary IDX1 and one IDX0 control. Every trace
+has an asynchronous reset event and two reset edges, followed by one
+low-clock configuration/raw-state deposit. Thereafter only DUT input ports
+change. Inputs settle for four ns, then all write buses/exec/qualified
+completion are captured before the rising edge. State is captured one ns
+after it, after NBA. No force/release or state feedback is used.
+
+The predeclared corpus contains 57 own-bank one-step cases, one separately
+classified wrong-bank assumption diagnostic, and two 20-clock sequences.
+It covers stalled/completed WAIT with identical side value, mandatory and
+optional side-set, count0/4/clamped7, base31 wrap, both channels, all execution
+suppression gates, delay and raw halt/fault seeds. The div4 stalled sequence
+expects repeated bridge writes on clocks0/4/8/12/16 with no completion;
+the other crosses enable gaps, disabled restart and flag changes between ticks.
+Total expected actual clocks including resets and the isolated RTL mutant:
+221. The mutant changes the unique actual source expression from `exec` to
+`exec&&complete` and must suppress the bridge buses on clock0; offline channel
+swap and lost-wrap-bit mutations of captured rows must also be rejected.
+Exact results, audit output, raw rows, commands and syscall dependency hashes
+are retained in the frozen C7 evidence ledger; a failure is retained rather
+than replacing the DUT or weakening the oracle.
+
+Replay uses explicit existing inputs. Obtain the supplied schema1
+`accepted-inputs.json` from the C7 evidence packet (copy it anywhere); its
+canonical hash, baseline c77dd128, exact source and import-object identities
+are enforced independently of receipt location. Existing accepted
+Wait/Event/Gating objects and Lean4.28 standard library are prerequisites;
+the checker does not run Lake or rebuild them. Select the real Icarus wrappers
+and existing strace executable. Prepare only the parent of a fresh output
+path. For example, from the repository root:
+
+```sh
+python3 formal/lean/check_rtl_sideset.py \
+  --output /absolute/fresh-parent/c7-replay \
+  --reference /absolute/input-packet/accepted-inputs.json \
+  --iverilog /absolute/oss-cad-suite/bin/iverilog \
+  --vvp /absolute/oss-cad-suite/bin/vvp \
+  --lean /absolute/lean4-v4.28.0/bin/lean \
+  --lean-lib /absolute/lean4-v4.28.0/lib/lean \
+  --lean-objects /absolute/repository/formal/lean/.lake/build/lib/lean \
+  --strace /absolute/existing/strace
+```
+
+All paths and identities are validated before destination creation; even an
+existing empty destination is rejected. `--declare-only` follows the same
+contract and performs no compiler/model/RTL clocks. The new module is compiled
+into the fresh evidence root with exact accepted import copies, then its
+closed executable projection is run through Lean's `--run`; no LLVM/native
+Lean executable or existing .lake object is overwritten. Icarus binaries,
+TMPDIR and syscall logs also stay in the fresh output. The <=90-second ledger
+counts reset and captured RTL clocks, including negative probes/failures.
+
+These are manual semantics theorems plus finite actual-core output evidence,
+not universal RTL refinement. Count/base decoding, rotation and bus expression
+correspondence are still a manual translation/trust boundary; the finite
+checker/thebench/simulator/Lean runtime are trusted. Seed reachability is not
+proved, including fault-without-halt and arbitrary divider/delay seeds.
+Nonzero OSR/main pin data, other instructions/WAIT kinds, flag timeout,
+qualifiers/auto-clear, arbitrary host/configuration writes, simultaneous
+restart/PC writes, registered CTRL latency, registered fetch/SRAM, full-chip
+flag arbitration, pin ownership muxes, pads/synchronizers, and physical timing
+are excluded. Effective enable/restart/logical F0 are external boundary inputs.
+
+
+Frozen C7 outcome: all seven new lemmas passed the axiom audit (only `propext`
+where required); unchanged RTL matched all 98 predictions over 60 streams,
+including 57 own-bank one-step cases, two 20-clock sequences and the one
+wrong-bank diagnostic. Actual aggregate was 218 clocks including 120 reset
+edges. The mutant compiler rejected the forward reference to `complete` at
+line222 (its declaration is line357), so the required actual-RTL mutation
+rejection has NOT been established. The offline mutations occur after that
+compile in the checker and were not reached. Two earlier proof builds failed
+on unused-simp-argument warnings; both diagnostics remain frozen. Three source
+revisions and four focused checks are exhausted; no rerun is implied. Full
+C7 acceptance is unmet. The next narrow obligation is a separately authorized
+mutant-harness correction that preserves the expected bridge failure, followed
+by the actual and offline negative controls. No semantic RTL disagreement was
+observed on the unmodified declared corpus, and no product semantics changed.
+
+
+## C8: disposable side-set mutant declaration binding
+
+C8 corrects only the evidence-local RTL mutation generator. The early
+initialized `side_act` declaration becomes `wire side_act;`; immediately after
+the unchanged `reg complete, jump, new_wait;` declaration it adds exactly
+`assign side_act = exec && complete && sc != 3'd0 && side_en;`.
+Both exact source needles must occur once; the receipt records both edits.
+No product statement, default_nettype, compiler option, positive input,
+comparison assertion, Lean proof or testbench changes. C7's original sources,
+patch, positive rows and elaboration failure remain immutable.
+
+The fresh C8 checker invocation uses the same explicit-input command above,
+with a new `--output` and the identical accepted provenance receipt. Its
+historical internal5000-clock cap is unchanged; this ticket's external
+acceptance cap is300, with expected221 clocks including resets and the actual
+mutant. Only one native replay is authorized. The result ledger must show
+seven identical lemma audits,60 unchanged positive/assumption streams and98
+unchanged Lean rows, executed actual mutant failure on bridge clock0, both
+offline negative controls rejected, and final checker exit0. The source/AST
+check uses zero compiler/Lean/RTL/model executions. Exact commands, input and
+prior-packet inventories, source deltas, raw rows and loaded runtime hashes
+are in the separate frozen C8 packet. This adds negative-control evidence for
+the finite core-bus slice; it does not establish universal SV refinement,
+normal fetch, chip pin ownership, pads/electrical or whole-program behavior.
+
+
+Frozen C8 result: PASS, final checker exit0 in15.818s. All60 original
+positive/assumption streams and98 Lean rows, their inputs and the seven-lemma
+axiom audit are byte-identical to frozen C7. The real completion-gated RTL
+mutant elaborated and mismatched bridge clock0: expected out mask/value
+0x600/0x400, observed0/0, with exec1 and qualified completion0 in both.
+Channel-swap and lost-wrap offline controls were rejected at clock0. Aggregate
+221 actual RTL clocks (122 reset edges,99 captured rows including mutant),
+61 one-time deposits, zero model steps. Both focused checks and the single
+implementation revision are consumed. All1450 prior packet files remain
+byte-identical. C8 earns the missing bounded negative controls while preserving
+C7's historical partial/failure evidence; host review/commit remains separate.
