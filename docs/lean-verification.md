@@ -370,3 +370,212 @@ asynchronous reset and CTRL bus latency. No source correspondence or Python
 agreement is an RTL refinement proof. Next: a separate bounded bitvector/
 RTL relation experiment for the decoder and derived gates, with fetch and
 host-priority obligations made explicit.
+
+## C4-EUCLID-RTL-GATE: finite native RTL correspondence
+
+The C4 packet starts at accepted C2 commit
+`8e47d0c9f201cab275e0f0c53eb6aaa1e588c9dc`. It adds a standalone Icarus
+testbench that instantiates **the unchanged `src/pe_core.sv`**, with its real
+`pe_fifo`, `pe_fifos` and behavioral `pe_cg` dependencies. `FIFO_LOG2=3` and
+IDX0/IDX1 are separate elaborations. This tests the core boundary; there is
+no substitute SV gate model, chip synchronizer, SRAM or host-port model.
+
+The stable instruction input encodes one WAIT RISE/FALL/EDGE/DIFF. PC, entry
+and both wrap endpoints select that core's bank and the same WAIT address.
+The only later drives are logical `pins_in`, effective enable/restart, and
+a same-address host PC write via `bus_sel/bus_we`, offset `0x08`. All other
+bus/flag/line/FIFO inputs stay quiescent; side-set remains disabled. Joint
+restart/PC write is excluded. Input words, little-endian instruction bytes,
+initial states and every drive are frozen before tool execution.
+
+Each trace begins with asynchronous reset and two reset rising edges. With
+clock low after reset, the testbench **deposits configuration and projected
+state once** through hierarchical procedural assignments. It never uses
+`force/release`, and never writes internal state after that deposit. These
+are declared raw-state cases, not reachability proofs: in particular the
+fault=1/halted=0 seed violates the reachable core invariant; cnt=65535 and
+delay=255 under the fixed small divider/delay are outside reset-reachable
+states of this restricted configuration. Halt seeds may require an earlier
+instruction outside the fixed-WAIT domain. Deposits bypass host programming,
+reset-to-configuration timing and instruction-memory loading.
+
+Sampling is explicit and race-free: drive ports with clock low, settle four
+ns, capture pre-edge `exec` and **`exec && complete`**, raise clock, then wait
+one ns past NBA updates before reading tracker, R/T, cnt/facc/dcnt and flags.
+Unqualified `complete` is combinational decode and is not a completion event.
+The accepted C2 `gating_probe` evolves independently from the same initial
+state and external drives. RTL state/outputs never enter Lean or subsequent
+test inputs. All predictions are computed before running the DUT traces.
+
+### Actual source map and arithmetic relation
+
+Line references below bind the pinned source hash in the C4 evidence packet.
+`source-expression-map.json` retains the exact text and line numbers.
+
+| RTL expression | Lean meaning / boundary |
+| --- | --- |
+| `op=instr[31:27]`, `sd=instr[26:19]`, `x=instr[18:0]` (169–171) | WAIT opcode 1, fixed 8-bit delay, 19-bit operand; side_count/side_opt=0 |
+| `tick=cnt==16'd0`, 9-bit `fsum={0,facc}+{0,div_frac}`, 16-bit `cnt_next` (188–190) | Explicit 16-bit modular subtraction/reload and 8-bit fraction; carry is `fsum[8]` |
+| `active=enable&&!restart`; `attempt=active&&tick&&!halted&&!fault&&dcnt==0`; `exec=attempt&&bank_ok` (210–213) | C2 derived gate under `pc[9:8]==IDX`; bank restriction is explicit |
+| `wkind=x[18:16]`, `widx=x[15:11]`, qualifier and transition (196–201) | RISE/FALL/EDGE, selected pin and edge qualification |
+| `wref=R[x[15:14]]`, `wdiff=((rotated_pins[7:0]^wref[7:0])&x[7:0])!=0`, `edge_done` (206–208) | DIFF reference/budget aliases use pre-write R; sticky event OR current condition |
+| Edge `wbase=in_wait&&edge_done`; DIFF `in_wait?edge_done:wdiff`; timeout (335–344) | Edge first attempt ignores history; DIFF first attempt is level; event precedes timeout |
+| WAIT decode R decrement and T update (427–443) | C1 attempted-WAIT semantics, invoked only through derived `exec` |
+| `commit=exec&&complete`; restart/host-PC/commit fetch priority (657–663) | Qualified completion; fixed self-wrap and same-address cancellation exclude general fetch reasoning |
+| Restart branch before active branch (755–772) | Clears divider/tracker/delay/T/halt/fault even with enable=0; R preserved |
+| Active divider and tracker before tick/delay/exec gates (773–797) | Every active clock advances divider/tracker, including halt/fault and non-tick clocks; first entry clears stale event |
+| Final `host_w` PC-write case (827–830) | Overrides dcnt/in_wait after core updates, including while disabled; tracker prev/event otherwise retained |
+
+`Wirelingo/RtlGating.lean` gives four small arithmetic/gate lemmas. A **manual
+Nat transcription** models the 9-bit sum modulo 512, carry bit as division
+by 256 modulo 2, and 16-bit counter truncation modulo 65536. Under 8-bit
+fraction inputs it proves the sum has no 9-bit overflow, bit 8 equals C2's
+carry, the divider one-step equals `dividerStep`, and the gate equals
+`gateExecute` under own-bank validity. Raw DIV_INT=0 is included through
+modular subtraction. This is not a machine-checked translation of SV or a
+sequential refinement theorem. Axiom audit found only `propext` and
+`Quot.sound`; no sorry/new axioms. The 46 accepted lemmas remain unchanged;
+the combined catalogue now has 50 lemmas, with the four new ones audited
+separately in C4.
+
+### Predeclared traces, native result and negative evidence
+
+The corpus is exactly 64 positive traces: both IDX values, four WAIT kinds,
+and eight C2-derived divider/state rows, each with 32 comparison clocks plus
+two reset clocks. It covers integer 1/2/4, fractional 1/128/255, raw integer
+zero with and without carry, facc near wrap, cnt=65535, delay, enable gaps,
+seeded halt/fault and recovery, disabled restart/PC cancellation, DIFF
+reference/budget aliases, edge qualifiers and short non-tick pulses.
+
+Final invocation **PASS in 14.38 seconds**: 2,048 positive comparison clocks,
+46 non-tick event captures, 24 disabled restart clocks and 24 disabled PC
+cancellation clocks. Every selected projected state and pre-edge permission/
+completion agrees with the unchanged compiled accepted Lean probe. A separate
+one-clock **wrong-bank assumption violation** yields attempt=1, bank_ok=0,
+exec=0, halted=1, fault=1 as expected; it is not a positive trace.
+
+An actual RTL mutant, labeled non-product and compiled only from an evidence
+copy, removes `{15'd0,fsum[8]}` from `cnt_next`. It is rejected at clock 0:
+DIV_INT=2, DIV_FRAC=128, facc=128, cnt=0 predicts cnt'=2 but the mutant gives
+1. The full source delta, instruction word `083a0461`, raw initial state and
+one-clock failing drive prefix are retained. Real FIFO/clock-gate dependencies
+stay unchanged in this negative compilation.
+
+Commands/logs are retained under team-root
+`evidence/sol-euclid/C4-EUCLID-RTL-GATE/validation-N/`; the focused driver is
+historical C4 commands used `check_rtl_gating.py --invocation N`. That frozen
+interface cannot replay its exhausted private directory; C5 below supplies
+the corrected public replay command. The historical runner used a
+finite-ticket ledger and refused existing invocation directories. Four
+invocations and three corrections were used: proof simplification, evidence
+namespace import setup, and compiler scratch placement. Invocations 1/2
+failed before any RTL clock (6.86/4.71 seconds). Invocation 3 passed in 13.91
+seconds but Icarus used its default ephemeral `/tmp/ivrl*` scratch; the final
+invocation repeated the identical corpus with TMPDIR under C4 evidence.
+Retained syscall logs verify final compiler file writes use that directory
+(normal `/dev/null` and `/dev/tty` opens excluded). All permanent build/output
+artifacts are under C4 evidence; accepted `.lake` objects/probe are read-only
+inputs. No further C4 source revision or native run follows the freeze.
+
+Across all invocations: **4,426 total RTL clocks**, including 264 reset clocks,
+132 one-time deposits (no additional edge), both wrong-bank negatives and both
+32-clock RTL-mutant traces; **zero incidental Python model cycles**. Actual
+tool wrappers, loader, Icarus executables/compiler target/VPI modules and
+loaded libraries are pinned from `strace` exec/read-open logs. The tool reports
+Icarus 14.0-devel; exact binary hashes, not its version label, bind the check.
+
+The result is finite RTL/Lean agreement at the declared boundary plus four
+separate manually transcribed arithmetic lemmas. It excludes full-chip
+synchronization, SRAM/registered-fetch timing, host serialization/CTRL latency,
+arbitrary host writes/configuration/instructions, general PC/bank behavior,
+FIFO operations, side-set, cross-core concurrency, asynchronous reset during
+execution, joint restart/PC writes, reachability, physical timing/electrical
+behavior and general sequential refinement. A next obligation is an RTL-state
+relation preserved across arbitrary-length traces of this subset, followed
+separately by fetch/control-boundary integration.
+
+## C5-EUCLID-REPLAY: explicit, fresh replay interface
+
+C5 corrects C4's replay plumbing. The original C4 checker/docs snapshots,
+four invocation records, corpus, source map, bench and arithmetic lemmas remain
+frozen in C4 evidence. The checker now resolves repository sources from its
+own file and requires explicit output, probe, provenance, Icarus, Lean library/
+object and strace paths. It has no private team/evidence/tool defaults and
+does not read the old C2 result log. It performs no implicit accepted-probe
+build, object replacement, dependency fetch or tool installation.
+
+Prepare the read-only inputs before running: the existing Icarus compiler
+and vvp executables (their runtime/loader dependencies must be available),
+Lean 4.28 executable and standard library, strace, and the accepted C2
+`gating_probe` plus its exact compiled object bundle. The ordinary object
+root contains `Wirelingo/*.olean*`; a prepared repository may use
+`formal/lean/.lake/build/lib/lean` and `.lake/build/bin/gating_probe`. An
+explicit byte-identical copy of these artifacts is also valid. This checker
+does not prepare/build them. Missing or differently built accepted inputs
+are errors, not a request to silently regenerate a reference.
+
+Supply the pinned schema1 `reference-provenance.json` from the C5 handoff
+packet as an explicit input. It contains baseline
+`8e47d0c9f201cab275e0f0c53eb6aaa1e588c9dc`, 29 repository source/config hashes,
+the accepted probe hash and all six accepted object hashes. Its canonical
+identity, checked in the source, is
+`5155ceb41cc12ea9f9c533baaa7275430c43b9aaaa11ef63d976be3660137277`:
+SHA-256 of JSON with sorted keys and compact separators. Receipt location
+and JSON whitespace may change; identity contents may not. Baseline, actual
+probe, repository sources and object set/bytes must all match before output
+creation. The accepted probe hash remains
+`17ccae47742796f268346790ce4e1388ae0684cc34cdaa4f26b673a762ea9c79`.
+This is a deliberately pinned replay contract; a new reference/build needs
+separate review and a new accepted identity.
+
+From the repository root, with the listed inputs already prepared:
+
+```sh
+task_reference=/path/to/reference-provenance.json
+task_probe=/path/to/accepted/gating_probe
+task_objects=/path/to/accepted/object-root
+task_icarus=/path/to/oss-cad-suite
+task_lean=/path/to/lean-4.28.0
+task_strace=/path/to/strace
+mkdir -p /path/to/replay-parent
+python3 formal/lean/check_rtl_gating.py \
+  --output /path/to/replay-parent/rtl-replay-001 \
+  --reference "$task_reference" --probe "$task_probe" \
+  --iverilog "$task_icarus/bin/iverilog" --vvp "$task_icarus/bin/vvp" \
+  --lean "$task_lean/bin/lean" --lean-lib "$task_lean/lib/lean" \
+  --lean-objects "$task_objects" --strace "$task_strace"
+```
+
+The destination itself must **not exist**, even if empty; its parent must
+already exist and be writable. Every path/identity check is read-only and
+precedes mkdir/declaration. Argument errors, missing inputs, wrong identities,
+existing destinations and dangling output symlinks reject without writing
+there. Each fresh destination contains its own `input-receipt.json`, copied
+provenance input, unchanged `predeclared-traces.json` and a single
+`validation-1/` ledger. No old C4 ledger is read/reset/reused or its cap raised.
+All compiler scratch uses the new invocation's TMPDIR. `--declare-only`
+requires the same explicit valid inputs and fresh output contract, runs no
+compiler/RTL/model, and creates a declaration-only directory; use another
+fresh directory for an actual replay.
+
+C5 is only CLI/provenance/output plumbing and documentation. ROWS, corpus,
+input encoding, first mismatch, positive assertions, 64x32 predictions,
+actual RTL mutant and theorem audit semantics remain unchanged. The C5
+evidence packet retains an AST preservation audit and the old frozen packets'
+before/after hashes. The exact fresh native argv, exits, TMPDIR, loaded runtime
+hashes and deterministic row/counterexample comparison are retained there.
+The native result and all core-boundary exclusions described in C4 still
+apply; reproducibility does not establish broader RTL refinement.
+
+The bounded correction passed: 18 grouped CLI/safety cases in 1.07 seconds
+with zero compiler/RTL/model execution, then one fresh native replay in 14.19
+seconds (14.08 seconds inside the checker). It used explicit byte-identical
+accepted probe/object copies and a relocated supplied receipt. The unchanged
+64x32 corpus produced 2,048 positive clocks, 46 non-tick captures and 24 each
+disabled restarts/PC cancellations; the real RTL carry mutant still fails at
+clock 0 and the wrong-bank diagnostic is unchanged. Total C5 clocks, including
+132 reset edges and both negatives, are 2,213; 66 deposits add no edge and no
+Python model is stepped. All 66 RTL row streams, Lean inputs/predictions,
+corpus, mutant source/counterexample and assumption diagnostic exactly match
+frozen C4. Only documented path/time/tool bookkeeping differs. Both focused
+checks are consumed; no additional native replay or old C4 ledger change.
