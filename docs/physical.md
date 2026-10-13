@@ -476,7 +476,10 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 runner1:~/protoemu-flow/protoemu-exp-fo6). t48ba plus one buffer that keeps
 net3483 within the fanout limit; `flow/release_check.py` passes every
 timing and electrical item at every corner and lacks only the GL, SDF and
-precheck receipts for this netlist.
+precheck receipts for this netlist. Run fo7 (the docs commit de39d45 on top,
+same `gen_config.py` defaults) reproduced it: the same netlist, and the
+same GDS once the timestamps in its BGNLIB/BGNSTR records are zeroed
+(`5e0e3c6e…` for both).
 
 **Previous candidate: t48ba** (netlist sha256 `e400fa30c291f653…`, GDS
 `8899bc154fc3975a…`; 47 % stdcell utilization, 53 % with the macros;
