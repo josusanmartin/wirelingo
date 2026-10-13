@@ -9,8 +9,8 @@
    and core 0's capture of the clone decodes to the same transcript. Then a
    man in the middle: one register is changed on its way to the master.
 
-Plus the capture timing contract (edges timestamped within one 5-tick sample)
-and the gap marker when the host stops draining.
+Plus the capture timing contract (edges timestamped to the tick by WAIT kind
+7's timeout counter) and the gap marker when the host stops draining.
 """
 import os
 import pathlib
@@ -22,6 +22,7 @@ from pe.modelhost import ModelHost
 FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 SDA, SCL = 0, 1
 HALF = 62                                   # SCL half period, clocks: 400 kHz at 50 MHz
+CHANNELS = 0b11                             # la_capture's MASK: SDA, SCL
 _rng = random.Random(5)
 ROM = bytes(_rng.getrandbits(8) for _ in range(256))
 OPS = [
@@ -46,9 +47,8 @@ def chip():
     mh.write(sim.A_POUT, 0b11)               # released
     mh.write(sim.A_OD, 0b11)
     mh.pull_up = 0b11
-    cap = asm.assemble((FW / "la_capture.pasm").read_text())
+    cap = asm.assemble((FW / "la_capture.pasm").read_text(), {"MASK": CHANNELS})
     mh.apply(host.load_program(0, cap, in_pins=0, clkdiv=1 << 8))
-    mh.write(sim.core_reg(0, sim.C_R0 + 3), 0b11)     # channel mask: SDA, SCL
     return mh
 
 
@@ -86,7 +86,7 @@ def run_master(mh, ops, eeprom=None, device=None, budget=600000):
 
 
 def decode(words):
-    cap = la.decode_records(words)
+    cap = la.decode_records(words, CHANNELS)
     assert cap.exact, cap.gaps
     ev = la.i2c_events(cap, SDA, SCL)
     return cap, ev, la.i2c_summary(ev)
@@ -134,7 +134,7 @@ def test_la_command_line(tmp_path, capsys):
     _, words = run_master(mh, OPS[:1], eeprom=i2cbus.Eeprom(SDA, SCL, 0x50, ROM))
     f = tmp_path / "words.txt"
     f.write_text("".join(f"{w:08x}\n" for w in words))
-    la.main([str(f), "--vcd", str(tmp_path / "bus.vcd"), "--i2c", "SDA=0,SCL=1"])
+    la.main([str(f), "--mask", "3", "--vcd", str(tmp_path / "bus.vcd"), "--i2c", "SDA=0,SCL=1"])
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith(f"{len(words)} states") and out[1:] == TRANSCRIPT[:2]
     vcd = (tmp_path / "bus.vcd").read_text()
@@ -216,19 +216,25 @@ def test_device_response_times():
     assert max(sda_lat) <= 10 and max(scl_lat) <= 4 and min(stretch) == 22
 
 
-def test_capture_timestamps():
-    """Random edges on 4 channels, spaced >= 17 ticks: each record's time is
-    the edge's time plus a constant within one sample (0..4 ticks); an idle
-    stretch longer than an R2 round is bridged by an idle record."""
-    rng = random.Random(3)
+def la_core(mask):
     mh = ModelHost()
-    mh.apply(host.load_program(0, asm.assemble((FW / "la_capture.pasm").read_text()), in_pins=0, clkdiv=1 << 8))
-    mh.write(sim.core_reg(0, sim.C_R0 + 3), 0xF)
+    mh.apply(host.load_program(0, asm.assemble((FW / "la_capture.pasm").read_text(), {"MASK": mask}),
+                               in_pins=0, clkdiv=1 << 8))
     mh.ext_oe, mh.uio = 0xFF, 0
+    return mh
+
+
+def test_capture_timestamps():
+    """Random edges on 4 channels (and noise on 4 unmasked ones), spaced >= 7
+    ticks: every record's time is the edge's time plus the same constant (the
+    synchroniser), i.e. timestamps to the tick; an idle stretch longer than a
+    counter round is bridged by an idle record."""
+    rng = random.Random(3)
+    mh = la_core(0x0F)
     t, sched = 100, []
-    for i in range(120):
-        t += rng.randint(17, 400) if i != 60 else 400000     # one gap > 327,690 ticks
-        sched.append((t, rng.randint(1, 15)))                # XOR mask: 1-4 channels change
+    for i in range(160):
+        t += rng.randint(7, 400) if i != 60 else 400000      # one gap > 65536 ticks
+        sched.append((t, rng.randint(1, 15) | (rng.getrandbits(4) << 4)))  # 1-4 channels + noise
     mh.start(1)
     t0, words, state, got = mh.chip.cycle, [], 0, []
     for when, flip in sched:
@@ -238,23 +244,65 @@ def test_capture_timestamps():
             mh.chip.cores[0].rxf.clear()
         state ^= flip
         mh.uio = state
-        got.append(state)
+        got.append(state & 0x0F)
     mh.step(100)
     words += mh.chip.cores[0].rxf
-    cap = la.decode_records(words)
-    assert cap.exact
+    cap = la.decode_records(words, 0x0F)
+    assert cap.exact and not cap.pulses
     assert [s for _, s in cap.edges[1:]] == got
-    assert any(w >> 24 == la.M_IDLE for w in words)
-    lag = [ct - et for (ct, _), (et, _) in zip(cap.edges[1:], sched)]   # capture time - edge time
-    assert max(lag) - min(lag) <= la.POLL - 1, (min(lag), max(lag))
+    assert len(cap.idles) == 400000 // 65536
+    lag = {ct - et for (ct, _), (et, _) in zip(cap.edges[1:], sched)}   # capture time - edge time
+    assert len(lag) == 1, sorted(lag)
+    print(f"\n{len(got)} edges >= 7 ticks apart: capture time - edge time = {lag.pop()} ticks for every one")
+
+
+def test_capture_close_edges():
+    """Edges on two channels d = 1..6 ticks apart (inside the 7-tick loop):
+    neither is lost; the second is timestamped at most 1 tick early (folded
+    into the first's record) or 5 ticks late. A square wave on one channel
+    with an edge every 7 ticks is captured exactly; faster, pulses go missing."""
+    for d in range(1, 7):
+        mh = la_core(0x03)
+        mh.start(1)
+        mh.step(30)
+        t0, words, want = mh.chip.cycle, [], []
+        for rep in range(10):
+            for ch in (0, 1):                          # ch0 changes, then ch1 d ticks later
+                want.append((mh.chip.cycle - t0, mh.uio ^ (1 << ch)))
+                mh.uio ^= 1 << ch
+                for _ in range(d if ch == 0 else 40):
+                    mh.step()
+                    words += mh.chip.cores[0].rxf
+                    mh.chip.cores[0].rxf.clear()
+        cap = la.decode_records(words, 0x03)
+        got = cap.edges[1:]
+        assert cap.exact and got[-1][1] == want[-1][1]
+        assert [s for _, s in got if s in (0, 3)] == [s for _, s in want if s in (0, 3)]   # no pair lost
+        lag = got[0][0] - want[0][0]
+        firsts = [t for t, s in got if s in (1, 2)]
+        seconds = [t for t, s in got if s in (0, 3)]
+        assert all(t - w - lag in range(-1, 6) for t, (w, _) in zip(seconds, want[1::2])), (d, cap.edges)
+        assert len(firsts) + len(seconds) <= 20
+    for spacing, exact in ((7, True), (6, False)):
+        mh = la_core(0x01)
+        mh.start(1)
+        mh.step(30)
+        words = []
+        for i in range(40):
+            mh.uio ^= 1
+            for _ in range(spacing):
+                mh.step()
+                words += mh.chip.cores[0].rxf
+                mh.chip.cores[0].rxf.clear()
+        mh.step(60)
+        words += mh.chip.cores[0].rxf
+        cap = la.decode_records(words, 0x01)
+        assert (len(cap.edges) == 41) == exact, (spacing, len(cap.edges))
 
 
 def test_capture_gap_when_host_stops_draining():
-    """RXF full: the core waits, and the next record carries the gap marker."""
-    mh = ModelHost()
-    mh.apply(host.load_program(0, asm.assemble((FW / "la_capture.pasm").read_text()), in_pins=0, clkdiv=1 << 8))
-    mh.write(sim.core_reg(0, sim.C_R0 + 3), 1)
-    mh.ext_oe, mh.uio = 1, 0
+    """RXF full: the core waits, and a gap word marks it."""
+    mh = la_core(1)
     mh.start(1)
     for i in range(20):                            # 20 edges, nobody draining
         mh.step(50)
@@ -263,10 +311,10 @@ def test_capture_gap_when_host_stops_draining():
     words = mh.pop_all(0)
     mh.step(100)
     words += mh.pop_all(0)
-    assert len(words) == 9 and words[0] >> 24 == la.M_FIRST    # 8 + the one that waited
+    assert words[0] >> 24 == la.M_FIRST and sum(w >> 24 == la.M_GAP for w in words) == 1
     mh.uio ^= 1
     mh.step(100)
     words += mh.pop_all(0)
-    assert words[-1] >> 24 == la.M_GAP_CHANGE
-    cap = la.decode_records(words)
+    cap = la.decode_records(words, 1)
     assert not cap.exact and len(cap.gaps) == 1
+    assert cap.edges[-1][1] == mh.uio & 1

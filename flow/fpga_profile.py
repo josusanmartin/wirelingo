@@ -47,11 +47,11 @@ def stage(dst, ncores=None, fifo_log2=None):
     core.write_text(text)
     chip = dst / "src/pe_chip.sv"
     text = chip.read_text()
-    pattern = re.compile(r"  wire \[3:1\] gcfg_gclk;.*?  endgenerate\n", re.S)
+    pattern = re.compile(r"  wire \[3:0\] gcfg_gclk;.*?  endgenerate\n", re.S)
     text, count = pattern.subn("", text)
     if count != 1:
         raise ValueError("global configuration gate site changed")
-    for index in range(1, 4):
+    for index in range(0, 4):                   # SYNC_BYPASS, PIN_OWNER_LO/HI, OD_MASK
         pattern = re.compile(rf"always @\(posedge gcfg_gclk\[{index}\] or negedge rst_n\)(.*?) else ")
         text, count = pattern.subn(r"always @(posedge clk or negedge rst_n)\1 else if (bus_we && sel_glob && goff == " + str(index + 4) + ") ", text)
         if count != 1:

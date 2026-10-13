@@ -13,6 +13,13 @@ on the Tiny Tapeout SG13CMOS5L tile:
 * A fix for netgen's LVS JSON escaping of the SRAM power pin names (VDD! ...).
 * Project.FixClockFanout: opt-in clock branch repair after CTS. It preserves
   each branch's loads and NDR while respecting the IHP fanout limit of eight.
+* Project.SramClockAdvance: opt-in useful skew after CTS. Each SRAM's clock
+  comes from a buffer on the clock tree's root net instead of CTS's balanced
+  (delay-buffered) branch, so reads launch earlier (flow/sram_clock_advance.tcl);
+  with PROTOEMU_CLOCK_FANOUT_FIX it also runs the clock branch repair.
+* Project.SramPinBuffers: opt-in, after post-GRT timing repair: a buffer at
+  each driven SRAM input pin, and no buf_16 on a DOUT (the macro's 0.595 ns /
+  0.064 pF limits; flow/sram_pin_buffers.tcl).
 
 LibreLane imports modules named librelane_plugin_* from the working directory
 (the repo root, both locally and in the TT GDS action).
@@ -99,6 +106,50 @@ class FixClockFanout(CompositeStep):
     id = "Project.FixClockFanout"
     name = "Repair and Legalize Clock Branches"
     Steps = [ClockFanoutRepair, DetailedPlacement]
+
+
+@Step.factory.register()
+class SramClockAdvanceTcl(OpenROADStep):
+    id = "Project.SramClockAdvanceTcl"
+    name = "Advance the SRAM Clocks"
+
+    config_vars = OpenROADStep.config_vars + [
+        Variable("PROTOEMU_CLOCK_FANOUT_FIX", bool,
+                 "Also split clock branches over the IHP fanout limit of eight (flow/clock_fanout_repair.tcl).",
+                 default=False),
+        Variable("PROTOEMU_LATE_CLOCK_REGS", Optional[List[str]],
+                 "Glob patterns of Q net names whose registers get a delayed clock (flow/sram_clock_advance.tcl).",
+                 default=None),
+        Variable("PROTOEMU_LATE_CLOCK_STAGES", int,
+                 "Clock buffers inserted in front of the PROTOEMU_LATE_CLOCK_REGS registers.",
+                 default=2),
+    ]
+
+    def get_script_path(self):
+        return os.path.join(HERE, "sram_clock_advance_step.tcl")
+
+
+@Step.factory.register()
+class SramClockAdvance(CompositeStep):
+    id = "Project.SramClockAdvance"
+    name = "Advance the SRAM Clocks and Legalize"
+    Steps = [SramClockAdvanceTcl, DetailedPlacement]
+
+
+@Step.factory.register()
+class SramPinBuffersTcl(OpenROADStep):
+    id = "Project.SramPinBuffersTcl"
+    name = "Buffer the SRAM Pins"
+
+    def get_script_path(self):
+        return os.path.join(HERE, "sram_pin_buffers_step.tcl")
+
+
+@Step.factory.register()
+class SramPinBuffers(CompositeStep):
+    id = "Project.SramPinBuffers"
+    name = "Buffer the SRAM Pins and Legalize"
+    Steps = [SramPinBuffersTcl, DetailedPlacement]
 
 
 # --- netgen writes the IHP SRAM's power pin names (VDD!, VSS!, VDDARRAY!) into

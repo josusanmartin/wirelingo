@@ -23,6 +23,13 @@
  * uio_in[i] = uio_oe[i] ? uio_out[i] : the PS's value, unless a PMOD pin
  * carries uio[i] (then the pad's level).
  *
+ * pe_lab (AXI4-Lite at 0xA003_0000) holds the build identity and the v2 demo
+ * fabric: its MODE register picks what drives the uio pads protoemu doesn't
+ * drive (GPIO path, pattern generator, SPI device on uio2/3/4, or an I2C bus
+ * joining uio0/uio2 and uio1/uio3). The generator runs on gclk (protoemu's
+ * clock or the alternate clock), the SPI device on dclk (400 MHz, the same
+ * MMCM as protoemu's clock, 8 dclk cycles per clk).
+ *
  * PMOD J2: pmod[i] is enabled by PMODn[8i+7] and carries TT pin PMODn[8i+4:8i]:
  * 0-7 uio[0..7] (driven when uio_oe, pad level to uio_in), 8-14 uo[0..6]
  * (driven), 16-20 ui[0..4] (input, replaces the GPIO bit). Disabled pins are
@@ -48,6 +55,10 @@ module kv260_top #(
   wire [15:0] awaddr, araddr;
   wire        awvalid, awready, wvalid, wready, bvalid, bready, arvalid, arready, rvalid, rready;
   wire [31:0] wdata, rdata;
+  wire [15:0] l_awaddr, l_araddr;
+  wire        l_awvalid, l_awready, l_wvalid, l_wready, l_bvalid, l_bready;
+  wire        l_arvalid, l_arready, l_rvalid, l_rready;
+  wire [31:0] l_wdata, l_rdata;
 
   pe_ps_wrapper u_ps (
       .pl_clk0(pl_clk0),
@@ -74,16 +85,36 @@ module kv260_top #(
       .spim_axi_rdata(rdata),
       .spim_axi_rresp(2'b00),
       .spim_axi_rvalid(rvalid),
-      .spim_axi_rready(rready));
+      .spim_axi_rready(rready),
+      .lab_axi_awaddr(l_awaddr),
+      .lab_axi_awprot(),
+      .lab_axi_awvalid(l_awvalid),
+      .lab_axi_awready(l_awready),
+      .lab_axi_wdata(l_wdata),
+      .lab_axi_wstrb(),
+      .lab_axi_wvalid(l_wvalid),
+      .lab_axi_wready(l_wready),
+      .lab_axi_bresp(2'b00),
+      .lab_axi_bvalid(l_bvalid),
+      .lab_axi_bready(l_bready),
+      .lab_axi_araddr(l_araddr),
+      .lab_axi_arprot(),
+      .lab_axi_arvalid(l_arvalid),
+      .lab_axi_arready(l_arready),
+      .lab_axi_rdata(l_rdata),
+      .lab_axi_rresp(2'b00),
+      .lab_axi_rvalid(l_rvalid),
+      .lab_axi_rready(l_rready));
 
   // clocks: 100 MHz * 12 = 1200 MHz VCO
-  wire clk_fb, clk_mmcm, clk_alt_mmcm, clk, mclk, locked;
+  wire clk_fb, clk_mmcm, clk_alt_mmcm, clk_d_mmcm, clk, mclk, gclk, dclk, locked;
   MMCME4_BASE #(
       .CLKIN1_PERIOD(10.0),
       .DIVCLK_DIVIDE(1),
       .CLKFBOUT_MULT_F(12.0),
       .CLKOUT0_DIVIDE_F(ALT_DIV),
-      .CLKOUT1_DIVIDE(CLK_DIV)
+      .CLKOUT1_DIVIDE(CLK_DIV),
+      .CLKOUT2_DIVIDE(CLK_DIV / 8)       // SPI device clock: 8 per protoemu clock (400 MHz at 50)
   ) u_mmcm (
       .CLKIN1(pl_clk0),
       .CLKFBIN(clk_fb),
@@ -93,15 +124,20 @@ module kv260_top #(
       .LOCKED(locked),
       .RST(!pl_resetn0),
       .PWRDWN(1'b0),
-      .CLKFBOUTB(), .CLKOUT0B(), .CLKOUT1B(), .CLKOUT2(), .CLKOUT2B(),
+      .CLKFBOUTB(), .CLKOUT0B(), .CLKOUT1B(), .CLKOUT2(clk_d_mmcm), .CLKOUT2B(),
       .CLKOUT3(), .CLKOUT3B(), .CLKOUT4(), .CLKOUT5(), .CLKOUT6());
   BUFG u_clk_buf (.I(clk_mmcm), .O(clk));
+  BUFG u_dclk_buf (.I(clk_d_mmcm), .O(dclk));
 
   wire sel_fabric, sel_alt, quad_pins, sck_ce, m_cs_n;
   wire [3:0]  m_io;
   wire [31:0] pmod0, pmod1;
   wire [7:0]  pad_i;
   BUFGMUX_CTRL u_mclk_mux (.I0(clk_mmcm), .I1(clk_alt_mmcm), .S(sel_alt), .O(mclk));
+  wire [1:0] lab_mode;
+  wire       pg_alt, dev_miso;
+  wire [7:0] pg_out;
+  BUFGMUX_CTRL u_gclk_mux (.I0(clk_mmcm), .I1(clk_alt_mmcm), .S(pg_alt), .O(gclk));
 
   // SCK: the GPIO bit, or mclk gated per beat. CS_n is high whenever the
   // selection changes, which resets the port's SCK domain, so the BUFGCTRL
@@ -117,6 +153,11 @@ module kv260_top #(
 
   wire [7:0] uo_out, uio_out, uio_oe;
 
+  // I2C bus (MODE 3): uio0 and uio2 are one SDA line, uio1 and uio3 one SCL
+  // line, each the wired-AND of its two pins' drivers with a pull-up
+  wire sda_bus = (!uio_oe[0] | uio_out[0]) & (!uio_oe[2] | uio_out[2]);
+  wire scl_bus = (!uio_oe[1] | uio_out[1]) & (!uio_oe[3] | uio_out[3]);
+
   // PMOD routing
   reg  [7:0] pad_o, pad_oe, uio_ext, ui_ext;
   reg  [7:0] uio_mapped, ui_mapped, f;
@@ -124,7 +165,12 @@ module kv260_top #(
   always @(*) begin
     uio_mapped = 8'd0;
     ui_mapped = 8'd0;
-    uio_ext = gpio0_o[23:16];
+    case (lab_mode)                                   // undriven uio pads: demo fabric
+      2'd1: uio_ext = pg_out;
+      2'd2: uio_ext = {gpio0_o[23:21], dev_miso, gpio0_o[19:16]};
+      2'd3: uio_ext = {gpio0_o[23:20], scl_bus, sda_bus, scl_bus, sda_bus};
+      default: uio_ext = gpio0_o[23:16];
+    endcase
     ui_ext = {3'd0, gpio0_o[4:0]};
     pad_o = 8'd0;
     pad_oe = 8'd0;
@@ -203,6 +249,32 @@ module kv260_top #(
       .io_i(uo_out[7:4]),
       .pclk(clk),
       .cs_pin(ui_in[7]));
+
+  pe_lab #(.CLK_DIV(CLK_DIV)) u_lab (
+      .aclk(pl_clk0),
+      .aresetn(aresetn),
+      .s_awaddr(l_awaddr),
+      .s_awvalid(l_awvalid),
+      .s_awready(l_awready),
+      .s_wdata(l_wdata),
+      .s_wvalid(l_wvalid),
+      .s_wready(l_wready),
+      .s_bvalid(l_bvalid),
+      .s_bready(l_bready),
+      .s_araddr(l_araddr),
+      .s_arvalid(l_arvalid),
+      .s_arready(l_arready),
+      .s_rdata(l_rdata),
+      .s_rvalid(l_rvalid),
+      .s_rready(l_rready),
+      .mode(lab_mode),
+      .pg_alt(pg_alt),
+      .gclk(gclk),
+      .pg_out(pg_out),
+      .dclk(dclk),
+      .sck(uio_out[2]),
+      .mosi(uio_out[3]),
+      .miso(dev_miso));
 
   assign gpio0_i = {7'd0, locked, uio_oe, uio_out, uo_out};
 

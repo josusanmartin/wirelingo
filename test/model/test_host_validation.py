@@ -14,6 +14,7 @@ from test_micropython_driver import FakeTT, protoemu, bringup
     (0, "nop\n" * 257, 0), (1, "nop", 0), (0, "nop", -1),
     (0, "nop\nnop", 255), (2, "nop", 512), (0, ".word 256", 0),
     (0, ".wrap_target\nnop\n.wrap\nnop", 256),
+    (0, f".word {isa.enc(isa.OP_CALL, 0, 256)}", 0),
 ])
 def test_host_rejects_cross_bank_loads(core, source, base):
     p = asm.assemble(source)
@@ -43,7 +44,7 @@ def test_board_load_validates_before_any_bus_write():
     nop = isa.enc(isa.OP_MOV, 0, 0x41000)
     for args in [(0, [nop] * 257, 0), (1, [nop], 0), (2, [nop], 512),
                  (0, [], 0), (0, [nop], 0, 1 << 16), (0, [256], 0),
-                 (0, [-1], 0)]:
+                 (0, [isa.enc(isa.OP_CALL, 0, 256)], 0), (0, [-1], 0)]:
         core, words, base, *wrap = args
         with pytest.raises(ValueError):
             pe.load(core, iter(words), base, wrap=wrap[0] if wrap else None)

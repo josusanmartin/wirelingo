@@ -5,16 +5,8 @@ Every decision uses start-of-cycle state; Chip.step calls core 0 first (which
 may push or pop through `push`/`take`), then `step`, then `commit` applies the
 cycle's queue changes."""
 
-import os
-
 M16 = 0xFFFF
 NRZ, NRZI, MANCH = 0, 1, 2
-# PROPOSAL (docs/usb-full-speed.md, not in the signed-off chip): an NRZ/NRZI
-# transition seen by the half-cycle sample (before the falling edge) starts
-# the bit counter one clock shorter, so the sample lands 1.5-2.5 clocks after
-# the edge instead of 2-3. Off by default; PE_LINE_NRZI_HALF=1 turns it on (the
-# RTL's matching define is PE_LINE_NRZI_HALF).
-NRZI_HALF = os.environ.get("PE_LINE_NRZI_HALF", "0") not in ("", "0")
 
 
 def _bit(p):
@@ -37,7 +29,10 @@ class Line:
         self.half = self.bit = 0
         self.level = self.txn = 0
         self.tcnt = self.tfacc = 0
-        self.trun, self.trunbit = 0, None
+        # run of equal bits for stuffing; the run bit keeps its last value across
+        # frames (only `trunv` is cleared), as in the RTL: a mid-frame switch from
+        # STUFF_ONES to equal-bit stuffing compares with that stale bit
+        self.trun, self.trunbit, self.trunv = 0, 0, 0
         # RX
         self.rq = []                 # received bits, oldest first (<= 32)
         self.rx_on = 0
@@ -46,7 +41,7 @@ class Line:
         self.quiet = 0
         self.q = 0                   # Manchester: time from the expected next mid-bit edge (1/64 half-cycles)
         self.n = 0                   # Manchester: mid-bit edges accepted in this frame (saturates at 32)
-        self.rrun, self.rrunbit = 0, None
+        self.rrun, self.rrunbit, self.rrunv = 0, 0, 0     # as trun/trunbit/trunv
         self.end_pend = self.ovf = 0
         # this cycle's core-0 traffic
         self._push = None
@@ -185,15 +180,15 @@ class Line:
             if self.stuff_ones:
                 self.trun = 0
             else:
-                self.trun, self.trunbit = 1, b
+                self.trun, self.trunbit, self.trunv = 1, b, 1
         elif self._entries_left():
             self.cover("line:tx_bit")
             b = self._pop_bit()
             if self.stuff_ones:
                 self.trun = min(self.trun + 1, 7) if b else 0      # 3-bit, saturating
             else:
-                self.trun = min(self.trun + 1, 7) if b == self.trunbit else 1
-                self.trunbit = b
+                self.trun = min(self.trun + 1, 7) if self.trunv and b == self.trunbit else 1
+                self.trunbit, self.trunv = b, 1
         else:                                    # nothing left: end the frame
             self.cover("line:tx_frame_end")
             if self.end_bits == 0 or self.end == 0:
@@ -236,7 +231,7 @@ class Line:
                 self.tx_on = 1
                 self.level = self.idle
                 self.txn = 1 - self.idle
-                self.trun, self.trunbit = 0, None
+                self.trun, self.trunv = 0, 0
                 self.ending = self.eop_idle = 0
                 self._reload()
                 self._next_bit()
@@ -276,7 +271,7 @@ class Line:
         if not self.rx_on:
             if trans:
                 self.rx_on = 1
-                self.rrun, self.rrunbit = 0, None
+                self.rrun, self.rrunv = 0, 0
                 self.quiet = 0
                 if self.code == MANCH:
                     self.q, self.n = age - _bit(p), 0      # the frame's first edge is a mid-bit edge
@@ -315,8 +310,10 @@ class Line:
         self.rprev = rx
 
     def _early(self, h):
-        """PROPOSAL: 1 if this cycle's edge came before the half-cycle sample."""
-        return int(NRZI_HALF and h != self.rprev)
+        """1 if this cycle's NRZ/NRZI edge came before the falling-edge sample:
+        the sample counter then starts one clock shorter (§4.7), which centres
+        the sample 1.5-2.5 clocks after a pad edge."""
+        return int(h != self.rprev)
 
     def _sample(self, rx, rxn):
         if self.diff and rx == 0 and rxn == 0:
@@ -341,13 +338,13 @@ class Line:
             if self.stuff_ones:
                 self.rrun = 0
             else:
-                self.rrun, self.rrunbit = 1, b
+                self.rrun, self.rrunbit, self.rrunv = 1, b, 1
             return
         if self.stuff_ones:
             self.rrun = min(self.rrun + 1, 7) if b else 0
         else:
-            self.rrun = min(self.rrun + 1, 7) if b == self.rrunbit else 1
-            self.rrunbit = b
+            self.rrun = min(self.rrun + 1, 7) if self.rrunv and b == self.rrunbit else 1
+            self.rrunbit, self.rrunv = b, 1
         self._new_rx = b
 
     def _end(self):

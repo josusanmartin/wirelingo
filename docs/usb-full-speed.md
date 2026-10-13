@@ -6,6 +6,16 @@ change that makes it possible? This report is meant to support (or stop) a
 headline claim, so every number below comes from a run, and the last section
 lists what the runs can't show.
 
+> **v2 update.** Change A below (the half-cycle NRZI sample point) is now part
+> of the design (branch `v2`, docs/isa.md §4.7), not a patch: the RTL and the
+> model always use it. The g4 numbers in this report (§2.1's sweep, the
+> "signed-off line unit" lines) describe the chip that was signed off; on v2,
+> `test_usb_fs_device` ACKs 24/24 packets at DCD 14 ns (28 ns edge to edge),
+> where g4 ACKed 11/24, and the turnarounds are 10.5 / 13.4 / 14.9 clocks.
+> Like g4's, these are digital simulations at exactly 48 MHz: whether the v2
+> chip runs at 48 MHz is up to its own signoff (g4's slow corner reaches about
+> 44 MHz; typ met 50 MHz).
+
 ## Bottom line
 
 **The signed-off chip can do it with no RTL change, as far as digital
@@ -42,14 +52,13 @@ It works under these conditions:
    software per transaction, but it is a real-time requirement on the board's
    host.
 
-**The weak point is receive jitter margin, not cycles.** The receiver tolerates
+**The weak point (on g4) is receive jitter margin, not cycles.** The receiver tolerates
 an edge-to-edge interval shrinking by about 20 ns (first misses at 20.0 ns at
 +2500 ppm, 20.8 ns at 0 ppm). The spec's receiver budget (TJR1) is ±18.5 ns,
 which leaves 1.5–2.3 ns of digital margin before pad thresholds, D+/D− skew and
 the synchroniser aperture take their share. A one-line change to the line unit
-(section 3, **prototyped**, no measurable area, no new wires) moves the sample point to the middle of the bit and raises tolerance to
-about 31 ns. I'd make that change if the chip is ever respun. The claim doesn't
-depend on it.
+(section 3, no measurable area, no new wires) moves the sample point to the middle of the bit and raises tolerance to
+about 31 ns. v2 makes that change. The claim doesn't depend on it.
 
 **Proposed claim wording:** *"A USB full-speed device (12 Mbit/s) on one 48 MHz
 core: firmware does PID decoding, CRC16, address filtering and the handshakes
@@ -211,8 +220,8 @@ times) to spare against the 6.5-bit maximum.
 
 ### 2.5 Where it breaks first
 
-1. **Receive jitter margin** (§2.1): about 2 ns beyond TJR1, before analog
-   effects.
+1. **Receive jitter margin** (§2.1): about 2 ns beyond TJR1 on g4, before
+   analog effects; about 12 ns with change A (v2).
 2. **Clock:** 50 MHz is out (§2.6).
 3. **FIFO depth:** packets over 24 bytes (IN) or 16 bytes (OUT) depend on a
    real-time SPI host (§2.4).
@@ -244,7 +253,7 @@ a full re-harden (3–4 h) and signoff. Ranked by benefit/cost:
 
 | # | Change | Buys | Area | Routing risk | Verdict |
 |---|---|---|---|---|---|
-| A | **Half-cycle NRZI sample point**: on an NRZ/NRZI transition already seen by the falling-edge sample (`edge1`), load the counter with P/2 − 2 instead of P/2 − 1 | Sample at 1.5–2.5 clocks after the edge instead of 2–3: tolerance **31 ns** instead of 21 (spec 18.5), centred, so margin on both sides | **+8 µm²** on pe_line's 40.8k (yosys + IHP typ lib; 0 flops; within synthesis noise) | None: `rx_mid`/`edge1` already exist inside pe_line for Manchester; no new net crosses a module boundary | **Prototyped and verified.** Recommended for any respin; not needed now |
+| A | **Half-cycle NRZI sample point**: on an NRZ/NRZI transition already seen by the falling-edge sample (`edge1`), load the counter with P/2 − 2 instead of P/2 − 1 | Sample at 1.5–2.5 clocks after the edge instead of 2–3: tolerance **31 ns** instead of 21 (spec 18.5), centred, so margin on both sides | **+8 µm²** on pe_line's 40.8k (yosys + IHP typ lib; 0 flops; within synthesis noise) | None: `rx_mid`/`edge1` already exist inside pe_line for Manchester; no new net crosses a module boundary | **Applied in v2** (was a prototype patch) |
 | B | Hardware CRC16 check / byte-wide RX interface | Receive loop at 1–2 instructions per bit | ~16 flops + ~40 gates, plus a status bit into core 0's condition mux | Moderate: a new wire into the core, where congestion lives | Not needed: the loop uses 75 % of its budget |
 | C | Hardware token match and automatic ACK/NAK | Turnaround independent of firmware | ~30–50 flops (address/endpoint, state), a config register (host-bus write path) | Moderate–high: the host-bus write path and line unit were the previous congestion sources | Not needed: at least 10 clocks of turnaround to spare |
 | D | 16-deep FIFOs on core 0 | 64-byte packets without a real-time host | ~512 more latches (~16k µm²) plus read muxes | **High**: FIFO depth moved Metal3 by ~1.6 points per halving in earlier runs, next to the congested core | Not recommended: streaming works with a responsive host |
@@ -252,22 +261,20 @@ a full re-harden (3–4 h) and signoff. Ranked by benefit/cost:
 
 ### Change A in detail
 
-[`docs/proposals/pe_line_nrzi_half.patch`](proposals/pe_line_nrzi_half.patch)
-adds it to `src/pe_line.sv` under `` `ifdef PE_LINE_NRZI_HALF `` (off by
-default). The patch isn't applied in `src/`, which stays exactly the signed-off
-design; apply it to test the proposal:
+It was a patch under `` `ifdef PE_LINE_NRZI_HALF `` while `src/` had to stay the
+signed-off g4 design; v2 applies it unconditionally (`src/pe_line.sv`,
+`tools/pe/line.py`, docs/isa.md §4.7):
 
 ```verilog
-wire [15:0] r_load = {1'b0, p[15:1]} - (edge1 ? 16'd2 : 16'd1);   // was: - 16'd1
+wire [15:0] r_load = {1'b0, p[15:1]} - (edge1 ? 16'd2 : 16'd1);   // g4: - 16'd1
 ...  n_rcnt = r_load;   // at a frame start and at each transition (NRZ/NRZI)
 ```
 
-The model has the same change (`tools/pe/line.py`, `NRZI_HALF`, enabled by
-`PE_LINE_NRZI_HALF=1`). The spec text would become: *"a transition sets the
-sample counter to P/2 − 1, or P/2 − 2 if the half-cycle sample already saw it."*
+The spec text: *"a transition sets the sample counter to P/2, or to P/2 − 1 if
+the falling-edge sample already showed it."*
 For internal pins `rx_mid` equals `pins_in`, so the shorter count always
 applies, which is harmless with no analog edge. P ≥ 4 keeps the load
-non-negative.
+non-negative (`formal/line.sby` asserts it).
 
 Evidence:
 
@@ -281,16 +288,16 @@ Evidence:
   | 30 ns | 60/60 | 59/60 | 58/60 |
   | 31.2 ns | 60/60 | 20/60 | 30/60 |
 
-* RTL: `test_usb_fs_device` with `PE_LINE_NRZI_HALF=1` gives 24/24 packets at
-  DCD 14 ns (28 ns edge to edge). The signed-off RTL gives 11/24.
+* RTL: `test_usb_fs_device` gives 24/24 packets at DCD 14 ns (28 ns edge to
+  edge) with the change (now the default). The signed-off g4 RTL gives 11/24.
 * Lockstep RTL vs model with the change: 4/4 tests, 60 seeds (rcnt is
   compared every cycle).
-* `formal/line.sby` passes with the define (k-induction).
-* The full model suite (211 tests) passes with the change on and off.
-* The full top-level RTL suite (`make PE_LINE_NRZI_HALF=1`) passes 17/17,
-  including low-speed USB, 10BASE-T receive and the concurrent USB service test.
-* With the define off, pe_line.sv is **proven equivalent** to the signed-off
-  file (yosys `equiv_induct`: 811/811 cells).
+* `formal/line.sby` passes (k-induction).
+* As a prototype, the full model and top-level RTL suites passed with the
+  change on and off (low-speed USB, 10BASE-T receive and the concurrent USB
+  service test included), and with it off pe_line.sv was proven equivalent to
+  the signed-off file (yosys `equiv_induct`: 811/811 cells). docs/verification.md
+  has the v2 regression counts.
 
 ## 4. Prototype and evidence
 
@@ -350,9 +357,11 @@ $ make GATES=yes GATE_LEVEL_NETLIST=.../protoemu-exp-g4/runs/wokwi/final/nl/tt_u
        COCOTB_TEST_FILTER=test_usb_fs_device PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3
 (identical lines to the RTL run)   TESTS=1 PASS=1 FAIL=0
 
-$ make PE_LINE_NRZI_HALF=1 COCOTB_TEST_FILTER=test_usb_fs_device               # proposal A
+$ make COCOTB_TEST_FILTER=test_usb_fs_device                                   # v2 (change A applied)
 turnaround ACK: 2.64 bit times = 10.5 clocks (spec 2-6.5)
-PROPOSAL half-cycle NRZI sample: DCD 9.25 ns (18.5 ns edge-to-edge): 24/24 ACKed; DCD 14 ns (28 ns): 24/24 ACKed
+turnaround NAK: 3.34 bit times = 13.4 clocks (spec 2-6.5)
+turnaround DATA1: 3.73 bit times = 14.9 clocks (spec 2-6.5)
+half-cycle NRZI sample point: DCD 9.25 ns (18.5 ns edge-to-edge): 24/24 ACKed; DCD 14 ns (28 ns): 24/24 ACKed
 TESTS=1 PASS=1 FAIL=0
 ```
 
@@ -373,7 +382,7 @@ the netlist implements the RTL. Timing is covered by signoff STA: typ met at
   lines for SE0, not a differential receiver. That is non-compliant in
   principle, though common in practice (Pico-PIO-USB works this way on RP2040
   GPIO). Threshold offset against the differential crossover comes straight out
-  of the ~2 ns jitter margin. Change A would make this a non-issue.
+  of the ~2 ns jitter margin on g4. Change A (v2) makes this a non-issue.
 * **Clock.** It must be 48.000 MHz within ±0.25 %; a crystal-derived PLL clock
   (±tens of ppm) is ample. The open questions are whether the demo board's
   RP2350 delivers 48 MHz to the TT clock pin (e.g. from its 48 MHz USB PLL via a

@@ -58,13 +58,13 @@ module pe_core #(
   // ---------------------------------------------------------------- opcodes
   localparam OP_JMP = 5'd0, OP_WAIT = 5'd1, OP_IN = 5'd2, OP_OUT = 5'd3, OP_PUSH = 5'd4;
   localparam OP_PULL = 5'd5, OP_MOV = 5'd6, OP_SET = 5'd7, OP_LDI = 5'd8, OP_ALU = 5'd9;
-  localparam OP_PIN = 5'd10, OP_FLAG = 5'd11, OP_HALT = 5'd12;
+  localparam OP_PIN = 5'd10, OP_FLAG = 5'd11, OP_HALT = 5'd12, OP_CALL = 5'd13;
 
   localparam L_PINS = 4'd4, L_PINDIRS = 4'd5, L_ISR = 4'd6, L_OSR = 4'd7;
-  localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12, L_LINE = 4'd13;
+  localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12, L_LINE = 4'd13, L_LR = 4'd14;
 
   localparam W_PIN1 = 3'd0, W_PIN0 = 3'd1, W_RISE = 3'd2, W_FALL = 3'd3, W_EDGE = 3'd4;
-  localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6;
+  localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6, W_DIFF = 3'd7;
 
   // ---------------------------------------------------------------- config
   reg [15:0] div_int;
@@ -92,6 +92,7 @@ module pe_core #(
   reg [7:0]  facc;
   reg        halted, fault, stalled;
   reg [15:0] crc;
+  reg [9:0]  lr;                 // link register: CALL's return address (docs/isa.md §5.2)
 
   // ---------------------------------------------------------------- FIFOs
   wire        host_push = bus_sel && bus_we && bus_off == 5'h10;
@@ -188,6 +189,9 @@ module pe_core #(
   wire [8:0]  fsum = {1'b0, facc} + {1'b0, div_frac};
   wire [15:0] cnt_next = tick ? (div_int - 16'd1 + {15'd0, fsum[8]}) : (cnt - 16'd1);
 
+  // pins from IN_BASE: the PINS source, and what WAIT kind 7 watches
+  wire [31:0] pins_rot = rotr32(pins_in, in_base);
+
   // WAIT edge tracker
   wire [2:0]  wkind = x[18:16];
   wire [4:0]  widx = x[15:11];
@@ -195,7 +199,13 @@ module pe_core #(
   wire        qual = !x[6] || (pins_in[x[4:0]] == x[5]);
   wire        trans = (wkind == W_RISE) ? (!wprev && wpin) :
                       (wkind == W_FALL) ? (wprev && !wpin) : (wprev != wpin);
-  wire        edge_done = wevent || (trans && qual);
+  // kind 7 (docs/isa.md §5.2): the masked pins differ from R[x[15:14]]; it
+  // shares the sticky event bit, so a difference between ticks is kept. The
+  // reference field is the ALU's rd field, so it shares that selector
+  // (core_route: about 1 % less wire than a selector of its own)
+  wire [15:0] wref = rsel(x[15:14], r0, r1, r2, r3);
+  wire        wdiff = |((pins_rot[7:0] ^ wref[7:0]) & x[7:0]);
+  wire        edge_done = wevent || (wkind == W_DIFF ? wdiff : (trans && qual));
 
   wire        active  = enable && !restart;
   wire        attempt = active && tick && !halted && !fault && dcnt == 8'd0;
@@ -219,13 +229,14 @@ module pe_core #(
   always @(*) begin
     case (src_code)
       4'd0, 4'd1, 4'd2, 4'd3: src_val = {16'd0, rsel(src_code[1:0], r0, r1, r2, r3)};
-      L_PINS:   src_val = rotr32(pins_in, in_base);
+      L_PINS:   src_val = pins_rot;
       L_ISR:    src_val = isr;
       L_OSR:    src_val = osr;
       L_STATUS: src_val = {21'd0, status16[10:0]};
       L_FLAGS:  src_val = {24'd0, flags};
       L_PC:     src_val = {22'd0, pc};
       L_CRC:    src_val = {16'd0, crc};
+      L_LR:     src_val = {22'd0, lr};
       default:  src_val = 32'd0;
     endcase
   end
@@ -324,7 +335,7 @@ module pe_core #(
       W_RISE, W_FALL, W_EDGE: wbase = in_wait && edge_done;
       W_FLAG1: wbase = wflag && qual;
       W_FLAG0: wbase = !wflag && qual;
-      default: wbase = 1'b1;
+      default: wbase = in_wait ? edge_done : wdiff;     // W_DIFF: also on the first attempt
     endcase
   end
   wire        w_to = x[10];
@@ -339,8 +350,13 @@ module pe_core #(
   wire        crc_fb = crc[crc_w] ^ crc_bit;
   wire [15:0] crc_fed = ((crc << 1) & crc_mask) ^ (crc_fb ? (crc_poly & crc_mask) : 16'd0);
 
+  // the PC after a completed instruction that doesn't jump (also CALL's link)
+  wire [9:0]  pc_seq = (pc == wrap_top) ? wrap_bottom : (pc + 10'd1);
+
   // ---------------------------------------------------------------- execute (combinational)
   reg         complete, jump, new_wait;
+  reg         lr_we;
+  reg  [9:0]  lr_nv;
   reg  [9:0]  jump_target;
   reg         reg_we;
   reg  [1:0]  reg_sel;
@@ -394,10 +410,13 @@ module pe_core #(
     crc_bit = 1'b0;
     crc_set = 1'b0;
     crc_set_val = 16'd0;
+    lr_we = 1'b0;
+    lr_nv = pc_seq;
 
     case (op)
-      OP_JMP: begin
+      OP_JMP, OP_CALL: begin
         jump = cond_ok;
+        lr_we = op == OP_CALL && cond_ok;           // a taken CALL links
         if (cond == 4'd3) begin
           reg_we = 1'b1;
           reg_sel = jsel[1:0];
@@ -554,6 +573,10 @@ module pe_core #(
             crc_set = 1'b1;
             crc_set_val = mov_val[15:0];
           end
+          L_LR: begin
+            lr_we = 1'b1;
+            lr_nv = mov_val[9:0];
+          end
           default: ;
         endcase
       end
@@ -635,7 +658,6 @@ module pe_core #(
   wire        host_w = bus_sel && bus_we;
   wire        host_pc_w = host_w && bus_off == 5'h08;
 
-  wire [9:0]  pc_seq = (pc == wrap_top) ? wrap_bottom : (pc + 10'd1);
   assign fetch_addr = restart ? entry :
                       host_pc_w ? bus_wdata[9:0] :
                       commit ? (jump ? jump_target : pc_seq) : pc;
@@ -726,6 +748,7 @@ module pe_core #(
       fault <= 1'b0;
       stalled <= 1'b0;
       crc <= 16'd0;
+      lr <= 10'd0;
     end else begin
       pc <= fetch_addr;
 
@@ -795,6 +818,7 @@ module pe_core #(
             if (t_we) t <= t_nv;
             if (crc_set) crc <= crc_set_val & crc_mask;
             else if (crc_feed) crc <= crc_fed;
+            if (lr_we) lr <= lr_nv;
           end
         end
       end
@@ -843,8 +867,10 @@ module pe_core #(
   reg [31:0] p_isr, p_osr;
   reg [7:0]  p_dcnt;
   reg [15:0] p_cnt, p_r0, p_r1, p_r2, p_r3;
-  reg        p_in_wait;
+  reg        p_in_wait, p_link;
+  reg [9:0]  p_lr, p_pc_seq;
   always @(posedge clk) begin
+    p_link <= commit && op == OP_CALL && cond_ok; p_lr <= lr; p_pc_seq <= pc_seq;
     p_rst_n <= rst_n; p_halted <= halted; p_fault <= fault; p_restart <= restart;
     p_host_pc_w <= host_pc_w; p_commit <= commit; p_enable <= enable; p_host_w <= host_w;
     p_pc <= pc; p_isr <= isr; p_osr <= osr; p_dcnt <= dcnt; p_cnt <= cnt; p_in_wait <= in_wait;
@@ -858,6 +884,10 @@ module pe_core #(
       if (p_fault && !p_restart) assert (fault);
       // the PC only moves on a completed instruction, a restart or a host write
       if (!p_restart && !p_host_pc_w && !p_commit) assert (pc == p_pc);
+      // LR changes only on a completed instruction (CALL or MOV LR; the host
+      // and restart don't touch it), and a taken CALL links the next PC
+      if (!p_commit) assert (lr == p_lr);
+      if (p_link) assert (lr == p_pc_seq);
       // a disabled core's execution state is frozen (host writes aside)
       if (!p_enable && !p_restart && !p_host_w) begin
         assert (pc == p_pc && isr == p_isr && osr == p_osr);

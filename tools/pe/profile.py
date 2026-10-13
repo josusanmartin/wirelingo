@@ -24,7 +24,7 @@ FULL = Profile("fixed-bank-v1-4c4b8f", 4, 4)
 def validate_image(core, words, base, wrap, profile=TAPEOUT):
     """Validate the whole image before a transport can perform any writes.
 
-    Direct JMPs must stay in the core's bank. Computed PC writes are checked
+    Direct JMPs and CALLs must stay in the core's bank. Computed PC writes are checked
     by the chip at execution time and cannot be checked statically here.
     """
     if not isinstance(core, int) or not 0 <= core < min(profile.ncores, profile.nbanks):
@@ -44,5 +44,5 @@ def validate_image(core, words, base, wrap, profile=TAPEOUT):
     for word in words:
         if not isinstance(word, int) or not 0 <= word <= 0xFFFFFFFF:
             raise ValueError("instruction must be a 32-bit word")
-        if word >> 27 == 0 and not lo <= (word & 0x3FF) < hi:
-            raise ValueError("JMP target leaves core's fixed instruction bank")
+        if word >> 27 in (0, 13) and not lo <= (word & 0x3FF) < hi:
+            raise ValueError("JMP/CALL target leaves core's fixed instruction bank")

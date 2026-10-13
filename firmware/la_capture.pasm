@@ -1,65 +1,61 @@
 ; Logic-analyzer capture: up to 8 channels, P[IN_BASE] .. P[IN_BASE+7].
-; The host preloads R3 with the channel mask (bit i = channel i, at most 0xFF;
-; registers survive a restart) and drains RXF. pe.la turns the records into
-; edges, a VCD and an I2C decode.
+; Assemble with MASK = the channel mask (bit i = channel i, 1..0xFF); the host
+; drains RXF. pe.la turns the records into edges, a VCD and an I2C decode.
 ;
-; Each RX word is one record: [31:24] marker, [23:16] channel state (masked),
-; [15:0] R2, the sample counter (counts down from 0xFFFF):
-;   0xF0  first record: the state when the capture started
-;   0xFF  change: the state differs from the previous record's
-;   0xFE  idle: 65536 samples without a change (state unchanged)
-;   0xFC / 0xF8  change / idle that follows a gap (below)
+; Each RX word is one record: [31:24] marker, [23:16] channel state (all 8
+; channels as sampled; the host applies MASK), [15:0] R2, a tick counter that
+; counts down from 0xFFFF while the WAIT waits (its timeout register):
+;   0xF0  first record: the state when the capture started (counter: ignore)
+;   0xFF  the masked state differs from the previous record's: a change; or it
+;         doesn't and the counter is 0: idle, 65536 ticks without a change; or
+;         it doesn't and the counter isn't 0: a pulse that was over a tick
+;         after it was seen (on an unknown channel)
+;   0xFC  gap: RXF was full and the core waited for the host (untimed); the
+;         records after it are timed from an unknown instant
 ; Bit 31 is always set, so a word read from an empty RXF (0) is never a
 ; record: the host can drain with blind READ_FIXED bursts and drop zeros.
 ;
-; Timing, in ticks (tick = CLKDIV clocks; CLKDIV 1 = one sample per 5 clocks):
-; the loop samples the pins every 5 ticks (`mov r0, pins`; pad inputs reach a
-; core 2 clocks late, docs/isa.md §2, a constant offset). B = the first sample
-; after a record, k = 0xFFFF - R2 the samples taken since:
-;   change at B + 5k; the next sample is 12 ticks after the change sample
-;   idle:  the next sample is at B + 5*65535 + 14
-;   first: the start sample is tick 1 after the restart, the next is tick 13
-; So an edge is timestamped to within 5 ticks; changes closer together than
-; 12 ticks fold into one record (several channels change at once), and a pulse
-; shorter than 5 ticks can be missed. pe.la.decode_records applies these rules.
+; Timing, in ticks (tick = CLKDIV clocks; pad inputs reach a core 2 clocks
+; late, docs/isa.md §2, a constant offset). `wait pins != r0` completes on the
+; first tick W at which a masked channel differs from the last record's state;
+; with CLKDIV > 1 a difference between ticks is kept until the next tick.
+; A = the WAIT's first attempt, k = 0xFFFF - R2: W = A + k.
+;   first: the start sample is tick 0, the first WAIT attempt tick 7
+;   after a record at W: the state is sampled at W + 1, the next WAIT starts
+;   at W + 7
+; So an edge at least 7 ticks after the previous record's W is timestamped
+; exactly; one within the next tick is folded into that record (1 tick early);
+; one 2-6 ticks after it is timestamped at W + 7 (up to 5 ticks late). Nothing
+; is lost but pulses shorter than that. pe.la.decode_records applies these rules.
 ;
-; Rate: a record per change, at most one per 12 ticks. RXF holds 8 records; past
-; that the rate is what the host drains. If RXF is full the core waits for the
-; host (`push block`): that time is not observed, and the next record's marker
-; says so (0xFC/0xF8: the interval before it is a lower bound and edges may be
-; missing).
+; Rate: a record per change, at most one per 7 ticks. RXF holds 8 records; past
+; that the rate is what the host drains, and a gap word marks the wait.
 ;
-; r0 = sample, r1 = state of the last record, r2 = sample counter, r3 = mask.
-; The ISR holds the next record's marker byte (its low 8 bits are shifted to
-; [31:24] by the two INs).
+; r0 = the last record's state (the WAIT's reference), r1 = 0xFF (the change
+; marker), r2 = tick counter. R3 is unused.
 .program la_capture
-.shift_in left
-    mov isr, ~null              ; tick 0: marker 0xFF...
-    mov r0, pins                ; tick 1: the start sample
-    and r0, r3
-    in null, 4                  ; marker 0xF0: first record
-    jmp change                  ; same path as a change: next sample at tick 13
-poll:
-    mov r0, pins                ; S
-    and r0, r3                  ; S+1
-    cmp r0, r1                  ; S+2
-    jmp !z, change              ; S+3
-    jmp r2--, poll              ; S+4: 65536 samples per R2 round
-    in null, 1                  ; idle: marker bit 0 = 0
-change:
-    jmp rxf, full               ; S+4 (idle: S+6)
-    in r0, 8                    ; S+5
-    in r2, 16                   ; S+6
-    push                        ; S+7
-    mov isr, ~null              ; S+8: next marker 0xFF
-next:
-    mov r1, r0                  ; S+9
-    ldi r2, 0xFFFF              ; S+10
-    jmp poll                    ; S+11, next sample S+12 (idle: S+14)
-full:                           ; RXF full: wait for the host, flag the gap
+.shift_in left autopush 32
+    mov r0, pins                ; tick 0: the start sample
+    ldi r1, 0xF0
+    in r1, 8                    ; marker 0xF0: first record
     in r0, 8
+    in r2, 16                   ; (autopush)
+    ldi r1, 0xFF                ; marker 0xFF from now on
+    ldi r2, 0xFFFF
+.wrap_target
+loop:
+    wait pins != r0 mask MASK timeout r2    ; W (A = the first attempt)
+    mov r0, pins                ; W+1: the new state
+    in r1, 8                    ; W+2: marker
+    in r0, 8                    ; W+3: state
+    jmp rxf, full               ; W+4
+    in r2, 16                   ; W+5: counter; autopush (RXF has room)
+    ldi r2, 0xFFFF              ; W+6
+.wrap                           ; next WAIT at W+7
+full:                           ; RXF full: wait for the host, then a gap word
+    in r2, 16                   ; autopush waits for room (untimed)
+    ldi r2, 0xFC00
     in r2, 16
-    push block
-    mov isr, ~null
-    in null, 2                  ; next marker 0xFC: follows a gap
-    jmp next
+    in null, 16                 ; 0xFC000000 (autopush, may wait too)
+    ldi r2, 0xFFFF
+    jmp loop

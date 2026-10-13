@@ -7,9 +7,22 @@ gate-level tests on the result. The routability experiments below used a
 flop-IMEM script stopped after global routing (`flow/exp.sh`, removed after
 bd07aa5; see git history).
 
-**Status:** run **g4** (2026-10-05, the current RTL: fixed banks, latch FIFOs,
-the dual-edge line receiver and the host-port reset guard) passes signoff; see
-the table at the end. A run is a commit:
+**Release check.** `flow/signoff.py` is the minimum check. A release candidate
+must also pass `flow/release_check.py <run worktree>` with automatic GL, SDF
+and precheck receipts. It requires finite, clean setup/hold at the actual
+clock constraint, no slew/capacitance/fanout violations without explicit
+documented waivers, complete functional suites and the required SDF cases.
+Receipts bind the candidate and result files by full SHA-256. Unrelated pass
+logs, partial suites and arithmetic estimates at another clock cannot pass.
+[Release evidence](release-evidence.md) gives the commands, coverage and limits.
+v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
+
+**Status:** the release candidate is run **t48ba** (2026-10-07): the v2 RTL
+with the clock-tree and repair settings that are now the `gen_config.py`
+defaults. It passes signoff, meets 50 MHz at every corner and is reproduced
+bit for bit by a clean-checkout harden (run ci6); `flow/release_check.py`
+fails it only on one fanout count inflated by antenna diodes (see "Release
+candidate" in the signoff section). A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -136,7 +149,127 @@ margins, instead of a 0.25 ns typ margin standing in for it. (The earlier
 "fast-corner hold took 3200 buffers" was the same uncertainty.)
 `CTS_BALANCE_LEVELS` changed nothing (same tree, same violators).
 
-## Routability is the constraint (not cell area)
+### Slow corner: useful skew around the SRAMs (2026-10-06)
+
+Full-speed USB needs exactly 48 MHz (20.833 ns), so the slow corner
+(`nom_slow_1p08V_125C`) must reach it. v2c: −1.57 ns at 20 ns, **−0.74 ns at
+20.833 ns** (91 violating endpoints). STA with `CLOCK_PERIOD` 20.833 on the
+same netlist and SPEF (the I/O delays scale with it).
+
+**What limits it.** Every violator starts at an SRAM output and ends in a
+flop of the same cycle's execute stage: 64 of the 91 are the chip's pin
+registers (`pin_out`, `pin_oe`), the rest core 0's R0–R3, CRC and PC. v2c's
+worst path (bank 1 DOUT[29] → `pin_out[3]`): the SRAM's clock pin at 1.32 ns
+(CTS balanced it to the register tree with five delay buffers), clock to
+DOUT 5.44 ns (the slow view; 5.13–5.26 ns before the 5 % derate, set by the
+macro), then 15.6 ns through 44 cells (0.2 ns of it net RC; 3.6 ns in ten
+fanout/repeater buffers; one `a221oi_1`, the only drive strength the library
+has, takes 1.39 ns into 0.09 pF), capture clock 1.19 ns, 0.25 ns uncertainty,
+0.17 ns setup. The first 5.3 ns of that path is instruction decode alone
+(nothing but SRAM bits in its fan-in), then the source select, the funnel and
+pin rotators, the side-set merge and the pin-owner mux. The paths that don't
+start at an SRAM had ≥ +1.6 ns; paths into the SRAM from flops ≥ +2.8 ns; the
+SRAM → logic → SRAM fetch-address loop +0.33 ns (bank 0). Upsizing every
+buf_1/buf_2 on the violating paths to buf_4 (STA what-if) gained 0.035 ns:
+the weak complex gates before them are the limit. Post-GRT repair stalls
+(v2c: −1.65 ns, 680 passes without progress).
+
+**What helped** (`flow/gen_config.py`, all opt-in):
+
+* `--sram-clock-advance` (`Project.SramClockAdvance`, after CTS): each SRAM's
+  `A_CLK` is driven by one buf_8 on the macro tree's root net, and CTS's
+  delay buffers for it are removed. The SRAMs launch at ≈ 0.4 ns instead of
+  1.2–1.3 ns; paths into the SRAMs trade that setup slack for hold slack (the
+  SRAM address hold buffers mostly disappear); the fetch loop starts and ends
+  on the same pin and is unchanged.
+* `--late-clock N` (same step): the 64 pin registers clock behind N extra
+  buf_8 (≈ 0.09 ns each at slow). `pin_oe` only drives pads (+12 ns from its
+  outputs), `pin_out` feeds the cores' pin inputs (+3.3 ns). Hold into them
+  (from `bus_wdata` and the static `pin_owner`/side-set configuration flops)
+  shrinks by the same amount; N = 12 left fast-corner hold at −0.016 ns (t48u).
+* `--clock-fanout-fix` (CTS sinks in clusters of 8, overloaded branches split):
+  clears the 85 clock-tree fanout violations; with the SRAM advance it also
+  changed the tree enough to help timing (t48e vs t48f).
+* `--pnr-setup-margin` (`src/protoemu_pnr_margin.sdc`): PnR repairs against
+  1.0 ns setup uncertainty instead of 0.25 (signoff unchanged). Unlike a
+  resizer setup margin it leaves the FIFO latches' borrowed slack at 0.
+
+What didn't: a post-GRT hold margin of 0.15 ns (450–840 hold buffers, +2.6–3.3 %
+area; two runs never finished detailed routing, one lost 1.2 ns of slow setup);
+`PL_WIRE_LENGTH_COEF` 0.2 with the above (detailed routing stalled at 6–7
+violations); densities ≤ 43 % (global placement clamps to 0.43: t48h placed
+exactly as t48f, same netlist hash); density 46 with `--clock-fanout-fix`
+(OpenROAD CTS left one FIFO clock gate's CLK unconnected: t48l/n/o/q; the SRAM
+clock step now stops on that). An RTL precompute of IN's autopush compare and
+the JMP/WAIT zero tests (branch `t48-rtl`, formally equivalent, full
+regression passing) congested global routing (Metal3 70 %, 400–440
+overflows, against 62–64 % and ~10): at this utilization any netlist change is
+a routability gamble. Synthesis `DELAY` strategies: deeper unplaced paths and
++4–32 % area.
+
+Slow-corner setup at 20 ns varies by ±0.4 ns between placements of the same
+configuration, so the runs below are samples, not a ranking of settings.
+
+All on v2c's RTL (cbeae96's `src/`), signoff by `flow/signoff.py` (all pass
+unless noted). "Worst flop" is the slow corner's worst setup slack at a flop
+or SRAM pin (the summary's WS is 0 when only the FIFO latches' borrowing is
+left); 48 MHz is STA at 20.833 ns on the same netlist and SPEF. Exceptions
+are max slew / max cap / max fanout violations per corner (typ, slow, fast).
+Settings: A = `--sram-clock-advance`, F = `--clock-fanout-fix`, Ln = 
+`--late-clock n`, M = `--pnr-setup-margin`, C = `MAX_FANOUT_CONSTRAINT` 8 and
+30 % slew margins in design repair, h = post-GRT hold margin (ns), d = density.
+
+| Run | Settings | Slow worst flop, 50 / 48 MHz | Fast hold | Exceptions typ · slow · fast | GRT Metal3 / overflow |
+|-----|----------|------------------------------|-----------|------------------------------|-----------------------|
+| v2c | — | −1.569 / −0.736 | +0.041 | 0/0/85 · 3/0/85 · 0/0/85 | 63.8 % / 8 |
+| t48a | F | −1.627 / −0.794 | +0.048 | 0/0/1 · 8/0/1 · 0/0/1 | 63.8 % / 11 |
+| t48e | A | −1.496 / −0.663 | +0.054 | 0/0/82 · 10/0/82 · 0/0/82 | 63.9 % / 7 |
+| t48g | A M | −0.801 / +0.032 | +0.046 | 0/0/83 · 9/0/83 · 0/0/83 | 63.9 % / 8 |
+| t48f | A F | −0.716 / +0.117 | +0.015 | 0/0/2 · 3/0/2 · 0/0/2 | 63.9 % / 11 |
+| t48i | A F L5 | −0.673 / +0.160 | +0.055 | 0/0/3 · 9/0/3 · 0/0/3 | 64.0 % / 12 |
+| t48m | A F L5 M | −0.597 / +0.236 | +0.046 | 0/0/5 · 7/0/5 · 0/0/5 | 64.1 % / 11 |
+| t48s | A F L5 M d44 | −0.439 / +0.394 | +0.063 | 0/0/2 · 3/0/2 · 0/0/2 | 63.8 % / 9 |
+| t48r | A F L8 M | −0.325 / +0.508 | +0.050 | 0/0/5 · 9/0/5 · 0/0/5 | 64.1 % / 12 |
+| t48v | A F L12 M | −0.275 / +0.558 | +0.014 | 0/0/1 · 4/0/1 · 0/0/1 | 64.2 % / 12 |
+| t48u | A F L12 M d44 | −0.112 / +0.721 | **−0.016** (fails) | 0/0/2 · 3/0/2 · 0/0/2 | 63.8 % / 9 |
+| t48z | t48u, h 0.15 | −1.311 / −0.478 | +0.059 | 0/0/2 · 6/0/2 · 0/0/2 | 64.1 % / 10 |
+| t48ad | A F L8 M C | −0.289 / +0.544 | +0.060 | 0/1/1 · 1/1/1 · 0/1/1 | 64.0 % / 8 |
+| t48ag | A F L8 M C h0.12 | **+0.054 / +0.887** | +0.079 | 0/0/1 · 2/0/1 · 0/0/1 | 64.0 % / 8 |
+| t48af | A F L8 M C d44 | +0.243 / +1.076 | +0.041 | 2/0/3 · 4/0/3 · 0/0/3 | 63.7 % / 10 |
+| t48aj | t48ag + `--final-design-repair` | −0.021 / +0.812 | +0.060 | 0/0/2 · 3/0/2 · 0/0/2 | 64.0 % / 10 |
+| t48ak | t48ag + `--sram-pin-buffers`, PnR fanout 6 | −0.882 / −0.049 | +0.043 | 0/0/2 · 0/0/2 · 0/0/2 | 66.9 % / 35 |
+| t48al | t48ak, d44 | −0.748 / +0.085 | +0.062 | 0/1/2 · 0/1/2 · 0/1/2 | 66.4 % / 48 |
+| t48aq | A F L5 M C h0.12, pin buffers (A_ADDR drivers upsized), GRT cap/antenna margins 30 % | −0.552 / +0.281 | +0.060 | 0/0/3 · 3/0/3 · 0/0/3 | 63.7 % / 19 |
+| t48ao | t48aq with L8 | +0.077 / +0.910 | **−0.003** (fails) | 0/0/1 · 0/0/1 · 0/0/1 | 63.7 % / 20 |
+| t48ar | t48aq with L6, DRT antenna margin 0 | −0.001 / +0.832 | +0.038 | 0/0/2 · 0/0/2 · 0/0/2 | 63.7 % / 19 |
+
+The remaining exceptions are of two kinds. Slew: always pins of bank 1
+(A_ADDR[5], A_ADDR[0], A_DIN[*]), driven by an `a21oi_1` or a `buf_1` fanout
+buffer; global routing estimated them inside the 0.595 ns limit with margin,
+extraction gave up to 0.8 ns. `--sram-pin-buffers` cleared them (t48ak/al:
+0 slew violations at every corner) at the cost of congestion when combined
+with the PnR fanout limit of 6. Fanout: 1–3 nets per run end with 9–13
+loads, every one because detailed routing's antenna repair (after all resizer
+steps) attached 6–11 antenna diodes to a net the resizer had left at ≤ 8 (or
+≤ 6). Shorter repair wires (`GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH` 250) to avoid
+the antenna violations cost 0.5–1 ns of slow setup and 360–400 hold buffers
+(t48am/an, stopped after global routing).
+A post-GRT hold margin of 0.14 ns (t48as) and density 44 with the pin buffers
+(t48ap) stalled detailed routing; both were stopped.
+
+**Candidate: t48ag** (commit e96cb69, `flow/harden.sh NAME -- --sram-clock-advance
+--clock-fanout-fix --late-clock 8 --pnr-setup-margin --set MAX_FANOUT_CONSTRAINT=8
+--set GRT_DESIGN_REPAIR_MAX_SLEW_PCT=30 --set DESIGN_REPAIR_MAX_SLEW_PCT=30
+--set GRT_RESIZER_HOLD_SLACK_MARGIN=0.12`): signoff passes; setup is met at
+every corner at 50 MHz, the slow corner's worst flop/SRAM-pin slack is
++0.054 ns at 20 ns and +0.887 ns at 20.833 ns; hold +0.186 / +0.353 / +0.079 ns
+(typ / slow / fast); no capacitance violations; 2 slow-corner slew violations
+(bank 1 A_ADDR[5] 0.692 ns, A_ADDR[0] 0.597 ns, limit 0.595) and 1 fanout
+violation at every corner (11 loads, antenna diodes included). Netlist sha256
+`b2cb0a1a619ad1bf`, GDS `90040c26d13fb390`; Metal3 64.0 %, 8 overflows after
+global routing; 52.5 % utilization with the macros. Functional gate level: all
+25 top-level tests (test.py 21, test_pio 2, test_eth_service 2).
+
 
 Numbers are quick global-routing runs (5 iterations) on placed databases.
 Metal3 is the only horizontal layer.
@@ -234,6 +367,39 @@ Rewrites that keep the behaviour gained nothing: masks from thermometer codes
 instead of rotators (−0.5 %), ALU shifts through the funnel (+1.8 %).
 Synthesis already shares well; the wiring is in what the core does.
 
+### What the v2 additions cost (2026-10-05, before re-hardening)
+
+Measured on the RTL alone (not yet hardened). Per core: `flow/core_route.sh`
+at placement densities 34/46/50 (a single placement moves wire by ~2 %, as
+much as the differences measured), cumulative from main, LibreLane synthesis
+area. pe_line: `TOP=pe_line` at 34/56/62 (its utilisation is 51 %, so lower
+densities place identically). pe_chip glue: yosys with the IHP typ library
+(it isn't a core_route target).
+
+| Step | Block | Wire (k µm, per density) | Avg Δ wire | Area |
+|---|---|---|---|---|
+| main (g4) | core | 718.0 / 706.5 / 689.5 | — | 105.5K µm² |
+| + half-cycle NRZI sample | pe_line | 187.2 / 183.9 / 180.8 vs 182.2 / 179.2 / 177.0 | +2.5 % of pe_line (+4.6K µm, one per chip) | −0.2K |
+| + SYNC_BYPASS | pe_chip | — | 13 flops and muxes beside the synchroniser | +1.26K (yosys) |
+| + WAIT kind 7 (own selector) | core | 737.7 / 722.8 / 705.9 | +2.5 % | +1.3K |
+| + CALL / RET | core | 740.5 / 724.5 / 705.4 | +0.2 % | −0.5K |
+| kind 7 on the ALU's selector (v2 as committed) | core | 732.6 / 715.5 / 700.6 | −1.0 %; **+1.6 % vs main** | +0.3K |
+| (not done) 32-bit CRC, poly top half fixed at 0x04C1 | core | 746.6 / 735.0 / 721.2 | +1.5 % over CALL/RET | +1.2K |
+
+So the committed v2 adds about 23K µm of wire across the two cores and 4.6K in
+the line unit, about 1.2 % of g4's 2.29M µm global route, and the core's
+Metal3 use rises by about 0.9 points (44.3 → 45.3 % in these runs). That's the
+kind of change that moved g4-era routing a lot, so it needs the full harden.
+
+The 32-bit CRC was left out: it costs about as much wire as the committed
+kind 7 (+1.5 % per core), and the
+firmware half doesn't fit. To check a 10BASE-T FCS in the engine, `eth10_rx`
+must restart the CRC right after the SFD. The cheap way to find it (preset
+the CRC to the fixed point of the preamble's `10` pairs, 0xFE9506DB, and wait
+for it to change) needs pair alignment, but receivers can lose the first
+preamble bits (test_eth10 allows it); a bit-by-bit SFD search costs about 7
+instructions per bit against a 5-clock bit. The host already checks the FCS.
+
 ## Signoff runs
 
 | Run | RTL | DRT (final) | KLayout DRC | LVS | Antenna | Setup WS typ / slow | Hold WS typ | Max slew / cap viol. (typ) |
@@ -243,10 +409,41 @@ Synthesis already shares well; the wiring is in what the core does.
 | final5 | bd2d6d0: + FIFO read snapshot, pe_fifos; PVT-matched SRAM views | 0 | 0 | clean | 0 | +3.12 / −6.90 ns | +0.21 ns (fast +0.05) | 3 / 11 |
 | t3 | 0ceca69: + line unit, quad host port, write-only configuration; measured wire capacitance, post-GRT timing repair | 0 | 0 | clean | 0 | +4.56 / −4.64 ns | +0.15 ns (**fast −0.024**, 1 path) | 3 / 2 |
 | t5 | t3 + post-GRT hold margin 0.25 ns | 0 | 0 | clean | 0 | +4.77 / −4.10 ns | +0.32 ns (fast +0.12) | 1 / 2 |
-| **g4** | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | **0 (met) / −2.88 ns** | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
+| g4 | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | 0 (met) / −2.88 ns | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
+| m10 | g4's RTL, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | 0 (met) / −2.98 ns | +0.17 ns (slow +0.32, fast +0.08) | 0 / 0 |
+| v2c | cbeae96: + NRZI half-cycle sample, `SYNC_BYPASS`, WAIT kind 7, CALL/RET; density 34, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | **0 (met) / −1.57 ns** | +0.10 ns (slow +0.20, fast +0.04) | 0 / 0 |
+| **t48ba** | v2 RTL (digest cd25b1c1…), software 93c2137; SRAM clock advance, pin registers 6 clock stages late, clock-fanout fix, PnR setup margin, SRAM pin buffers, repair with electrical margins, post-GRT hold margin 0.13 ns | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0** (1 fanout, see below) |
 
-g4 is the current candidate (netlist sha256 `4db31a01877b1977…`, GDS
-`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). The
+**Release candidate: t48ba** (netlist sha256 `e400fa30c291f653…`, GDS
+`8899bc154fc3975a…`; 47 % stdcell utilization, 53 % with the macros;
+global routing ended with 12 overflows, Metal3 63.9 %). Setup is met at
+20 ns at all three corners (the 0 is the FIFO latches' borrowing floor; every
+flop and SRAM path has positive slack), hold at every corner, and no slew or
+capacitance violation anywhere. A clean checkout of 93c2137 hardened with its
+container capped to 4 CPUs and 16 GB (run ci6, 1 h 57 min) reproduced the
+netlist exactly and the GDS exactly apart from its timestamps.
+`flow/release_check.py` verifies the receipts for this netlist (precheck,
+29/29 top-level tests at gate level, the SDF standard and v2 sets at
+typ/slow/fast plus their overclocked controls, autonomous full-speed USB
+enumeration with real delays) and fails on one item: net3483, driven by
+`wire3483`, has 11 loads against the cells' fanout limit of 8 at every
+corner: 7 cell inputs and 4 antenna diodes the router added. Its
+capacitance and slew are within limits. The archive of all receipts and
+inputs is described in [release-evidence.md](release-evidence.md).
+
+v2c was the previous candidate (netlist sha256 `929524418e3d4227…`, GDS
+`6d9787524c08a854…`; 44 % stdcell utilization, 50 % with the macros; global
+routing ended with 8 overflows, Metal3 63.8 %). It passes Tiny Tapeout's
+precheck and all 24 top-level tests at gate level. Two more placements of the
+same RTL passed too: v2a (density 44: slow −1.82 ns, fast hold +0.03 ns) and
+v2b (wire-length coefficient 0.2: slow −1.53 ns, fast hold +0.04 ns, 3/1
+slew/cap exceptions). The v2 features cost about 1.6 % more wire per core
+(table above), yet all three v2 runs routed with fewer global-routing
+overflows than g4 (8–13 against 39): at this congestion the placement varies
+more than the netlist does.
+
+g4 was the previous candidate (netlist sha256 `4db31a01877b1977…`, GDS
+`91ebc9ce59147f04…`; 44 % stdcell utilization, 50 % with the macros). Its
 build is reproducible on a GitHub runner's budget: a fresh `flow/harden.sh` of
 the same tree with its container capped to 4 CPUs and 16 GB (a public-repo
 runner; the official action uses the same tt-support-tools, PDK and LibreLane
@@ -254,7 +451,9 @@ revisions) finished in 1 h 56 min, passed signoff, and produced the same
 netlist and, with GDS timestamps zeroed, a byte-identical GDS. Tiny
 Tapeout's precheck (`tt/precheck`) passes on it. Its typ
 setup slack is exactly 0 because the FIFO latches borrow time; every flop path
-meets. The slow corner allows about 44 MHz. t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
+meets. Its slow corner allows about 44 MHz. m10 is g4's RTL re-hardened with
+the post-GRT hold margin raised from 0.05 to 0.10 ns: fast-corner hold +0.08 ns
+and no typ slew exceptions, which is why v2 uses 0.10. t5 is historical hardware at `ae7d59d`, with its own configuration. Its retained
 gate-level log passes 9/9 top-level tests. The slow corner allows
 about 41 MHz. final5's DOUT capacitance exceptions are gone; t5 has one
 slew and two capacitance exceptions at typ.
@@ -324,30 +523,121 @@ and SRAM models (no `FUNCTIONAL`), Icarus Verilog with `-gspecify
 -ginterconnect`, and this checkout's `test/test.py` with its clock set by
 `PE_CLK_NS`. Each case gets a fresh directory under
 `test/sim_build/gl_sdf.*`; the run directory is only read, and the script
-refuses a run whose `src/` differs from the checkout's. The standard cases
-run in parallel:
+refuses a run whose `src/` differs from the checkout's. The external devices
+on the uio pins drive 4 ns after the clock edge at which cocotb sets them
+(`TB_EXT_DELAY`, the input delay STA assumes; see the limits below). The
+standard cases run in parallel:
 
-| Corner | Clock | Tests | Required | g4 |
-|--------|-------|-------|----------|----|
-| typ | 20 ns (50 MHz) | test_id, test_uart_tx, test_spi_master, test_host_port_fast, test_fetch_to_pin | pass | 5/5 pass |
-| slow | 23 ns (43.5 MHz; STA needs 22.88) | same | pass | 5/5 pass |
-| slow | 12.5 ns (80 MHz) | test_fetch_to_pin | fail | fails |
-| slow | 20 ns (single case, not in the standard set) | the five | — | 5/5 pass (see below) |
-| fast | 20 ns (single case) | the five | — | 5/5 pass |
+| Corner | Clock | Tests | Required | g4 | v2c |
+|--------|-------|-------|----------|----|-----|
+| typ | 20 ns (50 MHz) | test_id, test_uart_tx, test_spi_master, test_host_port_fast, test_fetch_to_pin | pass | 5/5 pass | 5/5 pass |
+| slow | 23 ns (43.5 MHz; STA needs 22.88 for g4, 21.57 for v2c) | same | pass | 5/5 pass | 5/5 pass |
+| slow | 12.5 ns (80 MHz) | test_fetch_to_pin | fail | fails | fails |
+| slow | 20 ns (single case, not in the standard set) | the five | — | 5/5 pass (see below) | |
+| fast | 20 ns (single case) | the five | — | 5/5 pass | |
 
 ```
-$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-g4
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-g4        # before the 4 ns external-device delay
 [typ_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0   933950.00   498.61   1873.10 ** (537 s)
 [slow_23ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  1074042.50   455.90   2355.88 ** (495 s)
 [slow_12.5ns_fail] FAILS as required: ** TESTS=1 PASS=0 FAIL=1 SKIP=0  110918.75   342.31   324.03 ** (382 s)
 gl_sdf_test: all cases as required        (9 min wall on a loaded 16-core box)
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c
+[typ_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  933950.00  780.44  1196.70 ** (851 s)
+[slow_23ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0  1074042.50  756.60  1419.57 ** (831 s)
+[slow_12.5ns_fail_fetch_to_pin] FAILS as required: ** TESTS=1 PASS=0 FAIL=1 SKIP=0  109331.25  536.63  203.74 ** (609 s)
+gl_sdf_test (standard): all cases as required        (14 min wall, load average ~28 on 16 cores)
 ```
 
-One case is `flow/gl_sdf_test.sh <run> CORNER CLK_NS [fail]`; `TESTS=` picks
+One case is `flow/gl_sdf_test.sh <run> CORNER CLK_NS [fail|report]`
+(`report` prints the result without requiring either); `TESTS=` picks
 other tests and `MODULE=test_sigrok` the sigrok oracle (sigrok_uart_tx,
 sigrok_spi_master and sigrok_i2c_master pass at typ, 50 MHz). Most of a
 case's ~4 minutes is Icarus reading the SDF; the simulation itself runs at
 roughly 2 µs of chip time per second.
+
+**The v2 features** (`flow/gl_sdf_test.sh <run> v2`, five cases in
+parallel, ~30 minutes, the USB cases set it). Two of the tests are short
+directed ones written for this (their RTL runs take seconds; full-length
+originals in `v2long` below):
+
+| Feature | Test | What it checks |
+|---------|------|----------------|
+| `SYNC_BYPASS` | test_spi_master_fast | SPI master at 4 clocks per SCK reads every byte with MISO bypassed; without the bypass (or with spi_master) every bit one late |
+| WAIT kind 7 | test_la_capture_ticks (new, 0.2 ms) | la_capture at CLKDIV 1 on three channels: 32 pin changes (spaced 7-30 ticks, the 7-tick square wave, two-channel pairs 1-6 ticks apart, 1- and 2-clock pulses); decoded edges and pulses equal the cycle model's, spaced edges exact to the tick |
+| CALL/RET | test_call_ret (new, 0.26 ms) | conditional calls taken and not, nesting through a saved LR, a CALL on the wrap's last word, RET with side-set and delay, CLKDIV 1: side-set edges clock-exact, pushed links and final PC/status/R0-R3 equal the model's (kills `rtl-call-link-ignores-wrap` and `rtl-call-no-link` at RTL) |
+| half-cycle NRZI sample | test_usb_fs_device (3.3 ms) | USB full-speed device: SETUP/IN/OUT handshakes, turnaround, 2 × 24 OUT packets at DCD 9.25 and 14 ns |
+
+| Corner | Clock | Tests | Required | v2c |
+|--------|-------|-------|----------|-----|
+| typ | 20 ns | spi_master_fast, la_capture_ticks, call_ret | pass | 3/3 pass (690 s) |
+| typ | 20.834 ns (48 MHz, USB's clock) | usb_fs_device | pass | pass (1823 s) |
+| slow | 23 ns | spi_master_fast, la_capture_ticks, call_ret | pass | 3/3 pass (641 s) |
+| slow | 23 ns, USB bus scaled to the clock | usb_fs_device | pass | pass (1797 s) |
+| slow | 20.834 ns (48 MHz) | usb_fs_device | report only (STA needs 21.57 ns) | passes (1877 s) |
+| slow | 12.5 ns (80 MHz, single cases) | each of the three short tests | report only | each fails (spi_master_fast: X on a pin; la_capture_ticks: gaps; call_ret: no side-set edges) |
+
+```
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c v2
+[typ_20ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0  1043820.00  633.88  1646.72 ** (690 s)
+[typ_20.834ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3264021.11  1770.75  1843.30 ** (1823 s)
+[slow_23ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0  1200393.00  583.22  2058.21 ** (641 s)
+[slow_23ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3602904.00  1741.99  2068.27 ** (1797 s)
+[slow_20.834ns_report_usb_fs_device] PASSES (report only): ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3264021.11  1823.60  1789.88 ** (1877 s)
+gl_sdf_test (v2): all cases as required        (31 min wall, load average ~28 on 16 cores)
+```
+
+The 80 MHz cases show the annotation is in effect for these tests too, not
+that they target the feature's own paths: at that clock much more breaks
+(test_call_ret never saw a side-set edge).
+
+USB full speed needs exactly 48 MHz, which the slow corner doesn't meet in
+STA (−1.57 ns at 20 ns, so 21.57 ns); the slow/48 MHz case is reported, not
+required. It passes, as g4's five passed at slow/50 MHz (below): a pass
+shows only that the transitions the test exercises met timing, not that the
+184 failing endpoints are unreachable. For a required slow
+case, `PE_USB_FS_CLK_NS` (set to the case clock) runs the same test with the
+host's bit time and DCD scaled to the clock, still 4 clocks per bit (10.9
+Mbit/s at 23 ns: the same logic, not USB). At gate level the turnaround is
+2.89 bit times for the ACK (RTL 2.64: the 4 ns input delay moves the EOP's
+arrival past one more clock edge for that packet's phase); 24/24 OUT packets
+are ACKed at each DCD, at every clock.
+
+`flow/gl_sdf_test.sh <run> v2long` runs the full-length tests the directed
+ones stand in for, each its own case, at typ 20 ns and slow 23 ns:
+test_la_capture_rate (3.2 ms of chip time: the rate sweeps and their exact
+burst-rate assertions) and test_reverse_engineering (5.4 ms: la_capture on
+I2C, then i2c_device, which uses CALL/RET, cloning the EEPROM). v2c passes
+all four (about 50 minutes each under the same load), with the RTL's
+results: gap-free capture down to an edge every 80 clocks (1-bit SPI), 12
+(quad, 8-word bursts) and 9 (32-word bursts) at both corners, and the clone
+answers the same with SCL stretched 2935 clocks.
+
+```
+$ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c v2long
+[typ_20ns_pass_la_capture_rate] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3155480.00  2902.85  1087.03 ** (2958 s)
+[typ_20ns_pass_reverse_engineering] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  5431940.00  2900.97  1872.46 ** (2955 s)
+[slow_23ns_pass_la_capture_rate] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  3628802.00  2949.92  1230.14 ** (3006 s)
+[slow_23ns_pass_reverse_engineering] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0  6246731.00  2944.59  2121.42 ** (3002 s)
+gl_sdf_test (v2long): all cases as required
+```
+
+**A testbench race the v2 tests exposed.** test_spi_master_fast first
+failed at typ/50 MHz: with MISO not bypassed it read every byte right
+instead of one bit late. Its device model answers at the clock edge after it
+sees SCK fall, and cocotb set MISO at that edge with no delay. STA (v2c,
+typ) gives the pad-to-first-synchronizer path `uio_in[4]` → `input13` →
+`_37309_/D` as 0.12 ns and that flop's clock latency as 0.85 ns (slow: 0.19
+and 1.29 ns): a pin change made at the clock port's edge reaches D before
+the delayed edge, so the synchronizer takes it at that edge, a clock earlier
+than RTL. That is outside what STA signs off: the SDC sets 4 ns of input
+delay (`IO_DELAY_CONSTRAINT` 20 %), and with it the path has 3.22 ns of hold
+slack. The testbench now delays the external devices' outputs by 4 ns under
+SDF (`tb.v`, `TB_EXT_DELAY`, a transport delay; RTL is unchanged with it:
+the v2 tests and test_reverse_engineering pass with the delay compiled in),
+and the test passes at typ and slow. No chip finding: the bypass itself (the
+positive check) passed either way, and test_usb_fs_device, whose host
+places edges at random phase, passed at typ without the delay as well.
 
 **Getting Icarus to annotate this netlist.** Out of the box, Icarus 14
 (devel) silently annotated only part of it: its SDF reader stops at the first
@@ -411,9 +701,18 @@ slow-corner chip is specified at 43.5 MHz.
   `ifnone` edge-sensitive arcs (68 of them in 17 cell types; their
   conditional arcs, which get the unconditional SDF delay, still cover every
   0/1 input, so only X inputs are affected).
-* The testbench drives inputs at clock edges (the host port's SCK/MOSI/CS_n
-  go through synchronizers, so any phase is legal there); the board-level
-  input/output delays STA constrains aren't modelled.
+* Board timing, partly: the external devices on uio drive 4 ns after the
+  clock edge (STA's input delay; above), but the host port's ui inputs are
+  set at cocotb's own times (SCK/MOSI/CS_n go through synchronizers, so any
+  phase is legal there), and no output delay is modelled (the testbench
+  reads outputs at the next clock edge or at its own SPI timing).
+* Features: the v2 set covers each v2 feature with one test (the
+  half-cycle NRZI sample at the spec's DCD and beyond, `SYNC_BYPASS` on one
+  pin at 4 clocks per SCK, WAIT kind 7 at CLKDIV 1 on three channels,
+  CALL/RET in one program on one core). Kind 7 on fractional dividers, host
+  restarts mid-WAIT or mid-CALL and the bypass on other pins are left to
+  RTL lockstep (test_wait_diff, test_call_ret in `test_lockstep.py`, which
+  probe internal state and so don't run on the netlist).
 
 ## Area reductions applied
 

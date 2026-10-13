@@ -24,28 +24,52 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     assert subprocess.run(cmd + ["--check"], capture_output=True).returncode != 0
     assert dst.read_text() == '{"stale": true}'
     c = json.loads(original)
-    # signoff times the real latch arcs; PnR is the same SDC plus only the FIFO
-    # latch D->Q exception (docs/review.md)
+    assert c == json.loads((ROOT / "src/config.json").read_text())
+    # t48ba uses extra setup margin during PnR. Signoff still selects the real
+    # latch arcs, with neither that margin nor the PnR-only D->Q exception.
     assert c["SIGNOFF_SDC_FILE"] == "dir::protoemu.sdc"
-    assert c["PNR_SDC_FILE"] == "dir::protoemu_pnr.sdc"
+    assert c["PNR_SDC_FILE"] == "dir::protoemu_pnr_margin.sdc"
+    margin = [l for l in (ROOT / "src/protoemu_pnr_margin.sdc").read_text().splitlines()
+              if l.strip() and not l.lstrip().startswith("#")]
+    assert margin == ["source [file join [file dirname $::env(PNR_SDC_FILE)] protoemu_pnr.sdc]",
+                      "set_clock_uncertainty -setup [expr {$::env(CLOCK_UNCERTAINTY_CONSTRAINT) + 0.75}] [get_clocks clk]"]
     pnr = [l for l in (ROOT / "src/protoemu_pnr.sdc").read_text().splitlines()
            if l.strip() and not l.lstrip().startswith("#")]
     assert pnr == ["source [file join [file dirname $::env(PNR_SDC_FILE)] protoemu.sdc]",
                    "set_disable_timing -from D -to Q [get_lib_cells */sg13cmos5l_dlhq_1]"]
     assert c["//generator"]["preset"] == "submission"
+    assert c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.13
+    steps = c["meta"]["substituting_steps"]
+    assert steps["+OpenROAD.ResizerTimingPostGRT"] == "Project.SramPinBuffers"
+    assert steps["+Project.SramPinBuffers"] == "OpenROAD.RepairDesignPostGRT"
 
 
-def test_clock_repair_is_opt_in_and_keeps_submission_geometry(tmp_path):
+@pytest.mark.parametrize("options,step,fanout_fix", [
+    ([], "Project.SramClockAdvance", True),
+    (["--no-sram-clock-advance", "--late-clock", "0"], "Project.FixClockFanout", True),
+    (["--no-clock-fanout-fix"], "Project.SramClockAdvance", False),
+])
+def test_submission_clock_defaults_and_overrides_keep_geometry(tmp_path, options, step, fanout_fix):
     dst = tmp_path / "clock-fix.json"
-    subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--clock-fanout-fix",
+    subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), *options,
                     "--output", str(dst)], check=True, capture_output=True)
     c = json.loads(dst.read_text())
     baseline = json.loads((ROOT / "src/config.json").read_text())
-    assert c["meta"]["substituting_steps"]["+OpenROAD.CTS"] == "Project.FixClockFanout"
-    assert c["CTS_SINK_CLUSTERING_SIZE"] == 8
+    assert baseline["//generator"]["clock_fanout_fix"] is True
+    assert c["meta"]["substituting_steps"]["+OpenROAD.CTS"] == step
+    if fanout_fix:
+        assert c["CTS_SINK_CLUSTERING_SIZE"] == 8
+    else:
+        assert "CTS_SINK_CLUSTERING_SIZE" not in c
+    if step == "Project.SramClockAdvance":
+        assert c.get("PROTOEMU_CLOCK_FANOUT_FIX", False) is fanout_fix
+        assert c["PROTOEMU_LATE_CLOCK_STAGES"] == 6
+        assert c["PROTOEMU_LATE_CLOCK_REGS"] == ["u_chip.pin_oe*=6", "*.pin_out_cur*"]
+    else:
+        assert "PROTOEMU_CLOCK_FANOUT_FIX" not in c
+        assert "PROTOEMU_LATE_CLOCK_STAGES" not in c
     for name in ("CLOCK_PERIOD", "MACROS", "PNR_SDC_FILE", "SIGNOFF_SDC_FILE", "PNR_CORNERS"):
         assert c[name] == baseline[name]
-    assert "clock_fanout_fix" not in baseline["//generator"]
 
 
 @pytest.mark.parametrize("behavior", ["compile-failure", "startup-failure", "missing-xml", "test-failure",
@@ -59,6 +83,21 @@ def test_gl_never_accepts_stale_xml(tmp_path, behavior):
         (repo / ("test/" + module + ".py")).write_text('@cocotb.test()\nasync def test_a(dut): pass\n')
     shutil.copy(ROOT / "test/check_results.py", repo / "test")
     (repo / "runs/wokwi/final/nl/design.nl.v").write_text('module design; endmodule\n')
+    (repo / "info.yaml").write_text("project: {}\n")
+    (repo / "runs/wokwi/resolved.json").write_text('{"CLOCK_PERIOD":20}')
+    (repo / "runs/wokwi/final/metrics.json").write_text('{}')
+    for folder, filename in (("gds", "design.gds"), ("lef", "design.lef")):
+        p = repo / "runs/wokwi/final" / folder / filename
+        p.parent.mkdir(parents=True)
+        p.write_text("fixture")
+    for corner in ("nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C"):
+        p = repo / "runs/wokwi/final/sdf" / corner / "design.sdf"
+        p.parent.mkdir(parents=True)
+        p.write_text("fixture")
+        sta = repo / "runs/wokwi/99-openroad-stapostpnr" / corner
+        sta.mkdir(parents=True)
+        (sta / "sta.log").write_text("fixture")
+        (sta / "clock.rpt").write_text("Clock: clk\nPeriod: 20.000000\n")
     old = '<testsuites><testsuite><testcase name="old"/></testsuite></testsuites>'
     (repo / "test/gl.xml").write_text(old)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)

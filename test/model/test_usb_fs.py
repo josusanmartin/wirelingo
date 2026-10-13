@@ -2,7 +2,9 @@
 usb_fs_dev on core 0 with the line unit at 4 clocks per bit (48 MHz), against
 the pins-only full-speed host in pe.usbfs (edges in continuous time, with
 jitter and frequency offset; its own clock recovery; turnaround measured on
-the bus). No RTL change: the signed-off line unit and ISA.
+the bus). The firmware needs no RTL change (the g4 line unit and ISA); the
+v2 line unit's half-cycle NRZI sample point (docs/isa.md §4.7) adds jitter
+margin (test_fs_rx_duty_cycle_margin).
 
 Run with -s to see the measured numbers."""
 import pathlib
@@ -107,6 +109,25 @@ def test_fs_rx_jitter_and_rate(jitter, ppm):
     b = bits(h, "OUT data -> ACK")
     print(f"jitter +-{jitter} ns/edge, {ppm:+} ppm: 40/40 ACKed, turnaround {min(b):.2f}-{max(b):.2f} bit times")
     assert TA_MIN <= min(b) and max(b) <= TA_MAX and h.collisions == 0
+
+
+@pytest.mark.parametrize("ppm", [0, 2500, -2500])
+def test_fs_rx_duty_cycle_margin(ppm):
+    """Every J->K edge 14 ns late and every K->J edge 14 ns early: consecutive
+    edges 28 ns closer than nominal (USB allows 18.5). The half-cycle NRZI
+    sample point (docs/isa.md §4.7) samples 1.5-2.5 clocks after an edge, so
+    all 40 packets must be ACKed; g4's receiver (2-3 clocks) lost about half."""
+    mh, _ = device()
+    h = FsHost(mh, ppm=ppm, dcd_ns=14.0, seed=17 + ppm)
+    rng = random.Random(ppm + 1)
+    pid = usb.PID_DATA1
+    for i in range(40):
+        p = bytes(rng.choice((0xFF, 0x00, 0x55, rng.randrange(256))) for _ in range(rng.randrange(1, 17)))
+        assert h.data_out(0, 0, pid, p, tries=1), i
+        mh.step(40)
+        assert [(r.ok, r.data) for r in records(mh)] == [(True, p)]
+        pid ^= usb.PID_DATA0 ^ usb.PID_DATA1
+    print(f"DCD 14 ns (28 ns edge to edge), {ppm:+} ppm: 40/40 ACKed")
 
 
 @pytest.mark.parametrize("gap", [2.0, 6.5])

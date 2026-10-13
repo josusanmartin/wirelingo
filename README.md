@@ -24,18 +24,38 @@ describes how, and what it caught.
 
 **Where it stands:**
 
-* Signed off (run g4): DRC, LVS and antenna clean, 50 MHz at the typical
-  corner, hold met at every corner, Tiny Tapeout precheck passed; the netlist
-  passes all 20 top-level tests at gate level ([docs/physical.md](docs/physical.md)).
+* **Release candidate: run t48ba** (software `93c2137`). 50 MHz is met at all
+  three corners, slow included; hold is met everywhere (fast corner +0.095 ns);
+  DRC, LVS and antenna are clean and there are no slew or capacitance
+  violations. A clean checkout rebuilt on a 4-CPU machine reproduces its
+  netlist and GDS bit for bit. Hash-bound receipts: Tiny Tapeout precheck, all
+  29 top-level tests at gate level, and timing-annotated (SDF) gate level at
+  all three corners ([docs/release-evidence.md](docs/release-evidence.md)).
+  One exception remains: a net with 7 cell loads and 4 antenna diodes counts
+  11 against the IHP cells' fanout limit of 8 ([docs/physical.md](docs/physical.md)).
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
-* A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core** of the
-  signed-off chip, with handshakes 11.5 clocks after the host's packet
-  (spec: 8–26), in RTL and gate-level simulation ([docs/usb-full-speed.md](docs/usb-full-speed.md)).
+* A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
+  handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
+  gate-level simulation of the signed-off netlist
+  ([docs/usb-full-speed.md](docs/usb-full-speed.md)); the chip meets 50 MHz,
+  so 48 MHz, at every corner. With no host software after loading, one core
+  also enumerates as a USB device on its own, low or full speed
+  ([docs/usb-enumeration.md](docs/usb-enumeration.md)).
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
+* **v2** (signed off as run v2c): four small additions over g4, each in the spec, RTL, model, assembler, lockstep, formal where an
+  invariant applies, and a firmware that uses it. The line unit's NRZI sample
+  point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
+  packets at 28 ns edge-to-edge distortion, g4 11/24; v2c meets 48 MHz at the
+  typical corner, and its slow corner reaches about 46 MHz); `SYNC_BYPASS` reads chosen pad inputs through one
+  synchroniser flop (SPI master at 4 clocks per SCK, like PIO, if the pads and
+  the device answer within 2 clocks); WAIT kind 7 waits until any of 8 pins
+  differs from a register (logic analyzer timestamps to the tick instead of
+  5 ticks); CALL/RET with one link register (`i2c_device` 98 → 88
+  instructions). docs/isa.md has the details.
 
 ## What we'd do differently from PIO
 
@@ -49,7 +69,8 @@ for:
 - **WAITs that can't hang and don't miss edges:** any WAIT can time out; it can
   wait on a rise, fall or any edge, caught at full clock resolution even when
   the core ticks slowly; and it can be qualified by a second pin ("SDA falls
-  while SCL is high" is one instruction).
+  while SCL is high" is one instruction). v2: or wait until any of 8 pins
+  differs from a register, with the timeout counter as the timestamp.
 - **Pins:** per-pin open drain, `PIN p, hi/lo/toggle/hiz` on any pin, 8 virtual
   pins as wires between cores, per-pin ownership.
 - **A CRC tap** (any polynomial up to 16 bits) fed by the shift registers, and
@@ -80,10 +101,12 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 |---|---|---|---|
 | `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error | RTL; ±3 % and back-to-back on the model |
 | `spi_master` | mode 0, MSB first, 8-bit frames, f_SCK = f_tick / 4 | chip select by the host or a wrapper | RTL |
+| `spi_master_fast` (v2) | the same at 4 clocks per SCK (12.5 MHz at 50 MHz): MISO's pad in `SYNC_BYPASS` (one synchroniser flop), sampled at the SCK rise | the device must answer within 2 clocks of SCK falling, pad and board delays included | RTL against a device model; delay sweep on the model |
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit |
-| `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter margin about 2 ns past the spec | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 11.5 clocks (spec 8–26), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model |
+| `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter tolerance about 31 ns edge to edge, 12 ns past the spec's 18.5 (g4: about 21 ns) | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 10.5 clocks (spec 8–26; g4 11.5), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model |
+| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 241 of 256 words; full speed at exactly 48 MHz | model (both speeds: offsets, jitter, faults, resets, STALLs) and RTL with the host port idle; sigrok decodes every packet |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores |
@@ -93,7 +116,7 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 | `ps2_device` | PS/2 device, odd parity from the CRC tap | | model |
 | `ws2812` | NeoPixel driver, datasheet timing windows | | model |
 | `i2c_sniff` | passive I2C monitor (START/STOP/bytes), beside the master on the other core | | model |
-| `la_capture` + `i2c_device` (2 cores) | **reverse engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): an 8-channel logic analyzer (timestamped change records; `pe.la` makes a VCD, an I2C transcript and the device's register image), then an I2C target at the decoded address whose registers are host software: a clone of the captured EEPROM, or a man in the middle | capture: 5-tick samples, edges ≥ 12 ticks apart, sustained rate bounded by the host's draining (1-bit SPI at 25 MHz: 625 k edges/s); device: every read byte is a host round trip under clock stretching | RTL: capture → decode → clone → man in the middle through the SPI port, rate sweep; capture timing and device response on the model |
+| `la_capture` + `i2c_device` (2 cores) | **reverse engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): an 8-channel logic analyzer (timestamped change records; `pe.la` makes a VCD, an I2C transcript and the device's register image), then an I2C target at the decoded address whose registers are host software: a clone of the captured EEPROM, or a man in the middle | capture (v2, WAIT kind 7): timestamps to the tick, a record per ≥ 7 ticks, sustained rate bounded by the host's draining (1-bit SPI at 25 MHz: 625 k edges/s; quad, 32-word bursts: 5.6 M); device: every read byte is a host round trip under clock stretching | RTL: capture → decode → clone → man in the middle through the SPI port, rate sweep; capture timing and device response on the model |
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
 sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
@@ -112,7 +135,7 @@ configuration and the 4-core build. SymbiYosys proves the FIFO pair (with
 join) against reference queues at depths 4 and 8, SPI-slave bus safety, and
 core safety invariants. Firmware is developed against device models on the
 model, and the key cases repeat on the RTL through the SPI port. The
-signed-off netlist passes the same 20 top-level tests at gate level
+signed-off netlist passes the same top-level tests at gate level
 (functional, no SDF). Deliberately injected bugs are caught. Details, limits and
 the bugs this found: [docs/verification.md](docs/verification.md).
 
@@ -130,21 +153,30 @@ make -C formal                                                   # proofs
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs, the line unit and the quad host port; 44 % standard-cell
   utilization, 50 % with the macros.
-* **Run g4 passes signoff** (`flow/signoff.py`): 0 routing violations,
-  0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the typical
-  corner, and hold is met at every corner (+0.15 / +0.30 / +0.05 ns typ / slow /
-  fast). The slow corner reaches about 44 MHz (−2.88 ns at 50 MHz). Two slew
-  exceptions remain at typ.
-* The signed-off netlist passes all 20 top-level tests at gate level
-  (`flow/gl_test.sh`: main suite 16, compiled PIO 2, Ethernet capture 2;
-  functional, no SDF), and the GDS passes Tiny Tapeout's precheck
-  (`tt/precheck`).
+* **Run t48ba passes signoff** (`flow/signoff.py`): 0 routing violations,
+  0 KLayout DRC, LVS clean, 0 antenna violations. Setup is met at 50 MHz at
+  all three corners, hold everywhere (+0.19 / +0.36 / +0.095 ns typ / slow /
+  fast), and no slew or capacitance violation at any corner. 47 % standard-cell
+  utilization, 53 % with the macros; Metal3 at 64 %. What closed the slow
+  corner (from about 46 MHz in run v2c) was the clock tree, not the RTL: the
+  SRAMs are clocked from the clock root so their reads launch earlier, the
+  pin registers' clocks are delayed, clock branches respect the cells' fanout
+  limit, and repair runs with electrical margins.
+* The stricter `flow/release_check.py` (zero electrical exceptions, actual
+  50 MHz timing at every corner, receipts for this exact netlist) verifies
+  every receipt and fails on exactly one thing: one net (7 cell inputs + 4
+  antenna diodes, 11 against a limit of 8), at every corner, unwaived.
+* Its netlist passes all 29 top-level tests at gate level (main suite 25,
+  compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
+  typ, slow and fast at the claimed clocks, with an overclocked control that
+  must fail; autonomous full-speed USB enumeration runs on it with real
+  delays. The GDS passes Tiny Tapeout's precheck.
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 63 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
   the current RTL routable ([docs/physical.md](docs/physical.md)).
 * [External review](docs/review.md): the bugs an independent review found and
   how they were fixed and tested. `flow/gen_config.py --check` verifies that
-  `src/config.json` is the generator's (g4's settings).
+  `src/config.json` is the generator's (t48ba's settings).
 * [Optional board transport](docs/board-transport.md): RP2350 PIO/DMA quad
   SPI; board throughput and sampling margin remain unmeasured.
 * [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service

@@ -132,6 +132,13 @@ module pe_line (
   wire signed [20:0] m_q = q + 21'sd128;                         // one clock later
   wire signed [20:0] m_e = m_q - m_age;                          // the edge, from its expected time
   wire       m_in = (edge1 || edge2) && m_e >= -(mn < 6'd32 ? m_wide : m_win);
+  // NRZ/NRZI: the sample counter's load after a transition: P/2 - 1, one
+  // clock less when the falling-edge sample already saw the edge (edge1).
+  // That centres the sample 1.5-2.5 clocks after a pad edge instead of 2-3:
+  // at USB full speed (P = 4 at 48 MHz) an edge-to-edge interval may shrink
+  // by ~31 ns instead of ~21 ns (spec: 18.5 ns; docs/usb-full-speed.md).
+  // Internal pins have rx_mid == rx, so they always take the shorter count.
+  wire [15:0] r_load = {1'b0, p[15:1]} - (edge1 ? 16'd2 : 16'd1);
   wire [2:0] m_g = mn < 6'd6 ? 3'd1 : mn < 6'd12 ? 3'd2 : mn < 6'd18 ? 3'd3 : mn < 6'd24 ? 3'd4 : 3'd5;
   wire signed [20:0] m_r = (m_e + (21'sd1 <<< (m_g - 3'd1))) >>> m_g;   // loop correction, rounded
 
@@ -278,7 +285,7 @@ module pe_line (
             deliver(rx);
           end else begin
             n_rlast = rprev;
-            n_rcnt = {1'b0, p[15:1]} - 16'd1;
+            n_rcnt = r_load;
           end
         end
       end else if (manch) begin
@@ -292,7 +299,7 @@ module pe_line (
         end else n_q = m_q;
       end else begin
         if (trans) begin
-          n_rcnt = {1'b0, p[15:1]} - 16'd1;
+          n_rcnt = r_load;
           n_quiet = 4'd0;
         end else if (rcnt == 16'd0) begin
           n_rcnt = p - 16'd1;
@@ -412,6 +419,9 @@ module pe_line (
       assert ($signed({{2{m_q[20]}}, m_q}) == w_q);
       assert ($signed({{2{m_e[20]}}, m_e}) == w_e);
       if (m_in) assert ($signed({{2{m_r[20]}}, m_r}) == w_r && w_acc >= Q_LO && w_acc <= Q_HI);
+      // NRZ/NRZI: for any legal RX period (P >= 4) the post-transition load
+      // doesn't wrap, so the next sample comes within half a bit
+      if (p >= 16'd4) assert (r_load < {1'b0, p[15:1]});
     end
   end
 `endif

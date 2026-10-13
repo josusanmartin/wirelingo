@@ -42,12 +42,17 @@ module pe_chip #(
   reg [7:0]  od_mask;
   reg [31:0] pin_out, pin_oe;
   reg [12:0] sync1, sync2;
+  // SYNC_BYPASS (docs/isa.md §2): a pad input whose bit is set is read from
+  // the first synchroniser flop, one clock fresher. Safe only for inputs
+  // synchronous to our own outputs (MISO answering our SCK).
+  reg [12:0] sync_byp;                   // {ui[4:0], uio[7:0]}
+  wire [12:0] pad_in = (sync2 & ~sync_byp) | (sync1 & sync_byp);
 
   // pins as driven: the registers, with the line unit's transmit pins over them
   wire [31:0] line_mask, line_val_o;
   wire [31:0] eff_out = (pin_out & ~line_mask) | (line_val_o & line_mask);
   wire [31:0] eff_oe  = pin_oe | line_mask;
-  wire [31:0] pins_in = {eff_out[31:24], 3'd0, sync2[12:8], 1'b0, eff_out[14:8], sync2[7:0]};
+  wire [31:0] pins_in = {eff_out[31:24], 3'd0, pad_in[12:8], 1'b0, eff_out[14:8], pad_in[7:0]};
 
   // ---------------------------------------------------------------- bus decode
   wire        sel_imem = bus_addr[15:10] == 6'd0;
@@ -166,7 +171,8 @@ module pe_chip #(
   // The line unit's RX pin is also sampled on the falling clock edge, which
   // halves the receiver's timing quantization (10BASE-T edge jitter, §4.7).
   // rx_h2 is that sample half a clock before the pin's sync2 sample: the
-  // falling edge before the rising edge where sync1 took it.
+  // falling edge before the rising edge where sync1 took it. rx_hq is the
+  // same for sync1, used when the pin bypasses a synchroniser stage.
   wire        rx_is_pad = line_rxp[4:3] == 2'b00 || (line_rxp[4:3] == 2'b10 && line_rxp[2:0] <= 3'd4);
   wire [7:0]  ui8 = {3'd0, ui_in};
   wire        rx_pad = line_rxp[4] ? ui8[line_rxp[2:0]] : uio_in[line_rxp[2:0]];
@@ -177,7 +183,9 @@ module pe_chip #(
   always @(posedge clk or negedge rst_n)
     if (!rst_n) {rx_h2, rx_hq} <= 2'b00;
     else {rx_h2, rx_hq} <= {rx_hq, rx_n1};
-  assign line_rx_mid = rx_is_pad ? rx_h2 : pins_in[line_rxp];
+  wire [7:0]  byp_ui = {3'd0, sync_byp[12:8]};
+  wire        rx_byp = line_rxp[4] ? byp_ui[line_rxp[2:0]] : sync_byp[line_rxp[2:0]];
+  assign line_rx_mid = rx_is_pad ? (rx_byp ? rx_hq : rx_h2) : pins_in[line_rxp];
 
   reg [31:0] pin_out_n, pin_oe_n;
   integer p;
@@ -220,14 +228,15 @@ module pe_chip #(
 
   // ---------------------------------------------------------------- config registers
   // host-only writes: clock-gated instead of a hold mux per bit
-  // (0x0804 is reserved: each core fetches from its own bank, §3)
-  wire [3:1] gcfg_gclk;
+  // (0x0804 was BANK_OWNER, now SYNC_BYPASS: each core fetches from its own bank, §3)
+  wire [3:0] gcfg_gclk;
   genvar gi;
   generate
-    for (gi = 1; gi < 4; gi = gi + 1) begin : g_gcfg_cg
+    for (gi = 0; gi < 4; gi = gi + 1) begin : g_gcfg_cg
       pe_cg u_cg (.clk(clk), .en(bus_we && sel_glob && goff == 4'h4 + gi), .gclk(gcfg_gclk[gi]));
     end
   endgenerate
+  always @(posedge gcfg_gclk[0] or negedge rst_n) if (!rst_n) sync_byp <= 13'd0; else sync_byp <= {bus_wdata[20:16], bus_wdata[7:0]};
   always @(posedge gcfg_gclk[1] or negedge rst_n) if (!rst_n) pin_owner_lo <= 32'd0; else pin_owner_lo <= bus_wdata;
   always @(posedge gcfg_gclk[2] or negedge rst_n) if (!rst_n) pin_owner_hi <= 32'd0; else pin_owner_hi <= bus_wdata;
   always @(posedge gcfg_gclk[3] or negedge rst_n) if (!rst_n) od_mask <= 8'd0; else od_mask <= bus_wdata[7:0];

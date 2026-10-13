@@ -1,13 +1,16 @@
 #!/bin/bash
 # Gate-level tests of a hardened run, as Tiny Tapeout's CI does for IHP: the
 # unpowered netlist (final/nl) with the PDK cell and SRAM models, no SDF.
-#   flow/gl_test.sh <run worktree>   (default: current directory)
+#   flow/gl_test.sh <run worktree> [validation checkout]
+# The optional checkout supplies newer tests/firmware but must have the same
+# RTL/profile. Without it, the run worktree supplies the tests as before.
 # Runs every top-level suite (test.py, test_pio.py, test_eth_service.py) of the
 # run's own commit on its netlist, with its PE_NCORES / PE_NBANKS /
 # PE_FIFO_LOG2, each build in its own directory under <run>/test/sim_build/gl.*
 # (never reusing old results), and fails if any test fails.
 set -euo pipefail
 W=$(realpath "${1:-$PWD}")
+VALIDATION=$(realpath "${2:-$W}")
 shopt -s nullglob
 NETLISTS=("$W"/runs/wokwi/final/nl/*.nl.v)
 [[ ${#NETLISTS[@]} == 1 ]] || { echo "expected exactly one final netlist in $W"; exit 2; }
@@ -18,16 +21,20 @@ NC=$(def PE_NCORES); FL=$(def PE_FIFO_LOG2); FL=${FL:-2}
 NB=$(grep -q 'define PE_NBANKS `PE_NCORES' "$W/src/project.v" && echo "$NC" || def PE_NBANKS)
 mkdir -p "$W/test/sim_build"
 OUT=$(mktemp -d "$W/test/sim_build/gl.XXXXXX")
+python3 "$REPO/flow/release_receipts.py" begin gl "$W" "$OUT" --validation-root "$VALIDATION"
 cp "$NL" "$OUT/netlist.v"
 echo "netlist $(sha256sum "$NL" | cut -c1-16)  cores=$NC banks=$NB fifo_log2=$FL  outputs $OUT"
-cd "$W/test"
-export PATH=$HOME/tools/oss-cad-suite/bin:$REPO/.venv/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk}
+cd "$VALIDATION/test"
+VENV=$REPO/.venv
+[[ -d $VENV ]] || VENV=$(git -C "$REPO" worktree list --porcelain | awk 'NR==1{print $2}')/.venv
+export PATH=$HOME/tools/oss-cad-suite/bin:$VENV/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk}
 for module in test test_pio test_eth_service; do
   count=$(grep -c '^@cocotb.test()' "$module.py")
-  if ! PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL make GATES=yes \
+  if ! PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL PE_CLK_NS=20 PE_USB_FS_CLK_NS=20.834 I2C_STRETCH=40 make GATES=yes SIM=icarus TB=top IMEM=sram SDF= \
       GATE_LEVEL_NETLIST="$OUT/netlist.v" COCOTB_TEST_MODULES="$module" \
       SIM_BUILD="$OUT/$module" COCOTB_RESULTS_FILE="$OUT/$module.xml" > "$OUT/$module.log" 2>&1; then
     tail -30 "$OUT/$module.log"; echo "GL suite $module failed (log: $OUT/$module.log)"; exit 1
   fi
   python3 check_results.py "$OUT/$module.xml" "$count"
 done
+python3 "$REPO/flow/release_receipts.py" finish "$OUT"

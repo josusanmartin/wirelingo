@@ -18,6 +18,8 @@ CASES = {
     "wait rise 3": "wait rise 3", "wait fall 3 if pin 4 == 1": "wait fall 3 if pin 4 == 1",
     "wait edge v2 timeout r1": "wait edge 26 timeout r1",
     "wait 1 flag 5 clear": "wait 1 flag 5 clear", "wait 0 flag 2 timeout": "wait 0 flag 2 timeout r3",
+    "wait pins != r1 mask 0x0F timeout r2": "wait pins != r1 mask 0x0f timeout r2",
+    "wait pins != x": "wait pins != r0 mask 0xff",
     "in pins, 8": "in pins, 8", "in r2, 32": "in r2, 32", "in null, 1": "in null, 1",
     "out pindirs, 3": "out pindirs, 3", "out pc, 5": "out pc, 5", "out isr, 16": "out isr, 16",
     "push": "push block", "push iffull noblock": "push iffull noblock",
@@ -32,6 +34,8 @@ CASES = {
     "pin 5, lo": "pin 5, lo", "pin uo2, hi": "pin 10, hi", "pin 3, toggle": "pin 3, toggle", "pin 0, hiz": "pin 0, hiz",
     "flag set 6": "flag set 6", "flag clr 1": "flag clr 1",
     "halt": "halt",
+    "call 12": "call 12", "call !r2, 7": "call !r2, 7", "call !pin uio3, 4": "call !pin 3, 4",
+    "ret": "mov pc, lr", "mov r1, lr": "mov r1, lr", "mov lr, r3": "mov lr, r3",
 }
 
 
@@ -39,6 +43,11 @@ def test_roundtrip():
     for src, want in CASES.items():
         p = asm.assemble(src + "\n")
         assert isa.disasm(p.words[0]) == want, (src, isa.disasm(p.words[0]))
+
+
+def test_call_is_relocated():
+    p = asm.assemble("call sub\njmp 0\nsub: ret\n")
+    assert p.relocate(256)[:2] == [isa.enc(isa.OP_CALL, 0, 258), isa.enc(isa.OP_JMP, 0, 256)]
 
 
 def test_side_delay():
@@ -74,6 +83,13 @@ def test_clkdiv_rounding_carries():
     "pin 3",
     "flag set",
     "add r0",
+    "wait pins != r0 mask 256",         # 8-bit mask
+    "wait pins != r0 if pin 3 == 1",    # kind 7 has no qualifier (its bits are the mask)
+    "wait pins != 5",
+    "wait pins != r0 0x0F",
+    "out lr, 4",                        # OUT to LR only discards (MOV writes it)
+    "call",
+    "call 1024",
 ])
 def test_rejects_malformed(src):
     with pytest.raises(asm.AsmError):

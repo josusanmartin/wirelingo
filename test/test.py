@@ -282,7 +282,7 @@ class SpiSlave:
         self._drive(self._bit())
         self.nbit = 0
         self.cur = 0
-        cocotb.start_soon(self.run())
+        self.task = cocotb.start_soon(self.run())
 
     def _bit(self):
         byte = self.resp[0] if self.resp else 0
@@ -341,6 +341,61 @@ async def test_spi_master(dut):
     got = await spi.read(sim.core_reg(core(2), sim.C_FIFO), len(tx), fixed=True)
     assert list(slave.rx) == tx, list(slave.rx)
     assert [g & 0xFF for g in got] == resp, got
+
+
+@cocotb.test()
+async def test_spi_master_fast(dut):
+    """SPI master at 4 clocks per SCK (12.5 MHz at 50 MHz) against the same
+    device model as test_spi_master, which answers one clock after it sees SCK
+    fall. spi_master_fast with MISO's pad in SYNC_BYPASS (docs/isa.md §2)
+    reads every byte; without the bypass, or with spi_master at CLKDIV 1 even
+    with it, every MISO bit is taken one bit late (MOSI is always right)."""
+    spi = await setup(dut)
+    SCK, MOSI, MISO = UIO(2), UIO(3), UIO(4)
+    c = core(2)
+    await spi.apply(host.pin_owner_writes({SCK: c, MOSI: c, MISO: c}))
+    await run_program(spi, c, asm.assemble(f"pin {SCK}, lo\npin {MOSI}, lo\nhalt"))
+    await ClockCycles(dut.clk, 20)
+    tx, resp = [0xA5, 0x0F, 0xFF, 0x00, 0x3C], [0xC3, 0x5A, 0x01, 0x80, 0xE7]
+
+    async def transfer(fw, bypass):
+        await spi.write(sim.A_CTRL, [1 << (16 + c)])                 # stop the core, clear its FIFOs
+        await spi.write(sim.A_SYNCBYP, [(1 << MISO) if bypass else 0])
+        await spi.write(sim.core_reg(c, sim.C_FIFO), [b << 24 for b in tx], fixed=True)   # queued: back to back
+        slave = SpiSlave(dut, SCK, MOSI, MISO, resp)
+        rises = []
+
+        async def sck_monitor():
+            prev = 0
+            while True:
+                await RisingEdge(dut.clk)
+                s = (int(dut.uio_out.value) >> SCK) & 1
+                if s and not prev:
+                    rises.append(get_sim_time(unit="ns"))
+                prev = s
+        mon = cocotb.start_soon(sck_monitor())
+        await run_program(spi, c, load_fw(fw), out_pins=(MOSI, 1), side_pins=SCK, in_pins=MISO, clkdiv=1 << 8)
+        for _ in range(100):
+            if ((await spi.read(sim.core_reg(c, sim.C_STATUS)))[0] >> 4) & 15 == len(tx):
+                break
+        got = [g & 0xFF for g in await spi.read(sim.core_reg(c, sim.C_FIFO), len(tx), fixed=True)]
+        slave.task.cancel()
+        mon.cancel()
+        clocks = {round((b - a) / CLK_NS) for a, b in zip(rises, rises[1:])}
+        return list(slave.rx), got, clocks
+
+    rx, got, clocks = await transfer("spi_master_fast", True)
+    assert rx == tx and got == resp, (rx, got)
+    assert clocks == {4}, clocks                                   # 12.5 MHz SCK, back to back
+    dut._log.info(f"spi_master_fast, CLKDIV 1, MISO in SYNC_BYPASS: {len(tx)} bytes at "
+                  f"{sorted(clocks)} clocks per SCK, read {[hex(b) for b in got]}")
+    for fw, byp in (("spi_master_fast", False), ("spi_master", True)):
+        rx, got, clocks = await transfer(fw, byp)
+        assert rx == tx and clocks == {4}, (fw, byp, rx, clocks)
+        late = [((resp[i - 1] & 1 if i else resp[0] >> 7) << 7) | (resp[i] >> 1) for i in range(len(resp))]
+        assert got == late, (fw, byp, [hex(b) for b in got])         # every MISO bit one bit late
+        dut._log.info(f"{fw}, CLKDIV 1, bypass {int(byp)}: read {[hex(b) for b in got]} (one bit late)")
+    await spi.write(sim.A_SYNCBYP, [0])
 
 
 class I2cEeprom:
@@ -595,8 +650,8 @@ async def test_reverse_engineering(dut):
     await spi.write(sim.A_POUT, [0b11])                 # released
     await spi.write(sim.A_OD, [0b11])
     await spi.apply(host.pin_owner_writes({SDA: 1, SCL: 1}, profile=PROFILE))
-    await spi.apply(host.load_program(0, load_fw("la_capture"), 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
-    await spi.write(sim.core_reg(0, sim.C_R0 + 3), [0b11])     # channel mask
+    await spi.apply(host.load_program(0, load_fw("la_capture", MASK=0b11), 0, profile=PROFILE, in_pins=0,
+                                      clkdiv=1 << 8))         # channels SDA, SCL
     bus = OdBus([SDA, SCL])
     rng = random.Random(5)
     rom = bytes(rng.getrandbits(8) for _ in range(256))
@@ -607,7 +662,7 @@ async def test_reverse_engineering(dut):
                   "write to 0x51: address NACKed"]
 
     def decode(words):
-        cap = la.decode_records(words)
+        cap = la.decode_records(words, 0b11)
         assert cap.exact, f"capture has gaps at {cap.gaps}"
         ev = la.i2c_events(cap, SDA, SCL)
         return cap, ev, la.i2c_summary(ev)
@@ -648,15 +703,15 @@ async def test_la_capture_rate(dut):
     """la_capture's sustained edge rate through the host port: 300 edges of a
     square wave on one channel, drained with blind READ_FIXED bursts of 8 words,
     must arrive complete with no gap marker. 1-bit SPI at SCK = clk/2 and quad
-    at SCK = clk; logs the fastest gap-free wave of each sweep (each sweep stops
-    at its first failure)."""
+    at SCK = clk (8- and 32-word bursts); logs the fastest gap-free wave of each
+    sweep (each sweep stops at its first failure)."""
     from pe import la
     await setup(dut)
     T = CLK_NS
     one = TimedSpi(dut, period=2 * T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
     quad = QuadSpi(dut, period=T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
-    await one.apply(host.load_program(0, load_fw("la_capture"), 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
-    await one.write(sim.core_reg(0, sim.C_R0 + 3), [0b100])     # channel 2 only
+    await one.apply(host.load_program(0, load_fw("la_capture", MASK=0b100), 0, profile=PROFILE, in_pins=0,
+                                      clkdiv=1 << 8))         # channel 2 only
     await one.write(sim.A_HOSTCFG, [1])
     fifo = sim.core_reg(0, sim.C_FIFO)
     EXT.set(2, True, 0)
@@ -676,11 +731,12 @@ async def test_la_capture_rate(dut):
         await ClockCycles(dut.clk, 50)
         words += [w for w in await drain() if w]
         await one.write(sim.A_CTRL, [0])
-        cap = la.decode_records(words)
+        cap = la.decode_records(words, 0b100)
         return cap.exact and len(cap.edges) == N + 1
 
     modes = {"1-bit SPI, SCK = clk/2": (lambda: one.read(fifo, 8, fixed=True), (120, 90, 80, 70)),
-             "quad SPI, SCK = clk": (lambda: quad.qxfer(0x4B, fifo, nread=8), (24, 18, 14, 12, 11))}
+             "quad SPI, SCK = clk": (lambda: quad.qxfer(0x4B, fifo, nread=8), (24, 14, 13, 12, 11)),
+             "quad SPI, SCK = clk, 32-word bursts": (lambda: quad.qxfer(0x4B, fifo, nread=32), (12, 11, 10, 9, 8, 7))}
     best = {}
     for name, (drain, halves) in modes.items():
         for half in halves:
@@ -690,8 +746,182 @@ async def test_la_capture_rate(dut):
         assert name in best, f"{name}: gaps even at an edge every {halves[0]} clocks"
         dut._log.info(f"{name}: gap-free down to an edge every {best[name]} clocks "
                       f"({1e3 / (best[name] * T):.2f} M edges/s at {1e3 / T:.0f} MHz)")
-    # quad drains faster than the firmware records: its bound (an edge per 12 ticks) shows
+    # The firmware records an edge per 7 ticks (test_capture_close_edges); the
+    # port is the limit here: 8-word quad bursts drain a word per ~11 clocks
+    # (g4's polling firmware stopped at 12 itself), 32-word bursts one per ~8.8
     assert best["1-bit SPI, SCK = clk/2"] <= 90 and best["quad SPI, SCK = clk"] == 12, best
+    assert best["quad SPI, SCK = clk, 32-word bursts"] == 9, best
+
+
+@cocotb.test()
+async def test_la_capture_ticks(dut):
+    """WAIT kind 7 (`wait pins != r0 mask m`) at 1-tick resolution, short and
+    directed (for the SDF gate-level set, flow/gl_sdf_test.sh; ~0.2 ms):
+    la_capture at CLKDIV 1 on three channels while the testbench changes them
+    between clock edges at known clocks: edges 7 to 30 ticks apart, the
+    7-tick square wave, pairs on two channels 1 to 6 ticks apart, 1- and
+    2-clock pulses; drained between batches of at most 7 records. The decoded
+    edges and pulses, relative to the first edge, must equal the cycle
+    model's for the same stimulus, and edges >= 7 ticks apart must be
+    timestamped exactly (their drive-time differences)."""
+    from pe import la
+    from pe.modelhost import ModelHost
+    await setup(dut)
+    T = CLK_NS
+    spi = TimedSpi(dut, period=2 * T, cs_setup=T, cs_hold=T, cs_gap=4 * T)
+    MASK = 0b111
+    prog = load_fw("la_capture", MASK=MASK)
+    await spi.apply(host.load_program(0, prog, 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
+    for p in range(3):
+        EXT.set(p, True, 0)
+    fifo = sim.core_reg(0, sim.C_FIFO)
+    cyc = [0]
+
+    async def count():
+        while True:
+            await RisingEdge(dut.clk)
+            cyc[0] += 1
+    counter = cocotb.start_soon(count())
+    state, log, words = 0, [], []
+
+    async def drive(events):                       # (clocks after the previous change, channels to flip)
+        nonlocal state
+        for d, flip in events:
+            await ClockCycles(dut.clk, d)
+            await FallingEdge(dut.clk)             # mid-cycle: no race with the input synchronizers
+            state ^= flip
+            for p in range(3):
+                EXT.set(p, True, (state >> p) & 1)
+            log.append((cyc[0], state))
+
+    async def drain():
+        await ClockCycles(dut.clk, 60)
+        for _ in range(2):
+            words.extend(w for w in await spi.read(fifo, 8, fixed=True) if w)
+
+    await spi.write(sim.A_CTRL, [1 | (1 << 8) | (1 << 16)])
+    await drain()                                  # the first record
+    spaced = [(5, 1), (7, 2), (8, 4), (9, 1), (12, 2), (7, 4), (30, 3)]
+    batches = [spaced, [(5, 1)] + [(7, 1)] * 6]    # 7-tick square wave on channel 0
+    for ds in ((1, 2, 3), (4, 5, 6)):              # channel 0, then channel 1 d ticks later
+        batches.append([e for d in ds for e in ((40, 1), (d, 2))])
+    batches.append([(40, 4), (1, 4), (40, 4), (2, 4), (40, 3), (1, 3)])   # 1-, 2- and 1-clock pulses
+    for b in batches:
+        await drive(b)
+        await drain()
+    counter.cancel()
+    await spi.write(sim.A_CTRL, [0])
+
+    # the cycle model, same stimulus at the same relative clocks
+    mh = ModelHost()
+    mh.apply(host.load_program(0, prog, 0, profile=PROFILE, in_pins=0, clkdiv=1 << 8))
+    mh.ext_oe = 0b111
+    mh.start(1)
+    mh.step(30)
+    mwords = []
+    t = log[0][0]
+    for c, s in log + [(log[-1][0] + 200, log[-1][1])]:
+        while t < c:
+            mh.step()
+            mwords += mh.chip.cores[0].rxf
+            mh.chip.cores[0].rxf.clear()
+            t += 1
+        mh.uio = s
+
+    def rel(cap):
+        e = cap.edges[1:]
+        return [(t - e[0][0], s) for t, s in e], [t - e[0][0] for t in cap.pulses]
+    cap, mcap = la.decode_records(words, MASK), la.decode_records(mwords, MASK)
+    assert cap.exact and mcap.exact, (cap.gaps, mcap.gaps)
+    got, want = rel(cap), rel(mcap)
+    dut._log.info(f"{len(log)} pin changes -> {len(got[0])} edges, {len(got[1])} pulses; "
+                  f"edges (tick, state) relative to the first: {got[0]}; pulses {got[1]}")
+    assert got == want, (got, want)
+    n = len(spaced)
+    assert [t for t, _ in got[0][:n]] == [c - log[0][0] for c, _ in log[:n]], got[0][:n]
+    assert [s for _, s in got[0][:n]] == [s for _, s in log[:n]]
+    assert len(got[1]) == 2                        # the two 1-clock pulses
+
+
+CALL_RET_SRC = """
+.side_set 1 opt
+.shift_in left autopush 32
+    ldi r0, 6
+.wrap_target
+top:
+    call !r1, leaf [1]          ; taken when r1 == 0 (every other pass)
+    call outer side 1           ; nested: outer saves LR, calls leaf
+    jmp r0--, more              ; r0 counts the passes
+    halt
+more:
+    call leaf side 0            ; the wrap's last word: links to top
+.wrap
+outer:
+    mov r3, lr
+    call leaf [2]
+    mov r2, lr                  ; leaf's link
+    mov lr, r3
+    in r1, 8
+    in r0, 8
+    in r2, 8
+    in r3, 8                    ; autopush: r1, r0, leaf's link, outer's link
+    ret side 0
+leaf:
+    add r1, 1
+    and r1, 3
+    ret side 1 [1]
+"""
+
+
+@cocotb.test()
+async def test_call_ret(dut):
+    """CALL / RET at the top level, short and directed (for the SDF gate-level
+    set, flow/gl_sdf_test.sh; ~0.1 ms): conditional calls taken and not taken,
+    nesting through a saved LR, a CALL on the wrap's last word, RET with
+    side-set and delay, at CLKDIV 1. The side-set pin's edges (clock-exact
+    intervals), the pushed words (r1, r0 and both links), and PC, status and
+    R0-R3 at the halt must equal the cycle model's."""
+    from pe.modelhost import ModelHost
+    spi = await setup(dut)
+    prog = asm.assemble(CALL_RET_SRC)
+    PIN = UO(0)
+    mh = ModelHost()
+    mh.apply(host.load_program(0, prog, 0, profile=PROFILE, side_pins=PIN, clkdiv=1 << 8))
+    mh.start(1)
+    medges, prev = [], 0
+    for cyc in range(400):
+        mh.step()
+        v = mh.chip.outputs()[0] & 1
+        if v != prev:
+            medges.append(cyc)
+            prev = v
+    assert mh.chip.cores[0].halted
+    mwords = mh.pop_all(0)
+    mregs = [mh.chip.cores[0].read_reg(sim.C_PC), mh.chip.cores[0].read_reg(sim.C_STATUS)] + mh.chip.cores[0].r[:4]
+
+    edges = []
+
+    async def monitor():
+        prev, cyc = int(dut.uo_out.value) & 1, 0
+        while True:
+            await RisingEdge(dut.clk)
+            cyc += 1
+            v = int(dut.uo_out.value) & 1
+            if v != prev:
+                edges.append(cyc)
+                prev = v
+    mon = cocotb.start_soon(monitor())
+    await run_program(spi, 0, prog, side_pins=PIN, clkdiv=1 << 8)
+    await ClockCycles(dut.clk, 400)
+    mon.cancel()
+    words = await spi.read(sim.core_reg(0, sim.C_FIFO), len(mwords), fixed=True)
+    regs = [(await spi.read(sim.core_reg(0, off)))[0] for off in (sim.C_PC, sim.C_STATUS, sim.C_R0, sim.C_R0 + 1,
+                                                                   sim.C_R0 + 2, sim.C_R0 + 3)]
+    diffs = lambda e: [b - a for a, b in zip(e, e[1:])]
+    dut._log.info(f"side-set pin: {len(edges)} edges, intervals {diffs(edges)}; pushed {[hex(w) for w in words]}")
+    assert len(edges) == len(medges) and diffs(edges) == diffs(medges), (diffs(edges), diffs(medges))
+    assert words == mwords, ([hex(w) for w in words], [hex(w) for w in mwords])
+    assert regs == mregs, ([hex(r) for r in regs], [hex(r) for r in mregs])
 
 
 # ------------------------------------------------------------------ USB low speed
@@ -779,6 +1009,198 @@ async def test_usb_ls_device(dut):
     assert ta < 7.5 * 32, ta
 
 
+# ------------------------------------------------------------------ USB autonomous enumeration
+
+LAST_USB_HOST = None
+
+def rtl_control_host(dut, **kw):
+    """pe.usbhost.ControlHost (the model tests' host controller: toggles,
+    retries, STALL, keep-alives, faults) on the RTL pads. Its transaction logic
+    runs in a bridge() thread; each bus operation is one resume() into the
+    simulator: drive a packet, wait, or record the device's answer."""
+    import types
+    from pe import usb
+    from pe.usbhost import ControlHost
+
+    class RtlControlHost(ControlHost):
+        def __init__(self):
+            super().__init__(types.SimpleNamespace(pull_up=0, chip=types.SimpleNamespace(cycle=0)), **kw)
+
+        def _lengths(self, bits):
+            out = []
+            for _ in range(bits):
+                self.frac += self.tpb
+                out.append(int(self.frac))
+                self.frac -= out[-1]
+            return out
+
+        @resume
+        async def _clocks(self, n):
+            await ClockCycles(dut.clk, n)
+            self.mh.chip.cycle += n
+
+        @resume
+        async def _drive_rtl(self, states, lengths):
+            for s, n in zip(states, lengths):
+                dp, dm = USB_LINE[s]
+                EXT.set(0, True, dp)
+                EXT.set(1, True, dm)
+                await ClockCycles(dut.clk, n)
+            EXT.set(0, False)
+            EXT.set(1, False)
+            self.mh.chip.cycle += sum(lengths)
+
+        def _steps(self, bits):
+            n = sum(self._lengths(bits))
+            if n:
+                self._clocks(n)
+
+        def _drive(self, states):
+            self._drive_rtl(states, self._lengths(len(states)))
+
+        @resume
+        async def _response(self):
+            trace, start, i = [], None, 0
+            while True:
+                await RisingEdge(dut.clk)
+                s = {2: usb.J, 1: usb.K, 0: usb.SE0}.get(int(dut.uio_in.value) & 3, "?")
+                i += 1
+                if start is None:
+                    if s == usb.K:
+                        start = i
+                        self.turnarounds.append(1 + (i - 1) / self.bit)
+                    elif i >= self.TIMEOUT_BITS * self.bit:
+                        self.mh.chip.cycle += i
+                        return None
+                if start is not None:
+                    trace.append(s)
+                    if len(trace) > 2 and trace[-1] == usb.J and trace[-2] == usb.SE0:
+                        break
+            self.mh.chip.cycle += i
+            return self._decode(trace)
+
+        @resume
+        async def _reset_rtl(self, cycles, recovery):
+            EXT.set(0, True, 0)
+            EXT.set(1, True, 0)
+            await ClockCycles(dut.clk, cycles)
+            EXT.set(0, False)
+            EXT.set(1, False)
+            await ClockCycles(dut.clk, recovery)
+            self.mh.chip.cycle += cycles + recovery
+
+        def bus_reset(self, cycles=48 * 100, recovery=48 * 1000):
+            """100 us of SE0 (the device must act on 2.5 us; hosts send 10 ms)."""
+            self._reset_rtl(cycles, recovery)
+            self.next_keepalive = self.mh.chip.cycle
+
+    return RtlControlHost()
+
+
+@cocotb.test()
+async def test_usb_autonomous(dut):
+    """Autonomous USB low-speed enumeration (docs/usb-enumeration.md): the host
+    loads usb_enum and the line unit, then stays off the bus (CS_n high, SCK
+    still: checked on the pads) while the host controller model enumerates the
+    chip to Configured: a SETUP whose ACK is lost, SET_ADDRESS's status ACK
+    lost with an IN as the first token to the new address, a host ACK lost in
+    a data stage, damaged DATA, a STALLed string descriptor and SET_FEATURE, a bus
+    reset in the middle of a configuration read, then the whole flow again at a
+    new address with SET_ADDRESS's status ACK lost. Only then does the host
+    read the outcome over SPI. D+ = uio0, D- = uio1 (pull-up)."""
+    await usb_autonomous(dut, "low")
+
+
+@cocotb.test()
+async def test_usb_autonomous_fs(dut):
+    """test_usb_autonomous at full speed (12 Mbit/s, 4 clocks per bit): the
+    same firmware with a shorter turnaround delay. D- = uio0, D+ = uio1
+    (pull-up), so the pads show the same J/K patterns. Bit-exact edges here;
+    jitter and frequency offset are covered on the model (test_usb_autonomous.py)."""
+    await usb_autonomous(dut, "full")
+
+
+async def usb_autonomous(dut, speed):
+    from cocotb.triggers import ValueChange
+    from pe import usb, usbdev, usbenum
+    from pe.usbhost import Stall
+    DEV, CFG = usbdev.DEVICE_DESC, usbdev.CONFIG_DESC
+    spi = await setup(dut, clock_ns=20.834)       # 48 MHz
+    dut.pull_up.value = 0b10                      # the device's pull-up: J
+    await spi.apply(usbenum.load_writes(usbenum.assemble(speed), speed))
+    await ClockCycles(dut.clk, 100)
+
+    host_port = []                                # any change of CS_n/SCK/MOSI
+
+    async def watch():
+        last = int(dut.ui_in.value) >> 5
+        while True:
+            await ValueChange(dut.ui_in)
+            v = int(dut.ui_in.value) >> 5
+            if v != last:
+                host_port.append((get_sim_time(unit="ns"), v))
+                last = v
+    watcher = cocotb.start_soon(watch())
+    global LAST_USB_HOST
+    h = LAST_USB_HOST = rtl_control_host(dut, bit=usbenum.CLOCKS_PER_BIT[speed],
+                                         keepalive=speed == "low")   # test_sigrok compares its record of the bus
+
+    lost_in = []                                  # the turnaround of that IN (bit times)
+
+    def flow():
+        h.faults["lose_handshake"] = 1            # the first SETUP is sent twice
+        assert h.get_descriptor(0, 1, 8) == DEV[:8]
+        h.faults["lose_host_ack"] = 1             # SET_ADDRESS's status ACK lost,
+        h.control_write(0, bytes([0x00, 5, 5, 0, 0, 0, 0, 0]))
+        h._send(usb.token(usb.PID_IN, 5, 0))      # then an IN first: the address is
+        assert h._response() == bytes([usb.pid_byte(usb.PID_DATA1), 0, 0])   # committed on it
+        lost_in.append(h.turnarounds[-1])
+        h._steps(2)
+        h._send(usb.handshake(usb.PID_ACK))
+        h.gap()
+        h.faults["lose_host_ack"] = 1
+        assert h.get_descriptor(5, 1, 18) == DEV
+        h.faults["bad_data"] = 1
+        assert h.get_descriptor(5, 2, 9) == CFG[:9]
+        try:
+            h.get_descriptor(5, 3, 255)
+            raise AssertionError("string descriptor not STALLed")
+        except Stall:
+            pass
+        h.setup(5, bytes([0x80, 6, 0, 2, 0, 0, 18, 0]))
+        assert h.data_in(5, 1) == CFG[:8]         # mid-transfer:
+        h.bus_reset()
+        h._send(usb.token(usb.PID_IN, 5, 0))           # the old address is gone
+        assert h._response() is None
+        assert h.get_descriptor(0, 1, 8) == DEV[:8]
+        h.faults["lose_host_ack"] = 1             # SET_ADDRESS's status ACK lost
+        h.control_write(0, bytes([0x00, 5, 9, 0, 0, 0, 0, 0]))
+        assert h.get_descriptor(9, 1, 18) == DEV
+        assert h.get_descriptor(9, 2, 9) == CFG[:9]
+        assert h.get_descriptor(9, 2, 18) == CFG
+        try:
+            h.control_write(9, bytes([0x00, 3, 1, 0, 0, 0, 0, 0]))
+            raise AssertionError("SET_FEATURE not STALLed")
+        except Stall:
+            pass
+        h.control_write(9, bytes([0x00, 9, 1, 0, 0, 0, 0, 0]))
+        assert h.control_read(9, bytes([0x80, 0, 0, 0, 0, 0, 2, 0])) == b"\0\0"
+
+    await bridge(flow)()
+    watcher.cancel()
+    assert not host_port, host_port[:4]
+    assert h.injected == {"lose_handshake": 1, "lose_host_ack": 3, "bad_data": 1}, h.injected
+    assert all(2.0 <= t <= 6.5 for t in h.turnarounds), (min(h.turnarounds), max(h.turnarounds))
+    assert len(lost_in) == 1 and 2.0 <= lost_in[0] <= 6.5, lost_in
+    st = usbenum.decode_state((await spi.read(sim.A_FSET))[0],
+                              (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0])
+    assert st == dict(address=9, configured=True, pending_address=False, stalled=False), st
+    dut._log.info(f"autonomous USB ({speed} speed): {len(h.log)} transactions, {h.mh.chip.cycle} cycles "
+                  f"({h.mh.chip.cycle / 48e3:.1f} ms), turnaround {min(h.turnarounds):.2f}-"
+                  f"{max(h.turnarounds):.2f} bit times (the IN after a lost status ACK: {lost_in[0]:.2f}), "
+                  f"host port idle throughout; state {st}")
+
+
 # ------------------------------------------------------------------ USB full speed (study)
 
 @cocotb.test()
@@ -790,13 +1212,17 @@ async def test_usb_fs_device(dut):
     host's ACK -> F_GOTACK; turnaround measured on the bus from the host's
     SE0 -> J to the device's first K (USB 2.0: 2 to 6.5 bit times). Then OUT
     packets at the spec's consecutive-edge jitter (DCD 9.25 ns = 18.5 ns between
-    edges) must all be ACKed, and at DCD 14 ns the signed-off receiver must
-    start missing them while the PE_LINE_NRZI_HALF proposal must not."""
+    edges) must all be ACKed, and so must those at DCD 14 ns (28 ns), which
+    the g4 receiver (sample 2-3 clocks after an edge) missed half of: the
+    half-cycle NRZI sample point (docs/isa.md §4.7) centres the sample.
+    PE_USB_FS_CLK_NS (flow/gl_sdf_test.sh) runs it at another clock with the
+    bus scaled to match (4 clocks per bit; bit time and DCD scale with the
+    clock): not USB's 12 Mbit/s, the same logic at a slower clock."""
     import random
     from pe import usb, usbdev
-    half = os.environ.get("PE_LINE_NRZI_HALF", "0") not in ("", "0")
-    T = 20.834                                     # 48 MHz (ps-quantized)
-    TBIT = 1000 / 12
+    T = float(os.environ.get("PE_USB_FS_CLK_NS", "20.834"))   # 48 MHz (ps-quantized)
+    TBIT = 1000 / 12 * T / 20.834
+    dcd_scale = T / 20.834
     spi = await setup(dut, clock_ns=T)
     dut.pull_up.value = 0b10                       # 1.5k on D+ (uio1); D- = uio0
     prog = load_fw("usb_fs_dev", **usbdev.defines())
@@ -909,13 +1335,14 @@ async def test_usb_fs_device(dut):
             ok += r == usb.handshake(usb.PID_ACK) and [(x.ok, x.data) for x in recs] == [(True, p)]
         return ok
     n = 24
-    spec = await out_burst(9.25, n)
-    wide = await out_burst(14.0, n)
-    dut._log.info(f"{'PROPOSAL half-cycle NRZI sample' if half else 'signed-off line unit'}: "
-                  f"DCD 9.25 ns (18.5 ns edge-to-edge): {spec}/{n} ACKed; DCD 14 ns (28 ns): {wide}/{n} ACKed")
+    spec = await out_burst(9.25 * dcd_scale, n)
+    wide = await out_burst(14.0 * dcd_scale, n)
+    dut._log.info(f"half-cycle NRZI sample point, clk {T} ns: DCD {9.25 * dcd_scale:.2f} ns "
+                  f"({18.5 * dcd_scale:.1f} ns edge-to-edge): {spec}/{n} ACKed; DCD {14 * dcd_scale:.2f} ns "
+                  f"({28 * dcd_scale:.1f} ns): {wide}/{n} ACKed")
     mon.cancel()
     assert spec == n
-    assert (wide == n) if half else (wide < n)
+    assert wide == n
 
 
 @cocotb.test()

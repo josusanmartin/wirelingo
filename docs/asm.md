@@ -11,7 +11,9 @@ writes = host.load_program(core=1, prog=prog, in_pins=16, clkdiv=host.clkdiv_for
 
 ## Lexical rules
 
-* **Comments:** `;` or `//` to end of line.
+* **Comments:** `;` or `//` to end of line. Comments may carry `@point`,
+  `@deadline`, ... annotations for the timing checker
+  ([timing-check.md](timing-check.md)); the assembler ignores them.
 * **Labels:** `name:`, either on their own line or before an instruction.
 * **Numbers:** decimal, `0x…` or `0b…`. Operand fields accept simple
   expressions (`+ - * / % << >> | & ~`).
@@ -59,14 +61,17 @@ instruction.
 ```
 jmp [cond,] target
     cond: !rN  rN  rN--  pin p  !pin p  z  !z  c  !c  t  !osre  txne  rxf  f k  !f k
+call [cond,] target       ; as jmp; when taken, LR = the next PC (one level: save LR to nest)
+ret                       ; mov pc, lr
 wait 1|0 pin p   [if pin q == v] [timeout rN]
 wait rise|fall|edge p   [if pin q == v] [timeout rN]
 wait 1 flag k [clear] [timeout rN]      wait 0 flag k
-in  src, n        ; src: r0-r3 pins isr osr null status flags pc crc
+wait pins != rN [mask m] [timeout rT]   ; the 8 pins from IN_BASE, masked (default 0xFF), differ from rN's low byte
+in  src, n        ; src: r0-r3 pins isr osr null status flags pc crc lr
 out dst, n        ; dst: r0-r3 pins pindirs isr pc crc null
 push [iffull] [block|noblock]
 pull [ifempty] [block|noblock]
-mov dst, [~|::]src        ; ~ invert, :: bit-reverse; `mov crc, ~null` presets the CRC tap
+mov dst, [~|::]src        ; ~ invert, :: bit-reverse; `mov crc, ~null` presets the CRC tap; `mov lr, rN` / `mov rN, lr`
 set pins|pindirs, v       ; v = 0..31
 ldi rN, imm16
 add|sub|and|or|xor|shl|shr|cmp rN, rM|imm13
@@ -76,9 +81,10 @@ halt
 nop
 ```
 
-`x`/`y` are accepted as aliases of `r0`/`r1`. JMP targets are relative to
-the program start and are relocated by `Program.relocate(base)`. Computed
-jumps (`out pc`, `mov pc`) are not relocated.
+`x`/`y` are accepted as aliases of `r0`/`r1`. JMP and CALL targets are
+relative to the program start and are relocated by `Program.relocate(base)`.
+Computed jumps (`out pc`, `mov pc`) are not relocated; RET returns to the
+absolute address CALL linked.
 
 ## Example
 

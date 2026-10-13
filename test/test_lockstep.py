@@ -14,7 +14,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, RisingEdge, Timer
 
 from pe import isa, sim
-from pe.randprog import random_profile, random_program, random_config_writes
+from pe.randprog import random_profile, random_program, random_config_writes, random_bypass_writes
 
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
@@ -38,6 +38,7 @@ def line_state_rtl(u):
         eop=v(u.eop_idle), tcnt=v(u.tcnt), tfacc=v(u.tfacc), trun=v(u.trun), entries=v(u.e_cnt),
         rx_on=v(u.rx_on), rq=v(u.rq) & ((1 << v(u.rcount)) - 1), rcount=v(u.rcount), rcnt=v(u.rcnt),
         q=v(u.q) - ((v(u.q) >> 20) << 21), n=v(u.mn), quiet=v(u.quiet), rrun=v(u.rrun), end_pend=v(u.end_pend), ovf=v(u.ovf), rprev=v(u.rprev),
+        runbits=(v(u.trunbit), v(u.trunv), v(u.rrunbit), v(u.rrunv)),
     )
 
 
@@ -47,6 +48,7 @@ def line_state_model(l):
         tcnt=l.tcnt, tfacc=l.tfacc, trun=l.trun, entries=len(l.entries),
         rx_on=l.rx_on, rq=sum(b << i for i, b in enumerate(l.rq)), rcount=len(l.rq), rcnt=l.rcnt,
         q=l.q, n=l.n, quiet=l.quiet, rrun=l.rrun, end_pend=l.end_pend, ovf=l.ovf, rprev=l.rprev,
+        runbits=(l.trunbit, l.trunv, l.rrunbit, l.rrunv),
     )
 
 
@@ -59,7 +61,7 @@ def core_state_rtl(core):
         isr=v(core.isr), isr_cnt=v(core.isr_cnt), osr=v(core.osr), osr_cnt=v(core.osr_cnt),
         z=v(core.z), c=v(core.c), t=v(core.t), dcnt=v(core.dcnt), in_wait=v(core.in_wait),
         halted=v(core.halted), fault=v(core.fault), stalled=v(core.stalled),
-        cnt=v(core.cnt), facc=v(core.facc),
+        cnt=v(core.cnt), facc=v(core.facc), lr=v(core.lr),
         txl=v(core.u_fifos.txf.cnt), rxl=v(core.u_fifos.rxf.cnt), crc=v(core.crc),
         wprev=v(core.wprev), wevent=v(core.wevent), res=reservations(v(core.res_n), v(core.res_v)),
         # FIFO heads (when occupied): every entry is compared as it reaches the head
@@ -76,7 +78,7 @@ def core_state_model(m):
         isr=m.isr, isr_cnt=m.isr_cnt, osr=m.osr, osr_cnt=m.osr_cnt,
         z=m.z, c=m.c, t=m.t, dcnt=m.dcnt, in_wait=m.in_wait,
         halted=m.halted, fault=m.fault, stalled=m.stalled,
-        cnt=m.cnt, facc=m.facc, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
+        cnt=m.cnt, facc=m.facc, lr=m.lr, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
         wprev=m.wprev, wevent=m.wevent, res=reservations(len(m.res), sum(b << i for i, b in enumerate(m.res))),
         txh=m.txf[0] if m.txf else None, rxh=m.rxf[0] if m.rxf else None,
         **{k: getattr(m, k) for k in CONFIG},
@@ -127,6 +129,7 @@ class Harness:
                              ("pin_owner", v(self.chip.pin_owner_lo) | v(self.chip.pin_owner_hi) << 32,
                               sum(o << 2 * i for i, o in enumerate(m.pin_owner))),
                              ("od_mask", v(self.chip.od_mask), m.od_mask),
+                             ("sync_byp", v(self.chip.sync_byp), m.sync_bypass),
                              ("hostcfg", v(self.chip.hostcfg), m.hostcfg),
                              ("line.cfg", v(u.cfg), m.line.cfg), ("line.div", v(u.div), m.line.div),
                              ("line.txp", v(u.txp), m.line.txp), ("line.rxp", v(u.rxp), m.line.rxp)):
@@ -208,7 +211,7 @@ async def test_registers(dut):
         for off in (0, 1, 2, 3, 4, 5, 6, 7, 0xA, 0xB, 0xC, 0xD):
             await h.write(sim.core_reg(c, off), rng.getrandbits(32))
             await h.cycle_step(addr=sim.core_reg(c, off))
-    for a in (sim.A_RSVD4, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
+    for a in (sim.A_SYNCBYP, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
         await h.write(a, rng.getrandbits(32))
         await h.cycle_step(addr=a)
 
@@ -236,6 +239,8 @@ async def test_random_lockstep(dut):
         for addr, data in random_config_writes(rng, BANK_WORDS):
             await h.write(addr, data)
         for addr, data in random_line_writes(rng):
+            await h.write(addr, data)
+        for addr, data in random_bypass_writes(random.Random(seed + 0xB1A5)):
             await h.write(addr, data)
         await h.write(sim.A_CTRL, 15 if rng.random() < 0.7 else rng.randrange(1, 16))
         # run
@@ -286,6 +291,7 @@ async def test_random_lockstep(dut):
                                    wdata=rng.getrandbits(32))
             elif op < 0.155:
                 await h.cycle_step(ui, uio, we=True, addr=rng.choice([sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_HOSTCFG,
+                                                                   sim.A_SYNCBYP,
                                                                    sim.A_LINECFG,
                                                                    sim.A_POUT, sim.A_POE]),
                                    wdata=rng.getrandbits(32))
@@ -327,18 +333,19 @@ def coverage_goals():
     """Events every lockstep run must exercise: each opcode completing, the
     blocking ones also stalling, and the spec's corner cases (tools/pe/sim.py
     counts them with Chip.cover)."""
-    ops = ["jmp", "wait", "in", "out", "push", "pull", "mov", "set", "ldi", "alu", "pin", "flag"]
+    ops = ["jmp", "wait", "in", "out", "push", "pull", "mov", "set", "ldi", "alu", "pin", "flag", "call"]
     return ([f"done:{op}" for op in ops] + ["stall:wait", "stall:push", "stall:pull", "stall:out", "jump"] + [
         "wait:timeout", "wait:edge_caught_between_ticks", "wait:qualifier_blocked_edge",
-        "shift:autopush", "shift:autopull",
-        "pins:side_set_over_out", "pins:write_to_unowned_pin",
+        "wait:diff_first_attempt", "wait:diff_done", "wait:diff_timeout",   # between ticks: test_wait_diff
+        "shift:autopush", "shift:autopull", "call:taken", "call:ret", "call:mov_to_lr",
+        "pins:side_set_over_out", "pins:write_to_unowned_pin", "pins:sync_bypass_fresher",
         "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
         "fifo:clear_nonempty", "fifo:join_move",
         "ctrl:restart_mid_instruction", "core:bank_fault",
         "line:out_entry", "line:tx_bit", "line:tx_stuff", "line:tx_manchester_half", "line:tx_frame_end",
         "line:rx_bit", "line:rx_stuff", "line:rx_frame_end", "line:in_bits", "line:in_frame_end",
         "line:rx_overflow", "line:rx_edge_first_half", "line:rx_edge_second_half",
-        "line:rx_edge_outside_window",                                   # rx_locked: test_line_rx_jitter
+        "line:rx_edge_outside_window", "line:rx_bypassed_pin",                                   # rx_locked: test_line_rx_jitter
     ])
 
 
@@ -426,3 +433,119 @@ async def test_line_rx_jitter(dut):
     missing = [g for g in ("line:rx_locked", "line:rx_edge_first_half", "line:rx_edge_second_half",
                            "line:rx_frame_end") if not h.model.stats.get(g)]
     assert not missing, missing
+
+
+@cocotb.test()
+async def test_wait_diff(dut):
+    """Directed, compared every cycle: WAIT kind 7 (`wait pins != rN mask m`)
+    on slow and fractional dividers while pins pulse for single clocks, with
+    host PC writes and restarts landing mid-WAIT and timeouts expiring. Reaches
+    a difference caught between ticks (a pulse that is gone by the tick)."""
+    from pe import asm, host
+    h = await start(dut)
+    progs = [asm.assemble("""
+    .shift_in left
+    loop:
+        mov r0, pins
+        ldi r2, 30
+        wait pins != r0 mask 0x0F timeout r2
+        in r2, 16
+        push noblock
+        jmp loop
+    """), asm.assemble("""
+    loop:
+        ldi r1, 0x5
+        wait pins != r1 mask 0x05 timeout r3
+        jmp t, loop
+        wait pins != r1 mask 0x05
+        mov r3, pins
+        jmp loop
+    """)]
+    for c, (prog, div) in enumerate(zip(progs, (3 << 8 | 0x80, 2 << 8))):
+        for addr, data in host.load_program(c, prog, c * 256, in_pins=0, clkdiv=div):
+            await h.write(addr, data)
+    await h.write(sim.core_reg(1, sim.C_R0 + 3), 25)
+    await h.write(sim.A_CTRL, 3 | (3 << 8))
+    rng = random.Random(7)
+    uio = 0
+    for cyc in range(6000):
+        if rng.random() < 0.15:
+            uio ^= 1 << rng.randrange(4)               # pulses: often for a single clock
+        k = rng.random()
+        if k < 0.003:
+            c = rng.randrange(2)                       # back to its loop (its own bank)
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(c, sim.C_PC), wdata=c * 256)
+            uio = 0
+        elif k < 0.006:
+            await h.cycle_step(0, uio, we=True, addr=sim.A_CTRL, wdata=3 | (rng.randrange(1, 4) << 8))
+        elif k < 0.01:
+            c = rng.randrange(2)
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(c, sim.C_CLKDIV),
+                               wdata=(rng.randrange(1, 4) << 8) | rng.getrandbits(8))
+        else:
+            await h.cycle_step(0, uio, addr=sim.core_reg(0, sim.C_FIFO), snap=k < 0.3, commit=k < 0.3)
+            if rng.random() < 0.5:
+                uio &= ~(1 << rng.randrange(4))
+    want = ["wait:diff_first_attempt", "wait:diff_done", "wait:diff_caught_between_ticks", "wait:diff_timeout",
+            "ctrl:restart_mid_instruction"]
+    missing = [g for g in want if not h.model.stats.get(g)]
+    assert not missing, (missing, {k: v for k, v in h.model.stats.items() if k.startswith("wait")})
+
+
+@cocotb.test()
+async def test_call_ret(dut):
+    """Directed, compared every cycle: CALL / RET with conditional calls,
+    nesting through a saved LR, a CALL on the wrap's last word, side-set and
+    delays, on a fractional divider, while the host restarts the cores and
+    writes their PCs at random."""
+    from pe import asm, host
+    h = await start(dut)
+    progs = [asm.assemble("""
+    .side_set 1 opt
+        ldi r0, 3
+    .wrap_target
+    top:
+        call !r1, sub [1]
+        call r0--, outer side 1
+        jmp pin 0, skip
+        call sub
+    skip:
+        call sub side 0
+    .wrap
+    outer:
+        mov r3, lr
+        call sub [2]
+        mov lr, r3
+        ret
+    sub:
+        add r1, 1
+        and r1, 3
+        ret side 1 [1]
+    """), asm.assemble("""
+    loop:
+        call f
+        mov r2, lr
+        jmp loop
+    f:
+        add r3, 1
+        ret
+    """)]
+    for c, (prog, div) in enumerate(zip(progs, (2 << 8 | 0x40, 1 << 8))):
+        for addr, data in host.load_program(c, prog, c * 256, side_pins=8, clkdiv=div):
+            await h.write(addr, data)
+    await h.write(sim.A_CTRL, 3 | (3 << 8))
+    rng = random.Random(11)
+    for cyc in range(5000):
+        k = rng.random()
+        uio = rng.getrandbits(1)
+        if k < 0.004:
+            c = rng.randrange(2)                       # back to its program start (its own bank)
+            await h.cycle_step(0, uio, we=True, addr=sim.core_reg(c, sim.C_PC), wdata=c * 256)
+        elif k < 0.008:
+            await h.cycle_step(0, uio, we=True, addr=sim.A_CTRL, wdata=3 | (rng.randrange(1, 4) << 8))
+        else:
+            await h.cycle_step(0, uio)
+    want = ["done:call", "call:taken", "call:ret", "call:mov_to_lr", "call:at_wrap_top",
+            "ctrl:restart_mid_instruction"]
+    missing = [g for g in want if not h.model.stats.get(g)]
+    assert not missing, (missing, {k: v for k, v in h.model.stats.items() if "call" in k})

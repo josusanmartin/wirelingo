@@ -66,11 +66,11 @@ board measurements still need their own evidence.
 | Claim | Evidence | Reproduce |
 |---|---|---|
 | The RTL matches the spec's model cycle for cycle | random programs, pins and host traffic; registers, WAIT trackers, FIFO levels and heads compared every cycle; coverage goals required | `cd test && LOCKSTEP_SEEDS=60 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 make TB=chip` |
-| The tests catch bugs | 17 mutation definitions in model, RTL, firmware and assembler; the runner requires a passing baseline and an executed target-test failure | `python3 test/mutants.py` (use its recorded results for killed counts) |
+| The tests catch bugs | 34 mutation definitions in model, RTL, firmware, assembler and host driver; the runner requires a passing baseline and an executed target-test failure | `python3 test/mutants.py` (use its recorded results for killed counts) |
 | FIFOs (incl. join) are correct for all input sequences | k-induction against reference queues, depths 4 and 8 | `make -C formal fifos` |
 | The host port is fast and safe | 193 Mbit/s simulated quad payload at SCK = clk; phase/duty sweeps and reset aborts; formal bus safety | `cd test && make COCOTB_TEST_FILTER=test_host_port_fast`; `make -C formal hostport` |
 | Protocols work through the real host port | RTL UART, SPI, I2C, concurrent USB service, full Ethernet RX frames and overflow recovery | `cd test && make` |
-| The routed netlist does the same | Run g4's final netlist passes the 20 top-level tests at gate level (functional, no SDF); with its SDF, a five-test subset passes at typ/50 MHz and slow/43.5 MHz, and a control case fails at slow/80 MHz | `flow/gl_test.sh <run>`; `flow/gl_sdf_test.sh <run>` |
+| The routed netlist does the same | Run v2c's final netlist passes the 24 top-level tests at gate level (functional, no SDF); the two directed v2 tests added since pass there too; with its SDF, a five-test subset passes at typ/50 MHz and slow/43.5 MHz, and a control case fails at slow/80 MHz (g4 likewise); the v2-feature set (fast SPI with `SYNC_BYPASS`, WAIT kind 7, CALL/RET, full-speed USB at 48 MHz) passes at typ and slow | `flow/gl_test.sh <run>`; `flow/gl_sdf_test.sh <run> [v2\|v2long]` |
 | USB device service, on two cores or one | Concurrent RTL service at 48 MHz; address changes, lost ACK, malformed PID/CRC/stuffing, duplicate OUT, interrupted SETUP and reset | `cd test && make COCOTB_TEST_FILTER=test_usb_concurrent_service`; model USB tests |
 | Capture, understand, impersonate (reverse engineering) | core 0 captures a master and an EEPROM; the host decodes the transcript and register image; core 1 clones the EEPROM at the decoded address: same answers, same transcript; then a man in the middle changes a register. Capture timestamps within one 5-tick sample; sustained edge rate measured through the port | [reverse-engineering.md](reverse-engineering.md); `cd test && make COCOTB_TEST_FILTER=test_reverse_engineering`; `pytest test/model/test_reverse_engineering.py` |
 | I2C can't hang | SCL stuck low at every one of 19 releases, plus before START | `pytest test/model/test_i2c_timeout.py` |
@@ -78,15 +78,15 @@ board measurements still need their own evidence.
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model | `pytest test/model/test_micropython_driver.py` |
 | Optional RP2 PIO/DMA transport | Compiled PIO instruction traces drive the ASIC SPI port; API/error-path tests use fakes; board rate and pad margin remain unmeasured | [board-transport.md](board-transport.md); `make -C test COCOTB_TEST_MODULES=test_pio SIM_BUILD=sim_build/pio COCOTB_RESULTS_FILE=pio.xml` |
 | Finite Ethernet board capture | Actual capture driver over RTL/checkpoint GL SPI: 64/1518-byte frames, FCS failure and overflow cleanup; analog circuit remains unbuilt | [eth10-receiver.md](eth10-receiver.md); `make -C test COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml` |
-| Physical signoff | Run g4: DRC/LVS/antenna clean, typ setup met, hold met at every corner; slow corner ≈ 44 MHz | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/gl_test.sh <run>` |
+| Physical signoff | Run v2c: DRC/LVS/antenna clean, typ setup met, hold met at every corner, no typ slew/cap exceptions; slow corner ≈ 46 MHz | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/gl_test.sh <run>` |
 
 (`pytest` = `PYTHONPATH=tools python -m pytest -q` from the repo root.)
 
 ## Known limits
 
-* Two cores are selected for tapeout. The signed-off run (g4) meets 50 MHz at
-  the typical corner; the slow corner reaches about 44 MHz. Fast-corner hold
-  passes by 0.05 ns, the thinnest margin (docs/physical.md).
+* Two cores are selected for tapeout. The signed-off run (v2c) meets 50 MHz at
+  the typical corner; the slow corner reaches about 46 MHz. Fast-corner hold
+  passes by 0.04 ns, the thinnest margin (docs/physical.md).
 * 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
 * USB: endpoint 0 in firmware; requests and data toggles are host software.
 * Host link: 193 Mbit/s simulated payload (quad SPI, SDR, SCK = clk = 50 MHz,

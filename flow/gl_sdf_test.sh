@@ -4,36 +4,54 @@
 # (final/sdf/<corner>) through flow/sdf_prep.py, the PDK models' timing views,
 # Icarus Verilog.
 #
-#   flow/gl_sdf_test.sh <run worktree>                        # the standard cases
-#   flow/gl_sdf_test.sh <run worktree> CORNER CLK_NS [fail]   # one case
+#   flow/gl_sdf_test.sh <run worktree>                        # the standard (fast) set
+#   flow/gl_sdf_test.sh <run worktree> v2                     # the v2-feature set
+#   flow/gl_sdf_test.sh <run worktree> v2long                 # the v2 long tests
+#   flow/gl_sdf_test.sh <run worktree> CORNER CLK_NS [fail|report]   # one case
 #
-# Standard cases (run in parallel, ~6 minutes):
+# Standard set (run in parallel, ~6-15 minutes):
 #   typ  20 ns (50 MHz)     $TESTS              must pass  (STA: setup met at typ)
-#   slow 23 ns (43.5 MHz)   $TESTS              must pass  (STA: -2.88 ns at 20 ns)
-#   slow 12.5 ns (80 MHz)   test_fetch_to_pin   must FAIL  (the annotation is in effect)
+#   slow 20 ns (50 MHz)     $TESTS              must pass
+#   fast 20 ns (50 MHz)     $TESTS              must pass
+#   slow 10 ns (100 MHz)    test_fetch_to_pin   must FAIL  (the annotation is in effect)
+# SLOW_CLK_NS (default 20) and NEGATIVE_CLK_NS (default 10) can select other
+# explicit cases. A slower diagnostic run does not satisfy release coverage.
+# v2 set: typ, slow and fast each run the directed fast-SPI, capture and
+# CALL/RET cases at 20 ns, and USB full speed at 20.834 ns. All must pass.
+# v2long (the full-length originals the directed tests shorten; ~45-60 minutes):
+#   typ 20 ns and slow $SLOW_CLK_NS, each of test_la_capture_rate,
+#   test_reverse_engineering must pass.
 # CORNER is typ, slow or fast (final/sdf/nom_<corner>_*). A "fail" case passes
-# only if the simulation ran with a clean annotation and at least one test
-# failed an assertion.
+# only if the simulation completed with a clean annotation and a functional
+# failure (an assertion or an explicit unresolved-logic read); a "report"
+# case prints its result and does not require a functional pass, but still
+# requires complete results and a clean annotation. It never counts toward
+# release coverage. An infrastructure failure cannot be a negative control.
 #
-# Tests: this checkout's test/test.py (PE_CLK_NS sets its clock) on the run's
-# netlist, so the run's src/ must equal this checkout's (configs aside).
-# TESTS="test_id test_uart_tx" overrides the subset; MODULE=test_sigrok runs
-# another cocotb module (e.g. TESTS="sigrok_uart_tx sigrok_spi_master").
+# Tests: this checkout's test/test.py, or VALIDATION_ROOT's, on the run's netlist.
+# The validation source RTL and hardware profile must equal the candidate's.
+# An external validation root lets repaired tooling check a frozen release head.
+# CLK_NS sets every test's clock
+# (PE_CLK_NS), test_usb_fs_device's too (PE_USB_FS_CLK_NS: its bus keeps 4
+# clocks per bit, so away from 20.834 ns it is not 12 Mbit/s).
+# TESTS="test_id test_uart_tx" overrides the standard subset (and a single
+# case's); MODULE=test_sigrok runs another cocotb module (e.g.
+# TESTS="sigrok_uart_tx sigrok_spi_master").
 # Every case builds in a fresh directory under test/sim_build/gl_sdf.XXXXXX
 # (the run's directory is only read). The script fails on any case that is
 # not as required, on any SDF or VPI error in a simulator log, or on a
-# missing result. docs/physical.md (Gate-level simulation) says what this
-# checks and what it doesn't.
+# missing result. docs/physical.md (Timing-annotated gate level) says what
+# this checks and what it doesn't.
 set -euo pipefail
 W=$(realpath "${1:-$PWD}")
 REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+VALIDATION=$(realpath "${VALIDATION_ROOT:-$REPO}")
 shopt -s nullglob
 NETLISTS=("$W"/runs/wokwi/final/nl/*.nl.v)
 [[ ${#NETLISTS[@]} == 1 ]] || { echo "expected exactly one final netlist in $W"; exit 2; }
 NL=${NETLISTS[0]}
-if ! diff -rq -x 'config*.json' -x user_config.json "$W/src" "$REPO/src" > /dev/null; then
-  echo "$W/src differs from $REPO/src: the tests here would not describe that netlist"; exit 2
-fi
+# release_receipts.py checks RTL/profile equality before starting any cases;
+# PnR-only Tcl/SDC additions in the candidate do not change the testbench RTL.
 def() { { grep -o "define $1 [0-9]" "$W/src/project.v" || true; } | awk '{print $3}' | head -1; }
 NC=$(def PE_NCORES); FL=$(def PE_FIFO_LOG2); FL=${FL:-2}
 NB=$(grep -q 'define PE_NBANKS `PE_NCORES' "$W/src/project.v" && echo "$NC" || def PE_NBANKS)
@@ -45,14 +63,15 @@ export PATH=$HOME/tools/oss-cad-suite/bin:$VENV/bin:$PATH PDK_ROOT=${PDK_ROOT:-$
 mkdir -p "$REPO/test/sim_build"
 OUT=$(mktemp -d "$REPO/test/sim_build/gl_sdf.XXXXXX")
 echo "netlist $(sha256sum "$NL" | cut -c1-16)  cores=$NC banks=$NB fifo_log2=$FL  outputs $OUT"
-echo "tests ($MODULE): $TESTS"
+[[ $# -ge 3 || ${2:-standard} == standard ]] && echo "tests ($MODULE): $TESTS"
 
-# one case: corner, clock period (ns), expect (pass|fail), tests
+# one case: corner, clock period (ns), expect (pass|fail|report), tests
 run_case() {
   local corner=$1 clk=$2 expect=$3 tests=$4 sdf name dir t0 rc=0 count
   sdf=("$W"/runs/wokwi/final/sdf/nom_"$corner"_*/*.sdf)
   [[ ${#sdf[@]} == 1 ]] || { echo "[$corner] expected one SDF for corner $corner"; return 2; }
   name=${corner}_${clk}ns_$expect
+  [[ $tests == *" "* ]] || name=${name}_${tests#test_}
   dir=$OUT/$name
   mkdir -p "$dir"
   t0=$(date +%s)
@@ -62,20 +81,26 @@ run_case() {
   local testcase
   testcase=$(echo "$tests" | xargs | tr ' ' ',')
   count=$(echo "$tests" | wc -w)
-  (cd "$REPO/test" && PE_CLK_NS=$clk PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL make GATES=yes \
+  (cd "$VALIDATION/test" && PE_CLK_NS=$clk PE_USB_FS_CLK_NS=$clk PE_NCORES=$NC PE_NBANKS=$NB PE_FIFO_LOG2=$FL I2C_STRETCH=40 make GATES=yes SIM=icarus TB=top IMEM=sram SDF_MTM=typ TB_EXT_DELAY=4 \
       SDF="$dir/annotate.sdf" GATE_LEVEL_NETLIST="$dir/netlist.v" COCOTB_TEST_MODULES="$MODULE" \
       COCOTB_TESTCASE="$testcase" SIM_BUILD="$dir/build" COCOTB_RESULTS_FILE="$dir/results.xml" \
       > "$dir/sim.log" 2>&1) || rc=$?
+  printf '{"returncode":%s}\n' "$rc" > "$dir/status.json"
   local secs=$(( $(date +%s) - t0 ))
   # a clean annotation: no SDF errors (the header's empty typ VOLTAGE and
   # TEMPERATURE fields aside) and no VPI errors (e.g. an unplaceable net delay)
   local bad
-  bad=$(grep -E "SDF ERROR|VPI error|Could not insert|Cannot find" "$dir/sim.log" | grep -vE "annotate.sdf:(9|11): Chosen value not defined" | head -5 || true)
+  bad=$(grep -E "SDF (ERROR|WARNING)|VPI error|Could not insert|Cannot find" "$dir/sim.log" | grep -vE "annotate.sdf:(9|11): Chosen value not defined" | head -5 || true)
   if [[ -n $bad ]]; then echo "[$name] annotation errors (log $dir/sim.log):"; echo "$bad"; return 1; fi
   grep -q "^sdf_annotate: $dir/annotate.sdf" "$dir/sim.log" || { echo "[$name] \$sdf_annotate did not run (log $dir/sim.log)"; return 1; }
   local summary
   summary=$(grep -E "^\s*\*\* TESTS=" "$dir/sim.log" | sed 's/^ *//' || true)
   grep -E "cocotb.regression +\S+\.\S+ (passed|failed)" "$dir/sim.log" | awk -v n="$name" '{print "["n"] "$(NF-1)" "$NF}' || true
+  if [[ $expect == report ]]; then
+    local verdict=FAILED
+    [[ $rc == 0 ]] && python3 "$REPO/test/check_results.py" "$dir/results.xml" "$count" $tests > /dev/null && verdict=PASSES
+    echo "[$name] $verdict (report only): ${summary:-no results} (${secs} s, log $dir/sim.log)"; return 0
+  fi
   if [[ $expect == pass ]]; then
     if [[ $rc == 0 ]] && python3 "$REPO/test/check_results.py" "$dir/results.xml" "$count" $tests > /dev/null; then
       echo "[$name] PASS as required: $summary (${secs} s)"; return 0
@@ -89,16 +114,59 @@ run_case() {
   echo "[$name] required to fail, but: ${summary:-no results} (${secs} s, log $dir/sim.log)"; return 1
 }
 
+# the cases of a set: "corner clk expect tests...", one per line
+SET=${2:-standard}
+SLOW_CLK_NS=${SLOW_CLK_NS:-20}
+NEGATIVE_CLK_NS=${NEGATIVE_CLK_NS:-10}
 if [[ $# -ge 3 ]]; then
-  run_case "$2" "$3" "$([[ ${4:-} == fail ]] && echo fail || echo pass)" "$TESTS"
-  exit
+  SET=single
+  expect=${4:-pass}
+  [[ $expect == pass || $expect == fail || $expect == report ]] || { echo "invalid expectation $expect"; exit 2; }
+  CASES="$2 $3 $expect $TESTS"
 fi
-pids=()
-run_case typ 20 pass "$TESTS"                > "$OUT/typ.txt"  2>&1 & pids+=($!)
-run_case slow 23 pass "$TESTS"               > "$OUT/slow.txt" 2>&1 & pids+=($!)
-run_case slow 12.5 fail "test_fetch_to_pin"  > "$OUT/fail.txt" 2>&1 & pids+=($!)
+case $SET in
+  standard) CASES="typ 20 pass $TESTS
+slow $SLOW_CLK_NS pass $TESTS
+fast 20 pass $TESTS
+slow $NEGATIVE_CLK_NS fail test_fetch_to_pin" ;;
+  v2) V2="test_spi_master_fast test_la_capture_ticks test_call_ret"
+      CASES="typ 20 pass $V2
+typ 20.834 pass test_usb_fs_device
+slow $SLOW_CLK_NS pass $V2
+slow 20.834 pass test_usb_fs_device
+fast 20 pass $V2
+fast 20.834 pass test_usb_fs_device" ;;
+  v2long) CASES="typ 20 pass test_la_capture_rate
+typ 20 pass test_reverse_engineering
+slow $SLOW_CLK_NS pass test_la_capture_rate
+slow $SLOW_CLK_NS pass test_reverse_engineering" ;;
+  single) ;;
+  *) echo "unknown set $SET (standard, v2, v2long; or CORNER CLK_NS [fail|report])"; exit 2 ;;
+esac
+python3 - "$OUT/plan.json" "$MODULE" "$CASES" <<'PY'
+import json, sys
+cases = []
+for line in sys.argv[3].splitlines():
+    corner, clk, expect, *tests = line.split()
+    name = f"{corner}_{clk}ns_{expect}"
+    if len(tests) == 1:
+        name += "_" + tests[0].removeprefix("test_")
+    cases.append(dict(corner=corner, period_ns=float(clk), expect=expect,
+                      module=sys.argv[2], tests=tests, directory=name))
+with open(sys.argv[1], "x") as f:
+    json.dump(cases, f, allow_nan=False)
+PY
+python3 "$REPO/flow/release_receipts.py" begin sdf "$W" "$OUT" --validation-root "$VALIDATION" --plan "$OUT/plan.json"
+[[ $SET == standard ]] || echo "set $SET"
+pids=() outs=() i=0
+while read -r corner clk expect tests; do
+  outs+=("$OUT/case$i.txt")
+  run_case "$corner" "$clk" "$expect" "$tests" > "$OUT/case$i.txt" 2>&1 & pids+=($!)
+  i=$((i + 1))
+done <<< "$CASES"
 status=0
 for p in "${pids[@]}"; do wait "$p" || status=1; done
-cat "$OUT/typ.txt" "$OUT/slow.txt" "$OUT/fail.txt"
-[[ $status == 0 ]] && echo "gl_sdf_test: all cases as required" || echo "gl_sdf_test: FAILED"
+cat "${outs[@]}"
+[[ $status != 0 ]] || python3 "$REPO/flow/release_receipts.py" finish "$OUT" || status=1
+[[ $status == 0 ]] && echo "gl_sdf_test ($SET): all cases as required" || echo "gl_sdf_test ($SET): FAILED"
 exit $status

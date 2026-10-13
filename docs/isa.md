@@ -23,9 +23,11 @@ the RP2040 PIO engine's encodings, not the entire microcontroller:
 | WAIT has no timeout                      | any WAIT can time out (Rn tick budget), sets T flag  |
 | WAIT only on levels                      | WAIT on rise / fall / any edge, sampled every clock  |
 | WAIT selects one pin/GPIO/IRQ level       | WAIT qualifier: "SDA falls while SCL is high" in one instruction |
+| —                                        | WAIT until any of 8 pins differs from a register, with the timeout counter as a timestamp |
 | open drain needs pindir tricks           | per-pin open-drain mode                              |
 | SET/OUT/side-set use configured pin mappings | `PIN p, hi/lo/toggle/hiz` on any absolute pin     |
 | IRQ flags and GPIO signalling            | flags + 8 virtual pins (internal wires between cores)|
+| JMP only                                 | CALL / RET with one link register                    |
 
 The CRC tap is fed by the shift registers (§4.5). FIFO join (§4.4) is inspired
 by PIO. A shared hardware line unit (§4.7) assists core 0 with bit stuffing,
@@ -59,6 +61,29 @@ Cores see a 32-entry **logical pin space**:
 * **Synchroniser:** pad inputs pass through a 2-flop synchroniser. A core
   reading a pad input in cycle *t* sees the pad value that was present at the
   clock edge ending cycle *t − 2*.
+* **Synchroniser bypass:** with bit *i* of `SYNC_BYPASS` (0x0804) set, pad
+  input P*i* (P0–P7, P16–P20) is read from the first flop: in cycle *t* it is
+  the pad value at the edge ending cycle *t − 1*. The bit selects what
+  `pins_in[i]` is, so it applies everywhere the pin is read: IN/MOV `PINS`,
+  JMP pin conditions, WAIT and its edge trackers, the host's `PINS` register
+  and the line unit (its falling-edge sample moves with it, §4.7). Every reader
+  sees one value stream, so an edge WAIT followed by an IN, or a WAIT
+  qualifier on another pin, keeps its meaning. Changing a bit skips one sample
+  of that pin (bypass on) or repeats one (off): a one-cycle pulse can be lost
+  at that moment, but no edge is invented.
+  **Use it only for inputs synchronous to the chip's own outputs** whose round
+  trip is known to meet the first flop's setup and hold, such as SPI MISO
+  answering our SCK: with one flop, a metastable sample reaches the cores'
+  logic. It buys a clock of input latency, which a fast synchronous master
+  needs: `spi_master_fast` runs SPI at 4 clocks per SCK (12.5 MHz at 50 MHz)
+  with two clocks for the device to answer, where the synchronised input
+  needs 8 clocks per SCK (docs/pio-comparison.md). The two clocks must hold
+  the chip's clock-to-SCK-pad delay, both board flight times, the device's
+  SCK-to-MISO delay, the input pad delay and the flop's setup (40 ns at
+  50 MHz); none of the pad terms is characterised yet.
+  The control is per pin and global rather than per core because the
+  synchroniser is: 13 flops and 13 multiplexers beside it, and `pins_in` keeps
+  its width. A per-core choice would route both flops' outputs to every core.
 * **Output registers:** one global `pin_out[31:0]` and `pin_oe[31:0]`.
   Writes take effect at the end of the cycle in which the writing instruction
   executes, so the pad changes one cycle later.
@@ -104,6 +129,7 @@ Per-core architectural state:
 |--------------|-------|----------------------------------|
 | PC           | 10    | `ENTRY`                          |
 | R0–R3        | 16    | 0 at reset; kept on restart      |
+| LR           | 10    | 0 at reset; kept on restart (link register, §5.2) |
 | ISR          | 32    | 0                                |
 | ISR_CNT      | 6     | 0 (bits shifted in, saturates at 32) |
 | OSR          | 32    | 0                                |
@@ -300,7 +326,8 @@ RXP from `pins_in`):
 
 ```
 idle:     a transition on rx starts a frame
-NRZ/NRZI: a transition sets the sample counter to P/2;
+NRZ/NRZI: a transition sets the sample counter to P/2, or to P/2 - 1
+          if the falling-edge sample (below) already showed it;
           otherwise at 0 it samples and reloads P, else counts down
           sample: with DIFF, RXP = RXN = 0 (SE0) ends the frame;
                   bit = rx (NRZ), or 1 if rx equals the last sample (NRZI)
@@ -316,9 +343,21 @@ bit:      if STUFF_K and the run reached STUFF_K: drop it as a stuff bit
           (if it isn't the expected one: end the frame); else queue it
 ```
 
+**NRZ/NRZI sample point.** A pad edge reaches `pins_in` 1 to 2 clocks after
+it happens (the synchroniser, §2). The falling-edge sample (below) tells which
+half of that clock it fell in: if it fell before the falling edge, the counter
+starts one clock shorter. So the sample lands 1.5–2.5 clocks after the real
+edge instead of 2–3, centred in the bit at P = 4 (USB full speed at 48 MHz:
+an edge-to-edge interval may shrink by about 31 ns instead of 21; USB allows
+18.5). An internal pin's falling-edge sample equals `pins_in`, so it always
+takes the shorter count, which is harmless with no analog edge. P ≥ 4 keeps the
+count from wrapping (it is 16 bits, mod 2^16). With the RX pad in
+`SYNC_BYPASS` everything happens a clock earlier (an asynchronous line such
+as USB should not use the bypass).
+
 **Manchester timing.** The RX pin is sampled at both clock edges: a pad pin
-(P0–P7, P16–P20) also at the falling edge, half a clock before its
-synchronized sample (internal pins change only at rising edges), so each
+(P0–P7, P16–P20) also at the falling edge, half a clock before the
+synchronized sample it is read as (the first flop's with `SYNC_BYPASS`, §2) (internal pins change only at rising edges), so each
 transition is placed in one half of a clock. The phase `q`, in 1/64
 half-cycles, counts from the predicted next mid-bit transition (P ≤ 4095;
 higher bits of the RX period are ignored for Manchester):
@@ -363,7 +402,7 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | Op | Mnemonic | Operand layout                                                             |
 |----|----------|----------------------------------------------------------------------------|
 | 0  | `JMP`    | `[18:15] cond  [14:10] sel  [9:0] addr`                                    |
-| 1  | `WAIT`   | `[18:16] kind  [15:11] idx  [10] timeout  [9:8] treg  [7] clear  [6] qen  [5] qpol  [4:0] qpin` |
+| 1  | `WAIT`   | `[18:16] kind  [15:11] idx  [10] timeout  [9:8] treg  [7] clear  [6] qen  [5] qpol  [4:0] qpin`; kind 7: `[15:14] rref  [10] timeout  [9:8] treg  [7:0] mask` |
 | 2  | `IN`     | `[18:15] src  [4:0] count (0 = 32)`                                        |
 | 3  | `OUT`    | `[18:15] dst  [4:0] count (0 = 32)`                                        |
 | 4  | `PUSH`   | `[18] iffull  [17] block`                                                  |
@@ -375,7 +414,8 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 10 | `PIN`    | `[18:17] action  [4:0] pin`                                                |
 | 11 | `FLAG`   | `[18] clear  [2:0] idx`                                                    |
 | 12 | `HALT`   | —                                                                          |
-| 13–31 | —     | reserved (v0.3 serial pipeline)                                            |
+| 13 | `CALL`   | as JMP: `[18:15] cond  [14:10] sel  [9:0] addr`                            |
+| 14–31 | —     | reserved (v0.3 serial pipeline)                                            |
 
 ### 5.1 Operand codes (`src` / `dst`)
 
@@ -392,7 +432,8 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 11   | PC       | `{22'b0, PC}`                              | jump to `value[9:0]`                         |
 | 12   | CRC      | `{16'b0, CRC}`                             | `CRC = value[15:0] & CRC_MASK` (§4.5)        |
 | 13   | LINE     | IN: received bits (§4.7; core 0)           | OUT: queue bits to transmit (§4.7; core 0); MOV: discard |
-| 14–15| —        | 0                                          | discard                                      |
+| 14   | LR       | `{22'b0, LR}`                              | MOV: `LR = value[9:0]`; OUT: discard (the assembler rejects it) |
+| 15   | —        | 0                                          | discard                                      |
 
 For a PINS/PINDIRS destination, pin `(OUT_BASE + i) mod 32` gets `value[i]`
 for `0 ≤ i < OUT_COUNT`.
@@ -420,6 +461,21 @@ for `0 ≤ i < OUT_COUNT`.
 | 14   | `f k`      | `F[sel[2:0]] == 1`                                          |
 | 15   | `!f k`     | `F[sel[2:0]] == 0`                                          |
 
+**CALL cond, sel, addr** (opcode 13). Exactly JMP: the same fields and
+conditions, and `rN--` decrements either way. When the condition holds it also
+links: `LR` = the PC the core would have gone to without the jump
+(`WRAP_BOTTOM` if `PC == WRAP_TOP`, else `PC + 1`). **RET** is `MOV PC, LR`
+(assembler `ret`). There is one link register and no stack: a subroutine that
+calls another saves LR first (`mov r3, lr` … `mov lr, r3`), which costs two
+instructions per extra level. Neither the host nor a restart touches LR, and
+it is not on the host bus.
+Why one register: protocol firmware rarely nests (the shared pieces of
+`i2c_device` are leaves), and a 10-bit register costs 10 flops and a 2:1
+multiplexer in front of them, plus one input on the source multiplexer. A
+2-entry stack would double the flops and add a pointer and a second
+multiplexer level for no firmware that needs it. CALL reuses JMP's decode and
+condition logic, so the opcode costs one compare.
+
 **WAIT kind, idx [qualifier] [clear] [timeout].** Stalls until the condition
 holds. `p = idx` is an absolute pin; `k = idx[2:0]` is a flag.
 
@@ -432,9 +488,34 @@ holds. `p = idx` is an absolute pin; `k = idx[2:0]` is a flag.
 | 4    | `wait edge p`     | any transition has been observed                      |
 | 5    | `wait 1 flag k`   | `F[k] == 1`; with `clear`, the flag is cleared when the WAIT completes |
 | 6    | `wait 0 flag k`   | `F[k] == 0`                                           |
-| 7    | —                 | reserved (completes immediately)                      |
+| 7    | `wait pins != rN [mask m]` | `(rotr(pins_in, IN_BASE)[7:0] ^ R[rref][7:0]) & mask != 0` (see below) |
 
-**Qualifier** (`qen = 1`, syntax `if pin q == v`): `Q = (pins_in[qpin] == qpol)`.
+**Pin-set difference** (kind 7). The 8 pins from `IN_BASE` (the low byte of
+the `PINS` source), masked by `mask`, are compared with the low byte of
+`R[rref]` (`rref = x[15:14]`, which is `idx[4:3]`; `idx[2:0]` are reserved, 0). Kind 7 has no
+qualifier and no `clear`: its operand bits `[7:0]` are the mask. The condition
+`D` is a level, checked on every attempt including the first, so a WAIT that
+starts while the pins already differ completes at once. While the WAIT is in
+progress, every enabled cycle (tick or not) also sets the sticky `event` bit
+when `D` holds, as an edge WAIT does (below), and the WAIT completes on a tick
+where `D || event`. So a difference that lasts a single clock is caught even
+when the core ticks slowly. With a timeout, `R[treg]` counts the waiting ticks
+down, which makes it the timestamp of the change: started at `N`, it ends at
+`N − k` when the WAIT completes on its *k*-th tick after the first attempt
+(`la_capture` timestamps edges to the tick this way). The reference is read
+every cycle; if `rref = treg`, the decrements count.
+Why a register reference and not "a change since the WAIT began": the
+firmware records a sample, then waits for the pins to differ from *that
+sample*, so a change between the sample and the WAIT's first attempt is still
+caught (on the first attempt). Why a register and an immediate mask: the
+reference needs a register anyway, and an 8-bit mask fills the operand bits
+the qualifier uses; the comparison reuses the `PINS` rotator, the edge
+tracker's event bit and the ALU's register selector: `rref` sits where ALU
+puts `rd` (bits [15:14]), so only an 8-bit XOR/AND/OR is new. (With its own
+selector on bits [12:11] the routed core had about 1 % more wire in
+`flow/core_route.sh` runs at three densities.)
+
+**Qualifier** (`qen = 1`, syntax `if pin q == v`, kinds 0–6): `Q = (pins_in[qpin] == qpol)`.
 For level kinds (0, 1, 5, 6) the condition is `base && Q`, evaluated on the tick.
 For edge kinds, a transition counts only if `Q` holds in the same clock cycle
 as the transition.
@@ -447,12 +528,15 @@ or not):
 
 ```
 ev    = transition(prev, pins_in[p]) && (!qen || Q)     // rise: !prev && cur, fall: prev && !cur, edge: prev != cur
+                                                        // kind 7: ev = D (the pin-set difference)
 done  = event || ev                                     // used if this cycle is a tick
-event = event || ev;  prev = pins_in[p]
+event = event || ev;  prev = pins_in[p]                 // (prev follows pin idx for every kind)
 ```
 
 So edges are caught at full clock resolution even when the core ticks slowly.
-Only edges that happen after the WAIT began count.
+Only edges that happen after the WAIT began count. (Kind 7 also completes on
+its first attempt if `D` holds then; a stalled first attempt clears `event`
+like the others.)
 
 **Timeout** (`timeout = 1`) uses `R[treg]` as a tick budget. On each tick
 where the WAIT attempts but its condition doesn't hold:
@@ -641,7 +725,7 @@ do not establish that physical sampling margin.
 | 0x0801             | CTRL         | RW     | `[3:0]` enable; write-only, self-clearing: `[11:8]` restart, `[19:16]` FIFO clear |
 | 0x0802             | FLAGS_SET    | RW     | R: flags; W: set bits where 1                |
 | 0x0803             | FLAGS_CLR    | RW     | R: flags; W: clear bits where 1              |
-| 0x0804             | —            | —      | reserved (was BANK_OWNER; writes are ignored) |
+| 0x0804             | SYNC_BYPASS  | W      | `[7:0]` P0–P7, `[20:16]` P16–P20: read the pad through one synchroniser flop instead of two (§2); reset 0. (Was BANK_OWNER.) |
 | 0x0805             | PIN_OWNER_LO | W      | `[2i+1:2i]` owner of pin i (0–15)            |
 | 0x0806             | PIN_OWNER_HI | W      | owner of pin 16+i                            |
 | 0x0807             | OD_MASK      | W      | `[7:0]` open-drain enable for P0–P7          |

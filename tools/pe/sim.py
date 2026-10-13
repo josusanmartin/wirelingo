@@ -5,7 +5,7 @@ Everything reads start-of-cycle state; effects combine into the next state,
 mirroring the synchronous RTL.
 """
 from . import isa
-from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE)
+from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE, LR)
 from .line import Line
 
 M32 = 0xFFFFFFFF
@@ -16,7 +16,7 @@ ID_VALUE = 0x50450002
 IMEM_WORDS = 1024
 
 # Register map
-A_ID, A_CTRL, A_FSET, A_FCLR, A_RSVD4, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
+A_ID, A_CTRL, A_FSET, A_FCLR, A_SYNCBYP, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
 A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
@@ -53,6 +53,7 @@ class Core:
         self.crc_poly = self.crc_w = self.in_tap = self.out_tap = 0
         self.crc = 0
         self.r = [0, 0, 0, 0]
+        self.lr = 0          # link register: kept on restart, like R0-R3
         self.txf, self.rxf = [], []
         self.res = []  # host read reservations, oldest first: True if a real RXF entry (<= 2)
         self.restart()
@@ -184,6 +185,12 @@ class Core:
         else:
             trans = self.wprev != e.wpin
         e.ev = bool(trans and e.qual)
+        e.seen = self.in_wait and self.wevent      # an event latched on an earlier (non-tick) cycle
+        # kind 7: the pins from IN_BASE, masked, differ from R[x[15:14]] (no qualifier)
+        e.diff = False
+        if e.kind == isa.W_DIFF:
+            ref = self.r[isa.bits(x, 15, 14)]
+            e.ev = e.diff = bool((rotr32(e.pins_in, self.in_base) ^ ref) & isa.bits(x, 7, 0))
         e.edge_done = bool(self.wevent or e.ev)
         if self.in_wait and qen and trans and not e.qual and e.kind in _EDGE_WAITS:
             e.chip.cover("wait:qualifier_blocked_edge")
@@ -213,7 +220,8 @@ class Core:
         if code < 4:
             return self.r[code]
         return {PINS: rotr32(e.pins_in, self.in_base), ISR: self.isr, OSR: self.osr,
-                STATUS: self.status() & 0x7FF, FLAGS: e.flags, PC: self.pc, CRC: self.crc}.get(code, 0)
+                STATUS: self.status() & 0x7FF, FLAGS: e.flags, PC: self.pc, CRC: self.crc,
+                LR: self.lr}.get(code, 0)
 
     def _crc_mask(self):
         return mask(self.crc_w + 1)
@@ -239,6 +247,8 @@ class Core:
             e.jump = v & 1023
         elif dst == CRC:
             self.crc = v & self._crc_mask()
+        elif dst == LR:                 # MOV only (OUT skips it)
+            self.lr = v & 1023
 
     # ------------------------------------------------------------ the ops (docs/isa.md §5)
     def _op_jmp(self, e):
@@ -257,6 +267,15 @@ class Core:
             self.r[rs] = (rv - 1) & M16
         if ok:
             e.jump = addr
+        return ok
+
+    def _op_call(self, e):
+        """JMP that, when taken, links: LR = the PC it would have gone to."""
+        if self._op_jmp(e):
+            self.lr = self.wrap_bottom if self.pc == self.wrap_top else (self.pc + 1) & 1023
+            e.chip.cover("call:taken")
+            if self.pc == self.wrap_top:
+                e.chip.cover("call:at_wrap_top")
 
     def _op_wait(self, e):
         x, kind = e.x, e.kind
@@ -274,11 +293,14 @@ class Core:
             done = f == 1 and e.qual
         elif kind == isa.W_FLAG0:
             done = f == 0 and e.qual
-        else:
-            done = True
+        else:                                   # W_DIFF: a level on the first attempt, sticky after
+            done = e.diff if first else e.edge_done
         if done:
             if kind in _EDGE_WAITS and not e.ev:
                 e.chip.cover("wait:edge_caught_between_ticks")
+            if kind == isa.W_DIFF:
+                e.chip.cover("wait:diff_first_attempt" if first else
+                             "wait:diff_caught_between_ticks" if e.seen else "wait:diff_done")
             if to:
                 self.t = 0
             if kind == isa.W_FLAG1 and clr:
@@ -286,6 +308,8 @@ class Core:
         elif to and self.r[treg] == 0:
             self.t = 1
             e.chip.cover("wait:timeout")
+            if kind == isa.W_DIFF:
+                e.chip.cover("wait:diff_timeout")
         else:
             if to:
                 self.r[treg] = (self.r[treg] - 1) & M16
@@ -343,7 +367,7 @@ class Core:
             self._crc_feed(data & 1)
         if line:
             e.chip.line.push([(data >> i) & 1 for i in (range(n) if self.out_shr else range(n - 1, -1, -1))])
-        elif dst != OSR:                # OUT to OSR only shifts (docs/isa.md §5)
+        elif dst not in (OSR, LR):      # OUT to OSR only shifts, to LR discards (docs/isa.md §5)
             self._write_dst(e, dst, data, n)
 
     def _in_line(self, e, n):
@@ -410,6 +434,10 @@ class Core:
             v = ~v & M32
         elif mop == isa.M_REV:
             v = rev32(v)
+        if src == LR and dst == PC and mop == isa.M_NONE:
+            e.chip.cover("call:ret")
+        elif dst == LR:
+            e.chip.cover("call:mov_to_lr")
         self._write_dst(e, dst, v, 0)
 
     def _op_set(self, e):
@@ -474,7 +502,7 @@ _OPS = {isa.OP_JMP: Core._op_jmp, isa.OP_WAIT: Core._op_wait, isa.OP_IN: Core._o
         isa.OP_OUT: Core._op_out, isa.OP_PUSH: Core._op_push, isa.OP_PULL: Core._op_pull,
         isa.OP_MOV: Core._op_mov, isa.OP_SET: Core._op_set, isa.OP_LDI: Core._op_ldi,
         isa.OP_ALU: Core._op_alu, isa.OP_PIN: Core._op_pin, isa.OP_FLAG: Core._op_flag,
-        isa.OP_HALT: Core._op_halt}
+        isa.OP_HALT: Core._op_halt, isa.OP_CALL: Core._op_call}
 
 
 class _Exec:
@@ -518,6 +546,7 @@ class Chip:
         self.hostcfg = 0  # QUAD_EN: only the host port uses it
         self.line = Line(self.cover)
         self.sync1 = self.sync2 = 0  # {ui[4:0], uio[7:0]}
+        self.sync_bypass = 0         # SYNC_BYPASS, same bit order: read sync1 instead of sync2
         # the line unit's RX pin, also sampled on the falling clock edge (pe_chip
         # rx_hq, rx_h2): half a clock older than its sync2 sample
         self.rx_hq = self.rx_h2 = 0
@@ -547,8 +576,12 @@ class Chip:
             oe |= 1 << p
         return out, oe
 
+    def pad_in(self):
+        """The pads as the cores see them: sync2, or sync1 where SYNC_BYPASS is set (§2)."""
+        return (self.sync2 & ~self.sync_bypass) | (self.sync1 & self.sync_bypass)
+
     def pins_in(self):
-        s = self.sync2
+        s = self.pad_in()
         out, _ = self.eff_pins()
         return ((s & 0xFF) | (out & 0x7F00) | (((s >> 8) & 0x1F) << 16)
                 | (out & 0xFF000000))
@@ -587,6 +620,7 @@ class Chip:
         says the oldest snapped word was sent (pops it if it was a real entry);
         `cancel` ends the transaction and drops the reservations."""
         pins_in = self.pins_in()
+        byp = self.sync_bypass        # start of cycle: a host write takes effect next cycle (§5.3)
         line_write = None
         flags = self.flags
         fjoin = [core.fjoin for core in self.cores]  # start of cycle: a host write lands at the edge
@@ -663,6 +697,8 @@ class Chip:
                     self.pin_owner[16 + i] = (wdata >> (2 * i)) & 3
             elif addr == A_OD:
                 self.od_mask = wdata & 0xFF
+            elif addr == A_SYNCBYP:
+                self.sync_bypass = (wdata & 0xFF) | (((wdata >> 16) & 0x1F) << 8)
             elif addr == A_POUT:
                 new_out = wdata & M32
             elif addr == A_POE:
@@ -721,7 +757,12 @@ class Chip:
         if ctrl is not None:
             self.enable = ctrl & 15
         rxp = self.line.rxp
-        rx_mid = self.rx_h2 if _pad_bit(rxp) is not None else (pins_in >> rxp) & 1
+        bit = _pad_bit(rxp)          # the falling-edge sample before sync1's (rx_hq) or sync2's (rx_h2)
+        rx_mid = (pins_in >> rxp) & 1 if bit is None else \
+            self.rx_hq if (byp >> bit) & 1 else self.rx_h2
+        if bit is not None and (byp >> bit) & 1 and self.line.en and self.line.rx_en \
+                and self.rx_hq != self.rx_h2:
+            self.cover("line:rx_bypassed_pin")
         self.line.step(pins_in, rx_mid)  # after the cores: they used its start-of-cycle state
         self.line.commit()
         if line_write:
@@ -729,6 +770,8 @@ class Chip:
         self.ctrl_pend = wdata & M32 if (we and addr == A_CTRL) else None
         self.flags = ((flags & ~fclr) | fset) & 0xFF
         self.pin_out, self.pin_oe = new_out & M32, new_oe & M32
+        if byp & (self.sync1 ^ self.sync2):
+            self.cover("pins:sync_bypass_fresher")
         self.sync2 = self.sync1
         pads = (uio_in & 0xFF) | ((ui_in & 0x1F) << 8)
         mid = self.pads_prev if ui_mid is None and uio_mid is None else \

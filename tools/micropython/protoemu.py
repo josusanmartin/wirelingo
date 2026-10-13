@@ -17,7 +17,7 @@ prints the words and register values to paste here.
 """
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
-A_ID, A_CTRL, A_FSET, A_FCLR, A_RSVD4, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
+A_ID, A_CTRL, A_FSET, A_FCLR, A_SYNCBYP, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_POUT, A_POE, A_HOSTCFG = range(0x800, 0x80C)
 A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = range(8)
@@ -116,8 +116,8 @@ class ProtoEmu:
         for w in words:
             if not isinstance(w, int) or not 0 <= w <= 0xFFFFFFFF:
                 raise ValueError("instruction must be a 32-bit word")
-            if w >> 27 == 0 and not lo <= (w & 0x3FF) < hi:
-                raise ValueError("JMP target leaves core's fixed instruction bank")
+            if w >> 27 in (0, 13) and not lo <= (w & 0x3FF) < hi:   # JMP, CALL
+                raise ValueError("JMP/CALL target leaves core's fixed instruction bank")
         self.write(base, words)
         r = lambda o: self.core_reg(core, o)
         self.write(r(C_CLKDIV), [clkdiv, pinctrl0, pinctrl1, shiftctrl, base, wrap])

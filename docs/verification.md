@@ -43,7 +43,9 @@ The RTL `pe_chip` and the model run side by side in cocotb:
   timeouts so programs keep moving. Some jump targets deliberately cross into
   unowned banks, to exercise faults.
 * **Configuration:** random clock dividers, pin maps, shift and threshold
-  settings, pin ownership, open-drain masks and CRC polynomials.
+  settings, pin ownership, open-drain masks, synchroniser bypass masks (also
+  rewritten mid-run, so the switch between one and two flops is covered) and
+  CRC polynomials.
 * **Stimulus:** random pin toggling at several rates, plus random host bus
   traffic every cycle:
   * FIFO pushes and pops;
@@ -67,6 +69,19 @@ the disassembly of every core's current instruction. Coverage counters (per
 opcode: attempted, completed, stalled) are printed. The regression runs on the
 tapeout configuration (2 cores, 2 SRAM banks, 8-deep FIFOs) and on the full
 4-core flop build.
+
+**CALL / RET**: random programs contain CALLs (conditions and targets as
+JMP), RETs, and MOVs to and from LR, with coverage goals for a taken CALL, a
+RET and a write to LR; LR is compared every cycle. `test_call_ret` (directed)
+adds nesting through a saved LR, a CALL on the wrap's last word (it links to
+the wrap bottom), side-set and delays on CALL/RET, a fractional divider, and
+host restarts and PC writes.
+
+**WAIT kind 7** (`wait pins != rN mask m`) is a quarter of the random WAITs,
+with coverage goals for completing on the first attempt, while in progress and
+by timeout; `test_wait_diff` (directed, compared every cycle) adds slow and
+fractional dividers, single-clock pin pulses caught between ticks, host PC
+writes and restarts landing mid-WAIT.
 
 **The line unit** (§4.7) is in the lockstep too: random LINECFG/LINEDIV/
 LINEPINS (pins chosen so its TX often loops back to its RX), random IN/OUT LINE
@@ -103,6 +118,8 @@ lost when pushed 210 clocks into the read).
   * halted/fault are sticky until restart;
   * the PC changes only on a completed instruction, a restart or a host write;
   * a disabled core's state is frozen;
+  * LR changes only on a completed instruction, and a taken CALL leaves it
+    equal to the PC the core would have gone to without the jump;
   * shift counts never exceed 32.
 * **`pe_line`**, with every input free except core 0's contract (pushes only
   with room, takes only what `IN LINE` may, counts 1–32), including LINECFG,
@@ -110,7 +127,9 @@ lost when pushed 210 clocks into the read).
   ≤ 32 bits, and the Manchester receiver's phase stays in [−720720, 262208]
   for any period up to 4095, with every 21-bit operation equal to the same
   computation at 23 bits (it never wraps). Tightening either bound breaks the
-  induction.
+  induction. For any legal RX period (P ≥ 4) the NRZ/NRZI sample counter's
+  load after a transition (P/2 − 1, or P/2 − 2 with the half-cycle sample
+  point) doesn't wrap.
 
 These are safety properties of the pieces. Functional equivalence of the
 whole core is covered by lockstep, not by formal.
@@ -125,8 +144,10 @@ the RTL through the **real SPI host port** (`test/test.py`).
 
 **On the RTL, through the SPI port** (also run at gate level):
 
-* UART TX/RX; SPI master; I2C master against an EEPROM model with clock
-  stretching, NACKs and repeated STARTs.
+* UART TX/RX; SPI master, also at 4 clocks per SCK with MISO in
+  `SYNC_BYPASS` (`test_spi_master_fast`: correct with the bypass, one bit late
+  without it); I2C master against an EEPROM model with clock stretching, NACKs
+  and repeated STARTs.
 * USB low-speed device: SETUP + DATA0 → ACK and a good record; an IN to
   another address gets no answer; IN → NAK; IN → the staged DATA1, each within
   the 7.5-bit turnaround.
@@ -165,6 +186,11 @@ checkpoint tests do not satisfy final physical release.
   re-stage the same packet with the same toggle.
 * Line unit: USB-style (NRZI, stuffing, SE0 end; the waveform also decoded
   by the USB reference), Manchester and CAN-style (NRZ stuffing) loopbacks.
+* USB full speed (`usb_fs_dev`, 48 MHz, 4 clocks per bit): ±9.25 ns edge
+  jitter at ±500/±2500 ppm, and 28 ns of duty-cycle distortion between
+  consecutive edges at 0/±2500 ppm (`test_fs_rx_duty_cycle_margin`, which
+  needs the half-cycle NRZI sample point; the RTL test `test_usb_fs_device`
+  checks the same 28 ns case: 24/24 packets, against 11/24 on g4).
 * USB on one core (`usb_ls_dev`, line unit): enumeration with fixed and random
   service stalls, the address filter, the lost ACK, the same tests as the
   two-core firmware.
@@ -189,6 +215,20 @@ checkpoint tests do not satisfy final physical release.
   (host model checking parity), WS2812 (datasheet timing windows), and the I2C
   sniffer running beside the I2C master.
 * The CRC tap against the USB reference CRCs (fields and residues).
+* CALL / RET (`test_call.py`): linking, conditional calls (LR untouched when
+  not taken), nesting through a register, a CALL at the wrap top, LR across a
+  restart. `i2c_device` with its three subroutines runs the whole reverse
+  engineering flow; its response-time test keeps its bounds (a written byte's
+  ACK moved from 4 to 5 clocks after the SCL fall, the rest is unchanged).
+* WAIT kind 7 (`test_wait_diff.py`): the mask and IN_BASE, completion on
+  the first attempt, a one-clock pulse between ticks, the timeout as a tick
+  counter. The logic-analyzer capture (`test_reverse_engineering.py`):
+  160 random edges timestamped with one constant offset, edges 1–6 ticks apart
+  on two channels never lost, the 7-tick square-wave bound, idle records and
+  the gap word.
+* SPI master against a device model whose answer delay is swept
+  (`test_spi_fast.py`): clocks per SCK and the delay budget for each firmware,
+  divider and bypass setting.
 * Host software: the demo-board MicroPython driver runs unmodified against the
   model through a Python model of the SPI port (UART output, a 10BASE-T frame).
 
@@ -259,13 +299,49 @@ one-period bound and the clock-gating, pulse-width and recovery/removal checks
 with the run's extracted SDF (Icarus; `flow/sdf_prep.py` works around its SDF
 reader), five top-level tests at typ/50 MHz and slow/43.5 MHz must pass, and
 `test_fetch_to_pin` at slow/80 MHz must fail, which shows the delays are in
-effect. g4 passes all three cases. This checks that the exercised
+effect. g4 and v2c pass all three cases. This checks that the exercised
 transitions meet the clock with real cell, wire, clock-tree and SRAM delays.
 It does not check setup/hold windows (Icarus has no timing checks), and it
 covers only the paths the tests sensitize. g4's slow corner also passes the
 five tests at 50 MHz, although STA says −2.88 ns, because no test reaches
 STA's worst path. Details and limits:
 [physical.md](physical.md#timing-annotated-gate-level-sdf).
+
+The v2 features have their own set (`flow/gl_sdf_test.sh <run> v2`): the
+fast SPI master with MISO in `SYNC_BYPASS` (test_spi_master_fast), WAIT kind 7
+at 1-tick resolution (test_la_capture_ticks, new: decoded edges and pulses
+must equal the cycle model's), CALL/RET (test_call_ret, new: side-set edges,
+pushed links and registers must equal the model's) at typ 20 ns and slow
+23 ns, and the full-speed USB device with the half-cycle NRZI sample point
+(test_usb_fs_device) at typ 48 MHz and, with its bus scaled to the clock,
+slow 23 ns; slow at 48 MHz, which STA doesn't meet (21.57 ns), is reported.
+v2c passes all of it, slow/48 MHz included. `v2long` runs the full-length
+test_la_capture_rate and test_reverse_engineering (v2c: pass at typ and slow, ~50 minutes each). Under SDF the
+external uio devices drive 4 ns after the clock edge, STA's input delay:
+driven at the edge, a pad synchronizer whose clock arrives 0.85 ns late
+took the value a clock early, which first failed test_spi_master_fast's
+negative check (a testbench race, not the chip; physical.md has the
+numbers). Kind 7 on fractional dividers, restarts mid-WAIT or mid-CALL, and
+the bypass on other pins stay with RTL lockstep, which can't run on the
+netlist.
+
+## v2 regression (2026-10-05, RTL not yet hardened)
+
+On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
+
+* model suite: 251 passed;
+* top-level cocotb: `test.py` 20/20, `test_pio.py` 2/2, `test_eth_service.py` 2/2;
+* lockstep, tapeout configuration (`LOCKSTEP_SEEDS=60`, 2 cores, 2 SRAM banks,
+  8-deep FIFOs): 6/6, every coverage goal reached; 4-core flop build
+  (`LOCKSTEP_GOALS=core`, 60 seeds × 1000 cycles): 6/6; plus 400 seeds × 1000
+  cycles in four other seed windows (tapeout) and 200 in two (4-core), all
+  passing. Two earlier windows found the two golden-model bugs in the table
+  below; the regression's own windows had not reached them;
+* formal: all seven jobs pass (fifos 4/8 + cover, hostport + cover, core, line);
+* mutation runner: 34 of 34 mutants killed (17 of them new for the v2 features).
+
+Gate level and STA: run v2c's netlist passes all 24 top-level tests (functional
+GL) and signoff STA at every corner ([physical.md](physical.md)).
 
 ## Bugs found by this flow (selection)
 
@@ -284,3 +360,6 @@ STA's worst path. Details and limits:
 | test harness | driver test traced only `ModelHost.step`, missing the clocks of the host's own bus cycles (a 1-tick gap breaks Manchester decoding) | 10BASE-T driver test; trace now hooks `Chip.step` |
 | UART RX firmware | back-to-back bytes: the program returned to its start-bit edge WAIT exactly at the end of the stop bit, and with a fractional divider the next start edge could fall on that tick and be missed; also too little margin for a 3 %-fast sender | the board bring-up loopback (driver on the model); now a level WAIT, the byte pushed during the stop bit, and test_uart (±3 %, back to back) |
 | USB RX firmware (two-core) | the device's own ACK of SETUP/OUT data, heard by the RX core, set F_GOTACK; host software fast enough to stage the first IN chunk before that ACK ended saw the chunk as acknowledged, and a lost host ACK skipped a chunk | concurrent RTL service test, once the service loop got faster; the TX core now sets F_SENT when it sends DATA and only an ACK after it counts |
+| golden model (v2) | the line unit's falling-edge RX sample was chosen with a `SYNC_BYPASS` value written in the same cycle (the RTL uses it from the next cycle) | lockstep, a seed window outside the regression's (`LOCKSTEP_SEED0=5000`): Manchester phase off by one sample after a mid-frame bypass write |
+| golden model | the stuffing run bit was "none" at a frame start where the RTL keeps the last bit and clears a valid flag; switching STUFF_ONES off mid-frame crashed the model | lockstep, seed window 9000 (TypeError); run bits and flags are now compared every cycle |
+| MicroPython driver (v2) | its image check ignored CALL (opcode 13), so a CALL out of the core's bank loaded and faulted at run time | review; `test_board_load_validates_before_any_bus_write` has a CALL case and a mutant |
