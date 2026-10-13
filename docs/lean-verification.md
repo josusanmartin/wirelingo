@@ -116,9 +116,11 @@ hypotheses; the rows below are separate domains, not a global theorem count.
 
 The [axiom policy](../formal/lean/audit_axioms.py) allows only standard
 `propext`, `Classical.choice`, `Quot.sound`; it rejects `sorryAx` and new axioms.
-Ownership audits six statements; default IN8 audits its five original RX
-lemmas, using only `propext`. UART-IN1 audits those five plus eight new
-statements: 13 in total, using only `propext` and `Quot.sound`. General
+Ownership audits six statements. The historical C11/C12 IN8 run audited five
+RX lemmas, using only `propext`. Both current RX preparation routes audit those
+five plus eight new statements: 13 in total, using only `propext` and
+`Quot.sound`. The original IN8 finite corpus is unchanged and was not replayed
+for the UART-IN1 result. General
 specification statements depend on the Lean kernel/foundations. Executable
 agreement additionally trusts the compiler/runtime, checker, bench, Icarus
 and behavioral SRAM model; the source relation is hand reviewed.
