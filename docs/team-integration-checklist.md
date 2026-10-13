@@ -2,9 +2,10 @@
 
 This is a review checklist for lead/Claude integration, not permission to merge,
 run another lane's tests, start a harden or use runner1. Workers keep their own
-branches; lead commits reviewed changes. The host rebase onto `41fab1b` retained
-prior branch commits without integrating them into main. Select necessary
-production prerequisites; do not import every historical research commit.
+branches; lead commits reviewed changes. The accepted dependency snapshot below
+is dated **October 13, 2026, shipping1913**. Its combined Git tree is
+`f8772208d86e21ca1cec573bd33b353b8dbb5b72`; it is not main integration.
+Select the declared production prerequisites, not every worker ancestor.
 
 ## Release and source baseline
 
@@ -22,76 +23,132 @@ production prerequisites; do not import every historical research commit.
   firmware change. Model tests and fixture-based runner tests are different
   evidence from RTL, GL/SDF, routed signoff or board measurements.
 
-## Five lanes and handoff status
+## Five lanes — accepted shipping1913 dependency snapshot
 
-The table records worker/channel and dispatch facts at this checkpoint.
-**Pending** means no final accepted R13 result/commit is available here; an
-intermediate passing run does not replace the final source regression.
+Pinned main base: `0ebe6caac4e76ca2a648356543d0d7460574546d`.
+The [lead handoff]([home directory redacted]/wirelingo-team-20261011/control/resume-20261013/shipping-20261013-1913/HANDOFF.md)
+records the full commit identities, reviewed patches and saved results.
+**Numbers below are the global apply order of its 24 commits**; apply in
+increasing numerical order, including the interleaved lanes. No unselected
+historical worker ancestor is a prerequisite of this snapshot.
 
-| Lane / branch | Integration prerequisites | Relevant maintained checks / current status |
+| Lane | Selected commits in global apply order | Accepted evidence and limits |
 | --- | --- | --- |
-| Atlas USB ACK / `team/20261011-sol-atlas` | Worker reports current main `41fab1b` helpers/firmware suffice; no bridge/architecture predecessor needed. Additive study page comes from `f9c7ebd995a69086d968275ac1a3ca0102944d3c`, retaining the restored C9 append. Other Atlas historical docs/bridge commits are optional. Final R13 host commit pending. | New `test/model/test_usb_ack.py`; existing `test_usb_autonomous.py` and `test_usb_fs.py`, including reset/enumeration. Corrected pre-fix fixture reported 29 pass/20 fail; nominal and valid 4/5/6 total-bit holds pass. Final firmware fix/regression pending. FIFO-LS companion `usb_ls_dev.pasm` is outside R13; lead reports the analogous source gap, with no new LS companion result. |
-| Pulse SPI host / `team/20261011-sol-pulse` | Lead verified required branch chain `f328b02` → `74583e2` → `03923c9` → `e4dcb87` (all-mode/export, byte/tracer, packed firmware/helper, native host test). Final R13 host commit pending; these are not already in main. | Queued packed API plus new 1..32-byte preload API/firmware. `test/model/test_spi_packed.py`, new `test_spi_preloaded.py`, and focused serialized-host native test. Files/normal native command become available with Pulse prerequisites. Final API/model/native results pending. |
-| Kepler UART / `team/20261011-sol-kepler` | Worker reports **main `41fab1b` only**; no historical Kepler USB/docs commit needed. Dispatch base `987e2d5`; final R13 host commit pending. | `PYTHONPATH=tools python3 -m pytest -q test/model/test_uart.py`. First focused run reported 19 pass/674266 model clocks; final full-file run pending. Standalone RX unchanged at that report; no bridge-tail rewrite implied. |
-| Euclid checkout check / `team/20261011-sol-euclid` | Lead verified branch chain `38fa52b` → `fb4d90a` → `37926fe` → `8644940` → `086d81d` → `80f39b6`. Last commit is the five-file fetch/ownership predecessor `80f39b6628e09dba4584e2bca7ee38dfa3553d45`; ship it with the portability follow-up. Final R13 host commit pending; historical checker portability is not implied. | New checkout-local prepare/check entrypoint under `formal/lean/`, installed Lean 4.28/Icarus, fresh output. Final maintained command and isolated-copy regression pending. Saved C10 result: 132 positive rows, 175 RTL clocks, mutant detected at clock 29; this is historical finite evidence, not a new portability pass. |
-| Forge docs/tools / `team/20261011-sol-forge` | Shipping patch (physical-default sentence, generator regression, this checklist) depends only on main `41fab1b`; final host commit pending. Separate historical FAQ/status patch starts at `aa0820a`; its fanout CLI/test/FAQ originate in `14375cabdabae4d59a93ec8fed8cef1e22ba9172`. Do not import retired prototype/provenance commits to ship the production patch. | Three-group baseline: 111 pass, reused per lead; only modified parameter cases rerun. Missing fanout group: 23 pass. Final changed parametrized generator contract: 4 pass. Zero failures/skips/deselections; fixture/software checks only, zero model/RTL/EDA clocks. |
+| Atlas USB / Forge bundle and driver fixture | **1** `b6fdac6` → **18** `1d62eb7` → **23** `f1a313d` → **24** `5dde2a4` | USB source fixes and matching bundle reviewed/committed. Saved ACK corpus: 125 passes/1639116 model steps; two maintained driver/loader nodes: 2 passes/554241 steps, actual 2 cores/2 banks/256 words/depth8, core0/bank0 only, LS+FS loading-host idle. Earlier eight-test driver result uses default 4/4 and remains separate. No native/physical USB or concurrent core1 acceptance. |
+| Kepler UART | **2** `4519e2f` → **3** `80a28e5` → **22** `82ba9b2` | Timing regression, packed UART, then declared-length capture/helper reviewed/committed. Saved capture result: 208 passes/1662635 model steps, 19 words/76 bytes, N1..32, final STOP-sample/HALT/framing gates. No serialized-host/native UART or board acceptance. |
+| Pulse SPI | **13** `f328b02` → **14** `74583e2` → **15** `03923c9` → **16** `e4dcb87` → **17** `8f4df47` → **20** `416edf0` → **21** `7cff7d7` | All-mode export, byte scheduling/trace, queued packed API, serialized-host comparison, preload API, fixed-wait correction and measured outcome reviewed/committed. Saved native core0/mode0/div3/depth8, two 32B resident frames: 11712 paid clocks each, 288 margin to 12000; cold load 8734.5 clocks separate. Prior startup/deadline failures retained; no other-mode/length/pad/PPA claim. |
+| Euclid Lean/finite comparison | **5** `38fa52b` → **6** `fb4d90a` → **7** `37926fe` → **8** `8644940` → **9** `086d81d` → **10** `80f39b6` → **11** `28fa7d9` → **12** `dfee155` → **19** `9620901` | Finite check chain and current guide reviewed/committed. Saved normally fetched ownership: 132 positive rows/175 aggregate RTL clocks; RX-autopush: 192 positive rows/249 aggregate clocks, actual mutants detected. Manual Lean proofs and finite RTL comparisons are distinct; IN8 does not prove UART IN1 or arbitrary programs. |
+| Forge production docs/tools tests | **4** `ef192a3` | Physical-default correction and generator regression reviewed/committed. Saved three-group software baseline: 111 passes; changed generator parameter cases: 4 passes. Fixture/software evidence, zero model/RTL/EDA clocks. This checklist correction is a later docs-only delta, not part of the 24-commit snapshot. |
 
-Before integration, replace pending predecessor/commit entries with the owning
-worker's final handoff and lead receipt. Confirm each reviewed patch applies
-to the chosen main and contains only the declared paths. Do not treat a branch
-HEAD, rebase receipt or historical experiment pass as a dependency declaration
-or final acceptance.
+Use `b6fdac6` **instead of** separate `1415771` + `2f4087c`; apply successor
+`1d62eb7` after it **instead of** separate `8278342` + regenerated bundle patch.
+Never apply both component and packaged alternatives. The fixture commits
+`f1a313d` and `5dde2a4` follow the selected final USB source/bundle, even though
+their isolated branch parents differ. No historical Atlas bridge chain is needed.
 
-## Commands for the selected production tree
+Lead's saved isolated-index check applied all 24 commits and a fresh export
+passed `pe.mpy_bundle --check`: 75 files, no src/, flow/ or FPGA changes.
+That apply/bundle check adds zero model/RTL clocks and does **not** replace
+still-unrun final combined-tree dynamic regression or Claude/main integration.
+The [checklist source review]([home directory redacted]/wirelingo-team-20261011/control/resume-20261013/integration-checklist-current-review.json)
+identified this document's stale pending table and absent default fanout test.
 
-Forge's current software regression command (all four groups) is:
+The later C14 UART serial attempt is **outside this selected snapshot** and
+failed at time0 before any RTL clock, host transaction or capture, on unresolved
+initial UI observation. Keep its failed record; it provides no measured UART
+cost, native capture, service/deadline or board acceptance. A follow-up requires
+its own accepted scope, not an inferred pass from SPI or UART model results.
+
+## Maintained command references for the selected tree
+
+These are source-qualified commands from the named selected tree, **not new
+execution authorization or combined-tree pass receipts**. Run from a checkout
+of the selected inputs only after lead assigns ownership, dependencies and caps.
+Forge's default software command contains the three existing groups:
 
 ```sh
 PYTHONPATH=tools python3 -m pytest -q test/model/test_flow_tools.py \
-  test/model/test_release_evidence.py test/model/test_release_runners.py \
-  test/model/test_release_fanout_audit.py
+  test/model/test_release_evidence.py test/model/test_release_runners.py
 python3 flow/gen_config.py --preset submission --check
 ```
 
-The fanout diagnostic suite is available with Forge's separately reviewed
-`14375ca` tool; skip its command until that prerequisite is present rather
-than treating a missing file as a pass. The main-only shipping patch can use
-the first three existing groups.
+The existing focused generator contract is
+`test/model/test_flow_tools.py::test_submission_clock_defaults_and_overrides_keep_geometry`.
+These software tests use temporary fixtures/mocked processes, not Docker/SSH/EDA.
+Historical `test_release_fanout_audit.py` is **absent** from the selected tree;
+its tool/test prerequisite is unselected `14375cabdabae4d59a93ec8fed8cef1e22ba9172`.
+It is optional historical evidence, not part of the default command or a reason
+to import retired prototype/provenance work. A missing suite is not a pass.
 
-The R13 worker reused the already passing 111-test first three groups, ran
-only the missing fanout suite, then reran the four cases in the modified test:
+Maintained UART model commands, after the selected UART chain:
 
 ```sh
-PYTHONPATH=tools python3 -m pytest -q \
-  test/model/test_flow_tools.py::test_submission_clock_defaults_and_overrides_keep_geometry
+PYTHONPATH=tools python3 -m pytest -q test/model/test_uart.py \
+  test/model/test_uart_packed.py test/model/test_uart_capture.py
 ```
 
-Those tests create temporary synthetic candidates and fake make/precheck
-processes. They exercise real runner/parser software and rejection paths but
-launch no Docker, SSH, compiler, OpenROAD or physical tool. No nonlocal case
-needed deselection. Historical private-fixture Tcl mocks are not part of this
-four-group command and are not native integration evidence.
+See [UART timing/capture contracts](uart-rx-timing.md) for finite baud/phase,
+framing, normal rearm, under-supply and host-service boundaries. This combined
+command was not executed by this docs ticket; saved per-candidate results do
+not establish a new whole-tree result.
 
-For Atlas, after its reviewed new test is available, relevant commands are:
+Maintained USB model references, after the packaged USB and fixture changes:
 
 ```sh
 PYTHONPATH=tools python3 -m pytest -q test/model/test_usb_ack.py
+PYTHONPATH=tools python3 -m pytest -q \
+  test/model/test_micropython_driver.py::test_bringup_usb_enum_enumerates_alone \
+  test/model/test_micropython_driver.py::test_bundle_usb_enum_matches_the_loader
 PYTHONPATH=tools python3 -m pytest -q test/model/test_usb_autonomous.py \
   test/model/test_usb_fs.py
 ```
 
-Use Atlas's final documented selectors/budget when running these model cases;
-Forge did not run them. Kepler's maintained command is in the table. Pulse's
-final native invocation and Euclid's checkout command remain pending; copy
-those from their accepted docs rather than inventing an environment or
-historical absolute-path requirement.
+Only the ACK corpus and two driver nodes above have the cited new 2/2 fixture
+results. Default geometry in other suites is not silently overridden. Tests use
+software transport/cycle models; retain loading-host idle guards and ordinary
+loader equality. Read [USB enumeration](usb-enumeration.md) and
+[full-speed limits](usb-full-speed.md); no native or board pass follows.
 
-When a patch touches a newer protocol, select its existing corresponding
-regression: `test/model/test_dmx512.py`, `test_lin.py`, `test_nec.py`,
-`test_i2s.py`, `test_wiegand.py`, `test_dshot.py` or `test_dshot_bidir.py`.
-These files are present in current main; no R13 Forge pass is claimed for them.
-The reusable top-level commands are documented in [test/README.md](../test/README.md).
-This list is not a request for a broad all-protocol replay.
+Maintained SPI model command and separately gated native reference:
+
+```sh
+PYTHONPATH=tools python3 -m pytest -q test/model/test_spi_preloaded.py \
+  test/model/test_spi_packed.py
+python3 test/test_spi_preloaded_host.py --output /tmp/spi-preloaded-fresh
+```
+
+The native command needs separately qualified installed cocotb/Icarus/Python
+and a fresh/empty isolated output, with lead-owned execution/caps. See
+[SPI host contract](spi-packed-host.md) for exact core0/mode0/div3, synchronized
+MISO16, host SCK8 system clocks, fixed3120-clock wait and two-message limits.
+A displayed command or preflight is not an executed native result.
+
+Maintained Lean/fetched-RTL references, using **already installed** executable
+paths substituted for placeholders (Lean4.28.0, Icarus/vvp, strace):
+
+```sh
+python3 formal/lean/run_fetch_ownership.py --output /tmp/wirelingo-ownership-check \
+  --lean /path/to/lean4.28.0/bin/lean --iverilog /path/to/iverilog \
+  --vvp /path/to/vvp --strace /path/to/strace
+python3 formal/lean/check_rtl_rx_autopush.py --phase all \
+  --output /tmp/wirelingo-rx-autopush-check \
+  --lean /path/to/lean4.28.0/bin/lean --iverilog /path/to/iverilog \
+  --vvp /path/to/vvp --strace /path/to/strace
+```
+
+Each output must not exist, even if empty; parent must exist, outside source
+and Lean library. No elan shim, download, Lake or stale campaign objects.
+[Current Lean guide](lean-verification.md) states installed library/tool identity,
+receipt gates, manual theorem domains and finite/mutant limits; its
+[history](lean-verification-history.md) retains earlier failures. Lead coordinates
+native ownership/caps separately. This docs correction runs no Lean/RTL tools.
+
+For changes to other current protocols, select the existing corresponding
+regression: `test/model/test_dmx512.py`, `test/model/test_lin.py`,
+`test/model/test_nec.py`, `test/model/test_i2s.py`, `test/model/test_wiegand.py`,
+`test/model/test_dshot.py` or `test/model/test_dshot_bidir.py`.
+See [test commands](../test/README.md). Presence does not claim a Forge pass or
+authorize a broad replay. Combined dynamic regression remains explicitly pending.
 
 ## What needs fresh physical work
 
