@@ -28,7 +28,7 @@ from test_spi_packed_host import (CLK_NS, MOSI, SCK, CS, MISO, ObservedSpi,
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / 'firmware/spi_master_preloaded_once.pasm'
 SALTS = [(0xA5, 0x6D), (0x39, 0xD3)]
-WAIT_CLOCKS = 4096
+WAIT_CLOCKS = 3120
 DEFAULT_ENTRIES = ('cocotb_tools._coverage:start_cocotb_library_coverage',
                    'cocotb.logging:_configure',
                    'cocotb._init:init_package_from_simulation',
@@ -182,6 +182,10 @@ async def message(dut, spi, monitor, ledger, row, save, salts):
                    transactions=spi.transactions[first_tx:], observation_end_ps=now_ps())
         task.cancel()
         save()
+    # Persist complete protocol/timing evidence before deadline acceptance.
+    assert row['deadline_slack'] >= 0, (
+        '12000-clock resident deadline missed', row['resident_system_clocks'],
+        row['deadline_slack'])
 
 
 @cocotb.test()
