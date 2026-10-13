@@ -11,7 +11,7 @@ setup() needs the TT SDK; the other functions only need a ProtoEmu, so they
 also run against the model (test/model/test_micropython_driver.py).
 """
 import protoemu_fw as fw
-from protoemu import ProtoEmu, A_ID, ST_HALTED, ST_FAULT
+from protoemu import ProtoEmu, A_ID, A_FSET, A_FCLR, C_R0, ST_HALTED, ST_FAULT
 
 PROJECT = "tt_um_josusanmartin_protoemu"
 ID = 0x50450002
@@ -110,6 +110,35 @@ def usb_setup(pe, variant="line"):
         pe.write(usb_device.sim.A_LINECFG, 0x49F3)
     pe.start(1 if variant == "line" else 3)
     return usb_device.DeviceSoftware(pe, rx, usb_device.DESCRIPTORS, tx_core=tx)
+
+
+def usb_enum(pe, speed="low"):
+    """The autonomous USB device: after this load the chip enumerates on its own,
+    with no further host-port traffic. 48 MHz project clock. Low speed: D+ on
+    uio0, D- on uio1, 1.5k from D- to 3.3 V. Full speed: D- on uio0, D+ on
+    uio1, 1.5k from D+ to 3.3 V. 27 ohm in series with each line. Connect the
+    pull-up (or plug the cable in) after this call returns; read the outcome
+    with usb_enum_state(pe).
+    """
+    image = {"low": fw.USB_ENUM_LOW, "full": fw.USB_ENUM_FULL}.get(speed)
+    if image is None:
+        raise ValueError("USB speed must be low or full")
+    pe.stop(3)
+    pe.clear_fifos(3)
+    pe.write(A_FCLR, 0x7F)
+    for addr, words in image["writes"]:
+        pe.write(addr, words)
+    pe.start(1)
+
+
+def usb_enum_state(pe):
+    """The device's address and whether it is configured (pe.usbenum.state)."""
+    flags, filt = pe.read(A_FSET), pe.read(pe.core_reg(0, C_R0 + 3))
+    a, addr = filt >> 9, 0
+    for i in range(7):                  # the token filter holds the address bit-reversed
+        addr |= ((a >> i) & 1) << (6 - i)
+    return dict(address=addr, configured=bool(flags >> 5 & 1),
+                pending_address=bool(flags >> 1 & 1), stalled=bool(flags & 1))
 
 
 def eth10_receive(pe, timeout_us=100000, max_frames=1):

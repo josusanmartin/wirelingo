@@ -4,7 +4,8 @@ This file is used to generate the project datasheet.
 
 ## How it works
 
-protoemu is a programmable protocol emulator: small processor cores built for
+Wirelingo (repository name protoemu) is a programmable protocol emulator:
+small processor cores built for
 bit-banging, which implement serial protocols in firmware instead of fixed
 logic. Each core executes one 32-bit instruction per tick and has:
 
@@ -28,12 +29,19 @@ real protocols fit:
   and FIFO state.
 * Per-pin open drain, direct single-pin control on any pin, virtual pins and
   global flags for coordinating cores.
+* CALL/RET with one link register, a WAIT until masked pins differ from a
+  register, and a per-pin bypass of the input synchroniser.
+* A line unit on core 0 for NRZ, NRZI and Manchester framing with bit
+  stuffing, sampled mid-bit on a half-cycle phase so that full-speed USB
+  tolerates the specification's edge jitter.
 
 The firmware verified in simulation covers UART TX/RX, SPI master, I2C master
-(with clock stretching), a low-speed USB device (up to full enumeration, with
-the CRC16 checked by the CRC tap), a 10BASE-T transmitter (at 40 MHz, with
-link pulses), CAN 2.0A TX/RX, an SWD debug probe, a JTAG engine, 1-Wire,
-PS/2, WS2812 and an I2C sniffer.
+(with clock stretching), USB devices at low and full speed (48 MHz), including
+one that enumerates on its own with no host traffic after the load, a
+10BASE-T transmitter (at 40 MHz, with link pulses) and receiver, CAN 2.0A
+TX/RX, an SWD debug probe, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
+DMX512, LIN, NEC infrared, I2S, Wiegand and DShot600 (also bidirectional).
+None of it has run on silicon yet.
 
 The full specification is in `docs/isa.md` in the repository.
 
@@ -60,7 +68,8 @@ bringup.uart_tx(pe, b"hi\r\n")  # 115200 8N1 on uo[0]
 ```
 
 `protoemu_fw.py` holds assembled programs (UART, SPI, I2C, WS2812, USB, 10BASE-T TX)
-ready for `pe.load(**PROGRAM)`. Assemble your own with `tools/pe/asm.py`.
+ready for `pe.load(**PROGRAM)`, and the autonomous USB device for
+`bringup.usb_enum(pe, "low")` or `"full"` (wiring below). Assemble your own with `tools/pe/asm.py`.
 Clock per demo: 48 MHz for UART/I2C/SPI/USB, 40 MHz for 10BASE-T
 (`bringup.setup(40_000_000)`, then `pe.eth10_send(core, frame)`).
 The optional [PIO/DMA transport](board-transport.md) keeps the same driver
@@ -83,6 +92,16 @@ derived from the specifications, not yet validated on silicon):
   payload words, then a trailer with the bit count in [31:16], the reversed
   PID in [15:8], [7] = 1, SETUP association in [1] and CRC/PID good in [0]
   (`firmware/usb_ls_rx.pasm`).
+* **Autonomous USB device (low or full speed):** 48 MHz project clock, 27 Ω in
+  series with each line. Low speed: D+ on `uio[0]`, D- on `uio[1]`, 1.5 kΩ from
+  D- to 3.3 V. Full speed: D- on `uio[0]`, D+ on `uio[1]`, 1.5 kΩ from D+ to
+  3.3 V. Call `bringup.usb_enum(pe, speed)`, then connect the cable; the chip
+  answers the PC's enumeration by itself (vendor ID 0x1209, product 0x5634,
+  one configuration, no data endpoint), and `bringup.usb_enum_state(pe)` reads
+  the address and Configured state afterwards. Tested in RTL and
+  timing-annotated gate-level simulation and in simulation of the KV260 FPGA
+  build; it has not yet enumerated on a real PC, and full-speed signalling
+  through the chip's pads is unmeasured.
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
   nominal pins swing ±3.3 V differentially. The proposed 15–20 Ω series

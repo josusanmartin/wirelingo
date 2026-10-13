@@ -228,3 +228,37 @@ def test_board_modules_avoid_cpython_only_features():
     for f in sorted(root.glob("*.py")):
         hits = [m.group(0) for m in bad.finditer(f.read_text())]
         assert not hits, (f.name, hits)
+
+
+def test_bringup_usb_enum_enumerates_alone():
+    """bringup.usb_enum() loads the autonomous USB device through the driver
+    (bundle bursts over the SPI port model); the chip then enumerates with the
+    host transport idle, at both speeds, and usb_enum_state() reads the same
+    outcome as pe.usbenum.state."""
+    import pytest
+    from pe import usbenum
+    from pe.usbfs import FsControlHost
+    from pe.usbhost import ControlHost
+    import test_usb_autonomous as ua
+    for speed in ("low", "full"):
+        mh = ModelHost()
+        pe = protoemu.ProtoEmu(FakeTT(mh))
+        bringup.usb_enum(pe, speed)
+        mh.pull_up = 0b10
+        mh.step(100)
+        h = ControlHost(mh) if speed == "low" else FsControlHost(mh, ipd_bits=2.0, ack_bits=2.0)
+        with ua.TransportIdle(mh):
+            ua.enumerate_flow(h, addr=5)
+        got = bringup.usb_enum_state(pe)
+        assert got == ua.CONFIGURED(5), (speed, got)
+        assert got == usbenum.state(pe.read)
+    with pytest.raises(ValueError):
+        bringup.usb_enum(protoemu.ProtoEmu(FakeTT(ModelHost())), "high")
+
+
+def test_bundle_usb_enum_matches_the_loader():
+    """The bundle's bursts replay exactly pe.usbenum.load_writes (no start)."""
+    from pe import usbenum
+    for speed, image in (("low", protoemu_fw.USB_ENUM_LOW), ("full", protoemu_fw.USB_ENUM_FULL)):
+        flat = [(a + i, w) for a, ws in image["writes"] for i, w in enumerate(ws)]
+        assert flat == usbenum.load_writes(usbenum.assemble(speed), speed, start=False)
