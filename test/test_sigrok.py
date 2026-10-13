@@ -196,7 +196,8 @@ async def sigrok_usb_ls_device(dut):
 async def sigrok_usb_fs_device(dut):
     """test_usb_fs_device at 48 MHz: D+ = uio1, D- = uio0. The control
     transaction, then 24 OUT + DATA0 pairs at the spec's DCD jitter (all must
-    be ACKed) and 24 at DCD 14 ns (the signed-off receiver misses some)."""
+    be ACKed) and 24 at DCD 14 ns (the half-cycle NRZI sample point takes
+    them all, as test_usb_fs_device asserts)."""
     rec = await run_recorded(dut, T.test_usb_fs_device)
     pk, err = sigrok.usb(rec.trace, "uio1", "uio0", "full-speed", keep=keep("usb_fs"))
     s = usb_summary(pk)
@@ -217,7 +218,7 @@ async def sigrok_usb_fs_device(dut):
         i += 3 if acked else 2
     spec, wide = bursts[:24], bursts[24:]
     dut._log.info(f"sigrok: DCD 9.25 ns {sum(spec)}/{len(spec)} ACKed, DCD 14 ns {sum(wide)}/{len(wide)}")
-    assert len(bursts) == 48 and all(spec) and not all(wide)
+    assert len(bursts) == 48 and all(spec) and all(wide), (spec, wide)
     assert all(p.crc_ok for p in pk) and not err, err
     check_host_port(dut, rec, "usb_fs")
 
