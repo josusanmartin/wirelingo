@@ -242,6 +242,23 @@ def test_bus_reset_mid_enumeration(speed, when):
     assert usbenum.state(mh.read) == CONFIGURED(9)
 
 
+@pytest.mark.parametrize("offset", range(6))
+def test_bus_reset_at_any_phase(offset):
+    """A bus reset starting at any clock relative to the device's return to
+    idle is seen. The idle loop used to wait for a packet with `wait fall DM`,
+    which misses an SE0 that began up to 2 clocks before it (offsets 1 and 2
+    failed); `wait 0 pin DM` catches it. Found by docs/v3-study.md."""
+    mh, h = device("full")
+    with TransportIdle(mh):
+        h.control_write(0, bytes([0x00, 5, 5, 0, 0, 0, 0, 0]))
+        h.control_write(5, bytes([0x00, 9, 1, 0, 0, 0, 0, 0]))
+        mh.step(offset)
+        h.bus_reset(**SHORT_RESET)
+        h._send(usb.token(usb.PID_IN, 5, 0))
+        assert h._response() is None                    # back at the default address
+    assert usbenum.state(mh.read)["address"] == 0
+
+
 @pytest.mark.parametrize("speed", SPEEDS)
 def test_bus_reset_unconfigures(speed):
     mh, h = device(speed)

@@ -122,8 +122,10 @@ idle:
     ldi r0, 120                    ; 2.5 us of SE0 is a bus reset
     wait 1 pin DM timeout r0
     jmp t, se0
-    wait fall DM                   ; a packet (any fall in its SYNC will do: the
+    wait 0 pin DM                  ; a packet (any K in its SYNC will do: the
     jmp !pin DP, idle              ; line unit queues from its first edge), or SE0
+                                   ; (a level: `wait fall` missed an SE0 that began
+                                   ; within 2 clocks before it, i.e. a bus reset)
     in line, 16                    ; SYNC + PID
     jmp t, idle
     mov r0, ::isr                  ; 0x100 | rev8(PID) when the SYNC is right
