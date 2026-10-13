@@ -138,6 +138,20 @@ tool substitutes in the Python tests verify failure handling only; they are
 not chip validation. The runners' real artifact results must be recorded
 separately.
 
+## Recorded release: fo6 with software d916d40 (2026-10-13)
+
+Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`), validation root
+`d916d40`. Seven receipts: functional GL (29/29), SDF standard and v2 sets,
+autonomous USB enumeration (low and full speed) with SDF at typ, slow and
+fast at 20.834 ns, and precheck. `release_check.py` with all of them:
+`RELEASE PASSED (SDF profile v2, slow target 50 MHz)`, no waiver. Run ci7, a
+capped clean checkout of `d916d40`, reproduces the netlist and the
+timestamp-normalized GDS. The archive
+`wirelingo-release-evidence-d916d40-fo6.tar.gz` (sha256 `51da7962…`, 400
+payload files) keeps every hashed input and result, the logs, the verdict
+and the source bundle; the 93c2137 + t48ba archive (strict gate failing on
+one fanout item) is kept for history.
+
 ## Limits
 
 Receipts are local records, not cryptographic signatures or protection against

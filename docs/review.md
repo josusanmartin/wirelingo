@@ -67,6 +67,6 @@ tests now cover each fix. Finding codes are the review's.
 * A formal equivalence check of the RTL against the synthesized netlist. LVS
   compares layout with netlist; gate-level simulation covers only the cases
   the tests exercise.
-* The release candidate's one remaining exception (a fanout count of 11
-  against 8, of which 4 are antenna diodes) awaits an explicit decision:
-  waive it with that reason, or remove it.
+* Closed 2026-10-13: the last electrical exception (a fanout count of 11
+  against 8, of which 4 were antenna diodes) was removed, not waived. Run fo6
+  passes `flow/release_check.py` with no waiver.

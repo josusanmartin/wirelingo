@@ -23,8 +23,10 @@ diodes within the fanout limit (see "Antenna diodes and the fanout limit"
 below). It passes signoff and the physical part of
 `flow/release_check.py` with no exception at any corner: 50 MHz setup and
 hold everywhere, no slew, capacitance or fanout violation. Everything up to
-detailed routing is t48ba's, bit for bit; its GL, SDF and precheck receipts
-are still to be made. A run is a commit:
+detailed routing is t48ba's, bit for bit. With software `d916d40` (`main`,
+2026-10-13) as the validation root, `flow/release_check.py` passes with no
+waiver: `RELEASE PASSED (SDF profile v2, slow target 50 MHz)`. A capped
+clean checkout of `d916d40` reproduces it (run ci7). A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -474,12 +476,19 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 `a94a948b70591b221be4e272ab4aaaa9a2f636e073676fa98657e12475330f81`, GDS
 `e67697034da6cd34acb16c7ab6c0f85dc6d752fdc755439e6bdd21d872ac0707`;
 runner1:~/protoemu-flow/protoemu-exp-fo6). t48ba plus one buffer that keeps
-net3483 within the fanout limit; `flow/release_check.py` passes every
-timing and electrical item at every corner and lacks only the GL, SDF and
-precheck receipts for this netlist. Run fo7 (the docs commit de39d45 on top,
-same `gen_config.py` defaults) reproduced it: the same netlist, and the
-same GDS once the timestamps in its BGNLIB/BGNSTR records are zeroed
-(`5e0e3c6e…` for both).
+net3483 within the fanout limit. `flow/release_check.py --validation-root`
+`d916d40` passes with no waiver (2026-10-13): every timing and electrical
+item at every corner, and receipts for this netlist: functional GL 29/29
+(main suite 25, compiled PIO 2, Ethernet capture 2), the SDF standard set
+and v2 set at typ/slow/fast with the overclocked control failing as
+required, autonomous USB enumeration at low and full speed with real
+delays at all three corners (48 MHz; the firmware with the bus-reset fix),
+and Tiny Tapeout's precheck of this GDS. Run fo7 (the docs commit de39d45
+on top, same `gen_config.py` defaults) and run ci7 (a clean checkout of
+`main` at `d916d40`, container capped to 4 CPUs and 16 GB, 1 h 46 min)
+reproduced it: the same netlist, and the same GDS once the timestamps in
+its BGNLIB/BGNSTR records are zeroed (`5e0e3c6e…` for all three; the same
+normalization gives t48ba's recorded `23f7538c…`).
 
 **Previous candidate: t48ba** (netlist sha256 `e400fa30c291f653…`, GDS
 `8899bc154fc3975a…`; 47 % stdcell utilization, 53 % with the macros;

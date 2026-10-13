@@ -24,15 +24,17 @@ describes how, and what it caught.
 
 **Where it stands:**
 
-* **Release candidate: run t48ba** (software `93c2137`). 50 MHz is met at all
-  three corners, slow included; hold is met everywhere (fast corner +0.095 ns);
-  DRC, LVS and antenna are clean and there are no slew or capacitance
-  violations. A clean checkout rebuilt on a 4-CPU machine reproduces its
-  netlist and GDS bit for bit. Hash-bound receipts: Tiny Tapeout precheck, all
-  29 top-level tests at gate level, and timing-annotated (SDF) gate level at
-  all three corners ([docs/release-evidence.md](docs/release-evidence.md)).
-  One exception remains: a net with 7 cell loads and 4 antenna diodes counts
-  11 against the IHP cells' fanout limit of 8 ([docs/physical.md](docs/physical.md)).
+* **Release candidate: run fo6** (software `d916d40`), passing the strict
+  release gate with no waiver. 50 MHz is met at all three corners, slow
+  included; hold is met everywhere (fast corner +0.095 ns); DRC, LVS and
+  antenna are clean, with no slew, capacitance or fanout violation at any
+  corner. A clean checkout rebuilt on a 4-CPU machine reproduces its netlist
+  and GDS bit for bit. Hash-bound receipts: Tiny Tapeout precheck, all 29
+  top-level tests at gate level, and timing-annotated (SDF) gate level at all
+  three corners ([docs/release-evidence.md](docs/release-evidence.md)). The
+  last exception of the previous candidate, t48ba (antenna diodes taking a
+  net to 11 loads against the IHP cells' fanout limit of 8), is removed by a
+  flow step that buffers such nets after routing ([docs/physical.md](docs/physical.md)).
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
@@ -167,7 +169,7 @@ make -C formal                                                   # proofs
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs, the line unit and the quad host port; 44 % standard-cell
   utilization, 50 % with the macros.
-* **Run t48ba passes signoff** (`flow/signoff.py`): 0 routing violations,
+* **Run fo6 passes signoff** (`flow/signoff.py`): 0 routing violations,
   0 KLayout DRC, LVS clean, 0 antenna violations. Setup is met at 50 MHz at
   all three corners, hold everywhere (+0.19 / +0.36 / +0.095 ns typ / slow /
   fast), and no slew or capacitance violation at any corner. 47 % standard-cell
@@ -177,9 +179,11 @@ make -C formal                                                   # proofs
   pin registers' clocks are delayed, clock branches respect the cells' fanout
   limit, and repair runs with electrical margins.
 * The stricter `flow/release_check.py` (zero electrical exceptions, actual
-  50 MHz timing at every corner, receipts for this exact netlist) verifies
-  every receipt and fails on exactly one thing: one net (7 cell inputs + 4
-  antenna diodes, 11 against a limit of 8), at every corner, unwaived.
+  50 MHz timing at every corner, receipts for this exact netlist) passes with
+  no waiver. Detailed routing's antenna repair runs after every resizer step
+  and its diodes count as loads; the project's routing step re-routes nets
+  they take over the fanout limit behind one buffer (t48ba, the previous
+  candidate, had one such net).
 * Its netlist passes all 29 top-level tests at gate level (main suite 25,
   compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
   typ, slow and fast at the claimed clocks, with an overclocked control that
@@ -190,7 +194,7 @@ make -C formal                                                   # proofs
   the current RTL routable ([docs/physical.md](docs/physical.md)).
 * [External review](docs/review.md): the bugs an independent review found and
   how they were fixed and tested. `flow/gen_config.py --check` verifies that
-  `src/config.json` is the generator's (t48ba's settings).
+  `src/config.json` is the generator's (fo6's settings).
 * [Optional board transport](docs/board-transport.md): RP2350 PIO/DMA quad
   SPI; board throughput and sampling margin remain unmeasured.
 * [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service
