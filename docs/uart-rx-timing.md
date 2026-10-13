@@ -261,3 +261,155 @@ single baseline comparison, setup and post-deadline reads; zero native/EDA/
 runner jobs. One candidate/implementation iteration sufficed. The unchanged
 23-test byte-UART suite was not rerun. These source/model results are pending
 host commit and Claude integration; the new tests/docs require R13 first.
+
+## Declared-length capture: complete 1..32-byte results
+
+`firmware/uart_rx_capture.pasm` adds an optional **declared-length** mode.
+The application supplies N in 1..32 and arranges the wire START after arming;
+this is not idle-delimited packet inference or unconditional acquisition of
+an already running stream. The image uses **19 words/76 bytes**, six words
+more than continuous packed RX. One core/RX pin/F0 and the existing RX FIFO
+are used, with R1 and R2 additionally holding N and N mod4. No extra SRAM,
+metadata FIFO word, ISA, bundle or hardware change is needed.
+
+Nonfinal frames preserve the eight-tick interface and data/STOP/rearm
+schedule. The old D70/D71 padding slots now decrement R1 and test whether
+this is the final frame. After the final D76 STOP **sample**, the program
+pushes a partial group if required and executes HALT. Exactly ceil(N/4)
+words are emitted: complete groups remain little endian; a final 1..3-byte
+group is **high aligned** with zero low padding. N32 still occupies exactly
+8 FIFO words. Earlier complete words may appear before STOP validation;
+word availability alone is not whole-capture completion.
+
+### Paid setup and completion API
+
+`tools/pe/uartcapture.py` provides pure `capture_plan` and `decode_capture`.
+Load/configure the image separately while core0 is disabled, using the
+ordinary assembler/loader with RX defined and the same divider/IN_BASE.
+Before each arm/rearm, read core0 STATUS and the current enable mask:
+**both target FIFOs must be empty and core0 must be stopped/HALT or disabled**.
+Do not silently clear leftovers. F0 belongs to this workload; an independently
+running peer must not use it. Keep its enable bit when supplying the current
+`enabled_before` mask.
+
+```python
+from pe.uartcapture import capture_plan, decode_capture
+
+# After ordinary stopped/disabled + empty-FIFO checks and cold image load:
+writes = capture_plan(N, core=0, enabled_before=current_enable_mask)
+# Send each (address, value) through the ordinary bus transport.
+# Arrange the known N-byte input only after that start API has returned.
+# Later read STATUS: require HALT, no fault, exactly ceil(N/4) RX words.
+# Read F0 before deciding whether framing is acceptable, then drain normally.
+raw_bytes = decode_capture(N, rx_words)
+```
+
+All numeric arguments are validated before a plan is returned: core0 only,
+plain integer N1..32 and enable mask 0..3. Its five writes disable core0 while
+preserving the peer enable, pay R1=N/R2=N mod4, write **FCLR1 only**, and
+restart/start core0. No peer registers, other flags, program/configuration
+or FIFO words are written. This costs five register data words/20 data bytes,
+excluding transport framing. The test caller additionally pays two ordinary
+precondition reads; arm costs 9 direct-model clocks. Cold loading costs 25
+writes (19 instruction +6 configuration). These are bus operations, not a
+serialized SPI/native performance measurement.
+
+The strict decoder requires exactly ceil(N/4) uint32 words, rejects invalid
+length/count/type/range and nonzero low padding in the final partial word.
+It preserves complete little-endian groups and extracts only the high-aligned
+tail. For N3, `55ff0000` decodes to `00 ff 55`; for N5, complete word
+`aa55ff00` plus tail `5a000000` decodes to `00 ff 55 aa 5a`.
+Valid-format data corruption requires a payload oracle; decoder success
+alone is neither completion nor framing acceptance.
+
+After the fixed test deadline, ordinary reads obtain STATUS, F0, the expected
+FIFO words and empty STATUS. A completed capture pays ceil(N/4)+3 final
+read transactions: 9 model clocks for one word, 30 for eight. HALT/no fault
+and exact occupancy gate drain/decoding. F0 is read after HALT. Core1 stays
+disabled in these model flows; all four enable masks are covered by pure
+plan tests. Live peer execution is not claimed, and no peer register/flag
+setup is used to manufacture preservation.
+
+### Independent pin cases and measured boundaries
+
+Run only the new maintained tests (prerequisite: C11 `80a28e5`, after R13):
+
+```sh
+PYTHONPATH=tools python3 -m pytest -q test/model/test_uart_capture.py
+```
+
+Every timeline is precomputed before enabling: 48 MHz, 115200 8N1, absolute
+START4096+phase, rational true-baud offsets and two-flop input age. Inputs
+advance during setup and later reads. No PC/ISR/FIFO/flag observation drives
+edges or schedules service. No loading-host API or write/snap/commit/cancel
+strobe occurs from ordinary start return to offered-source-end+1024 clocks.
+That deadline includes extra offered frames/breaks and is fixed before arm.
+Normal host reads after it are paid and logged.
+
+Nominal N1/3/4/5/31/32 use the fixed C11 pattern truncated to N, followed by
+an extra complete `aa` frame. All return the exact N bytes/ceil(N/4) words,
+HALT/no fault, F0clear and no residual FIFO after ordinary drain. Extra frames
+are physically offered but generate no START/data/STOP acquisition or words.
+N32 additionally covers the other seven C11 true-baud/phase/jitter settings:
+ideal -3%/nominal/+3% at phases0/51 (nominal0 already counted), plus +3%
+at both phases with alternating +/-2-clock duration jitter.
+
+| N32 true baud | Phase | Jitter | Minimum data-source margin | Minimum STOP-source margin |
+|---|---:|---:|---:|---:|
+| -3% | 0 | ideal | 107 clocks | 94 clocks |
+| -3% | 51 | ideal | 106 clocks | 92 clocks |
+| nominal | 0 | ideal | 157 clocks | 157 clocks |
+| nominal | 51 | ideal | 156 clocks | 156 clocks |
+| +3% | 0 | ideal | 47 clocks | 36 clocks |
+| +3% | 51 | ideal | 48 clocks | 36 clocks |
+| +3% | 0 | +/-2 clocks | 49 clocks | 36 clocks |
+| +3% | 51 | +/-2 clocks | 50 clocks | 36 clocks |
+
+All declared START/data/STOP observations remain in their offered windows,
+including the last byte; data/STOP source times are strictly interior.
+HALT follows the final STOP sample by 104 clocks for nominal complete groups,
+156..157 for good partial groups,156 for bad N4,209 for bad N3. Nominal
+first-START-to-HALT is 4167 clocks for N1,12501 for N3, 16615 for N4, 20834
+for N5, 129164 for N31 and 133279 for N32. These are local model observations,
+not all-phase/arbitrary-jitter/electrical timing guarantees.
+
+**Completion refers to the final STOP sample, not its physical end.** In
+selected good N32 cases HALT occurs 220 clocks before to 29 clocks after the
+physical STOP end. The final partial PUSH is after the final STOP sample;
+the final full-group autopush is 416..417 clocks before it. Earlier words
+must therefore wait for whole-capture HALT and framing checks before being
+treated as an accepted result.
+
+### Errors, rearm and under-supply
+
+Final bad STOP at N3/N4 retains exact suspect bytes. Twelve continued low
+bit periods, two high idle bits and an extra complete frame produce no extra
+words. Sticky F0 is set **before HALT**, not cleared to pass. F0 is capture
+error information, not per-byte validity metadata; raw decoding still returns
+suspect data for the caller's policy.
+
+A normally rearmed N32→N3 pair uses one cold capture-image load, no reset or
+reload, and complete ordinary draining between arms. The first N32 ends with
+bad STOP to set F0. The second, distinctly patterned `39 d3 81`, starts at
+predeclared cycle 200000 and returns `81d33900`. F0 rises 137323 before first
+HALT137427, is cleared only by the paid FCLR1 write at 142657, and remains
+clear at second HALT212449. Both captures use fixed deadlines and ignore
+their extra complete frames. No stale words are silently discarded.
+
+An under-supply test declares N5 but offers only four bytes. At the fixed
+idle deadline the receiver is still waiting, R1=1, HALT/fault both clear,
+and one early full word is available. The completion gate does not drain or
+decode it as an N5 result. There is no timeout, idle flush or fabricated
+partial completion. The application must arrange enough input or explicitly
+manage an abandoned capture; a cancellation API is outside this mode.
+
+All **208 tests** passed across two focused selections: 197 in 16.34s and 11
+in 54.59s, using **1662635 / 3000000** counted Chip.step calls, including
+load, setup, final reads and rearm. There are 191 pure controls and 17 model
+tests (17 instances/18 capture episodes, including under-supply). One source
+iteration sufficed; no correction selection or native/RTL/EDA/runner work
+was needed. The unchanged byte/packed UART suites were not replayed.
+Declared lengths/start arrangement, empty target FIFOs, F0 ownership and
+these finite wire cases are the supported contract. Full-FIFO losslessness,
+spontaneous packet acquisition, serialized host throughput and physical/pad
+qualification remain outside it. Host commit/Claude integration are separate.
