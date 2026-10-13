@@ -100,6 +100,9 @@ def _eval(expr, defs, lineno):
     e = re.sub(r"(?<![0-9a-fA-FxXbB])[A-Za-z_][A-Za-z_0-9]*", sub, expr)
     if not re.fullmatch(r"[0-9a-fA-FxXbB_+\-*/%()<>|&~ ]*", e) or not e:
         raise AsmError(f"line {lineno}: bad expression '{expr}'")
+    # `/` is integer (floor) division, as in other assemblers: a/2 and a - a/2
+    # then always add up to a (truncating each half of a float lost a clock)
+    e = e.replace("//", "/").replace("/", "//")
     try:
         return int(eval(e, {"__builtins__": {}}, {}))
     except Exception as ex:
