@@ -53,7 +53,7 @@ occupancy, not a speed comparison:
 |---|---|---|
 | UART over virtual pin 24 | TX 4 + RX 13 / two cores | Generated bundle loaded via RTL SPI; 53 bytes in 4.639 ms simulated, including a 187.5-us service stall |
 | USB without line unit | RX 143 + TX 49 / two cores | Concurrent SPI service, descriptors, errors, retries and bus reset |
-| USB with line unit | 119 / core 0 | Same software service and end-to-end RTL checks; core 1 remains available |
+| USB with line unit | 129 / core 0 | Same software service and end-to-end RTL checks; core 1 remains available |
 | I2C master | 71 / one core | Device-model transactions and stuck-clock recovery |
 
 The UART test demonstrates two independent programs communicating internally.

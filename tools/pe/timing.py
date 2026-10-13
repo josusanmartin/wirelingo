@@ -1380,7 +1380,7 @@ def main(argv=None):
     bad = bool(chk.errors)
     for r in results:
         print(r.report(a.v))
-        bad |= r.status != "PASS"
+        bad |= r.status not in ("PASS", "PASS (conditional)")   # conditional only when declared (reach=)
     if not results:
         print("no @deadline annotations")
     return 1 if bad else 0

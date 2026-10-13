@@ -612,7 +612,7 @@ Expected output (the kernel lines are the format Linux 6.8 prints; the port
       pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
       pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
       holding D- (pmod[1]) low: detached
-      loaded usb_enum (241 words, low speed) into core 0, CRCCTRL, line unit
+      loaded usb_enum (246 words, low speed) into core 0, CRCCTRL, line unit
       attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
     [kernel] waiting up to 20 s for 1209:5634 (no host-port access meanwhile)
       [  ...] usb 1-1.2: new low-speed USB device number 4 using xhci-hcd
@@ -645,7 +645,7 @@ outside full speed's driver-impedance window (28-44 ohm); keep the wires short.
 
 On `main` since 2026-10-13, with the USB bus-reset fix (usb_enum waits for
 D- low as a level; 241 words, one more than the transcripts recorded on
-2026-10-07). The bitstream is unchanged (no `src/` change); the Kria's
+2026-10-07; 246 since the ACK tail guard of 2026-10-13). The bitstream is unchanged (no `src/` change); the Kria's
 `~/protoemu48/{tools,firmware,fpga/kv260/host}` were refreshed from `main`
 the same day (nothing loaded), and `make -C fpga/kv260/sim` passes 5/5 with it.
 

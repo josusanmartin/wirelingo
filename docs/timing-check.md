@@ -20,7 +20,7 @@ RTL, and an interval the stimulus never produced is not covered by it.
 
 ```
 $ python -m pe.timing firmware/usb_fs_dev.pasm --defs pe.usbdev:defines
-usb_fs_dev: 131 words, CLKDIV 1+0/256 (1 tick = 1 clk)
+usb_fs_dev: 141 words, CLKDIV 1+0/256 (1 tick = 1 clk)
 deadline ack_ta (line 47): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
   bound: [5, 12] ticks = [5, 12] clk; with adjust +3..4: [8, 16] clk
   required: >= 8 and <= 26 clk  ->  PASS

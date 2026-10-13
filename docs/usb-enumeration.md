@@ -11,7 +11,7 @@ SET_ADDRESS.
 ## Bottom line
 
 **It fits on one core, at low speed and at full speed, with the same
-firmware.** `firmware/usb_enum.pasm` is 241 of core 0's 256 instruction words
+firmware.** `firmware/usb_enum.pasm` is 246 of core 0's 256 instruction words
 (36 of them the descriptors), uses the line unit, and leaves core 1 free.
 `pe.usbenum.load_writes()` is the whole host side: the program, CRCCTRL, the
 line unit's three registers and the start. From then on the host transport is
@@ -19,7 +19,7 @@ idle (the tests fail on any host bus access, and the RTL test watches CS_n,
 SCK and MOSI on the pads) until the host chooses to read the outcome: the
 address is in core 0's r3, and flag F5 means Configured.
 
-The binding constraint is **instruction memory** (15 words to spare), then
+The binding constraint is **instruction memory** (10 words to spare since the ACK tail guard; 15 before), then
 **registers** (four 16-bit registers hold the token filter, the transfer state
 and the prepared answer; every other bit of state is a global flag). Cycles
 are not the limit at low speed (32 clocks per bit). At full speed (4 clocks
@@ -297,7 +297,7 @@ GL flow would run these tests as-is).
   free to hold it, so it would be recomputed per token or kept elsewhere), its
   own toggle (a flag), and a data source: core 1 through virtual pins, or the
   host through the TX FIFO, which brings the host back for data, though not
-  for enumeration. The descriptor fits in the 15 spare words; the token
+  for enumeration. The descriptor (8 table words) fits in the 10 spare words; the token
   dispatch and data path need room made first (candidates: GET_CONFIGURATION,
   6 words; the interface/endpoint GET_STATUS range, 2; the SETUP length check,
   3).

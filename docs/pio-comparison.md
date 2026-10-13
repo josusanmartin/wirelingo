@@ -88,7 +88,7 @@ protoemu 8 ticks per bit at 800 kHz.
 | **I2C SCL held low** | SM waits forever; `pio_i2c_write_blocking` doesn't return (100 ms simulated) | error reply after 2.5 ms per command; idle after 7.6 ms; works again when SCL is freed | protoemu |
 | I2C address NACK | SM halts on `irq wait`; CPU drains, forces a JMP, clears the IRQ, sends STOP; no further bytes clocked | per-byte ACK bit to host; keeps clocking bytes already queued | PIO (stops by itself) |
 | I2C SDA held low | false ACK, "success" | false ACK, data 0x00 | neither |
-| **USB** | Pico-PIO-USB: 32 instr, 3 SMs; CPU does NRZI/stuff encoding, CRC and handshake timing (source); FS device, FS/LS host | LS device only: 119 instr on one core + line unit (or 143 + 49 on two cores); handshakes, CRC check and stuff errors in the engine | different scope; protoemu on CPU offload |
+| **USB** | Pico-PIO-USB: 32 instr, 3 SMs; CPU does NRZI/stuff encoding, CRC and handshake timing (source); FS device, FS/LS host | LS device only: 129 instr on one core + line unit (or 143 + 49 on two cores); handshakes, CRC check and stuff errors in the engine | different scope; protoemu on CPU offload |
 | **Area** | not published; "each SM ≈ a standard SPI/I2C controller" (datasheet §3.1) | 0.354 mm² std cells + 0.099 mm² SRAM, whole chip incl. host port and line unit (run g4) | not comparable |
 | **Host link** | on-chip bus, DMA up to 1 word per clock (datasheet §3.1) | external SPI: 193 Mbit/s quad (simulated, 193.6 on FPGA) | PIO |
 
@@ -209,7 +209,7 @@ clocks, at 133 MHz: 15 ns.
 | What the timeouts cost | — | 20 instructions: `ldi r3` + `jmp t` at each of the 6 SCL-release WAITs, plus an 8-instruction handler |
 
 The 71 instructions would not fit in a PIO block. That is the point of 256
-private words: this I2C master and the 119-instruction USB device both need
+private words: this I2C master and the 129-instruction USB device both need
 more than 32.
 
 ### Host traffic and bus time
@@ -401,7 +401,7 @@ benchmarked against PRU code.
      the engine. Pico-PIO-USB does these on the CPU with timing-critical busy
      waits.
 3. **Room for the program that does this.** 256 private words per core: the
-   71-instruction I2C master and the 119-instruction USB device each exceed a
+   71-instruction I2C master and the 129-instruction USB device each exceed a
    PIO block's 32 shared slots.
 
 A smaller, measured point: protoemu's UART receiver takes back-to-back frames

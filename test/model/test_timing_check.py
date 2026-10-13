@@ -631,3 +631,16 @@ def test_nonreaching_path_fails_unless_declared():
     src2 = src.replace("jmp pin 0, lost", "jmp pin 0, stop").replace("lost: jmp lost", "stop: halt")
     _, (r,) = timing.check_source(src2)
     assert r.status == "FAIL (MAY NEVER REACH)"         # a HALT on the way counts too
+
+
+def test_cli_exit_status(tmp_path, capsys):
+    """The command line exits 0 when every deadline passes, declared
+    conditional ones included (usb_fs_dev has four), and 1 on a failure."""
+    assert timing.main([str(FW / "usb_fs_dev.pasm"), "--defs", "pe.usbdev:defines"]) == 0
+    assert "PASS (conditional)" in capsys.readouterr().out
+    bad = tmp_path / "late.pasm"
+    bad.write_text("; @deadline d from=start to=end max=1\nstart: nop\nnop\nend: nop\nhalt\n")
+    assert timing.main([str(bad)]) == 1
+    undeclared = tmp_path / "lost.pasm"
+    undeclared.write_text("; @deadline d from=start to=end max=3\nstart: nop\njmp pin 0, lost\nend: nop\nhalt\nlost: jmp lost\n")
+    assert timing.main([str(undeclared)]) == 1
