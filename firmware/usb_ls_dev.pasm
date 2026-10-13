@@ -157,9 +157,16 @@ echo:                              ; our own packet comes back: drop it
     mov isr, null
     jmp echo
 got_ack:
-    in line, 8                     ; a complete extra byte invalidates the ACK
-    jmp t, ack_valid               ; allow shorter final-bit dribble before EOP
-    jmp skip_clear
+    mov isr, ~null                 ; unread bits stay ones for final-bit dribble
+    in line, 4                     ; four received bits invalidate the handshake
+    jmp t, ack_short
+    jmp skip_clear                 ; not ended: clear ISR, then drain the rest
+ack_short:
+    mov r0, ::isr
+    and r0, 15
+    cmp r0, 15
+    mov isr, null                  ; ended tail: clear without reading another frame
+    jmp !z, idle                   ; invalid short data leaves completion unset
 ack_valid:
     flag set F_GOTACK
     jmp idle

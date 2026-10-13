@@ -210,9 +210,16 @@ nak_send:
     ldi r3, 0x5A80                 ; SYNC + NAK
     jmp send16
 got_ack:
-    in line, 8                     ; full extra byte invalidates the handshake;
-    jmp t, ack_valid               ; shorter final-bit dribble is allowed
-    jmp skip_clear
+    mov isr, ~null                 ; unread bits stay ones for final-bit dribble
+    in line, 4                     ; four received bits invalidate the handshake
+    jmp t, ack_short
+    jmp skip_clear                 ; not ended: clear ISR, then drain the rest
+ack_short:
+    mov r0, ::isr
+    and r0, 15
+    cmp r0, 15
+    mov isr, null                  ; ended tail: clear without reading another frame
+    jmp !z, idle                   ; invalid short data leaves completion unset
 ack_valid:
     flag set F_GOTACK
     jmp idle                      ; publish only after the tail-end check

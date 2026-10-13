@@ -30,6 +30,11 @@ ACK_CASES = (
     pytest.param(b"\xff", 0, False, id="extra-ff"),
     pytest.param(b"\xff\xff\xff", 0, False, id="extra-three-bytes"),
 )
+SHORT_SUFFIXES = (
+    pytest.param("0", id="short-zero"),
+    *[pytest.param(bits, id="short-" + bits)
+      for bits in ("01", "10", "001", "101", "110", "1111")],
+)
 
 
 def ack_symbols(tail=b"", stretch=0):
@@ -57,6 +62,22 @@ def ack_symbols(tail=b"", stretch=0):
     return states
 
 
+def partial_ack_symbols(suffix):
+    """Chronological decoded bits, raw NRZI before EOP; no byte padding/stuffing."""
+    assert suffix and set(suffix) <= {"0", "1"}
+    states = ack_symbols()[:-3]
+    level = states[-1]
+    for bit in suffix:
+        if bit == "0":
+            level = usb.K if level == usb.J else usb.J
+        states.append(level)
+    states += [usb.SE0, usb.SE0, usb.J]
+    prefix = list(usb.bits_lsb_first(b"\x80\xd2"))
+    assert usb.nrzi_destuff([usb.J] + states) == prefix + [int(b) for b in suffix]
+    assert len(states) == 16 + len(suffix) + 3
+    return states
+
+
 class LoadingHostIdle:
     """Autonomous enumeration must receive no active loading-host service."""
     OPS = ("write", "snap", "commit", "cancel", "read", "push", "pop_all", "apply", "start")
@@ -77,7 +98,7 @@ class LoadingHostIdle:
             delattr(self.mh, name)
 
 
-def device(variant, phase):
+def device(variant, phase, gap_bits=4):
     mh = ModelHost()
     software = None
     if variant.startswith("enum"):
@@ -97,10 +118,11 @@ def device(variant, phase):
     mh.pull_up = 2
     mh.step(100)
     if variant in ("enum-low", "fifo-low"):
-        peer = ControlHost(mh, bit=32, keepalive=False, retries=0)
+        peer = ControlHost(mh, bit=32, keepalive=False, retries=0, gap_bits=gap_bits)
     else:
         peer = FsControlHost(mh, sof=False, retries=0, seed=phase+1,
-                             jitter_ns=0, ppm=0)
+                             jitter_ns=0, ppm=0, gap_bits=gap_bits,
+                             ipd_bits=gap_bits)
     assert mh.chip.sync_bypass == 0
     return mh, peer, software
 
@@ -136,6 +158,17 @@ def test_ack_stretch_is_a_final_level_hold():
 @pytest.mark.parametrize("tail,stretch,accepted", ACK_CASES)
 def test_ack_length_and_dribble(variant, phase, tail, stretch, accepted):
     """Bad ACK retries identical bytes; good/dribbled ACK advances cursor/toggle."""
+    exercise_ack(variant, phase, ack_symbols(tail, stretch), accepted)
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+@pytest.mark.parametrize("phase", (0, 1))
+@pytest.mark.parametrize("suffix", SHORT_SUFFIXES)
+def test_partial_ack(variant, phase, suffix, record_property):
+    exercise_ack(variant, phase, partial_ack_symbols(suffix), False, record_property)
+
+
+def exercise_ack(variant, phase, states, accepted, record_property=None):
     mh, peer, software = device(variant, phase)
     guard = LoadingHostIdle(mh) if software is None else nullcontext()
     with guard:
@@ -147,7 +180,7 @@ def test_ack_length_and_dribble(variant, phase, tail, stretch, accepted):
             software.service()  # record when the staged packet was sent
         peer._steps(4)
         mh.step(phase)
-        send_ack(peer, ack_symbols(tail, stretch))
+        send_ack(peer, states)
         if software:
             # Observe firmware completion before ordinary service clears the flag.
             got_ack = bool(mh.read(sim.A_FSET) & usbdev.F_GOTACK)
@@ -155,7 +188,13 @@ def test_ack_length_and_dribble(variant, phase, tail, stretch, accepted):
             # privileged device/peer completion schedules re-staging.
             mh.step(5000)
             software.service()
-        assert poll(peer) == (SECOND if accepted else FIRST)
+        reply = poll(peer)
+        if record_property:
+            record_property("next_reply", reply.hex())
+            record_property("expected_reply", (SECOND if accepted else FIRST).hex())
+            if software:
+                record_property("F_GOTACK", got_ack)
+        assert reply == (SECOND if accepted else FIRST)
         if software:
             assert got_ack == accepted
             assert not software.words, "unwanted handshake tail entered RX records"
@@ -170,3 +209,69 @@ def test_ack_length_and_dribble(variant, phase, tail, stretch, accepted):
                 mh.step(100)
                 software.service()
             assert poll(peer) == SECOND
+
+
+class PadEdges:
+    """Observe supplied resolved pads at actual model clocks; no DUT state writes."""
+    def __init__(self, mh, record_property):
+        self.chip = mh.chip
+        self.edges = []
+        self.record_property = record_property
+
+    def __enter__(self):
+        self.original = self.chip.step
+
+        def observed(*args, **kwargs):
+            pads = args[1] & 3
+            if not self.edges or pads != self.edges[-1][1]:
+                self.edges.append((self.chip.cycle, pads))
+            return self.original(*args, **kwargs)
+
+        self.chip.step = observed
+        return self
+
+    def __exit__(self, *exc):
+        del self.chip.step
+        self.record_property("resolved_pad_edges", self.edges)
+
+
+def minimum_ack(peer, states):
+    if isinstance(peer, FsControlHost):
+        # The next send schedules its K from EOP J using ipd_bits=2.
+        peer.fs.send(usb.handshake(usb.PID_ACK), states=states)
+    else:
+        peer._drive(states)
+        # _drive already paid the trailing J bit: one more gives J->K=2 bits.
+        peer._steps(peer.gap_bits - 1)
+
+
+@pytest.mark.parametrize("variant", ("enum-low", "enum-full"))
+@pytest.mark.parametrize("phase", (0, 1))
+def test_partial_ack_minimum_first_retry(variant, phase, record_property):
+    mh, peer, software = device(variant, phase, gap_bits=2)
+    assert software is None
+    with LoadingHostIdle(mh):
+        peer.setup(0, DESCRIPTOR_REQUEST)
+        assert poll(peer) == FIRST
+        peer._steps(4)
+        mh.step(phase)
+        with PadEdges(mh, record_property) as pads:
+            minimum_ack(peer, partial_ack_symbols("0"))
+            # One first IN and one response: no eventual-success/retry path.
+            retry = poll(peer)
+            assert retry == FIRST
+            peer._steps(4)
+            minimum_ack(peer, ack_symbols())
+            assert poll(peer) == SECOND
+        edges = pads.edges
+        eop_j = next(t for (prev_t, prev), (t, value) in zip(edges, edges[1:])
+                     if prev == 0 and value == 2)
+        token_k = next(t for t, value in edges if t > eop_j and value == 1)
+        clocks = token_k - eop_j
+        assert peer.retries == 0 and peer.gap_bits == 2
+        assert 2 * peer.bit <= clocks <= 2 * peer.bit + 2
+        record_property("EOP_J_clock", eop_j)
+        record_property("first_retry_K_clock", token_k)
+        record_property("EOP_to_first_retry_clocks", clocks)
+        record_property("EOP_to_first_retry_bits", clocks / peer.bit)
+        record_property("first_retry", retry.hex())

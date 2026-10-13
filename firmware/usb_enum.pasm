@@ -215,10 +215,15 @@ se0:
     jmp idle                       ; (low DM in K is not SE0)
 ; ---------------------------------------------------------------- ACK
 got_ack:
-    in line, 8                     ; reject a full extra byte; allow final-bit
-                                   ; dribble (§7.1.9.1), then validate the end
-    jmp t, ack_end                 ; packet may follow 2 bit times after it
-    jmp skip
+    mov isr, ~null                 ; unread bits stay ones for final-bit dribble
+    in line, 4                     ; at most three extra ones before EOP
+    jmp t, ack_short
+    jmp skip                       ; not ended: drain the remaining invalid tail
+ack_short:
+    mov r0, ::isr
+    and r0, 15
+    cmp r0, 15
+    jmp !z, idle                   ; ended invalid: never consume the next token
 ack_end:
     jmp !f F_SENT, idle            ; not for our DATA
     flag clr F_SENT

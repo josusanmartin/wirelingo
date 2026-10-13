@@ -465,3 +465,58 @@ tails, EOP-duration validation and shared line-end/stuff-error causes are
 not independently qualified. Passing packet cases are model evidence, not
 USB electrical or physical qualification. Integrators must regenerate any
 embedded firmware bundle after applying this firmware change.
+
+
+## Partial ACK data and immediate retry
+
+The current `usb_enum.pasm`, `usb_fs_dev.pasm` and `usb_ls_dev.pasm` replace
+the earlier IN LINE8 byte-only guard described above. They seed ISR with
+ones, request four tail bits and require both an early end and an all-one
+reversed low nibble. This allows the ordinary ACK and zero-to-three extra
+ones representing the permitted final-level hold, while rejecting a zero
+in a shorter tail or four received tail bits. The rule follows the
+[USB 2.0 dribble exception, section7.1.9.1](https://bitsavers.trailing-edge.com/components/usb/USB_2.0_2000.pdf#page=185)
+and [PID-only handshake format, section8.4.5](https://bitsavers.trailing-edge.com/components/usb/USB_2.0_2000.pdf#page=234).
+
+Recovery distinguishes two paths. An invalid tail whose end was consumed
+returns to idle immediately; reading another discard chunk there would
+swallow the next token. Only an ongoing invalid tail drains the remaining
+packet. The FIFO programs clear ISR on both rejected paths and on the
+ended valid path before publishing F_GOTACK, preventing discarded tail
+bits from combining into an autopushed record. The guard uses scratch r0,
+leaving transfer/address/configuration state intact.
+
+The maintained ACK regression retains all65 prior cases and adds56 raw
+short-tail cases: chronological decoded suffixes0,01,10,001,101,110,1111
+across all four programs/speeds and phase settings0/1. The peer appends
+NRZI symbols directly before ordinary EOP, without byte padding or
+restuffing; a separate decoder checks the exact SYNC/PID/suffix bits.
+Packet equality, CRC, completion flag, clean software RX words and one
+advancement after a later valid ACK remain required.
+
+Four additional autonomous tests issue the first retry IN with peer spacing
+configured to two bit times, with no host bus service, automatic retries or
+settling delay after the bad ACK. Resolved pads at rising model clocks
+measure64 clocks (two LS bit times) and9 clocks (2.25 FS bit times) from
+bad-ACK EOP J to the next token K, at both phase settings. FS uses the
+existing asynchronous sender, so configured and sampled spacing differ.
+The first response must be the exact pending DATA packet, then an ordinary
+ACK must advance it once. These are finite sampled conditions, not a
+continuous phase/rate or minimum-spacing throughput guarantee. FIFO cases
+retain normal paid DeviceSoftware service and a fixed5000-clock retry
+interval; their service gaps are not claimed as a wire minimum.
+
+Program sizes are246words/984B for either autonomous speed (+5words,
+10words free),141words/564B for FIFO FS (+6words,115free), and129words/516B
+for FIFO LS (+6words,127free). Autonomous descriptor addresses remain
+dev1/cfg19. The FIFO delta includes one explicit ended-path ISR clear.
+Existing core/line unit, pads, flags, FIFOs and host ABI are unchanged.
+The extra nibble checks add four autonomous or five FIFO instruction ticks
+after the end branch on the accepted path; core divider is one. This is
+source instruction accounting, not a new measured turnaround bound.
+
+Shared end/error indication, EOP duration, other malformed tails, electrical
+behavior and physical USB qualification remain outside this regression.
+Embedded bundles must be regenerated separately after integrating the
+accepted firmware; this change does not update the earlier pinned bundle
+snapshot.
