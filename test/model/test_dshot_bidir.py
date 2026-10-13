@@ -81,21 +81,29 @@ def test_bidir_telemetry(rate, turn):
     assert esc.contention == 0
 
 
-def test_bidir_no_reply_and_timing():
+@pytest.mark.parametrize("f_clk", [48e6, 50e6])
+def test_bidir_no_reply_and_timing(f_clk):
     """An ESC that does not answer: count-0 records, the line pulled up. And
-    the frame's timing at 48 MHz (CLKDIV 1): low 1250 / 625 ns, bit 1667 ns."""
-    mh = setup()
+    the frame's timing (CLKDIV 1): lows of exactly T1 / T0 clocks and bits of
+    BIT clocks; at 48 MHz low 1250 / 625 ns, bit 1667 ns. At 50 MHz T0 is odd
+    (31): the KV260 showed every bit a clock short while the assembler's `/`
+    was float division (two truncated halves of T0 - 2)."""
+    mh = setup(f_clk)
     esc = pf.BidirEsc([None] * 4)
-    recs, log = run(mh, esc, [(500 << 1), (501 << 1)])
+    recs, log = run(mh, esc, [(500 << 1), (501 << 1)], f_clk=f_clk)
     assert recs and all(r == 0 for r in recs)
     edges = log.edges()
     lows = [b[0] - a[0] for a, b in zip(edges, edges[1:]) if a[1] == 0]
     falls = [t for t, v in edges if v == 0]
     per = [b - a for a, b in zip(falls, falls[1:]) if b - a < 2000]
-    print(f"\nbidirectional DShot600 at 48 MHz: lows {sorted(set(round(x, 1) for x in lows))} ns, "
+    print(f"\nbidirectional DShot600 at {f_clk / 1e6:g} MHz: lows {sorted(set(round(x, 1) for x in lows))} ns, "
           f"bit {sorted(set(round(p, 1) for p in per))} ns")
-    assert set(round(x, 1) for x in lows) <= {625.0, 1250.0}
-    assert set(round(p, 1) for p in per) == {1666.7}
+    d, ns = pf.dshot_bidir_defines(f_clk), 1e9 / f_clk
+    assert set(round(x, 1) for x in lows) == {round(d["T0"] * ns, 1), round(d["T1"] * ns, 1)}
+    assert set(round(p, 1) for p in per) == {round(d["BIT"] * ns, 1)}
+    if f_clk == 48e6:
+        assert set(round(x, 1) for x in lows) == {625.0, 1250.0}
+        assert set(round(p, 1) for p in per) == {1666.7}
 
 
 def test_bidir_50mhz():
