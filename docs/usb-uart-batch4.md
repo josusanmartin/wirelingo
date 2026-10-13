@@ -1,119 +1,129 @@
 # One retained four-byte UART report over USB EP0
 
-This optional preparation uses two existing cores/banks and one retained
-four-byte report. It has no batch model/native result yet. The accepted
-one-byte workload is a separate mode and remains unchanged. No RTL, larger
-bank, FIFO relay, bulk endpoint, third core or generated bundle is added.
+This optional firmware receives four UART bytes and returns the retained report
+through a vendor request on low-speed USB EP0. It uses two existing cores and
+banks. The sender must honor READY; acquisition pauses until the report is
+acknowledged. This is a model-tested workload, not continuous UART forwarding.
+The [one-byte mode](usb-uart-byte.md) remains a separate program.
+
+## Load and use
+
+The [cold-load helper](../tools/pe/usb_uart_batch4.py) exposes `assemble()`,
+`load_writes()` and `vendor_request()`. Apply its 339 ordinary register/memory
+writes for this mode with both cores disabled. Loading replaces both programs
+and reserves the resources below, then starts both cores once. The count is
+host operations, not a measurement of serial loading time.
+
+The default request is `c0 01 00 00 00 00 04 00`. Exactly four good bytes must
+be available; other wLength values are refused, not clamped. Partial groups
+have no idle timeout flush. The USB host sends normal control-transfer packets;
+the loading host does no active API calls, FIFO service or rearming in the test.
+There are no noncontrol endpoints or generated embedded bundles for this mode.
 
 | Resource | Reservation |
 |---|---|
-| Core0/bank0 |256 words/1024B, no headroom; autonomous low-speed EP0 |
-| Core1/bank1 |59 words/236B; partial group in ISR/OSR, retained halves R1/R2 |
-| Physical pins |USB0/1 owned by core0; RX16, READY8, ERROR9 owned by core1 |
-| Virtual pins |24..31 owned by core1; core0 IN_BASE24 |
-| Flags |F0..5 USB; F6 byte-ready; F7 retained report-valid |
-| FIFO geometry |Two cores/two banks/256 words/depth8, no runtime FIFO service |
-| Cadence |Core0 encoded256; core1 encoded3333 =3333/256 clocks/tick |
-| External source |48MHz clock, nominal115200 8N1, exact1250/3 clock bit period |
-| USB line |LS32 clocks/bit, TURN63, synchronized inputs/SYNC_BYPASS0 |
+| Core 0 / bank 0 | 256 words / 1,024 bytes; autonomous low-speed EP0; no headroom |
+| Core 1 / bank 1 | 59 words / 236 bytes; partial group in ISR/OSR, retained halves in R1/R2 |
+| Physical pins | USB 0/1 on core 0; RX 16, READY 8, ERROR 9 on core 1 |
+| Virtual pins | 24–31 owned by core 1; core 0 reads from pin 24 |
+| Flags | F0–F5 USB; F6 byte ready; F7 report valid |
+| Profile | Two cores, two banks, 256 words per bank, FIFO depth 8; no active FIFO relay |
+| Core cadence | Encoded dividers 256 and 3333: 1 and 3333/256 system clocks per tick |
+| Tested source | Nominal 48 MHz system clock, 115,200 baud, 8N1; 1250/3 clocks per bit |
+| USB line | 32 clocks per low-speed bit, TURN 63, synchronized inputs / SYNC_BYPASS 0 |
 
-ERROR9 costs one additional output relative to the one-byte program. Core1's
-32-tick UART schedule executes more frequently; power/area/Fmax are unmeasured.
-The complete cold loader plans339 normal host writes and starts both cores
-once. No active loading-host API, FIFO service, interrupt or host rearm is
-part of the proposed workload. External USB-host transactions remain a paid
-service cost. Single buffering pauses UART acquisition until the DATA ACK;
-four-byte batching does not establish sustained115200-baud forwarding.
+The images total 1,260 bytes. ERROR consumes one additional physical output
+compared with the one-byte mode. RTL is unchanged; power, area and maximum
+clock rate are not measured by this experiment.
 
 ## Ownership and lifetime
 
-`pe.usb_uart_batch4.assemble()` and `load_writes()` prepare only this cold,
-disabled mode, with profile validation and explicit owners. `vendor_request()`
-defaults to `c0 01 00 00 00 00 04 00`; every other wLength is refused, not
-clamped. No partial-report timeout flush exists. Descriptors remain18/18bytes
-with zero noncontrol endpoints; this is not HID/CDC/interrupt/bulk USB.
+Active-high READY grants one complete UART frame. Finish the admitted frame
+even if the next grant arrives during its STOP bit. The test waits eight clocks
+after observing a new grant and completing the previous frame. Later groups
+can wait for planned USB work before using an already granted high level.
+Internal registers and flags do not control the external sender or its bytes.
 
-READY is active high and grants one complete UART frame. The source must
-finish an admitted frame even if a new grant arrives during its STOP. The
-frozen first group starts each frame at max(new READY edge, previous frame
-completion)+8 clocks. The first idle frame is READY+8; later frames finish
-the prior STOP before reacting. Later groups may also wait for planned USB
-work before observing an already granted high level. Only actual physical
-READY controls UART admission; internal flags/registers never drive source
-decisions or expected data.
+A good STOP advances the group. A bad STOP discards the suspect byte, restores
+the prior good bytes and sets sticky ERROR. ERROR is separate from the USB
+payload and clears only on cold restart. Four good bytes are retained in R1/R2;
+F7 is set after the first byte and F6 are published. Core 0 clears F6 with WAIT
+before IN8; core 1 observes the clear before changing the virtual pins. This
+requires uninterrupted core 0 execution at one clock per tick and exclusive
+pin/flag ownership; it is not an atomic hardware mailbox operation.
 
-Good STOP advances the partial group; bad STOP discards only the suspect
-byte, restores prior good bits and sets sticky physical ERROR9. ERROR is not
-a byte in the USB payload and is cleared only at cold restart. Four good
-bytes are retained in R1/R2. F7 is set once, after the first F6 publication.
-Core0 clears F6 with WAIT before IN8; core1 separately observes that clear
-before changing virtual pins. This relies on uninterrupted core0 divider1
-and no other flag/pin writer, not an atomic hardware mailbox instruction.
+The valid ACK/F_SENT check at exact cursor 4133 clears F7. The tested report
+survives lost/malformed ACKs, retries, descriptor SETUP, deconfiguration, a
+non-four-byte length request and USB detector reset. Every started report reads
+two complete 16-bit words. The cyclic supplier checks F7 before F6 to escape a
+speculative next byte after consumption; retries do not set F7 again. Release
+occurs at DATA ACK, before status completion, so application exactly-once
+delivery is not promised.
 
-Only the existing valid ACK/F_SENT check at exact cursor4133 clears F7.
-Lost/malformed ACK, retries, descriptor SETUP, deconfiguration, non4 lengths
-and USB detector reset retain the report/error. Every started report reads
-two complete16-bit words; cyclic supplier state returns to byte zero. The
-producer checks F7 before F6 to escape a speculative next byte on consumption,
-and retries never re-set F7. Release is at DATA ACK before status completion;
-application exactly-once delivery is not promised.
+These rules require fixed configuration and eventual completion of all four
+internal byte reads. Global reset, reload, gating, faults, preemption and abort
+after only one to three supplier reads are outside this contract. The inherited
+ACK guard does not distinguish every shared line-end/error cause or qualify all
+malformed endings. Detector reset in the test is not electrical USB reset
+qualification.
 
-These reset/abandonment rules assume fixed configuration, uninterrupted
-cores and eventual completion of all four internal reads. Global reset,
-reload, host gating, faults, preemption/abort after1..3 supplier reads and
-arbitrary configuration changes are excluded. Shared line end/error causes,
-USB electrical/reset qualification and all malformed endings remain outside
-the inherited byte/partial-tail ACK guard.
+## Measured finite model result
 
-## Proposed finite witness and phase coverage
+On October 13, 2026, the single test passed on its sole invocation: **376,538
+model steps**, including loading, in 33.63 seconds wall time. It used the
+2/2/256/depth-8 profile above. Its raw trace contains 192 USB packets, 126
+external USB-host transactions and 11 UART frames. Independent saved-trace
+review decoded all packets, checked 63 DATA CRCs and checked 110 UART symbols.
+No synthetic mutation controls were run for this experiment.
 
-The new single ordinary-pytest node proposes four good00 bytes, nominal
-address5 enumeration, three all-zero no-ACK IN attempts, a malformed ACK,
-descriptor/non4-length/config0/1 retention, detector reset/re-enumeration,
-and one exact4 consuming dribble ACK. A second report is39,d3,81,5e with bad
-STOPa6 inserted after39,d3; descriptor and reset must retain report and ERROR,
-then an ordinary ACK must consume it. Two final good bytes12,34 followed by
-5000 idle clocks must remain unavailable. No repeated response repair or
-automatic retries is permitted. All no-ACK handoffs use fixed64-clock gaps.
+The test retained `00 00 00 00` through lost/malformed ACKs, descriptor and
+configuration traffic, a refused length and reset/re-enumeration. A valid
+final-bit dribble ACK consumed it. The second report, `39 d3 81 5e`, excluded a
+bad-STOP `a6` inserted after the first two bytes; ERROR remained set through
+subsequent descriptor/reset traffic. An ordinary ACK consumed that report.
+The final partial group `12 34` remained unavailable after 5,000 idle clocks.
 
-No runtime model result is asserted. The future proposal is one serial node,
-120s wall/2GiB, five-second process-group grace and at most1000000 actual
-Chip.step calls including loading/failures. A separate lead slot is required.
+All three external IN times were fixed before execution. The trace observed
+the targeted same-edge F6 clear and producer poll seeing the old high value,
+at fractional divider state 236. No pilot run, phase search or retuning was
+used. Let C be the final payload OUT of the first 16-bit word:
 
-The source divider calendar is T(n)=340+13n+floor(5n/256), based on339 cold
-writes and normal restart. The proposed no-stuff path has header OUT H at
-IN START+1155, last word-one payload OUT C=H+930, and third-byte F6 clear
-S=C+5. Three fixed external IN START clocks are118185,132206,146230. They
-target producer poll clocks120275,134297,148319 and fractional states
-236/245/254; offsets0/−1/+1 discriminate the source edge convention without
-a pilot, deposit, runtime search or retuning. These are source predictions,
-not observed clocks. The frozen source-calendar receipt lists derivation
-and all initial UART grants/windows.
+| Attempt | Clear to FLAG publication | Next payload OUT relative to C | Same-edge old-high poll |
+|---|---:|---:|---|
+| First all-zero reply | 53 clocks | C + 63 | Yes |
+| Lost-ACK retry | 27 clocks | C + 37 | No |
+| Malformed-ACK retry | 52 clocks | C + 62 | No |
 
-The passive trace retains actual word boundaries, F6 WAIT/IN, producer poll,
-virtual-pin OUT and FLAG publication, queue occupancy and next payload OUT.
-At least one declared attempt must observe a same-edge WAIT clear and
-producer poll seeing old-high, with53 clocks to FLAG publication. Otherwise
-timing coverage is incomplete, even if all-zero bytes happen to pass. The
-oracle must also see S=C+5 and bit17 OUT no later than C+63, before earliest
-no-stuff empty decision C+95. The director's all256 fractional-state source
-arithmetic remains distinct from this proposed trace coverage.
+In the first case, C=120270, F6 clear=120275, publication=120328 and the next
+OUT=120333. This is 32 clocks before the conservative source-derived empty
+queue decision at C+95. The raw packet remained complete with correct CRC.
+This finite observation is distinct from the source arithmetic over all 256
+fractional states and is not a general RTL timing proof.
 
-Raw resolved USB pads decide SYNC/PID, exact four-byte payload, CRC, EOP and
-packet count, so underrun/split packets cannot pass by eventual equality.
-Raw READY/RX/ERROR histories decide admission, good/bad frames, sticky error,
-retention and release. PC/flag/queue observations corroborate timing only.
-Loading API guards and actual bus-strobe observations must both remain zero;
-all line RX overflow and ownTX/external-overlap observations are retained.
-Overlap fails the oracle. No measured throughput/latency/maxima or PPA/native
-claim follows from assembly, collection or source arithmetic.
+Active loading API calls, loading bus strobes and external/device USB driver
+overlap were all zero. **636 line-RX overflow events remain in the trace**, all
+observed during device transmission. Their cause and general recovery behavior
+are unproven; this result does not establish that overflows are harmless.
 
-The test uses pytest's tmp_path by default. A nonempty WIRELINGO_EVIDENCE can
-select a fresh explicit output directory. After an authorized model slot:
+Observed ACK EOP-J to next READY delays were 66 and 54 clocks. The scenario
+includes enumeration, deliberate retries, resets and idle periods; its elapsed
+clocks per byte are not sustained throughput. Single buffering still stops
+UART admission while a report is retained. No native RTL, physical, board,
+USB-conformance, broad baud/jitter or maximum-latency result is claimed.
 
-    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools /usr/bin/python3 -B -m pytest \
-      -q -x -p no:cacheprovider test/model/test_usb_uart_batch4.py
+## Reproduce
 
-Preparation may collect this node with Chip/Core construction/step forbidden;
-collection is not a functional result. No source change or dynamic retry is
-authorized by this document.
+The maintained test uses pytest's `tmp_path` by default. A nonempty
+`WIRELINGO_EVIDENCE` selects a fresh explicit output directory. From the repo:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools /usr/bin/python3 -B -m pytest \
+  -q -x -p no:cacheprovider test/model/test_usb_uart_batch4.py
+```
+
+The test saves raw pins and its oracle result, checks exact packet counts and
+CRC/EOP, verifies READY/RX/ERROR behavior, and requires the 53-clock timing
+witness. Collection alone does not validate behavior. The recorded run had a
+120-second wall limit, 2 GiB address-space limit, one-million-step cap and
+five-second termination grace; the plain command above does not impose the
+external wall or memory limits.

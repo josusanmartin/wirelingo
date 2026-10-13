@@ -487,5 +487,3 @@ def test_uart_batch4_control_mailbox(tmp_path):
         raise
     finally:
         (out/'dynamic.json').write_text(json.dumps(rig.result(error),indent=2)+'\n')
-
-
