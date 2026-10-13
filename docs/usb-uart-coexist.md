@@ -7,7 +7,7 @@ which uses all eight flags, and it does not forward UART bytes through USB.
 
 Load both images while both cores are disabled, using normal TAPEOUT loaders.
 At 48MHz USB uses the low-speed line unit on logical pads0/1; UART receives
-1152008N1 on logical RX16 (ui0), with the unchanged eight-tick divider.
+115200 baud, 8N1 on logical RX16 (ui0), with the unchanged eight-tick divider.
 The peer image uses19 words/76B; selected USB uses246 words/984B. Together
 1060B occupy both engines and banks (10/237 words spare), one line unit,
 flags0..6 and three physical inputs/pads0/1/16. UART uses no virtual pins,
@@ -160,8 +160,8 @@ invocation, firmware correction, default API edit or timing retune occurred.
 | Data/STOP source margins |161/161 clocks |158/158 clocks |
 | Loading-host quiet clocks |291..150000 |24000..40000 and40024..100000 |
 
-Case1's UART source spans4096..137429.76USB packets, including all26 device
-responses, overlap that physical wire interval. Both cores remain enabled
+Case1's UART source spans clocks 4096 through 137429. A total of 76 USB
+packets, including all 26 device responses, overlap that interval. Both cores remain enabled
 through the exchange; core1 HALTs after its final STOP sample and retains
 all32 exact bytes without loading-host refill/service. The fixed150000 drain
 returns the eight little-endian words and leaves the target FIFO empty.
@@ -194,7 +194,8 @@ Normal WAIT/line blocking remains observable (core stall clocks141916/8645
 and97630/42185); these include idle time, not loss of captured bytes.
 
 The existing line unit reports276/92 RX overflow events in the two cases,
-all attributed to own transmission. Neither line unit nor USB code changed;
+all recorded while its own transmitter was active. That observation does
+not establish the cause. Neither line unit nor USB code changed;
 passing the finite packet oracle does not establish overflow robustness.
 No such claim, full-speed envelope, live serialized-host concurrency,
 UART-to-USB forwarding, indefinite input stream, CPU/PPA/electrical or
