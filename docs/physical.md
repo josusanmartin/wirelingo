@@ -17,12 +17,14 @@ logs, partial suites and arithmetic estimates at another clock cannot pass.
 [Release evidence](release-evidence.md) gives the commands, coverage and limits.
 v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
 
-**Status:** the release candidate is run **t48ba** (2026-10-07): the v2 RTL
-with the clock-tree and repair settings that are now the `gen_config.py`
-defaults. It passes signoff, meets 50 MHz at every corner and is reproduced
-bit for bit by a clean-checkout harden (run ci6); `flow/release_check.py`
-fails it only on one fanout count inflated by antenna diodes (see "Release
-candidate" in the signoff section). A run is a commit:
+**Status:** the physical candidate is run **fo6** (2026-10-13): run t48ba's
+v2 RTL and settings plus `Project.DetailedRouting`, which keeps antenna
+diodes within the fanout limit (see "Antenna diodes and the fanout limit"
+below). It passes signoff and the physical part of
+`flow/release_check.py` with no exception at any corner: 50 MHz setup and
+hold everywhere, no slew, capacitance or fanout violation. Everything up to
+detailed routing is t48ba's, bit for bit; its GL, SDF and precheck receipts
+are still to be made. A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -257,6 +259,59 @@ the antenna violations cost 0.5–1 ns of slow setup and 360–400 hold buffers
 A post-GRT hold margin of 0.14 ns (t48as) and density 44 with the pin buffers
 (t48ap) stalled detailed routing; both were stopped.
 
+**Antenna diodes and the fanout limit (2026-10-13).** The fanout
+violations above all come from the order of the flow: detailed routing's
+antenna repair runs after the last resizer step, and each diode's pin is an
+input that counts against the library's limit of eight. t48ba's net3483
+(driven by the repair wire buffer `wire3483`) had 7 cell loads after
+repair and 11 after routing: the router attached four diodes, two next to
+`_37093_/D` and one each next to `_26873_/A1` and `_26505_/A1`. Limits
+during placement and global routing can't see that: the diodes don't exist
+yet, and a PnR fanout limit of 6 congested Metal3 (t48ak/al). So
+`Project.DetailedRouting` (`flow/drt_antenna_fanout.tcl`, on by default;
+`gen_config.py --no-antenna-fanout-repair` gives t48ba's configuration)
+runs LibreLane's `drt.tcl` unchanged and then, in the same OpenROAD
+process, fixes what the router added (`flow/antenna_fanout.tcl`):
+
+* every net whose input pins, diodes included, exceed the limit is split:
+  each cell sink is grouped with the diodes nearest to it, and the group
+  farthest from the driver plus the groups nearest to it move behind a new
+  `buf_4` placed on the free row sites at their centroid, until both nets
+  are within the limit;
+* the original net is re-created under its own name and guides, both nets
+  get guides over the buffer and the moved pins, and detailed routing and
+  its antenna loop run again (minutes; in fo6, 57 violations after the
+  first iteration and 0 after the second, no antenna violation);
+* a check that every pin of both nets lies on its routed wire, then the
+  fanout check, which repeats up to three rounds. A design without such
+  nets passes through unchanged.
+
+Each mechanism was measured; the first versions failed:
+
+| Run | Step version | Result |
+|-----|--------------|--------|
+| fo1 | separate step after routing, global routing incremental | stopped before routing: on a copy of t48ba's routed database, detailed routing in a new OpenROAD process started over (38k violations at the first iteration) |
+| fo2 | inside detailed routing's process, global routing incremental | stopped: after antenna repair, global routing works from the detailed routes; its incremental update rewrote 22k guides and dropped the NDRs of 14 clock roots, and the router started over (30k violations) |
+| fo3 | guides written by the step, `detailed_placement` legalizes the buffer | stopped: legalization touched every instance and the router started over (91k violations) |
+| fo4 | buffer placed on free sites by the step, resizer's `insert_buffer` | **LVS: 2 errors**, net3483 open at the buffer input: the router did not route the pin added to a net it had already routed |
+| fo5 | odb edit, net kept | stopped by the step's own pin check (same open) |
+| **fo6** | net re-created | **signoff passes, no electrical exception** |
+
+fo6 (commit f6b8ca0, the `gen_config.py` defaults): net3483 keeps 5 cells,
+1 diode and the buffer (7 loads); `antfo_buf_1` drives `_37093_/D`,
+`_26873_/A1` and their 3 diodes (5 loads), 0.8 µm from their centroid. The
+final netlist differs from t48ba's in exactly that: one buffer, one net, five
+pins (and the fillers around the buffer). Routed wire +105 µm (1 788 162
+against 1 788 057 µm), no routing DRC, no antenna violation. Both moved
+endpoints have about 16 ns of setup and 2 ns of hold slack at the slow
+corner (net3483 carries a static configuration bit), and the reported slacks
+are t48ba's: setup WS 0 at 20 ns at all three corners (the latch-borrowing
+floor; worst flop/SRAM endpoint +0.010 ns slow, +4.06 typ, +4.65 fast), hold
++0.191 / +0.362 / +0.095 ns (typ / slow / fast), 0 setup and hold violators,
+0 slew / 0 capacitance / **0 fanout** violations at typ, slow and fast.
+Global routing as in t48ba: Metal3 63.9 %, 12 overflows (27 after the last
+post-GRT repair), all cleared by detailed routing.
+
 **Candidate: t48ag** (commit e96cb69, `flow/harden.sh NAME -- --sram-clock-advance
 --clock-fanout-fix --late-clock 8 --pnr-setup-margin --set MAX_FANOUT_CONSTRAINT=8
 --set GRT_DESIGN_REPAIR_MAX_SLEW_PCT=30 --set DESIGN_REPAIR_MAX_SLEW_PCT=30
@@ -413,8 +468,17 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 | m10 | g4's RTL, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | 0 (met) / −2.98 ns | +0.17 ns (slow +0.32, fast +0.08) | 0 / 0 |
 | v2c | cbeae96: + NRZI half-cycle sample, `SYNC_BYPASS`, WAIT kind 7, CALL/RET; density 34, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | **0 (met) / −1.57 ns** | +0.10 ns (slow +0.20, fast +0.04) | 0 / 0 |
 | **t48ba** | v2 RTL (digest cd25b1c1…), software 93c2137; SRAM clock advance, pin registers 6 clock stages late, clock-fanout fix, PnR setup margin, SRAM pin buffers, repair with electrical margins, post-GRT hold margin 0.13 ns | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0** (1 fanout, see below) |
+| **fo6** | t48ba + `Project.DetailedRouting` (antenna diodes within the fanout limit), commit f6b8ca0 | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0**, 0 fanout at every corner |
 
-**Release candidate: t48ba** (netlist sha256 `e400fa30c291f653…`, GDS
+**Physical candidate: fo6** (netlist sha256
+`a94a948b70591b221be4e272ab4aaaa9a2f636e073676fa98657e12475330f81`, GDS
+`e67697034da6cd34acb16c7ab6c0f85dc6d752fdc755439e6bdd21d872ac0707`;
+runner1:~/protoemu-flow/protoemu-exp-fo6). t48ba plus one buffer that keeps
+net3483 within the fanout limit; `flow/release_check.py` passes every
+timing and electrical item at every corner and lacks only the GL, SDF and
+precheck receipts for this netlist.
+
+**Previous candidate: t48ba** (netlist sha256 `e400fa30c291f653…`, GDS
 `8899bc154fc3975a…`; 47 % stdcell utilization, 53 % with the macros;
 global routing ended with 12 overflows, Metal3 63.9 %). Setup is met at
 20 ns at all three corners (the 0 is the FIFO latches' borrowing floor; every
