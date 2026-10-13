@@ -52,6 +52,7 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     ([], "Project.SramClockAdvance", True),
     (["--no-sram-clock-advance", "--late-clock", "0"], "Project.FixClockFanout", True),
     (["--no-clock-fanout-fix"], "Project.SramClockAdvance", False),
+    (["--no-antenna-fanout-repair"], "Project.SramClockAdvance", True),
 ])
 def test_submission_clock_defaults_and_overrides_keep_geometry(tmp_path, options, step, fanout_fix):
     dst = tmp_path / "clock-fix.json"
@@ -72,6 +73,19 @@ def test_submission_clock_defaults_and_overrides_keep_geometry(tmp_path, options
     else:
         assert "PROTOEMU_CLOCK_FANOUT_FIX" not in c
         assert "PROTOEMU_LATE_CLOCK_STAGES" not in c
+    steps = c["meta"]["substituting_steps"]
+    if "--no-antenna-fanout-repair" in options:
+        assert "OpenROAD.DetailedRouting" not in steps
+        # An intentional opt-out is reproducible with its own flags, but must
+        # fail the shipping-default drift check without rewriting the file.
+        original = dst.read_bytes()
+        command = [sys.executable, str(ROOT / "flow/gen_config.py"),
+                   "--output", str(dst), "--check"]
+        assert subprocess.run(command + options, capture_output=True).returncode == 0
+        assert subprocess.run(command, capture_output=True).returncode != 0
+        assert dst.read_bytes() == original
+    else:
+        assert steps["OpenROAD.DetailedRouting"] == "Project.DetailedRouting"
     for name in ("CLOCK_PERIOD", "MACROS", "PNR_SDC_FILE", "SIGNOFF_SDC_FILE", "PNR_CORNERS"):
         assert c[name] == baseline[name]
 

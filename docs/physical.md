@@ -31,7 +31,7 @@ clean checkout of `d916d40` reproduces it (run ci7). A run is a commit:
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
 
-`flow/gen_config.py --clock-fanout-fix` (off by default) clusters CTS sinks by
+`flow/gen_config.py --clock-fanout-fix` (enabled by the submission preset) clusters CTS sinks by
 eight and adds `Project.FixClockFanout`, which splits clock branches above the
 IHP buffers' fanout limit of eight and legalizes the added buffers.
 
