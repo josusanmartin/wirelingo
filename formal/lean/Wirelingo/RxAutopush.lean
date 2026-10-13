@@ -181,4 +181,105 @@ def rxObserve (s : RxChip) (b : RxBus) : List Nat :=
    n.queue.length, n.reserved.length, rxReal n, n.stalled.toNat,
    0, 0, n.sync1, n.sync2, 0, 0, 0, 0]
 
+/-- Added UART boundary: IN PINS1, right shift, autopush32. All gate and
+host-interference assumptions are the SAME manual boundary as IN8. -/
+def rxShift1 (word : BitVec 32) (bit : BitVec 1) : BitVec 32 :=
+  BitVec.ofNat 32 (word.toNat / 2 + bit.toNat * 2147483648)
+
+def rxIn1 (s : RxPartial) (g : RxGate) (bit : BitVec 1) (full : Bool)
+    (nextPC entry : BitVec 10) : RxResult :=
+  if g.restart then ⟨⟨0, 0, entry⟩, none, false, false⟩
+  else if rxExecute g then
+    if 32 ≤ min 32 (s.count + 1) then
+      if full then ⟨s, none, false, false⟩
+      else ⟨⟨0, 0, nextPC⟩, some (rxShift1 s.isr bit), true, true⟩
+    else ⟨⟨rxShift1 s.isr bit, min 32 (s.count + 1), nextPC⟩, none, true, true⟩
+  else ⟨s, none, false, false⟩
+
+/-- Blocking, unconditional PUSH of the current ISR: no realignment.
+No if-full/CRC/LINE/host-register-write variant is part of this boundary. -/
+def rxPushBlock (s : RxPartial) (g : RxGate) (full : Bool)
+    (nextPC entry : BitVec 10) : RxResult :=
+  if g.restart then ⟨⟨0, 0, entry⟩, none, false, false⟩
+  else if rxExecute g then
+    if full then ⟨s, none, false, false⟩
+    else ⟨⟨0, 0, nextPC⟩, some s.isr, true, true⟩
+  else ⟨s, none, false, false⟩
+
+theorem rx1_manual_below (s : RxPartial) (g : RxGate) (bit : BitVec 1)
+    (full : Bool) (nextPC entry : BitVec 10) (hr : g.restart = false)
+    (he : rxExecute g = true) (hc : min 32 (s.count + 1) < 32) :
+    rxIn1 s g bit full nextPC entry =
+      ⟨⟨rxShift1 s.isr bit, min 32 (s.count + 1), nextPC⟩, none, true, true⟩ := by
+  simp [rxIn1, hr, he, Nat.not_le.mpr hc]
+
+theorem rx1_manual_ready (s : RxPartial) (g : RxGate) (bit : BitVec 1)
+    (nextPC entry : BitVec 10) (hr : g.restart = false)
+    (he : rxExecute g = true) (hc : 32 ≤ min 32 (s.count + 1)) :
+    rxIn1 s g bit false nextPC entry =
+      ⟨⟨0, 0, nextPC⟩, some (rxShift1 s.isr bit), true, true⟩ := by
+  simp [rxIn1, hr, he, hc]
+
+theorem rx1_manual_full (s : RxPartial) (g : RxGate) (bit : BitVec 1)
+    (nextPC entry : BitVec 10) (hr : g.restart = false)
+    (he : rxExecute g = true) (hc : 32 ≤ min 32 (s.count + 1)) :
+    rxIn1 s g bit true nextPC entry = ⟨s, none, false, false⟩ := by
+  simp [rxIn1, hr, he, hc]
+
+theorem rx1_manual_current_bit_resume (s : RxPartial) (g : RxGate)
+    (blocked current : BitVec 1) (nextPC entry : BitVec 10)
+    (hr : g.restart = false) (he : rxExecute g = true)
+    (hc : 32 ≤ min 32 (s.count + 1)) :
+    let stalled := rxIn1 s g blocked true nextPC entry
+    stalled.push = none ∧ rxIn1 stalled.state g current false nextPC entry =
+      ⟨⟨0, 0, nextPC⟩, some (rxShift1 s.isr current), true, true⟩ := by
+  simp [rxIn1, hr, he, hc]
+
+theorem rx_push_manual_ready (s : RxPartial) (g : RxGate) (nextPC entry : BitVec 10)
+    (hr : g.restart = false) (he : rxExecute g = true) :
+    rxPushBlock s g false nextPC entry = ⟨⟨0, 0, nextPC⟩, some s.isr, true, true⟩ := by
+  simp [rxPushBlock, hr, he]
+
+theorem rx_push_manual_full (s : RxPartial) (g : RxGate) (nextPC entry : BitVec 10)
+    (hr : g.restart = false) (he : rxExecute g = true) :
+    rxPushBlock s g true nextPC entry = ⟨s, none, false, false⟩ := by
+  simp [rxPushBlock, hr, he]
+
+/-- Eight successive right IN1 operations in LSB-first byte order. -/
+def rxFoldByte (s : BitVec 32) (b : BitVec 8) : BitVec 32 :=
+  let r0 := rxShift1 s (BitVec.ofNat 1 (b.toNat % 2))
+  let r1 := rxShift1 r0 (BitVec.ofNat 1 (b.toNat / 2 % 2))
+  let r2 := rxShift1 r1 (BitVec.ofNat 1 (b.toNat / 4 % 2))
+  let r3 := rxShift1 r2 (BitVec.ofNat 1 (b.toNat / 8 % 2))
+  let r4 := rxShift1 r3 (BitVec.ofNat 1 (b.toNat / 16 % 2))
+  let r5 := rxShift1 r4 (BitVec.ofNat 1 (b.toNat / 32 % 2))
+  let r6 := rxShift1 r5 (BitVec.ofNat 1 (b.toNat / 64 % 2))
+  rxShift1 r6 (BitVec.ofNat 1 (b.toNat / 128 % 2))
+
+theorem rx1_manual_lsb_byte_order (s : BitVec 32) (b : BitVec 8) :
+    rxFoldByte s b = BitVec.ofNat 32 (s.toNat / 256 + b.toNat * 16777216) := by
+  apply BitVec.eq_of_toNat_eq
+  have hs := s.isLt
+  have hb := b.isLt
+  simp only [rxFoldByte, rxShift1, BitVec.toNat_ofNat]
+  omega
+
+theorem rx1_manual_high_tails (a b c : BitVec 8) :
+    rxFoldByte 0 a = BitVec.ofNat 32 (a.toNat * 16777216) ∧
+    rxFoldByte (rxFoldByte 0 a) b =
+      BitVec.ofNat 32 ((a.toNat + b.toNat * 256) * 65536) ∧
+    rxFoldByte (rxFoldByte (rxFoldByte 0 a) b) c =
+      BitVec.ofNat 32 ((a.toNat + b.toNat * 256 + c.toNat * 65536) * 256) := by
+  simp only [rx1_manual_lsb_byte_order]
+  have hz : (0 : BitVec 32).toNat = 0 := rfl
+  simp only [hz]
+  have ha := a.isLt
+  have hb := b.isLt
+  have hc := c.isLt
+  constructor
+  · apply BitVec.eq_of_toNat_eq
+    simp
+  · constructor <;> apply BitVec.eq_of_toNat_eq <;>
+      simp only [BitVec.toNat_ofNat] <;> omega
+
 end Wirelingo

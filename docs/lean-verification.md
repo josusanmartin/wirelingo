@@ -1,6 +1,6 @@
 # Lean verification: current commands, domains and evidence
 
-Run from the repository root. The two maintained native checks below build
+Run from the repository root. The maintained native checks below build
 required Lean modules from checked-in source into **fresh output**, without
 Lake, downloads, historical receipts or preexisting campaign `.olean` files.
 They establish finite agreement with a manual Lean reference, not universal
@@ -44,9 +44,10 @@ the installation's `bin` directory; use `--lean-lib` for another layout.
 No accepted/shared `.lake` objects are overwritten. Missing tools or invalid
 paths fail with a dependency/output diagnostic.
 
-The ownership wrapper runs prepare then native within one fresh root. RX's
-`all` mode does the same. Preparation elaborates unmodified RTL and a labeled
-scratch-only mutant, compiles the manual specification, audits its lemmas,
+The ownership wrapper runs prepare then native within one fresh root. The
+default IN8 corpus's `all` mode does the same; UART-IN1 uses separate phases
+below. Preparation elaborates unmodified RTL and a labeled scratch-only
+mutant, compiles the manual specification, audits its lemmas,
 and computes predictions before simulation. Native compares all declared
 fields/phases and requires the expected actual-mutant divergence. Inspect
 `run-ledger.json`, phase `ledger.json`, axiom output, raw/predicted rows,
@@ -111,12 +112,13 @@ hypotheses; the rows below are separate domains, not a global theorem count.
 | [RtlGating](../formal/lean/Wirelingo/RtlGating.lean) | One-step arithmetic/gate equality between two manual Nat transcriptions under valid fraction/own-bank assumptions. Width truncation and carry included; no machine-checked SV extraction or sequential refinement. |
 | [SideSet](../formal/lean/Wirelingo/SideSet.lean) | Per-pin finite-width side function: completion independence, execution/optional suppression, out/oe separation and mandatory stalled bridge mask/value0x600/0x400. The function clamps count/rotates pins; general SV rotation correspondence is unproved. WAIT zero-main-data domain; separate flag-cycle executable is not a general flag/event theorem. |
 | [PinOwnership](../formal/lean/Wirelingo/PinOwnership.lean) | Selected-owner update, nonowner noninterference, absent/no-write retention, direct POUT priority and old owner on configuration edge; four supplied core slots with zero masks for absent cores, line disabled. Closed fetch projection has finite checks below, not a fetch refinement theorem. |
-| [RxAutopush](../formal/lean/Wirelingo/RxAutopush.lean) | Five IN8/autopush32 lemmas: inactive no-push, below-threshold accumulation, ready push/clear, full ISR/count/PC retention, conditional full-pop/resume with current byte and no intervening state interference. Explicit enable/tick/bank/delay/halt/fault/restart gate; IN8 is not UART IN1. |
+| [RxAutopush](../formal/lean/Wirelingo/RxAutopush.lean) | Five IN8/autopush32 lemmas cover inactive/below/ready/full and conditional full-pop/resume with the current byte. Eight additional statements cover right-shift IN1 accumulation/ready/full/current-bit resume, blocking PUSH ready/full, LSB-first byte order and high-aligned 1/2/3-byte tails. Supplied execution gates and state assumptions remain explicit; these are manual boundaries, not a UART interpreter or SV translation. |
 
 The [axiom policy](../formal/lean/audit_axioms.py) allows only standard
 `propext`, `Classical.choice`, `Quot.sound`; it rejects `sorryAx` and new axioms.
-The maintained ownership/RX preparations audit their six/five original manual
-statements respectively; all five RX lemmas use only `propext`. General
+Ownership audits six statements; default IN8 audits its five original RX
+lemmas, using only `propext`. UART-IN1 audits those five plus eight new
+statements: 13 in total, using only `propext` and `Quot.sound`. General
 specification statements depend on the Lean kernel/foundations. Executable
 agreement additionally trusts the compiler/runtime, checker, bench, Icarus
 and behavioral SRAM model; the source relation is hand reviewed.
@@ -124,9 +126,10 @@ and behavioral SRAM model; the source relation is hand reviewed.
 ## Saved comparisons that actually executed
 
 These are recorded finite results, not tests run by reading this guide.
-Full commands, source maps, failures, audit output and packet paths are in the
-[dated history](lean-verification-history.md). Historical evidence remains
-outside the checkout; the two current commands above do not require it.
+The [dated history](lean-verification-history.md) preserves earlier commands,
+source maps, failures and audit details. The UART-IN1 result is described
+below. Historical campaign evidence remains outside the checkout; the current
+commands do not require it.
 
 | Comparison | Recorded evidence level and result |
 | --- | --- |
@@ -137,10 +140,11 @@ outside the checkout; the two current commands above do not require it.
 | C7/C8 side buses | Actual unchanged core:98 reference rows over60 positive/assumption streams; final C8 aggregate221 clocks,61 one-time deposits. Actual completion-gated mutant fails0; offline channel-swap/wrap-loss reject. C7's mutant elaboration failure was corrected in C8; **not chip ownership/pad evidence**. |
 | C10/R13 fetched ownership | Actual normally loaded/fetched chip:132 positive rows across43/39/50 clocks;175 aggregate clocks/8 resets. Actual owner0 mux mutant fails29, offline output/port shift31. R13 source-only checkout rebuild passed; **no deposits or Python model steps**. |
 | C11/C12 RX-autopush | Actual normally fetched chip/FIFO:192 positive rows,96 left+96 right+57 mutant clocks=249 total/6 resets;9 drained words each setting. Pop67 still blocks IN; resume68 shifts current synchronized byte once. Mutant writes stalled ISR/count and fails56. C11 compile failure was closed by C12; **no deposits or Python model steps**. |
+| C23–C26 UART-IN1/PUSH | Actual normally loaded 19-word UART capture and a separate reduced full-IN1 fixture: 10 positive streams, 987 projected IN/PUSH boundary rows, 9,101 aggregate clocks including 22 resets and the mutant. The actual partial-PUSH alignment mutant diverges at clock 336. Both the metadata check and fresh prepare/native sequence pass; **no deposits or Python model steps**. |
 
 ## Current normal-fetch assumptions and exclusions
 
-Both maintained witnesses instantiate unchanged `pe_chip` with two cores,
+The normal-fetch witnesses instantiate unchanged `pe_chip` with two cores,
 two banks,256 words per bank and FIFO depth8, plus real core/imem/line/FIFO/
 clock-gate dependencies and unchanged behavioral SRAM. They start from reset
 and load programs/configuration through **parallel chip bus ports**. There
@@ -158,8 +162,8 @@ timeout, auto-clear, other instruction/main writes and arbitrary interference
 are excluded. These flag conditions are a separate narrow executable, not
 an extension of Gating's proved edge/DIFF WAIT contract.
 
-RX runs core0 only (core1 disabled), four identical IN PINS8 words, wrap0..3,
-div1/frac0/delay0, threshold32, both shift directions and a two-flop raw-pin
+The IN8 corpus runs core0 only (core1 disabled), four identical IN PINS8 words,
+wrap0..3, div1/frac0/delay0, threshold32, both shift directions and a two-flop raw-pin
 pipeline. LINE, CRC tap, side-set, FJOIN, FIFO clear and concurrent core
 configuration/PC/register writes are excluded; config is stable after setup.
 Its declared CTRL enable/restart and FIFO snap/commit/cancel schedule includes
@@ -167,13 +171,76 @@ disabled retention and restart clearing without clearing RXF. Full is sampled
 before host pop; stalling preserves partial ISR/count/PC but **does not latch
 all changing wire bytes**. General reset during execution, arbitrary programs,
 UART IN1, SPI/UART lossless stalled reception and whole-protocol behavior are
-outside this witness.
+outside this IN8 witness; the separate UART-IN1 scope is described below.
 
-Neither result is universal ISA/SV refinement, reachability for every seed,
+None of these results is universal ISA/SV refinement, reachability for every seed,
 a wall-clock termination guarantee, full-chip concurrency beyond the cases,
 or physical/silicon/release qualification. Consult the [ISA](isa.md), actual
 [core](../src/pe_core.sv)/[FIFO pair](../src/pe_fifos.sv)/[chip](../src/pe_chip.sv),
 and archived source maps for the remaining translation/trust gap.
+
+## UART-IN1 and partial PUSH
+
+The explicit `--corpus uart-in1` mode checks normally fetched UART capture
+through actual core/chip/FIFO RTL and behavioral SRAM. Preparation compiles
+and audits 13 manual lemmas and generates 987 expected IN/PUSH boundary rows.
+The recorded native run passes ten positive streams and rejects an actual
+partial-PUSH alignment mutation across 9,101 total clocks, including 22 reset
+edges. The entire metadata-check/prepare/native sequence took 27.49 seconds
+under a single 120-second wall limit and 2 GiB address-space cap.
+
+Use fresh destinations and the installed-tool variables and `receipt_sha256`
+function defined above. The firmware is the unchanged 19-word
+[UART capture program](../firmware/uart_rx_capture.pasm).
+
+```sh
+python3 formal/lean/check_rtl_rx_autopush.py --corpus uart-in1 --phase prepare \
+  --output /tmp/wirelingo-uart-in1-prepare \
+  --lean "$task_lean" --iverilog "$task_iverilog" \
+  --vvp "$task_vvp" --strace "$task_strace"
+python3 formal/lean/check_rtl_rx_autopush.py --corpus uart-in1 --phase native \
+  --output /tmp/wirelingo-uart-in1-native \
+  --lean "$task_lean" --iverilog "$task_iverilog" \
+  --vvp "$task_vvp" --strace "$task_strace" \
+  --prepared /tmp/wirelingo-uart-in1-prepare \
+  --prepared-sha256 "$(receipt_sha256 /tmp/wirelingo-uart-in1-prepare/prepared-receipt.json)"
+```
+
+Preparation does not execute `vvp`. Native requires the unchanged source,
+tools, libraries and prepared artifacts bound by that receipt. `--phase all`
+is disabled for this corpus. Its separate 32,768-clock bench/checker ceiling
+does not enlarge the declared 9,101-clock schedule; default IN8 retains its
+original limits and was not replayed for this result.
+
+The capture cases request 1, 2, 3, 4, 5, 31 and 32 bytes, a final bad STOP,
+and five bytes with only four offered. The last case remains incomplete:
+there is no idle flush or false HALT. Independent raw RX0 waveforms run at
+exactly eight clocks per bit through two synchronizer flops; core0 runs at
+divider 1, with core1 disabled. Setup and drains use the parallel chip bus.
+The reduced full-IN1 fixture separately checks snapshot/cancel/commit, the
+pre-pop full bubble, restart, and resumption using the current sampled bit.
+
+The three-byte alignment mutant drains `0x0081d339` instead of `0x81d33900`;
+its first disagreement is clock 336. The saved positive traces agree with
+all 987 projected boundary rows, fetched instructions, independent
+UART samples, word/tail order, STOP/F0/HALT and drain assertions. The Lean
+projection receives pre-state and execution/control-flow boundaries; it is
+not a closed whole-core predictor or machine-extracted SV refinement.
+
+Three verification defects were corrected without weakening those conditions:
+UART-only Lean calls use one thread under the memory cap; the tail proof
+explicitly reduces typed `BitVec 32` zero; and setup metadata emits list pairs
+so JSON round trips preserve direct declaration equality. Altered numeric
+setup data still fails that equality guard. The failed C23 preparation and
+first C26 native-validation attempt remain preserved in campaign evidence;
+the final passing packet is `C26-EUCLID-ARM-LISTS`.
+
+Full words may publish before STOP validation, so callers must still inspect
+final framing status and completion. A stalled IN cannot recover intervening
+wire bits. This finite result does not establish baud tolerance, paid serial
+host timing, concurrent protocols, arbitrary programs, electrical/physical
+behavior or general UART correctness. LINE, CRC, side-set, FJOIN and active
+IMEM/configuration/PC/register interference remain excluded.
 
 ## Historical section links
 

@@ -22,11 +22,17 @@ module rtl_rx_autopush_tb;
   integer fd, n, clocks, j, rn, we, addr, raw, snap, commit, cancel;
   reg [31:0] data;
   reg [31:0] pre [0:18];
+  reg [31:0] extra [0:8];
+  integer uart_mode = 0, trace_limit = 200;
   initial begin
     if (!$value$plusargs("INPUT=%s", path)) $fatal(1,"missing INPUT");
     fd=$fopen(path,"r"); if (!fd) $fatal(1,"input open failed");
     n=$fscanf(fd,"%d\n",clocks);
-    if (n!=1 || clocks<2 || clocks>200) $fatal(1,"invalid clock count");
+    if ($value$plusargs("UART_IN1=%d", uart_mode)) begin
+      if (uart_mode!=1 || !$value$plusargs("LIMIT=%d", trace_limit) || trace_limit<2 || trace_limit>32768)
+        $fatal(1,"invalid declared UART limit");
+    end
+    if (n!=1 || clocks<2 || clocks>(uart_mode ? trace_limit : 200)) $fatal(1,"invalid clock count");
     #1;
     for(j=0;j<clocks;j=j+1) begin
       n=$fscanf(fd,"%d %d %d %d %d %d %d %d\n",rn,we,addr,data,raw,snap,commit,cancel);
@@ -38,6 +44,16 @@ module rtl_rx_autopush_tb;
       if(bus_we && bus_addr>=16'h0400 && bus_addr<16'h0480 && dut.enable!=0)
         $fatal(1,"enabled configuration/register write");
       if(dut.line_mask!=0 || uio_oe!=0 || dut.fclear!=0) $fatal(1,"excluded line/output/FIFO-clear interference");
+      if (uart_mode) begin
+        if(dut.enable[1] || dut.g_core[1].g_on.u_core.exec || dut.g_core[1].g_on.u_core.core_rxpush)
+          $fatal(1,"inactive peer changed");
+        if(dut.enable[0] && (!`C.in_shr || !`C.autopush || `C.push_th!=32 || `C.fjoin ||
+            `C.side_count!=0 || `C.in_tap || `C.out_tap || `C.in_base!=0 ||
+            `C.div_int!=1 || `C.div_frac!=0 || dut.sync_byp!=0))
+          $fatal(1,"excluded UART configuration");
+        extra[0]=`C.dcnt; extra[1]=`C.halted; extra[2]=`C.fault; extra[3]=`C.cnt;
+        extra[4]=`C.r0; extra[5]=`C.r1; extra[6]=`C.r2; extra[7]=dut.flags; extra[8]=bus_rdata;
+      end
       pre[0]=dut.enable[0]; pre[1]=dut.restart[0]; pre[2]=dut.pins_in[7:0];
       pre[3]=dut.bank_rdata[31:0]; pre[4]=`C.pc; pre[5]=`C.isr; pre[6]=`C.isr_cnt;
       pre[7]=`C.rxf_level; pre[8]=`C.res_n; pre[9]=`C.res_real; pre[10]=`C.rd_real;
@@ -48,13 +64,22 @@ module rtl_rx_autopush_tb;
       pre[18]=(`C.rxf_level!=0)?`C.rxf_head:32'd0;
       clk=1;
       #1; // POST-EDGE after NBA and actual latch FIFO settling.
-      $write("ROW %0d",j);
+      if(uart_mode) $write("UROW %0d",j); else $write("ROW %0d",j);
       for(n=0;n<19;n=n+1)
         if(n==3) $write(" %08x",pre[n]); else $write(" %0d",pre[n]);
+      if(uart_mode) begin
+        $write(" %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d",
+        `C.pc,`C.isr,`C.isr_cnt,`C.rxf_level,`C.res_n,`C.res_real,`C.stalled,
+        `C.halted,`C.fault,dut.sync1[7:0],dut.sync2[7:0],`C.cnt,`C.dcnt,`C.facc,
+        dut.g_core[1].g_on.u_core.exec && dut.g_core[1].g_on.u_core.core_rxpush);
+        for(n=0;n<9;n=n+1) $write(" %0d",extra[n]);
+        $display(" %0d %0d %0d %0d %08x",`C.r0,`C.r1,`C.r2,dut.flags,dut.bank_rdata[31:0]);
+      end else begin
       $display(" %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d %0d",
         `C.pc,`C.isr,`C.isr_cnt,`C.rxf_level,`C.res_n,`C.res_real,`C.stalled,
         `C.halted,`C.fault,dut.sync1[7:0],dut.sync2[7:0],`C.cnt,`C.dcnt,`C.facc,
         dut.g_core[1].g_on.u_core.exec && dut.g_core[1].g_on.u_core.core_rxpush);
+      end
       $display("DRIVE %0d reset_n=%0d we=%0d addr=%04x data=%08x raw=%02x snap=%0d commit=%0d cancel=%0d",
         j,rn,we,bus_addr,bus_wdata,raw_byte,snap,commit,cancel);
       #4 clk=0;
