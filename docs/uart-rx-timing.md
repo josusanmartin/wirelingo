@@ -126,3 +126,138 @@ The R13 final full-file run passed **23 tests**, receiving 377 bytes in
 2312207 / 2500000. The final run was performed once at the unchanged test
 source; the 13-word receiver firmware is byte-identical to the ticket
 baseline. These are local model results pending host commit/integration.
+
+## Optional packed UART mode: 32-byte finite capture
+
+`firmware/uart_rx_packed.pasm` is a separate optional receiver, not a
+replacement for the byte-per-word program or its bundle. It uses the same
+8N1 wire format, RX define/IN_BASE, eight-ticks-per-bit divider and one core.
+Both programs occupy **13 words/52 bytes**. Packed mode enables right-shift
+`autopush 32` and substitutes two NOPs for per-byte alignment/manual PUSH.
+Data samples remain `D+12+8k`, STOP remains `D+76`, and the level WAIT
+rearms at `D+77`. No ISA, model, FIFO depth, host API or bundle changes.
+The original receiver's stale comment that rearm always precedes a +3%
+START is corrected; its instructions are identical.
+
+Run only the maintained packed regression (prerequisite: R13 UART commit
+`4519e2f`, which supplies the independent pin-timeline helper):
+
+```sh
+PYTHONPATH=tools python3 -m pytest -q test/model/test_uart_packed.py
+```
+
+Four received bytes form one FIFO word in little-endian order:
+`b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)`. Host code can decode complete
+words without another general-purpose API:
+
+```python
+received = b"".join(int(word).to_bytes(4, "little") for word in rx_words)
+```
+
+Eight physical RX FIFO words therefore retain **32 payload bytes** in this
+mode, using the existing ISR for the current partial group. Packing reduces
+word usage for complete groups; it does not increase the UART wire rate,
+provide a fourfold throughput guarantee or create larger SRAM. Resource
+use is one core/private program bank, R0/ISR and shift count, one synchronized
+logical input RX (UI0/P16 in tests), F0 and the eight-word RX FIFO. No second
+engine, shared virtual pins or additional hardware buffer is consumed.
+The tested initial state is a fresh two-core/two-bank/256-word/depth8 model,
+empty FIFO and ordinary restart/enable; live reload with stale FIFO/flags
+is outside these tests. Restart clears partial ISR state; idle does not.
+
+### Same-stimulus, no-service comparison
+
+The comparison offers exactly these 32 consecutive bytes to both programs:
+
+```text
+00 ff 55 aa 5a c3 19 e7 01 02 04 08 10 20 40 80
+7e 81 3c c1 96 69 12 34 56 78 9a bc de f0 27 d8
+```
+
+At nominal 115200 baud, physical START is cycle 4096. Both runs use the same
+precomputed bit boundaries and service deadline, cycle 138453: final offered
+STOP end 137429 plus 1024 clocks. **No loading-host register/FIFO operation**
+is allowed after the normal start call returns until that fixed deadline.
+PC/ISR/FIFO observations are passive and never schedule edges or service.
+All loader/start/read/helper Chip.step calls are counted; synchronized
+input age is two clocks, with no bypass. After the deadline, the host reads
+STATUS and drains that many words through normal snap/commit/cancel reads,
+waits a fixed 1024 clocks, then performs a second STATUS/drain. No privileged
+FIFO removal, state seeding or serialized SPI-host throughput is involved.
+
+| Nominal identical 32-byte stream | Byte receiver | Packed receiver |
+|---|---|---|
+| RX FIFO occupancy at deadline | 8 words, first 8 byte values | 8 words, all 32 byte values |
+| Pending ISR at deadline | Ninth byte `01`, shift count 32, blocked PUSH | Empty, shift count 0 |
+| Returned after the fixed drain/grace | First 9 byte values | All 32 exact bytes |
+| First missing START | Frame 9 (tenth offered byte) | None |
+| First STOP not validated | Frame 8 (ninth offered byte) | None |
+| Stalls recorded across capture/drain | 1869 manual PUSH attempts | Zero PUSH/autopush stalls |
+| Active loading-host operations | 0 | 0 |
+
+Baseline's first blocked PUSH is cycle 41165 at PC 8. Its ninth byte had
+already been sampled into ISR; it becomes readable only after post-deadline
+drain frees a FIFO slot. Its STOP was never checked at the intended time,
+and subsequent input frames are lost. F0 stays clear here: the framing flag
+is not a general loss/overflow indicator. This distinguishes eight FIFO
+words from incidental pending ISR storage; neither mode promises lossless
+input once a full FIFO blocks acquisition.
+
+### Selected packed timing contract
+
+The eight 32-byte candidate streams cover true baud -3%/nominal/+3%, phases
+0/51 clocks, ideal bits, plus +3% at both phases with alternating +/-2-clock
+bit-duration jitter. The nominal phase0 stream is the candidate half of
+the single comparison and is not repeated. Rate uses
+`48000000/(115200*(1+offset))`; phases shift the fixed physical START origin.
+Jitter and rational-to-clock quantization follow the R13 source. This is a
+finite selected matrix, not all phases/payloads or arbitrary jitter.
+All 256 offered candidate bytes return exactly in 64 words, with no active
+host service or blocked autopush. Every START/data/STOP observation is in
+its offered slot, including the last byte; data and STOP source samples
+are strictly inside their independently defined windows.
+
+| True baud | Phase | Alternating jitter | Minimum data margin | Minimum STOP margin |
+|---|---:|---:|---:|---:|
+| -3% | 0 | 0 clocks | 106 clocks | 92 clocks |
+| -3% | 51 | 0 clocks | 107 clocks | 93 clocks |
+| nominal | 0 | 0 clocks | 171 clocks | 171 clocks |
+| nominal | 51 | 0 clocks | 170 clocks | 170 clocks |
+| +3% | 0 | 0 clocks | 48 clocks | 37 clocks |
+| +3% | 51 | 0 clocks | 48 clocks | 37 clocks |
+| +3% | 0 | +/-2 clocks | 50 clocks | 37 clocks |
+| +3% | 51 | +/-2 clocks | 50 clocks | 37 clocks |
+
+Margins use the external source cycle `S-2`, not a pad/electrical timing
+model. First packed-word publication is 16080 clocks/335us after first START
+in the nominal comparison; across the eight cases it is 15716..16446 clocks.
+Publication occurs on the fourth byte's last data sample, **before its STOP
+is validated**. Those are publication latencies; host reads remain postponed
+until after the fixed deadline. No native/RTL/board throughput is measured.
+
+### Partial group and framing/break limits
+
+With `00 ff 55`, followed by eight nominal bit periods of idle, a passive
+checkpoint at cycle 17620 sees **zero FIFO words**, ISR `55ff0000` and shift
+count 24. Idle does not flush those three bytes. Fourth byte `aa` starts at
+cycle 19929; publication at 23509 yields word `aa55ff00` and exact bytes
+`00 ff 55 aa`. First START-to-publication latency is 19413 clocks in this
+explicit idle-gap case. Up to three bytes wait in ISR for the next byte;
+there is no timeout flush or arbitrary packet-length guarantee. Restart
+would discard a partial group rather than deliver it.
+
+The R13-shaped fault stream offers `a5` with bad STOP, twelve extra low
+bit periods, two high idle bits, then `5a ff 00`. Sticky F0 is set once and
+not cleared. The group returns word `00ff5aa5`, retaining the suspect `a5`;
+partial ISR state survives the break/recovery wait. F0 is global, not
+per-byte or per-word validity metadata. Consumers must treat words around
+F0 as suspect and account for publication before fourth-byte STOP checking.
+This is the declared finite recovery waveform, not noise rejection or reset
+qualification. Full-FIFO stalls can lose input; no lossless FIFO-full claim.
+
+The new file's ten tests passed in two focused invocations: 3 tests in 13.12s
+and 7 in 37.47s. Total **1303266 / 3000000** actual model clocks includes the
+single baseline comparison, setup and post-deadline reads; zero native/EDA/
+runner jobs. One candidate/implementation iteration sufficed. The unchanged
+23-test byte-UART suite was not rerun. These source/model results are pending
+host commit and Claude integration; the new tests/docs require R13 first.

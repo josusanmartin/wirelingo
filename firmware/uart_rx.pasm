@@ -7,8 +7,9 @@
 ; Timing (D = the tick the start-bit WAIT completes, at most a tick after the
 ; falling edge): data bits are sampled at D+12, D+20, ..., D+68, the stop bit at
 ; D+76. The byte is pushed during the stop bit, so a good stop bit returns to
-; the start-bit WAIT at D+77, before the next start bit even from a sender 3 %
-; fast (test_uart). The WAIT is on the level, not the edge: arriving just after
+; the start-bit WAIT at D+77. In the selected +3 % true-baud regression it
+; can rearm 9 clocks after the next physical START (docs/uart-rx-timing.md).
+; The WAIT is on the level, not the edge: arriving just after
 ; a start edge, an edge WAIT would miss it (its first attempt only samples).
 .program uart_rx
 .shift_in right
