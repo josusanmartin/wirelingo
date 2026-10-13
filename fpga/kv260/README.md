@@ -533,7 +533,7 @@ Expected output (the kernel lines are the format Linux 6.8 prints; the port
       pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
       pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
       holding D- (pmod[1]) low: detached
-      loaded usb_enum (240 words, low speed) into core 0, CRCCTRL, line unit
+      loaded usb_enum (241 words, low speed) into core 0, CRCCTRL, line unit
       attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
     [kernel] waiting up to 20 s for 1209:5634 (no host-port access meanwhile)
       [  ...] usb 1-1.2: new low-speed USB device number 4 using xhci-hcd
@@ -563,6 +563,12 @@ firmware at full speed); an FPGA pin with 27 ohm is probably also
 outside full speed's driver-impedance window (28-44 ohm); keep the wires short.
 
 ### Build and staging (2026-10-07, branch `kv260-usb`)
+
+On `main` since 2026-10-13, with the USB bus-reset fix (usb_enum waits for
+D- low as a level; 241 words, one more than the transcripts recorded on
+2026-10-07). The bitstream is unchanged (no `src/` change); the Kria's
+`~/protoemu48/{tools,firmware,fpga/kv260/host}` were refreshed from `main`
+the same day (nothing loaded), and `make -C fpga/kv260/sim` passes 5/5 with it.
 
 Branch `kv260-usb` = `v2` (this FPGA flow) + the `usb-enum` commit
 (firmware/usb_enum.pasm, pe.usbenum, pe.usbhost, docs/usb-enumeration.md;
@@ -648,7 +654,7 @@ to the end of enumeration:
     pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
     pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
     holding D- (pmod[1]) low: detached
-    loaded usb_enum (240 words, low speed) into core 0, CRCCTRL, line unit
+    loaded usb_enum (241 words, low speed) into core 0, CRCCTRL, line unit
     attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
     usb_demo on the KV260 RTL at 48 MHz: device descriptor 120110010000000809123456010000000001; 27 transactions,
       168540 cycles (3.51 ms), turnaround 2.16-2.16 bit times, host port idle after the start;
