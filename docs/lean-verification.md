@@ -740,3 +740,151 @@ Channel-swap and lost-wrap offline controls were rejected at clock0. Aggregate
 implementation revision are consumed. All1450 prior packet files remain
 byte-identical. C8 earns the missing bounded negative controls while preserving
 C7's historical partial/failure evidence; host review/commit remains separate.
+
+
+## C9: normally fetched WAITs and registered per-pin ownership
+
+`PinOwnership.lean` adds six manually transcribed line-disabled per-pin
+register lemmas: selected-owner update, nonowner noninterference, no-write
+retention, absent/zero-mask retention, direct host POUT priority, and old-owner
+use on the owner-configuration edge. Owner/pin/word inputs normalize to2/5/32
+bits. Four core mask/value slots are explicit; slots2/3 are absent and zero
+in this bench. The proofs do not translate SV or prove global sequential RTL
+refinement. The closed executable reference reuses accepted `sideEffect` only
+for zero-main-data, output side-set WAITs, and `sideExecute` with explicit own
+bank validity. Its separate condition function covers exactly unqualified,
+no-timeout/no-auto-clear FLAG1/FLAG0 F0, without C1/C2 event resolution.
+
+The executable reference starts from reset, models one-cycle SRAM read/hold
+and CTRL pending state, and consumes only the fixed bus schedule. It never
+accepts DUT PCs, write buses, counters or outputs as prediction inputs.
+Unknown SRAM/DOUT is explicit before loading; only inactive value buses with
+unknown instruction in the declared cold phase are excluded from comparison.
+Masks/registers/ports and known fetch words are still compared. All fields
+must be known in execution phase1. The live bench has no deposits, force,
+instruction injection, memory replacement or testbench pad accumulator.
+
+Three positive streams and one exact actual-chip mux-mutant stream are
+predeclared:43 owner-walk clocks,39 fetch/release/wrap/host clocks,50 div4
+clocks, and43 mutant clocks, totaling175 actual edges including8 reset edges
+and all loading/CTRL settling. Both cores are active together, loaded through
+the documented direct chip bus while disabled. Direct bus is not serial host
+transport evidence. Geometry is NCORES2/NBANKS2/BANK_AW8/FIFO_LOG2=3 with
+unchanged pe_chip/core/imem/line/FIFO/gating sources and `test/sram_model.v`
+on the real SRAM macro interface; PE_FLOP_IMEM is not defined.
+
+Exact normally loaded two-word programs:
+
+| Core | Address | Word | Instruction |
+| --- | --- | --- | --- |
+|0|0|0x0a050000|WAIT FLAG1 F0, mandatory side1|
+|0|1|0x0c060000|WAIT FLAG0 F0, mandatory side2|
+|1|256|0x0c050000|WAIT FLAG1 F0, mandatory side2|
+|1|257|0x0a060000|WAIT FLAG0 F0, mandatory side1|
+
+DIV integer1 (or4 in the last stream), fraction0; SIDE_COUNT2/SIDE_BASE9,
+optional0/pindir0; ENTRY own bank slot0, WRAP slot0..1; SHIFTCTRL0 (OSR reset0,
+autopull disabled), PINCTRL0=0. LINECFG0, OD_MASK0, owner-hi0, POE0x600,
+initial POUT0x600, flags0. CTRL0x303 is written then its one-cycle restart/
+enable latency observed before assertions. Setup is29 edges including reset.
+All per-edge bus drives, exact words/LE bytes and independent predictions are
+in the declaration/preparation packet. Active owner/POUT changes and host flag
+set/clear are the specifically exercised exceptions to cold configuration.
+Program banks and core configuration are never written while enabled.
+
+The owner walk covers pairs(0,0)->0x200,(1,1)->0x400,(0,1)->0x600,(1,0)->0
+under both-stalled FLAG1 preconditions, and absent owners(2,3) retaining0x600.
+It verifies old owner on the configuration edge and new owner thereafter.
+The release/wrap stream observes fetched FLAG0 side effects on the edge after
+FLAG1 completes, a POUT/core-write overlap and subsequent core reapplication,
+then wraps back to FLAG1. The div4 stream changes flags/owners between ticks.
+
+| Actual source relation | Manual semantics / actual observation |
+| --- | --- |
+|pe_chip sel_imem/sel_core/sel_glob, ctrl_pend/ctrl_data and restart/enable|fixed bus decode and one-cycle pending CTRL in closed reference|
+|pe_imem bank-local raddr, we/waddr, SRAM A_REN=!we; behavioral SRAM NBA DOUT/hold|unknown initial memory, normal loaded words, registered read/hold; pre/post instr and pre fetch captured|
+|pe_core exec/complete/fetch_addr, own-bank PC and wrap|accepted execution gate plus separate narrow flag condition; pre-edge masks/qualified completion and post-PC/stalled/fault/halt|
+|pe_chip pin_owner[2*p+:2], w_out_en/val selection|per-pin ownerBit/ownerWord, slots2/3 zero|
+|pe_chip pin_owner_lo/hi clock-gated NBA configuration|new owner stored; old owner used in same-edge register update|
+|pe_chip pin_out<=POUT host write?bus_wdata:pin_out_n|manual register host priority; actual post-NBA pin_out|
+|line_mask overlay and OD_MASK|line-off/OD0 checked; pad synchronization/timing excluded|
+|uo_out=eff_out[14:8]|logical pins9/10 correspond to actual uo_out[1]/[2], slices pin_out[10:9] and uo_out[2:1]|
+
+The bench drives inputs with clock low, waits4ns, snapshots old owner/config,
+instr/fetch and write masks/completion before the rising edge, then reads
+actual pin_out/port after1ns and NBA. All edges, reset and loading included,
+are counted. The exact NONPRODUCT mux mutant replaces both mask and value
+owner references on the one output-selection statement with core0 references.
+It must compile before behavioral execution and disagree at owner1's first
+eligible edge29. Offline negative delays only the saved output/port sequence
+one clock while leaving success/completion markers intact; it must disagree
+at edge31. Syntax/assertion/runtime failures are failures, not passing negatives.
+
+Replay requires explicit --phase prepare/native, fresh --output, --reference,
+--iverilog/--vvp/--lean/--lean-lib/--lean-objects/--strace. The canonical accepted
+receipt anchors baseline2de7a6a and exact sources/imports, independent of its
+location. Existing accepted Wait/Event/Gating/SideSet objects are copied
+read-only into new evidence, never rebuilt with Lake. Preparation elaborates
+both actual RTL variants, compiles/audits the new module and computes all
+predictions before native use. Native additionally requires --prepared and
+--prepared-sha256, checks source/tool/artifact identity before creating its
+fresh destination, and runs only the predeclared streams. Explicit executable
+replay commands, runtime syscall file hashes and complete budget ledgers are
+retained in NEW C9 evidence. All compiler output/TMPDIR stays there.
+
+This slice has line-off, integer-divider/delay0, fixed two-word own-bank WAIT,
+no qualifier/timeout/auto-clear or main pin write, reset OSR0/autopull0, bus
+schedule and normal behavioral SRAM assumptions. It does not establish
+universal instruction/fetch/RTL refinement, arbitrary host interference,
+serial bus transport, CDC/pad synchronization/timing, SRAM electrical behavior,
+full-chip concurrency beyond these two cores, physical or silicon correctness.
+
+
+Frozen C9 outcome: FAILURE before native execution. Both original actual-chip
+and evidence-local owner0 mux mutant elaborated successfully in each of two
+preparation checks, using the unchanged behavioral SRAM macro path. The first
+Lean build failed on three local-let rewrite goals and a record layout error.
+The second source revision resolved those diagnostics, but selected-owner and
+no-write lemmas still leave `if true=true` / `if false=true` goals unclosed.
+Thus the new module has NOT compiled, the six declarations are NOT accepted
+or axiom-audited theorems, and closed Lean predictions were not emitted.
+No positive native rows, actual behavioral mux mutation rejection or offline
+shift rejection exists. Planned175 clocks were not run: actual RTL/model
+clock count0, state deposits0. Two source revisions and two focused checks
+consumed; the other two checks remain unused because source revision budget
+is exhausted. Failed logs/compile exits and all predeclared stimuli remain
+immutable. Next decision is a separately authorized proof-only closure/audit
+correction before the original native experiment; no C9 retry is inferred.
+
+
+C10 proof closure and completed native result (reconciled October 13): the
+previous C9 failure remains historical. The follow-up changed only the two
+selected-owner/no-write proof bodies, adding explicit `if_pos`/`if_neg`
+closure after the hypothesis rewrite. Definitions, theorem statements, other
+proofs, audit driver, checker, bench, programs and bus schedules are unchanged.
+Lean compiled and all six manual theorem audits passed: five have no axioms;
+`owner_absent_mask_retains` uses `propext`, permitted by the existing policy.
+No sorry, new axiom or native_decide was introduced.
+
+The single preparation check passed in9.30s, elaborated original and actual
+owner0 mux-mutant RTL, and emitted132 closed predictions before simulation.
+The single native check passed in0.61s: original43/39/50-clock streams matched
+all originally compared fields/phases, including reset/loading. The43-clock
+actual mutant first disagreed at clock29: expected pin_out0x400/uo_out0x04,
+observed0x200/0x02, with both WAITs executing but incomplete. The existing
+offline control shifts the saved registered-output and external-port columns
+together; it first disagreed at clock31 and preserves completion markers.
+These are two compared channels in one saved-row mutation, not two independent
+mutant simulations. Aggregate175 RTL clocks include8 reset edges; Python
+model steps and hierarchical state deposits are zero.
+
+Successful raw/predicted rows, axiom output, exact commands, explicit input
+receipts, runtime syscall/hash maps and clock ledgers remain in immutable
+`evidence/sol-euclid/C10-EUCLID-ITE-CLOSURE/`. The run completed before STOP
+and was recovered without replay after the October13 host rebase. A narrow
+current-checkout checker interface follow-up needs its own assignment; no
+old budget is renewed. This establishes finite normal behavioral-SRAM fetch,
+core-bus, registered ownership and logical-port correspondence in the declared
+line-off/OD0/two-core WAIT domain. Manual source translation, universal RTL
+refinement, serial-host transport, pad/electrical/CDC and release approval
+remain outside the claim.
