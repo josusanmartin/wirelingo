@@ -46,6 +46,14 @@ describes how, and what it caught.
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
+* **Post-freeze protocol challenge:** with the RTL frozen at tag
+  `rc-93c2137-t48ba`, DMX512, LIN (commander and a self-synchronising
+  responder), NEC infrared (38 kHz carrier and receiver), I2S, Wiegand and
+  DShot600 (bidirectional too) were added in firmware alone: ten programs,
+  each checked by the static timing checker, pins-only models, sigrok's
+  decoders and an RTL test through the SPI port
+  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the
+  ISA limitations they ran into).
 * **v2** (signed off as run v2c): four small additions over g4, each in the spec, RTL, model, assembler, lockstep, formal where an
   invariant applies, and a firmware that uses it. The line unit's NRZI sample
   point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
@@ -117,6 +125,12 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 | `ws2812` | NeoPixel driver, datasheet timing windows | | model |
 | `i2c_sniff` | passive I2C monitor (START/STOP/bytes), beside the master on the other core | | model |
 | `la_capture` + `i2c_device` (2 cores) | **reverse engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): an 8-channel logic analyzer (timestamped change records; `pe.la` makes a VCD, an I2C transcript and the device's register image), then an I2C target at the decoded address whose registers are host software: a clone of the captured EEPROM, or a man in the middle | capture (v2, WAIT kind 7): timestamps to the tick, a record per ≥ 7 ticks, sustained rate bounded by the host's draining (1-bit SPI at 25 MHz: 625 k edges/s; quad, 32-word bursts: 5.6 M); device: every read byte is a host round trip under clock stretching | RTL: capture → decode → clone → man in the middle through the SPI port, rate sweep; capture timing and device response on the model |
+| `dmx512_tx` (post-freeze) | **DMX512** (E1.11) lighting: BREAK 176 us, MAB 12 us, up to 513 slots at 250 kbit/s streamed from the FIFO, short packets padded to the 1204 us minimum | transmit only; the host refreshes within 1 s | RTL (timing at 50 MHz: every edge on the 4 us grid; full universes); sigrok `dmx512` |
+| `lin_commander` + `lin_responder` (post-freeze, 2 cores) | **LIN** 2.x: break/sync/PID (parity computed in firmware), publish or subscribe, classic/enhanced checksums; the responder measures the bit rate on every sync field | no schedule table, sleep or bit-error check | RTL (both on one bus); model: commander +-10 %, responder clock +-14 %, response within 0.44 % of the commander; sigrok `lin` |
+| `nec_tx` + `nec_rx` (post-freeze) | **NEC infrared**: 38 kHz carrier generated in firmware, frames/extended/repeat codes 108 ms apart; receiver decodes a receiver module's output | NEC only | RTL (TX -> receiver-module model -> RX); model: +-10 % senders, +-200 us burst distortion; sigrok `ir_nec` on the carrier and the module output |
+| `i2s_tx` (post-freeze) | **I2S** 16-bit stereo; on underrun the clocks keep running and the frame is silence | transmit only, no MCLK | RTL; sigrok `i2s` |
+| `wiegand_tx` + `wiegand_rx` (post-freeze) | **Wiegand** card-reader interface: parity computed (TX) and checked (RX, 26/34-bit) with the CRC tap; RX catches both lines with one WAIT | TX <= 32 data bits | RTL (TX -> RX); model: 20-100 us pulses, 0.2-5 ms intervals, glitches; sigrok `wiegand` |
+| `dshot600`, `dshot_bidir` (post-freeze) | **DShot600** ESC protocol, checksum in firmware, last value repeated; **bidirectional**: the ESC's GCR telemetry received on the same wire at 750 kbit/s, every edge timed | telemetry GCR decoded by the host | RTL; model: edges exact at 48 MHz, +-1 clock at 50 MHz; telemetry with ESC clock +-15 %; sigrok `pwm` (no DShot decoder exists) |
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
 sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
@@ -188,7 +202,7 @@ make -C formal                                                   # proofs
 |------|------|
 | `docs/` | `isa.md` (spec), `asm.md` (assembler), `methodology.md` (AI-assisted design and verification), `verification.md`, `physical.md`, `info.md` (TT datasheet) |
 | `src/` | RTL: `pe_core`, `pe_fifos`/`pe_fifo`, `pe_chip` (cores + IMEM + pins), `pe_imem`, `pe_hostport` (SPI, 1-bit or quad), TT top `project.v` |
-| `tools/pe/` | `isa`, `asm` (assembler), `sim` (golden model), `host` (register writes), `modelhost`, `randprog`, USB/CAN helpers |
+| `tools/pe/` | `isa`, `asm` (assembler), `sim` (golden model), `host` (register writes), `modelhost`, `randprog`, USB/CAN helpers, `postfreeze` (host side and pins-only models of the post-freeze protocols) |
 | `tools/micropython/` | demo-board driver and generated firmware bundle |
 | `firmware/` | `.pasm` programs |
 | `test/` | cocotb top-level and lockstep tests; `test/model/` pytest firmware tests |
