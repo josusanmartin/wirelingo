@@ -1,5 +1,49 @@
 # Lean verification of WAIT execution
 
+
+Run the finite SRAM-fetch/ownership regression from the checkout with installed
+Python3.10+, Lean4.28.0 (including its standard library), Icarus Verilog/vvp,
+and strace. Replace the executable placeholders with installed paths:
+
+```sh
+python3 formal/lean/run_fetch_ownership.py \
+  --output /tmp/wirelingo-ownership-review \
+  --lean /path/to/lean4.28/bin/lean \
+  --iverilog /path/to/iverilog --vvp /path/to/vvp
+```
+
+The output must not exist; its parent must exist and lie outside the checkout
+and Lean library. Icarus, vvp and strace can also resolve from PATH; use
+`--strace` if needed. The Lean library defaults to `lib/lean` alongside its
+installation's `bin` directory; `--lean-lib` overrides it. Supply the actual
+installed Lean binary rather than an elan shim: this runner never downloads
+or installs a toolchain. No Lake build or historical evidence/objects/commit
+is required. Wait/Event/Gating/SideSet compile from checked-in source into
+fresh scratch, followed by PinOwnership and the unchanged six-theorem audit.
+Both real RTL variants elaborate before the fixed132-positive-row comparison
+and43-clock actual owner0 mutant. Total175 RTL clocks include8 reset edges;
+model steps/deposits are zero. The actual mux and offline output/port shift
+controls must first disagree at29 and31 respectively. This remains finite
+manual-model/native agreement in the documented domain, not universal SV
+refinement or pad/physical validation.
+
+`run-ledger.json` and the prepare/native ledgers retain commands, exits,
+versions, source/tool hashes, syscall-read runtime/library hashes, raw and
+predicted rows and negative counterexamples. The preparation receipt binds
+every required checked-in source, tool, read Lean library input, compiled
+object, corpus and prediction artifact; native rejects stale source or
+artifact inputs before creating its output. Advanced separate phases use
+`check_rtl_fetch_ownership.py --phase prepare|native` with explicit tool/library
+paths and fresh outputs; native additionally takes `--prepared` and the exact
+`--prepared-sha256`. Historical C9/C10 receipts retain their original meaning
+and bytes; this maintained interface does not reinterpret old packets.
+
+The October13 checkout-usability run rebuilt imports in an isolated source-only
+copy and passed in27.63s. Its corpus,132 positive rows and both counterexamples
+match the saved C10 result exactly; syscall-read records show no historical
+evidence or original-worktree inputs. Missing tools/nonfresh output/stale
+prepared sources reject before output writes. The proofs and bench are unchanged.
+
 This provides executable Lean specifications and 46 kernel-checked theorems:
 15 for the **resolved-condition WAIT instruction-attempt boundary**, and 15
 for the **RISE/FALL/EDGE/DIFF tracker and condition-resolution projection**,

@@ -4,7 +4,8 @@
 Prepare elaborates BOTH real RTL variants before any simulation, compiles and
 audits the new manual Lean semantics and computes closed bus-only predictions.
 Native uses that explicit immutable preparation in one fresh output directory.
-All tools/imports are existing explicit inputs; no Lake/build/install defaults.
+Installed tools are explicit inputs. Imports compile from checked-in source
+into fresh output; no Lake/download/install or historical object dependency.
 """
 import argparse
 import hashlib
@@ -13,15 +14,20 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import time
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+# Historical corpus label, not a checkout/provenance prerequisite.
 BASELINE = '2de7a6a728a32ad708040d564ac3f77fd3dcac5a'
-REFERENCE_IDENTITY = '9130c373135a1752c3bbf6eecefcd17e926a32bd7252ca1eb0901e6a1b3a444a'
+IMPORTS = ('Wait', 'Event', 'Gating', 'SideSet')
+SOURCE_FILES = tuple('src/' + n + '.sv' for n in
+    ('pe_chip', 'pe_core', 'pe_imem', 'pe_line', 'pe_fifo', 'pe_fifos', 'pe_cg')) + (
+    'test/sram_model.v', 'formal/lean/audit_axioms.py',
+    'formal/lean/lean-toolchain') + tuple('formal/lean/Wirelingo/' + n + '.lean'
+    for n in IMPORTS)
 UNKNOWN = 4294967296
 FIELDS = ('owner_lo', 'owner_hi', 'enable', 'restart', 'flags', 'pc0', 'pc1',
           'instr0', 'instr1', 'fetch0', 'fetch1', 'cnt0', 'cnt1', 'exec0', 'exec1',
@@ -30,7 +36,8 @@ FIELDS = ('owner_lo', 'owner_hi', 'enable', 'restart', 'flags', 'pc0', 'pc1',
           'post_pin_oe', 'post_uo_out', 'post_pc0', 'post_pc1', 'post_instr0',
           'post_instr1', 'post_stalled0', 'post_stalled1', 'post_faults', 'post_halts')
 NEW_SOURCES = ('Wirelingo/PinOwnership.lean', 'PinOwnershipAudit.lean',
-               'rtl_fetch_ownership_tb.sv', 'check_rtl_fetch_ownership.py')
+               'rtl_fetch_ownership_tb.sv', 'check_rtl_fetch_ownership.py',
+               'run_fetch_ownership.py')
 MUX_NEEDLE = '      if (w_out_en[32*pin_owner[2*p +: 2] + p]) pin_out_n[p] = w_out_val[32*pin_owner[2*p +: 2] + p];'
 MUX_MUTANT = '      if (w_out_en[p]) pin_out_n[p] = w_out_val[p];'
 
@@ -117,38 +124,33 @@ def predeclaration():
             'domain': 'line-off, OD0, POE600, reset OSR0/autopull0; bus-only stable own-bank WAITs'}
 
 
+def source_inputs():
+    return {f: digest(ROOT / f) for f in SOURCE_FILES} | {
+        'formal/lean/' + f: digest(HERE / f) for f in NEW_SOURCES}
+
+
 def validate_inputs(a):
     a.output = a.output.absolute()
     if a.output.exists() or a.output.is_symlink() or not a.output.parent.is_dir():
         raise ValueError('fresh nonexistent output required with existing parent')
     a.output = a.output.parent.resolve() / a.output.name
-    for name in ('reference', 'iverilog', 'vvp', 'lean', 'strace'):
-        p = getattr(a, name).resolve(strict=True)
-        if not p.is_file() or (name != 'reference' and not os.access(p, os.X_OK)):
-            raise ValueError(f'missing/invalid input {name}')
+    for name in ('iverilog', 'vvp', 'lean', 'strace'):
+        try:
+            p = getattr(a, name).resolve(strict=True)
+        except OSError as e:
+            raise ValueError(f'{name} unavailable: supply an installed executable via --{name}') from e
+        if not p.is_file() or not os.access(p, os.X_OK):
+            raise ValueError(f'{name} unavailable: supply an installed executable via --{name}')
         setattr(a, name, p)
-    for name in ('lean_lib', 'lean_objects'):
-        p = getattr(a, name).resolve(strict=True)
-        if not p.is_dir():
-            raise ValueError(f'missing input directory {name}')
-        setattr(a, name, p)
+    a.lean_lib = a.lean_lib.resolve(strict=True)
     if not (a.lean_lib / 'Init.olean').is_file():
-        raise ValueError('standard Lean library missing')
-    if any(a.output.is_relative_to(p) for p in (ROOT, a.lean_lib, a.lean_objects)):
-        raise ValueError('output overlaps read-only source/library/import root')
-    a.receipt = json.loads(a.reference.read_text())
-    identity = hashlib.sha256(json.dumps(a.receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    if identity != REFERENCE_IDENTITY or a.receipt['baseline'] != BASELINE:
-        raise ValueError('wrong accepted provenance identity')
-    for f, h in a.receipt['sources'].items():
-        if digest(ROOT / f) != h:
-            raise ValueError(f'wrong accepted source {f}')
-    for f, h in a.receipt['objects'].items():
-        if digest(a.lean_objects / f) != h:
-            raise ValueError(f'wrong accepted import {f}')
-    for f in NEW_SOURCES:
-        if not (HERE / f).is_file():
-            raise ValueError(f'missing source {f}')
+        raise ValueError('Lean standard library missing: supply Lean4.28 lib/lean via --lean-lib')
+    if any(a.output.is_relative_to(p) for p in (ROOT, a.lean_lib)):
+        raise ValueError('output overlaps read-only source/library root')
+    try:
+        a.sources = source_inputs()
+    except OSError as e:
+        raise ValueError(f'checkout source missing: {e.filename}') from e
     if a.phase == 'native':
         if not a.prepared or not a.prepared_sha256:
             raise ValueError('native requires explicit prepared directory and receipt SHA256')
@@ -157,17 +159,22 @@ def validate_inputs(a):
         if digest(receipt_file) != a.prepared_sha256:
             raise ValueError('wrong prepared receipt identity')
         prep = json.loads(receipt_file.read_text())
-        if prep['baseline'] != BASELINE:
-            raise ValueError('wrong prepared baseline')
-        for f, h in prep['new_sources'].items():
-            if digest(HERE / f) != h:
-                raise ValueError(f'prepared source drift {f}')
+        if prep['source_inputs'] != a.sources:
+            raise ValueError('prepared source drift: rerun preparation in a fresh output')
+        if prep['corpus_sha256'] != hashlib.sha256(json.dumps(
+                predeclaration(), sort_keys=True).encode()).hexdigest():
+            raise ValueError('prepared corpus drift')
         for f, h in prep['artifacts'].items():
             if digest(a.prepared / f) != h:
                 raise ValueError(f'prepared artifact drift {f}')
         for name, h in prep['tools'].items():
             if digest(getattr(a, name)) != h:
                 raise ValueError(f'prepared tool drift {name}')
+        if str(a.lean_lib) != prep['lean_lib']:
+            raise ValueError('prepared Lean library path drift')
+        for f, h in prep['library_inputs'].items():
+            if digest(Path(f)) != h:
+                raise ValueError(f'prepared library drift {f}')
         if a.output.is_relative_to(a.prepared):
             raise ValueError('output overlaps frozen preparation')
     return a
@@ -231,10 +238,15 @@ def prepare(inv):
         inv.run([a.iverilog, '-g2012', '-s', 'rtl_fetch_ownership_tb', '-o', a.output / (label + '.vvp'),
                  HERE / 'rtl_fetch_ownership_tb.sv', source, *deps, ROOT / 'test/sram_model.v'], 'elaborate-' + label)
     build = a.output / 'lean-build'; (build / 'Wirelingo').mkdir(parents=True)
-    for f, h in a.receipt['objects'].items():
-        shutil.copyfile(a.lean_objects / f, build / f)
-        assert digest(build / f) == h
     env = {'LEAN_PATH': str(build) + ':' + str(a.lean_lib)}
+    version = inv.run([a.lean, '--version'], 'lean-version')
+    if not re.search(r'Lean \(version 4\.28\.0(?:,|\))', version):
+        raise RuntimeError('Lean4.28.0 required; supply its installed bin/lean')
+    inv.run([a.iverilog, '-V'], 'iverilog-version')
+    inv.run([a.vvp, '-V'], 'vvp-version')
+    for name in IMPORTS:
+        inv.run([a.lean, '-DwarningAsError=true', '-o', build / ('Wirelingo/' + name + '.olean'),
+                 HERE / ('Wirelingo/' + name + '.lean')], 'import-' + name, env)
     inv.run([a.lean, '-DwarningAsError=true', '-o', build / 'Wirelingo/PinOwnership.olean',
              HERE / 'Wirelingo/PinOwnership.lean'], 'owner-build', env)
     audit = inv.run([a.lean, '-DwarningAsError=true', HERE / 'PinOwnershipAudit.lean'], 'owner-audit', env)
@@ -262,8 +274,13 @@ def prepare(inv):
     assert [r[25] for r in predictions['owner-walk'][29:]] == [1024,1024,512,512,1536,1536,0,1536,0,1536,1536,1536,1024,1024]
     assert [r[25] for r in predictions['fetch-release-wrap-host'][29:]] == [512,512,512,1024,1536,1024,1024,1024,512,512]
     artifact_files = ['original.vvp', 'owner0-mutant.vvp', 'predictions.json', 'predeclared-stimuli.json',
-                      'lean-build/Wirelingo/PinOwnership.olean', 'owner-audit.stdout.log', 'mutant-delta.json']
-    receipt = {'baseline': BASELINE, 'new_sources': {f: digest(HERE / f) for f in NEW_SOURCES},
+                      'lean-build/Wirelingo/PinOwnership.olean', 'owner-audit.stdout.log', 'mutant-delta.json'] + [
+                      'lean-build/Wirelingo/' + n + '.olean' for n in IMPORTS]
+    receipt = {'baseline': BASELINE, 'source_inputs': a.sources,
+        'corpus_sha256': hashlib.sha256(json.dumps(predeclaration(), sort_keys=True).encode()).hexdigest(),
+        'lean_lib': str(a.lean_lib),
+        'library_inputs': {str(f): digest(f) for f in sorted(inv.dependencies) if f.is_relative_to(a.lean_lib)},
+        'new_sources': {f: digest(HERE / f) for f in NEW_SOURCES},
         'tools': {n: digest(getattr(a, n)) for n in ('iverilog', 'vvp', 'lean', 'strace')},
         'artifacts': {f: digest(a.output / f) for f in artifact_files}, 'axiom_lemmas': 6,
         'positive_RTL_clocks_predeclared': 132, 'aggregate_RTL_clocks_predeclared': 175}
@@ -340,7 +357,7 @@ def native(inv):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--phase', choices=('prepare','native'), required=True)
-    for n in ('output','reference','iverilog','vvp','lean','lean-lib','lean-objects','strace'):
+    for n in ('output','iverilog','vvp','lean','lean-lib','strace'):
         p.add_argument('--'+n, type=Path, required=True)
     p.add_argument('--prepared', type=Path)
     p.add_argument('--prepared-sha256')
@@ -348,17 +365,16 @@ def main():
     except (OSError, ValueError, KeyError, TypeError) as e: p.error(str(e))
     a.output.mkdir(exist_ok=False)
     put(a.output / 'predeclared-stimuli.json', predeclaration())
-    put(a.output / 'input-receipt.json', {'baseline':BASELINE, 'accepted_identity':REFERENCE_IDENTITY,
-        'selected_paths':{n:str(getattr(a,n)) for n in ('output','reference','iverilog','vvp','lean','lean_lib','lean_objects','strace')},
-        'reference_sha256':digest(a.reference), 'accepted_provenance':a.receipt,
+    put(a.output / 'input-receipt.json', {'corpus_label':BASELINE,
+        'source_inputs':a.sources,
+        'selected_paths':{n:str(getattr(a,n)) for n in ('output','iverilog','vvp','lean','lean_lib','strace')},
         'prepared':str(a.prepared) if a.prepared else None, 'prepared_sha256':a.prepared_sha256})
     inv = Invocation(a)
     try: result = prepare(inv) if a.phase == 'prepare' else native(inv)
     except Exception as e: result = {'result':'fail','phase':a.phase,'error':str(e)}
     finally:
-        inv.dependencies.update([Path(sys.executable).resolve(),a.reference,a.strace,
-            *[HERE/f for f in NEW_SOURCES], *[ROOT/f for f in a.receipt['sources']],
-            *[a.lean_objects/f for f in a.receipt['objects']]])
+        inv.dependencies.update([Path(sys.executable).resolve(),a.strace,
+            *[ROOT/f for f in a.sources]])
         put(a.output / 'dependency-hashes.json',{str(f):digest(f) for f in sorted(inv.dependencies)})
         summary={'elapsed_seconds':time.monotonic()-inv.start,'commands':inv.commands,
             'RTL_clocks_including_reset_setup':inv.clocks,'reset_edges':inv.resets,
