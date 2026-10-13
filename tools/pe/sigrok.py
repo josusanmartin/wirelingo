@@ -363,3 +363,132 @@ class ModelRecorder:
         self._sim.Chip.step = self._step
         self.trace.end(self.k * self.period_ps)
         return False
+
+
+# ---------------------------------------------------------------- post-freeze protocols
+# (docs/post-freeze-protocols.md: firmware written after the RTL freeze)
+
+def dmx512(trace, pin, **kw):
+    """sigrok's dmx512 decoder: (packets, errors). Each packet is a dict with
+    t (ns, the BREAK's start), brk_ns, mab_ns and slots (bytes: the START code
+    first). errors: [(t_ns, text)].
+
+    Two limits of libsigrokdecode 0.5.3's decoder (both legal DMX512): it
+    samples a slot's second stop bit at the first sample of the next slot, so
+    slots must be separated by some mark (MTBS > 0); and it looks for the next
+    BREAK only after 512 channels, so a shorter packet runs into the next one."""
+    anns = decode(trace, f"dmx512:dmx={pin}", "dmx512=break:mab:startcode:channel:data:error", **kw)
+    pk, err, cur = [], [], None
+    for a in anns:
+        if a.text == "Break":
+            cur = {"t": a.start, "brk_ns": a.end - a.start, "mab_ns": None, "slots": bytearray()}
+            pk.append(cur)
+        elif a.text == "MAB" and cur is not None:
+            cur["mab_ns"] = a.end - a.start
+        elif re.fullmatch(r"\d+ / 0x[0-9a-f]+", a.text) and cur is not None:
+            cur["slots"].append(int(a.text.split()[0]))
+        elif a.text != "Start code" and not a.text.startswith("Channel"):
+            err.append((a.start, a.text))
+    for p in pk:
+        p["slots"] = bytes(p["slots"])
+    return pk, err
+
+
+def lin(trace, pin, baud, version=2, **kw):
+    """sigrok's uart + lin stack: frames as dicts {t, pid, id, parity_ok,
+    data (bytes), checksum, checksum_ok}; warnings [(t_ns, text)]."""
+    anns = decode(trace, f"uart:rx={pin}:baudrate={baud},lin:version={version}",
+                  "lin=data:control:error:inline_error", **kw)
+    frames, warn, cur = [], [], None
+    for a in anns:
+        t = a.text
+        if t == "Break condition":
+            cur = {"t": a.start, "pid": None, "id": None, "parity_ok": None, "data": bytearray(),
+                   "checksum": None, "checksum_ok": None, "sync": False}
+            frames.append(cur)
+        elif cur is None:
+            warn.append((a.start, t))
+        elif t == "Sync":
+            cur["sync"] = True
+        elif m := re.match(r"ID: ([0-9A-F]{2}) Parity: (\d) \((ok|bad)\)", t):
+            cur["id"] = int(m[1], 16)
+            cur["pid"] = cur["id"] | int(m[2]) << 6
+            cur["parity_ok"] = m[3] == "ok"
+        elif m := re.match(r"Data: 0x([0-9A-F]{2})", t):
+            cur["data"].append(int(m[1], 16))
+        elif m := re.match(r"Checksum: 0x([0-9A-F]{2})", t):
+            cur["checksum"] = int(m[1], 16)
+            cur["checksum_ok"] = a.pd == "lin" and cur["checksum_ok"] is not False
+        elif t == "Checksum invalid":
+            cur["checksum_ok"] = False
+            warn.append((a.start, t))
+        elif a.pd == "lin" and (t.startswith("P != ") or t.startswith("Sync is not") or t in ("Error",)):
+            warn.append((a.start, t))
+    for f in frames:
+        f["data"] = bytes(f["data"])
+    return frames, warn
+
+
+def ir_nec(trace, pin, polarity="active-low", cd_freq=0, **kw):
+    """sigrok's ir_nec decoder: [(t_ns, kind, addr, cmd)] with kind "frame" or
+    "repeat", and warnings [(t_ns, text)]."""
+    opts = f"ir_nec:ir={pin}:polarity={polarity}" + (f":cd_freq={cd_freq}" if cd_freq else "")
+    anns = decode(trace, opts, "ir_nec=leader-code:addr:addr-inv:cmd:cmd-inv:repeat-code:warnings", **kw)
+    out, warn, cur = [], [], None
+    for a in anns:
+        t = a.text
+        if t == "Leader code":
+            cur = ["frame", None, None, a.start]
+        elif t == "Repeat code":
+            out.append((a.start, "repeat", None, None))
+            cur = None
+        elif m := re.match(r"Address: 0x([0-9A-F]{2})", t):
+            if cur:
+                cur[1] = int(m[1], 16)
+        elif m := re.match(r"Command: 0x([0-9A-F]{2})", t):
+            if cur:
+                cur[2] = int(m[1], 16)
+        elif t.startswith("Command#") and cur and cur[2] is not None:
+            out.append((cur[3], "frame", cur[1], cur[2]))
+            cur = None
+        elif "error" in t.lower():
+            warn.append((a.start, t))
+    return out, warn
+
+
+def i2s(trace, sck, ws, sd, **kw):
+    """sigrok's i2s decoder: [(t_ns, "L"|"R", value)] and warnings."""
+    anns = decode(trace, f"i2s:sck={sck}:ws={ws}:sd={sd}", "i2s=left:right:warnings", **kw)
+    out, warn = [], []
+    for a in anns:
+        if m := re.match(r"(Left|Right) channel: ([0-9a-f]+)", a.text):
+            out.append((a.start, m[1][0], int(m[2], 16)))
+        else:
+            warn.append((a.start, a.text))
+    return out, warn
+
+
+def wiegand(trace, d0, d1, bitwidth_ms=4, active="low", **kw):
+    """sigrok's wiegand decoder: [(t_ns, bits as a '0'/'1' string)] per frame
+    (a frame ends after bitwidth_ms without a pulse), and invalid states."""
+    anns = decode(trace, f"wiegand:d0={d0}:d1={d1}:bitwidth_ms={bitwidth_ms}:active={active}",
+                  "wiegand=state", **kw)
+    out, bad = [], []
+    for a in anns:
+        if m := re.match(r"(\d+) bits ([01]*)$", a.text):
+            out.append((a.start, m[2]))
+        elif a.text == "invalid":
+            bad.append((a.start, a.text))
+    return out, bad
+
+
+def pwm(trace, pin, polarity="active-high", **kw):
+    """sigrok's pwm decoder: [(t_start_ns, t_end_ns, duty_percent)], one per
+    period (active edge to active edge). The period is taken from the
+    annotation's span: sigrok's own period text has one decimal."""
+    anns = decode(trace, f"pwm:data={pin}:polarity={polarity}", "pwm=duty-cycle", **kw)
+    out = []
+    for a in anns:
+        if m := re.fullmatch(r"([0-9.]+)%", a.text):
+            out.append((a.start, a.end, float(m[1])))
+    return out
