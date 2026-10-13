@@ -230,6 +230,19 @@ def test_board_modules_avoid_cpython_only_features():
         assert not hits, (f.name, hits)
 
 
+class _TapeoutModelHost(ModelHost):
+    """USB driver fixture at the shipping geometry; other fixtures keep defaults."""
+
+    def __init__(self):
+        from pe.profile import TAPEOUT
+
+        self.chip = sim.Chip(ncores=TAPEOUT.ncores, nbanks=TAPEOUT.nbanks,
+                             bank_words=TAPEOUT.bank_words, fifo_depth=TAPEOUT.fifo_depth)
+        self.ui = self.uio = self.ext_oe = self.pull_up = 0
+        assert (self.chip.ncores, self.chip.nbanks, self.chip.bank_words,
+                self.chip.fifo_depth) == (2, 2, 256, 8)
+
+
 def test_bringup_usb_enum_enumerates_alone():
     """bringup.usb_enum() loads the autonomous USB device through the driver
     (bundle bursts over the SPI port model); the chip then enumerates with the
@@ -241,7 +254,7 @@ def test_bringup_usb_enum_enumerates_alone():
     from pe.usbhost import ControlHost
     import test_usb_autonomous as ua
     for speed in ("low", "full"):
-        mh = ModelHost()
+        mh = _TapeoutModelHost()
         pe = protoemu.ProtoEmu(FakeTT(mh))
         bringup.usb_enum(pe, speed)
         mh.pull_up = 0b10
@@ -253,7 +266,7 @@ def test_bringup_usb_enum_enumerates_alone():
         assert got == ua.CONFIGURED(5), (speed, got)
         assert got == usbenum.state(pe.read)
     with pytest.raises(ValueError):
-        bringup.usb_enum(protoemu.ProtoEmu(FakeTT(ModelHost())), "high")
+        bringup.usb_enum(protoemu.ProtoEmu(FakeTT(_TapeoutModelHost())), "high")
 
 
 def test_bundle_usb_enum_matches_the_loader():
