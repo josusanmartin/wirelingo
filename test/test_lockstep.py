@@ -219,8 +219,8 @@ async def test_registers(dut):
 @cocotb.test()
 async def test_random_lockstep(dut):
     """Random programs + random stimulus, compared every cycle."""
-    nseeds = int(os.environ.get("LOCKSTEP_SEEDS", "20"))
-    ncycles = int(os.environ.get("LOCKSTEP_CYCLES", "600"))
+    nseeds = int(os.environ.get("LOCKSTEP_SEEDS", "40"))
+    ncycles = int(os.environ.get("LOCKSTEP_CYCLES", "1000"))
     seed0 = int(os.environ.get("LOCKSTEP_SEED0", "1000"))
     h = await start(dut)
     for seed in range(seed0, seed0 + nseeds):
