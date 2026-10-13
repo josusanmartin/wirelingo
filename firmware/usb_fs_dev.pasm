@@ -64,7 +64,7 @@ idle:
     ldi r2, 120                    ; 2.5 us of SE0 is a bus reset
     wait 1 pin DM timeout r2
     jmp t, bus_reset
-    wait fall DM
+    wait 0 pin DM                  ; a level: `wait fall` missed an SE0 begun just before it
     jmp !pin DP, idle              ; J -> SE0: reset, rather than packet SYNC
     in line, 8                     ; SYNC
     jmp t, idle
