@@ -133,18 +133,25 @@ header. The fixed4096-clock timer expires about1012 clocks after wire end;
 post-wire status/drain/POUT costs are separately recorded in the artifacts.
 Both messages miss the12000-clock comparison deadline by about688 clocks.
 
-The maintained two-message benchmark now uses a fixed3120-clock wait and
-asserts the unchanged12000-clock deadline only after saving complete paid
-timing and protocol results. Saved R13 arithmetic predicts11712 resident
-clocks (288 slack), with approximately36 clocks from CS release to the
-first host service. Those are policy predictions; the current run artifacts
-record the measured outcome, including any deadline failure. All8592 serial
-transaction clocks, register readback, STATUS reads, final POUT, stimuli,
-startup guard and physical/API silence checks are retained. The timer is
-fixed from start return and never uses peer or internal completion. This
-is a reduction in waiting policy cost at the same hardware/wire rate,
-limited to the exact32B/mode0/div3/host-SCK8/launch-delay2 schedule; it
-does not change the retained R13 MISS688 or original startup failure.
+The saved C13 native run passed both consecutive32-byte messages at
+11711.9999 and11711.99995 paid resident clocks, each with approximately288
+clocks of slack against the unchanged12000-clock deadline. Each message
+pays8592 serialized transaction clocks plus the fixed3120-clock wait;
+first host service begins35.99995 clocks after physical CS release. Cold
+load is separate:8734.5 clocks,134serial bytes and44program bytes. The
+deadline assertion runs only after complete paid timing and protocol
+results have been saved. Register readback, STATUS reads, final POUT,
+stimuli, startup guard and physical/API silence checks are retained.
+The timer is fixed from start return and never uses peer or internal
+completion. This removes976 waiting-policy clocks per message relative to
+R13 at the same hardware/wire rate; its MISS688 and original startup
+failure remain preserved. Qualification is limited to two consecutive32B
+messages on core0, mode0/div3, synchronized MISO16 with two-clock peer
+launch, depth8, two cores/two banks256,20ns system period and host SCK8
+system clocks. Final hold remains3 clocks; other modes, lengths, clock
+configurations, CPU cost, pad timing, Fmax and PPA are not qualified by
+this run. The queued9216-clock result uses a different active-service
+policy and is not a matched speed comparison.
 
 The historical queued32-byte result was9216 paid clocks with a60-byte image,
 header plus eight TX payload words, only28 prestart payload bytes and active
