@@ -258,6 +258,84 @@ an external I2C device or I2C's electrical timing.
 `make -C fpga/kv260/sim` runs the same demos (shortened) on the RTL:
 `test_lab` (plus `test_bringup_steps`, `test_spim`; 3/3 pass).
 
+## Post-freeze protocols on hardware (2026-10-13, `host/postfreeze_demo.py`)
+
+The ten post-freeze firmwares (docs/post-freeze-protocols.md) on the FPGA
+build of the chip RTL: their first run outside simulation. What ran is the
+RTL on an FPGA (fabric timing, inferred RAM, no IHP pads), not silicon.
+Nothing left the FPGA: every line is a virtual pin (P24+) or a uio pad driven
+by pe_lab; no PMOD pin was enabled (the J2 wiring was not known, so no
+protocol went over real pins).
+
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu/fpga/kv260/host/postfreeze_demo.py --save pf50.json
+    # 48 MHz (DShot): sudo xmutil unloadapp; sudo xmutil loadapp protoemu48, then
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu48/fpga/kv260/host/postfreeze_demo.py dshot bidir --save pf48.json
+    scp ubuntu@kria.[tailnet domain redacted]:pf50.json /tmp/ && python3 fpga/kv260/host/postfreeze_demo.py sigrok /tmp/pf50.json
+    python3 fpga/kv260/host/postfreeze_demo.py --model          # the same runs on the cycle model (about 5 min)
+
+**Board state and builds.** Run 2026-10-13 19:14-19:17 UTC. The Kria had
+rebooted and had `k26-starter-kits` in slot 0; `xmutil loadapp protoemu`
+loaded the 50 MHz app: `bringup_kria.py --only build clock id` PASS, RTL
+revision `d1aa46f` (digest `3adc796c`, clk_div 24), clock 49.9966 MHz. The
+script measured 49.9991 MHz over 2 s against Linux's clock and, within
+200 ppm of the MMCM's 1200 MHz / 24, derived every CLKDIV and define for
+50.000 MHz. DShot was repeated on `protoemu48` (RTL revision `60b0692`,
+digest `036faa21`, clk_div 25; measured 47.9992 MHz, defines for 48.000 MHz),
+then `protoemu` was loaded again (build/clock/id PASS, 49.9989 MHz) and left
+loaded with PMOD0/PMOD1 = 0, pe_lab MODE 0 and the host port on the GPIO
+path. The chip Verilog (`src/*.v`) is identical in d1aa46f, 60b0692 and
+`main` (0ebe6ca); between them only harden configuration (config.json, SDC)
+and build.tcl changed. Host software (`tools/`, `firmware/`,
+`fpga/kv260/host/`) was refreshed in `~/protoemu` and `~/protoemu48` by rsync
+as install.sh does, keeping each `expected_build.json`.
+
+**Method.** Transmitters: core 0 runs the firmware with its pins on virtual
+pins; core 1 runs `la_capture` on them (1 tick = 1 clock, unless stated);
+the host drains the records with one 4096-word READ_FIXED burst over
+pe_spim, with the SCK divider chosen so the burst outlasts the transmission
+and drains faster than the edges arrive (quad at SCK = clk for I2S). The
+transmitter waits behind a 2-word preamble (`wait 1 pin 7; jmp <firmware>` at
+word 254) until pe_lab's pattern generator raises uio7, after the burst has
+started. A capture with a gap record fails the run; none had one. The
+pins-only decoders and models of `pe.postfreeze` judge the edges.
+Receivers: core to core where both ends speak the same line (Wiegand on V0/V1;
+LIN on pe_lab's I2C-bus mode, uio0 and uio2 wired-AND with a pull-up, both
+nodes open drain; bidirectional DShot against `host/esc_emu.pasm`, a 16-word
+ESC stand-in on the second core, on the same wired-AND line). Otherwise the
+pattern generator plays a pins-only model's waveform at clock-exact times
+(NEC envelopes, Wiegand reader timings, a LIN commander at +-10 %). `nec_rx`
+cannot take `nec_tx`'s output (raw 38 kHz carrier vs a receiver module's
+demodulated envelope; nec_tx has no envelope mode), so NEC TX and RX were
+tested separately.
+
+**Results at 50 MHz** (15 of 16 runs PASS; times from the captures, one
+clock = 20 ns):
+
+| Protocol | How | Result |
+|---|---|---|
+| DMX512 TX | V0 -> la_capture | PASS. 3 packets (9, 2, 1 slots, MTBS 0) and 2 (20, 1 slots, MTBS 8 us): every slot right; BREAK 176.0 us, MAB 12.0 us, every bit edge on the 4 us grid (0 ns off), mark between slots 0 / 8.0 us, BREAK to BREAK 1204.0 us (padded) and 1234.0 us (20 slots x 52 us + 194). sigrok `dmx512` on the MTBS-8 capture: the 20 slots equal, then it reads the next BREAK as slots (its known 512-slot limit) |
+| I2S TX | V0-V2 -> la_capture, quad drain | PASS. 48 kHz: 14 samples exact, then 35 silent words with BCLK and WS running (underrun); BCLK period 32/33 clocks (CLKDIV 16+71/256), frame 1041/1042 clocks, fs 47996.2 Hz (-0.008 %) over 24 frames. sigrok `i2s`: same samples, no warnings |
+| DShot600 | V0 -> la_capture | PASS. 20 frames 0x7d0a, 0x617, 0xffee then repeated; T1H 1240-1260, T0H 620-640, bit 1660-1680 ns (+-1 clock, CLKDIV 10.42), frame period 125.0 us. At 48 MHz: T1H 1250.0, T0H 625.0, bit 1666.7 ns exactly. sigrok `pwm` -> the same frames |
+| NEC TX | V0 -> la_capture | PASS. Repeat code at clock resolution: bursts of 341 and 21 carrier periods, carrier 37999.86 Hz (1315/1316 clocks), on 8.76-8.78 us (33.3 %), leader to stop burst 1280 ticks. Standard (0x04/0x08) and extended (0xBEEF/0x11) frames captured at 5 us ticks (one record per carrier period: burst starts exact to 5 us, ends within ~35 us), decoded from the envelope; unit from burst starts 560.0-562.5 us (firmware 561.4 us, +-5 us tick); repeat to repeat 107.790 ms (firmware 107.7898). sigrok `ir_nec`: repeat on the raw carrier, the standard frame on the rebuilt envelope (the extended one is its known "Address# error") |
+| NEC RX | generator -> uio0 | PASS. 525 entries, 1.2 s: senders at x1.0, x0.9 (+200 us bursts) and x1.1 (-200 us bursts), standard + repeat + extended each, 9 records right; a glitch, a 3 ms leader and 30 ms stuck low ignored; a truncated frame -> error after 13 bits; the next frame decoded. Waveforms from `pe.postfreeze.nec_envelope` (our model, not a real remote or receiver module) |
+| Wiegand TX | V0/V1 -> la_capture | PASS. 26-bit H10301 (42/31337) and 34-bit frames bit-exact, pulses 50.0 us, intervals 2000.0 us. sigrok `wiegand`: same bits, both valid |
+| Wiegand TX -> RX | core 0 -> V0/V1 -> core 1 | PASS. PW 50 / IV 200 us: 26-bit (valid), 34-bit (valid), raw 30-bit (not valid: not a validated format), 26-bit with a wrong parity bit (not valid), all bit for bit |
+| Wiegand RX | generator -> uio0/uio1 | PASS. 26-bit at 20 us / 200 us and 34-bit at 100 us / 5 ms valid; 2 us glitches between bits ignored; wrong parity not valid; both lines low -> error |
+| LIN commander | V0 -> la_capture | PASS. Bus bytes 55 50 01020304 a5, 55 3c 30..37 62 (classic), 55 61 (header, no responder: timeout record); break 12.9992-12.9996 bits, delimiter 0.9999, edges inside bytes -30..+13 ns from the 19200 bit/s grid. sigrok `lin`: IDs 0x10, 0x3C, 0x21, parity and checksums ok |
+| LIN commander <-> responder | wired-AND bus (pe_lab I2C mode) | PASS. Responder clock nominal, x1.1, x0.9: sync-field T = 104 / 115 / 94 ticks (ideal 104.2 / 114.6 / 93.8); publish 0x10 heard (enhanced ok), subscribe 0x21 answered C0 FF EE and checked by the commander, publish 0x3C heard (classic ok); no dropped record (F2) |
+| LIN responder rate | generator commander -> uio0, response on uio2 -> la_capture | PASS. Commander at 19200 bit/s, x1.1, x0.9: response C0 FF EE + checksum, response bit -0.16 / +0.32 / +0.22 % from the commander's (LIN: +-2 %), spaces between bytes 0.07-0.16 bit |
+| Bidir DShot frames | uio0 -> la_capture (no ESC) | **FAIL at 50 MHz**, PASS at 48 MHz. Frames right (0x640d, 0x197, 0xf9e7, inverted checksums), but low 1220 / 600 ns and bit 1640 ns: one clock short of the defines (T1 62, T0 31, BIT 83). Cause, in the firmware, not the FPGA: with T0 odd, `dshot_bidir.pasm`'s delays `[(T0 - 2) / 2]` and `[T0 - 2 - (T0 - 2) / 2]` each lose half a clock (the assembler divides exactly, then truncates). The cycle model shows the same. At 48 MHz (T0 = 30): low 1250.0 / 625.0 ns, bit 1666.7 ns exactly |
+| Bidir DShot telemetry | dshot_bidir <-> esc_emu, wired-AND line | PASS at 50 and 48 MHz. The ESC side sampled the 8 frames right; 8 replies (21 levels, 750 kbit/s, 30 us turnaround) decoded by the firmware + host to eRPM periods 333, 4096, 64896, 100, 1000, 2000, 29952, 512 us (what the encoding keeps of 65000 and 30000), GCR and checksums ok. The ESC is our fixture (`esc_emu.pasm`), not a real ESC |
+
+**Not run / limits.** The 513-slot DMX universe (the host cannot feed the TX
+FIFO and drain the capture at once with one SPI port; packets here are at
+most 20 slots, each pre-loaded in the 8-word FIFO). Full NEC frames at carrier
+resolution (a 67 ms frame produces more records than one 4096-word burst can
+drain fast enough), hence the 5 us capture for frames. No protocol went over
+FPGA package pins. Every "other end" is either this chip's other core or one
+of our pins-only models played by the generator; sigrok's third-party
+decoders checked the captured transmitter waveforms off the board.
+
 ## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
 
 ### Fabric master + PMOD build

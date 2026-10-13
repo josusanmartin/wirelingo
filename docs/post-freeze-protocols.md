@@ -37,6 +37,8 @@ model tests (`test/model/test_{dmx512,lin,nec,i2s,wiegand,dshot,dshot_bidir}.py`
 `test_post_freeze_timing.py`: 78 tests; the whole model suite, 517 tests,
 passes on this branch).
 
+On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs pass at 50 MHz; bidirectional DShot's bit timing is a clock short at 50 MHz (odd T0, a firmware delay-expression truncation) and exact at 48 MHz.
+
 ## How they are judged
 
 * **Pins-only models** (`tools/pe/postfreeze.py`), the other end of each
