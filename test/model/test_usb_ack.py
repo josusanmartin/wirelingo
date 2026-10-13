@@ -12,6 +12,7 @@ import pytest
 
 from pe import asm, host, sim, usb, usbdev, usbenum
 from pe.modelhost import ModelHost
+from pe.profile import TAPEOUT
 from pe.usbfs import FsControlHost
 from pe.usbhost import ControlHost
 
@@ -98,8 +99,22 @@ class LoadingHostIdle:
             delattr(self.mh, name)
 
 
+class TapeoutModelHost(ModelHost):
+    """Explicit shipping geometry; these cases use only core0 and bank0."""
+    def __init__(self):
+        self.chip = sim.Chip(ncores=TAPEOUT.ncores, nbanks=TAPEOUT.nbanks,
+                             bank_words=TAPEOUT.bank_words,
+                             fifo_depth=TAPEOUT.fifo_depth)
+        self.ui = 0
+        self.uio = 0
+        self.ext_oe = 0
+        self.pull_up = 0
+
+
 def device(variant, phase, gap_bits=4):
-    mh = ModelHost()
+    mh = TapeoutModelHost()
+    assert (mh.chip.ncores, mh.chip.nbanks, mh.chip.bank_words,
+            mh.chip.fifo_depth) == (2, 2, 256, 8)
     software = None
     if variant.startswith("enum"):
         speed = "low" if variant == "enum-low" else "full"
