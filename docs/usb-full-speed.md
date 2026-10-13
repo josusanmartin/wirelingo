@@ -398,3 +398,70 @@ the netlist implements the RTL. Timing is covered by signoff STA: typ met at
 * **Board host latency** for streamed 64-byte packets: the model assumes a
   dedicated SPI service loop. A MicroPython host will not keep up. Use
   packets ≤ 16/24 bytes there.
+
+
+## ACK length and final-bit stretching
+
+usb_fs_dev.pasm publishes F_GOTACK after checking that no complete extra
+byte follows the ACK PID. An oversized ACK leaves the pending software
+transfer unacknowledged, so ordinary retry service re-stages the same PID
+and payload. A later valid ACK advances it once. Discarded tail bits are
+cleared from ISR before the skip loop, preventing the ACK tail from being
+autopushed as an RX data record.
+
+The guard uses IN LINE8 rather than IN LINE1.
+[USB 2.0 section7.1.9.1](https://bitsavers.trailing-edge.com/components/usb/USB_2.0_2000.pdf#page=185)
+requires accepting final-bit stretching up to six bit times without a
+transition before EOP. ACK's PID ends with two ones; its final constant
+NRZI level already spans three bit times, including the preceding zero.
+The regression holds that final symbol for another one, two or three bit
+times, giving total four-, five- and six-bit intervals. It delays EOP
+without encoding/restuffing another byte.
+
+Run the [maintained packet/toggle regression](../test/model/test_usb_ack.py):
+
+    PYTHONPATH=tools python -m pytest -q test/model/test_usb_ack.py
+
+It covers autonomous enumeration at LS/FS and the software-serviced FIFO
+FS program, ordinary/stretched ACKs, extra00/55/ff bytes, longer tails,
+identical retransmission and advancement after a valid retry ACK. External
+replies must have the exact PID, payload and CRC. The FS program is135
+words (540bytes), four words more than before this guard; the autonomous
+program remains241words. No host ABI, timing sidecar, model or RTL changes
+are required.
+
+This byte-length guard does not separately certify EOP duration or
+stuff-error handling: the existing line interface shares an end indication
+for several termination causes. The regression is model evidence for the
+declared packet cases, not general USB or physical qualification.
+
+
+## FIFO low-speed ACK companion
+
+The one-core `usb_ls_dev.pasm` now applies the same complete-byte ACK-tail
+check before setting F_GOTACK. A rejected tail jumps through the existing
+ISR-clear instruction before draining the remaining packet, so discarded
+ACK bits cannot combine with later reads into an autopushed RX record.
+Normal DeviceSoftware service handles retransmission and completion.
+
+The maintained ACK regression also covers this FIFO low-speed program:
+ordinary ACK, raw final-level holds totaling four/five/six unchanged bit
+times, extra00/55/ff bytes and a three-byte ff tail, each at two deterministic
+start phases one system clock apart. Every reply must match the expected
+DATA PID, payload and CRC; rejected ACKs retain the first packet, and a
+subsequent ordinary ACK advances once. Software-visible F_GOTACK must match
+acceptance, with no discarded-tail RX words left after normal service.
+
+The LS program grows from119 to123words (476 to492bytes), still within its
+256-word bank. It uses the existing one enabled core, line unit, D+/D− pads
+and FIFOs; no host ABI, model, RTL or timing-sidecar changes. Completion
+waits for the line-end result instead of publishing immediately after the
+PID. At32 clocks/bit, eight nominal wire bits span256 clocks; valid
+final-symbol stretching postpones EOP by up to96 clocks in these cases.
+These are source timing costs, not a new measured turnaround guarantee.
+
+This companion retains the byte-length guard's limits: partial malformed
+tails, EOP-duration validation and shared line-end/stuff-error causes are
+not independently qualified. Passing packet cases are model evidence, not
+USB electrical or physical qualification. Integrators must regenerate any
+embedded firmware bundle after applying this firmware change.

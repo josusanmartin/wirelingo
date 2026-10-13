@@ -210,10 +210,16 @@ nak_send:
     ldi r3, 0x5A80                 ; SYNC + NAK
     jmp send16
 got_ack:
+    in line, 8                     ; full extra byte invalidates the handshake;
+    jmp t, ack_valid               ; shorter final-bit dribble is allowed
+    jmp skip_clear
+ack_valid:
     flag set F_GOTACK
+    jmp idle                      ; publish only after the tail-end check
 skip:                              ; the rest of an unwanted packet
     in line, 16
     jmp t, idle
+skip_clear:                        ; avoid autopushing discarded ACK tail bits
     mov isr, null
     jmp skip
 bus_reset:

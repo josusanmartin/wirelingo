@@ -215,7 +215,8 @@ se0:
     jmp idle                       ; (low DM in K is not SE0)
 ; ---------------------------------------------------------------- ACK
 got_ack:
-    in line, 16                    ; the frame's end first: the host's next
+    in line, 8                     ; reject a full extra byte; allow final-bit
+                                   ; dribble (§7.1.9.1), then validate the end
     jmp t, ack_end                 ; packet may follow 2 bit times after it
     jmp skip
 ack_end:

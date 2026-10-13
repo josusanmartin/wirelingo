@@ -157,11 +157,17 @@ echo:                              ; our own packet comes back: drop it
     mov isr, null
     jmp echo
 got_ack:
+    in line, 8                     ; a complete extra byte invalidates the ACK
+    jmp t, ack_valid               ; allow shorter final-bit dribble before EOP
+    jmp skip_clear
+ack_valid:
     flag set F_GOTACK
+    jmp idle
 skip:                              ; the rest of an unwanted packet
     in line, 16
     jmp t, idle
-    mov isr, null
+skip_clear:
+    mov isr, null                  ; discard tail bits before they can autopush
     jmp skip
 bus_reset:
     jmp pin DP, idle              ; timeout in K is not SE0
