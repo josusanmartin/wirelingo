@@ -165,13 +165,21 @@ def test_lin_responder_sync(rate_err, clock_err):
     assert rsp[1]["published"]
     [f1, f2] = bus.frames(bit)
     assert f2["bytes"] == frame_bytes(0x31, resp) and f2["stop_errors"] == 0
-    # the response's own bit time: start bit to start bit over 6 bytes
-    st = f2["starts"][2:]
-    per = [(b - a) for a, b in zip(st, st[1:])]
-    measured_bit = min(per) / 10
+    # the response's own bit time, from the edges inside each byte (start bit
+    # to the farthest edge), and the spaces between its bytes
+    edges = bus.log.edges()
+    est = []
+    for s0 in f2["starts"][2:]:
+        inside = [t for t, _ in edges if s0 < t < s0 + 9.6 * bit]
+        if inside:
+            t = max(inside)
+            est.append((t - s0) / round((t - s0) / bit))
+    measured_bit = sum(est) / len(est)
+    gaps = [b - a - 10 * measured_bit for a, b in zip(f2["starts"][2:], f2["starts"][3:])]
     print(f"\nLIN responder, commander {rate_err:+.0%}, own clock {clock_err:+.0%}: T = {[r['T'] for r in rsp]} "
           f"ticks (ideal {T:.1f}); response bit {measured_bit:.0f} ns vs commander {bit:.0f} ns "
-          f"({(measured_bit / bit - 1) * 100:+.2f} %)")
+          f"({(measured_bit / bit - 1) * 100:+.2f} %), space between its bytes {min(gaps) / bit:.2f}.."
+          f"{max(gaps) / bit:.2f} bits")
     assert abs(measured_bit / bit - 1) < 0.02            # LIN 2.x: +-2 % after synchronisation
 
 

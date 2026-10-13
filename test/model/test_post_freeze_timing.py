@@ -22,6 +22,7 @@ DEFS = {
     "dmx512_tx": {"TX": 8, "MTBS": 0},
     "i2s_tx": {},
     "dshot600": {"GAP": 454},
+    "dshot_bidir": {"ESC": 0, "BIT": 80, "T0": 30, "T1": 60, "RBIT": 64, "RTMO": 4800, "GAP": 1000},
     "nec_tx": {"IR": 8},
     "nec_rx": {"IR": 16},
     "wiegand_tx": {"D0": 0, "D1": 1, "PW": 50, "IV": 2000, "FG": 20000},
@@ -110,6 +111,24 @@ def test_dshot_sound():
         mh.push(0, rng.getrandbits(12))
         mh.step(rng.randrange(3000, 12000))
     sound("dshot600", tr, div)
+
+
+def test_dshot_bidir_sound():
+    mh = ModelHost()
+    prog = asm.assemble((FW / "dshot_bidir.pasm").read_text(), DEFS["dshot_bidir"])
+    mh.apply(host.load_program(0, prog, side_pins=0, in_pins=0, clkdiv=1 << 8))
+    mh.pull_up = 1
+    tr = timing.Tracer(mh.chip, 0, 0)
+    mh.start(1)
+    esc = pf.BidirEsc([pf.erpm_telemetry(p) for p in (100, 900, 30000)] + [None, pf.erpm_telemetry(5)])
+    for v in (1000 << 1, 7 << 1, 2047 << 1, 3, 600 << 1):
+        mh.push(0, v)
+        for _ in range(12000):
+            drive, lvl = esc.step(mh.chip.cycle * 1e9 / 48e6, mh.bus_uio() & 1)
+            mh.ext_oe, mh.uio = drive, lvl
+            mh.step()
+            mh.pop_all(0)
+    sound("dshot_bidir", tr, 1 << 8)
 
 
 def test_nec_sound():

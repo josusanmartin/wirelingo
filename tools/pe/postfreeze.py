@@ -662,3 +662,126 @@ class LinNode:
         if self.tx and t >= self.tx[0][0] - self.bit:
             return self.tx[0][1]
         return 1
+
+
+# ---------------------------------------------------------------- bidirectional DShot
+
+GCR = [0x19, 0x1B, 0x12, 0x13, 0x1D, 0x15, 0x16, 0x17, 0x1A, 0x09, 0x0A, 0x0B, 0x1E, 0x0D, 0x0E, 0x0F]
+GCR_DECODE = {c: i for i, c in enumerate(GCR)}
+
+
+def dshot_bidir_frame(throttle, telemetry=0):
+    """The inverted-checksum frame of bidirectional DShot."""
+    v = ((throttle & 0x7FF) << 1) | (telemetry & 1)
+    return (v << 4) | ((~(v ^ (v >> 4) ^ (v >> 8))) & 0xF)
+
+
+def dshot_bidir_defines(f_clk, esc_pin=0, rtmo_us=100, gap_us=50):
+    """dshot_bidir.pasm defines for a clock of f_clk (CLKDIV 1)."""
+    t = lambda ns: round(ns * f_clk / 1e9)
+    return {"ESC": esc_pin, "BIT": t(1e9 / 600e3), "T0": t(625), "T1": t(1250), "RBIT": round(f_clk / 750e3),
+            "RTMO": t(rtmo_us * 1e3), "GAP": t(gap_us * 1e3)}
+
+
+def erpm_telemetry(period_us):
+    """The 16-bit eRPM telemetry value for an eRPM period: e (3 bits),
+    m (9 bits) with period = m << e, and the checksum nibble."""
+    e = 0
+    while period_us >> e > 511:
+        e += 1
+    if e > 7:
+        raise ValueError("period too long")
+    v12 = (e << 9) | (period_us >> e)
+    v = v12 << 4
+    return v | ((~((v12 >> 8) ^ (v12 >> 4) ^ v12)) & 0xF)
+
+
+def telemetry_levels(value16):
+    """The 21 line levels an ESC sends for a telemetry value: 4 nibbles ->
+    GCR quintets (20 bits), each 1 a transition, starting from l[0] = 0."""
+    gcr = 0
+    for k in (12, 8, 4, 0):
+        gcr = (gcr << 5) | GCR[(value16 >> k) & 0xF]
+    levels = [0]
+    for i in range(19, -1, -1):
+        levels.append(levels[-1] ^ ((gcr >> i) & 1))
+    return levels
+
+
+def dshot_telemetry(record):
+    """Decode a dshot_bidir RX record: None (no reply), or dict with value,
+    checksum ok, e, m, period_us; 'gcr_error' if a quintet is not GCR."""
+    count = record & 0xFF
+    if count == 0:
+        return None
+    levels = (record >> 8) & 0x1FFFFF
+    gcr = (levels ^ (levels >> 1)) & 0xFFFFF
+    v = 0
+    for k in (15, 10, 5, 0):
+        q = (gcr >> k) & 0x1F
+        if q not in GCR_DECODE:
+            return {"gcr_error": True, "count": count, "levels": levels}
+        v = (v << 4) | GCR_DECODE[q]
+    c = v ^ (v >> 8)
+    c ^= c >> 4
+    e, m = v >> 13, (v >> 4) & 0x1FF
+    return {"value": v, "checksum_ok": (c & 0xF) == 0xF, "e": e, "m": m, "period_us": m << e, "count": count}
+
+
+class BidirEsc:
+    """A pins-only bidirectional-DShot ESC: on the one wire (idle high,
+    pulled up) it times each frame's low pulses (a 1 if low for over half a
+    bit), checks the inverted checksum, and turn_ns after the frame's last bit
+    drives a telemetry reply (21 levels at 750 kbit/s * rate) taken from
+    `replies`, then releases the line. step(t, line) -> (drive, level);
+    `contention` counts samples where the line was low while it drove high
+    (someone else driving)."""
+
+    def __init__(self, replies, turn_ns=30e3, rate=1.0, bit_ns=1e9 / 600e3):
+        self.replies = list(replies)
+        self.turn, self.rbit, self.bit = turn_ns, 1e9 / 750e3 / rate, bit_ns
+        self.prev, self.fall, self.bits, self.last_rise = 1, None, [], None
+        self.frames = []           # (t, frame16, checksum ok)
+        self.tx = None             # (t0, levels)
+        self.contention = 0
+        self.sent = []
+        self.drove = None          # the level driven on the previous step
+
+    def step(self, t, line):
+        if self.drove == 1 and line == 0:
+            self.contention += 1               # it drove high, the wire was low
+        self.drove = None
+        if self.tx is not None:
+            t0, lv = self.tx
+            k = int((t - t0) // self.rbit)
+            if t < t0:
+                pass
+            elif k < len(lv):
+                self.prev = line
+                self.drove = lv[k]
+                return 1, lv[k]
+            else:
+                self.tx = None
+        if self.prev == 1 and line == 0:
+            self.fall = t
+        elif self.prev == 0 and line == 1 and self.fall is not None:
+            self.bits.append(1 if t - self.fall > self.bit / 2 else 0)
+            self.last_rise = t
+            self.fall = None
+            if len(self.bits) == 16:
+                f = int("".join(map(str, self.bits)), 2)
+                v = f >> 4
+                ok = (f & 0xF) == ((~(v ^ (v >> 4) ^ (v >> 8))) & 0xF)
+                self.frames.append((t, f, ok))
+                self.bits = []
+                if ok and self.replies:
+                    r = self.replies.pop(0)
+                    if r is not None:
+                        # the frame's last bit ends ~ (bit - low) after this rise
+                        self.tx = (t + (self.bit - (1250 if f & 1 else 625)) + self.turn,
+                                   telemetry_levels(r))
+                        self.sent.append(r)
+        if self.bits and self.last_rise is not None and t - self.last_rise > 3 * self.bit:
+            self.bits = []                     # a partial frame
+        self.prev = line
+        return 0, 1

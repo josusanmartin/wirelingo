@@ -381,3 +381,46 @@ async def pf_lin(dut):
         s = [(f["id"], f["parity_ok"], f["data"].hex(), f["checksum_ok"]) for f in fr]
         dut._log.info(f"sigrok lin: {s} {warn}")
         assert s == [(0x10, True, "01020304", True), (0x21, True, staged.hex(), True)]
+
+
+# ------------------------------------------------------------------ bidirectional DShot
+
+@cocotb.test()
+async def pf_dshot_bidir(dut):
+    """dshot_bidir at 48 MHz (CLKDIV 1) on uio0 (pulled up) against the
+    pins-only ESC model: inverted frames out, GCR telemetry back 30 us later
+    at 750 kbit/s, recovered by the firmware and decoded by the host."""
+    ESC = T.UIO(0)
+    PERIOD = 20.834
+    spi = await T.setup(dut, clock_ns=PERIOD)
+    dut.pull_up.value = 1 << ESC
+    await spi.write(sim.core_reg(0, sim.C_R0), [0])
+    await T.run_program(spi, 0, load("dshot_bidir", **pf.dshot_bidir_defines(48e6, ESC)), side_pins=ESC,
+                        in_pins=ESC, clkdiv=1 << 8)
+    esc = pf.BidirEsc([pf.erpm_telemetry(p) for p in (333, 4096, 65000)], rate=1.03)
+
+    async def model():
+        while True:
+            await RisingEdge(dut.clk)
+            drive, lvl = esc.step(get_sim_time(unit="ps") / 1000, int(dut.uio_in.value) & 1)
+            T.EXT.set(ESC, drive, lvl)
+    task = cocotb.start_soon(model())
+    pads = Pads(dut)
+    vals = [(800 << 1), (12 << 1) | 1, (1999 << 1)]
+    recs = []
+    for v in vals:
+        await spi.write(sim.core_reg(0, sim.C_FIFO), [v], fixed=True)
+        await wait_ns(dut, 190e3, PERIOD)
+        recs += await drain(spi, 0)
+    task.cancel()
+    pads.stop()
+    tel = [pf.dshot_telemetry(r) for r in recs if r]
+    dut._log.info(f"ESC saw {[(hex(f), ok) for _, f, ok in esc.frames]}; telemetry "
+                  f"{[(hex(t['value']), t['checksum_ok'], t['period_us']) for t in tel]}; sent "
+                  f"{[hex(x) for x in esc.sent]}; contention {esc.contention}")
+    seen = [f for _, f, ok in esc.frames if ok]
+    assert len(seen) == len(esc.frames)                         # every checksum good
+    dedup = [f for j, f in enumerate(seen) if j == 0 or f != seen[j - 1]]
+    assert dedup[-3:] == [pf.dshot_bidir_frame(v >> 1, v & 1) for v in vals]   # after R0's motor-stop frame
+    assert [t["value"] for t in tel] == esc.sent and all(t["checksum_ok"] for t in tel)
+    assert esc.contention == 0
