@@ -20,6 +20,10 @@ on the Tiny Tapeout SG13CMOS5L tile:
 * Project.SramPinBuffers: opt-in, after post-GRT timing repair: a buffer at
   each driven SRAM input pin, and no buf_16 on a DOUT (the macro's 0.595 ns /
   0.064 pF limits; flow/sram_pin_buffers.tcl).
+* Project.DetailedRouting: opt-in replacement of OpenROAD.DetailedRouting:
+  the same routing and antenna loop, then nets whose antenna diodes took them
+  over the fanout limit get a buffer for their farthest loads and are
+  re-routed in the same process (flow/antenna_fanout.tcl).
 
 LibreLane imports modules named librelane_plugin_* from the working directory
 (the repo root, both locally and in the TT GDS action).
@@ -34,7 +38,7 @@ from typing import List, Optional
 from decimal import Decimal
 
 from librelane.steps.step import CompositeStep
-from librelane.steps.openroad import DetailedPlacement, OpenROADStep
+from librelane.steps.openroad import DetailedPlacement, DetailedRouting, OpenROADStep, dpl_variables
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow")
 
@@ -150,6 +154,19 @@ class SramPinBuffers(CompositeStep):
     id = "Project.SramPinBuffers"
     name = "Buffer the SRAM Pins and Legalize"
     Steps = [SramPinBuffersTcl, DetailedPlacement]
+
+
+@Step.factory.register()
+class DetailedRoutingFanout(DetailedRouting):
+    id = "Project.DetailedRouting"
+    name = "Detailed Routing, Antenna Diodes within the Fanout Limit"
+
+    # detailed routing's variables (it re-routes and repeats the antenna loop)
+    # and detailed placement's (it legalizes the new buffers)
+    config_vars = DetailedRouting.config_vars + dpl_variables
+
+    def get_script_path(self):
+        return os.path.join(HERE, "drt_antenna_fanout.tcl")
 
 
 # --- netgen writes the IHP SRAM's power pin names (VDD!, VSS!, VDDARRAY!) into

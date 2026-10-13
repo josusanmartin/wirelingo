@@ -42,6 +42,10 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     steps = c["meta"]["substituting_steps"]
     assert steps["+OpenROAD.ResizerTimingPostGRT"] == "Project.SramPinBuffers"
     assert steps["+Project.SramPinBuffers"] == "OpenROAD.RepairDesignPostGRT"
+    # antenna diodes count as loads: nets they take over the limit are split
+    # after detailed routing (flow/antenna_fanout.tcl)
+    assert steps["OpenROAD.DetailedRouting"] == "Project.DetailedRouting"
+    assert c["MAX_FANOUT_CONSTRAINT"] == 8
 
 
 @pytest.mark.parametrize("options,step,fanout_fix", [
