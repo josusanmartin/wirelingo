@@ -17,9 +17,12 @@ logs, partial suites and arithmetic estimates at another clock cannot pass.
 [Release evidence](release-evidence.md) gives the commands, coverage and limits.
 v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
 
-**Status:** run **v2c** (2026-10-06, the v2 RTL: g4's design plus the
-half-cycle NRZI sample point, `SYNC_BYPASS`, WAIT kind 7 and CALL/RET) passes
-signoff; see the table at the end. A run is a commit:
+**Status:** the release candidate is run **t48ba** (2026-10-07): the v2 RTL
+with the clock-tree and repair settings that are now the `gen_config.py`
+defaults. It passes signoff, meets 50 MHz at every corner and is reproduced
+bit for bit by a clean-checkout harden (run ci6); `flow/release_check.py`
+fails it only on one fanout count inflated by antenna diodes (see "Release
+candidate" in the signoff section). A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -408,9 +411,27 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 | t5 | t3 + post-GRT hold margin 0.25 ns | 0 | 0 | clean | 0 | +4.77 / −4.10 ns | +0.32 ns (fast +0.12) | 1 / 2 |
 | g4 | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | 0 (met) / −2.88 ns | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
 | m10 | g4's RTL, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | 0 (met) / −2.98 ns | +0.17 ns (slow +0.32, fast +0.08) | 0 / 0 |
-| **v2c** | cbeae96: + NRZI half-cycle sample, `SYNC_BYPASS`, WAIT kind 7, CALL/RET; density 34, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | **0 (met) / −1.57 ns** | +0.10 ns (slow +0.20, fast +0.04) | 0 / 0 |
+| v2c | cbeae96: + NRZI half-cycle sample, `SYNC_BYPASS`, WAIT kind 7, CALL/RET; density 34, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | **0 (met) / −1.57 ns** | +0.10 ns (slow +0.20, fast +0.04) | 0 / 0 |
+| **t48ba** | v2 RTL (digest cd25b1c1…), software 93c2137; SRAM clock advance, pin registers 6 clock stages late, clock-fanout fix, PnR setup margin, SRAM pin buffers, repair with electrical margins, post-GRT hold margin 0.13 ns | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0** (1 fanout, see below) |
 
-v2c is the current candidate (netlist sha256 `929524418e3d4227…`, GDS
+**Release candidate: t48ba** (netlist sha256 `e400fa30c291f653…`, GDS
+`8899bc154fc3975a…`; 47 % stdcell utilization, 53 % with the macros;
+global routing ended with 12 overflows, Metal3 63.9 %). Setup is met at
+20 ns at all three corners (the 0 is the FIFO latches' borrowing floor; every
+flop and SRAM path has positive slack), hold at every corner, and no slew or
+capacitance violation anywhere. A clean checkout of 93c2137 hardened with its
+container capped to 4 CPUs and 16 GB (run ci6, 1 h 57 min) reproduced the
+netlist exactly and the GDS exactly apart from its timestamps.
+`flow/release_check.py` verifies the receipts for this netlist (precheck,
+29/29 top-level tests at gate level, the SDF standard and v2 sets at
+typ/slow/fast plus their overclocked controls, autonomous full-speed USB
+enumeration with real delays) and fails on one item: net3483, driven by
+`wire3483`, has 11 loads against the cells' fanout limit of 8 at every
+corner: 7 cell inputs and 4 antenna diodes the router added. Its
+capacitance and slew are within limits. The archive of all receipts and
+inputs is described in [release-evidence.md](release-evidence.md).
+
+v2c was the previous candidate (netlist sha256 `929524418e3d4227…`, GDS
 `6d9787524c08a854…`; 44 % stdcell utilization, 50 % with the macros; global
 routing ended with 8 overflows, Metal3 63.8 %). It passes Tiny Tapeout's
 precheck and all 24 top-level tests at gate level. Two more placements of the

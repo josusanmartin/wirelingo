@@ -59,11 +59,14 @@ tests now cover each fix. Finding codes are the review's.
 
 ## Still open
 
-* Anything on hardware: RP2350 transport throughput, USB enumeration on a real
-  host, the 10BASE-T analog front end.
+* More on hardware. The RTL runs on a Kria KV260 at 50 MHz (bring-up, the v2
+  features, quad SPI at 193.6 Mbit/s, UART across real PMOD pins:
+  [fpga/kv260](../fpga/kv260/README.md)); still open are the RP2350 transport,
+  USB enumeration against a real host (prepared on the KV260, not yet
+  wired), and the 10BASE-T analog front end.
 * A formal equivalence check of the RTL against the synthesized netlist. LVS
   compares layout with netlist; gate-level simulation covers only the cases
   the tests exercise.
-* An opt-in clock-fanout repair step (`gen_config.py --clock-fanout-fix`) is
-  in the flow but unused until a signoff run shows the clock-fanout limits it
-  addresses.
+* The release candidate's one remaining exception (a fanout count of 11
+  against 8, of which 4 are antenna diodes) awaits an explicit decision:
+  waive it with that reason, or remove it.

@@ -24,22 +24,25 @@ describes how, and what it caught.
 
 **Where it stands:**
 
-* Signed off (run v2c), i.e. it passes the Tiny Tapeout acceptance criteria
-  `flow/signoff.py` checks: DRC, LVS and antenna clean, 50 MHz at the typical
-  corner, hold met at every corner, Tiny Tapeout precheck passed; the netlist
-  passes all 24 top-level tests at gate level. Remaining exceptions: the slow
-  corner misses 50 MHz by 1.57 ns (about 46 MHz), with 3 slew violations
-  there, and 85 clock-tree leaf buffers exceed the cells' fanout limit of 8
-  at every corner ([docs/physical.md](docs/physical.md)).
+* **Release candidate: run t48ba** (software `93c2137`). 50 MHz is met at all
+  three corners, slow included; hold is met everywhere (fast corner +0.095 ns);
+  DRC, LVS and antenna are clean and there are no slew or capacitance
+  violations. A clean checkout rebuilt on a 4-CPU machine reproduces its
+  netlist and GDS bit for bit. Hash-bound receipts: Tiny Tapeout precheck, all
+  29 top-level tests at gate level, and timing-annotated (SDF) gate level at
+  all three corners ([docs/release-evidence.md](docs/release-evidence.md)).
+  One exception remains: a net with 7 cell loads and 4 antenna diodes counts
+  11 against the IHP cells' fanout limit of 8 ([docs/physical.md](docs/physical.md)).
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
 * A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
   handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
   gate-level simulation of the signed-off netlist
-  ([docs/usb-full-speed.md](docs/usb-full-speed.md)). 48 MHz is met at the
-  typical corner; the slow corner reaches about 46 MHz, so closing 48 MHz
-  there is the next timing target.
+  ([docs/usb-full-speed.md](docs/usb-full-speed.md)); the chip meets 50 MHz,
+  so 48 MHz, at every corner. With no host software after loading, one core
+  also enumerates as a USB device on its own, low or full speed
+  ([docs/usb-enumeration.md](docs/usb-enumeration.md)).
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
@@ -150,25 +153,30 @@ make -C formal                                                   # proofs
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs, the line unit and the quad host port; 44 % standard-cell
   utilization, 50 % with the macros.
-* **Run v2c passes signoff** (`flow/signoff.py`): 0 routing violations,
-  0 KLayout DRC, LVS clean, 0 antenna violations. 50 MHz is met at the typical
-  corner, and hold is met at every corner (+0.10 / +0.20 / +0.04 ns typ / slow /
-  fast). The slow corner reaches about 46 MHz (−1.57 ns at 50 MHz), with 3 slew
-  violations; the typical and fast corners have none, and no capacitance
-  violations anywhere. 85 clock-tree leaf buffers drive 9–14 flops against
-  the IHP cells' fanout limit of 8, at every corner (g4: 79);
-  `gen_config.py --clock-fanout-fix` exists for that but isn't used yet. Two
-  other placements of the same RTL (v2a, v2b) also pass.
-* The signed-off netlist passes all 24 top-level tests at gate level
-  (`flow/gl_test.sh`: main suite 20, compiled PIO 2, Ethernet capture 2;
-  functional, no SDF), and the GDS passes Tiny Tapeout's precheck
-  (`tt/precheck`).
+* **Run t48ba passes signoff** (`flow/signoff.py`): 0 routing violations,
+  0 KLayout DRC, LVS clean, 0 antenna violations. Setup is met at 50 MHz at
+  all three corners, hold everywhere (+0.19 / +0.36 / +0.095 ns typ / slow /
+  fast), and no slew or capacitance violation at any corner. 47 % standard-cell
+  utilization, 53 % with the macros; Metal3 at 64 %. What closed the slow
+  corner (from about 46 MHz in run v2c) was the clock tree, not the RTL: the
+  SRAMs are clocked from the clock root so their reads launch earlier, the
+  pin registers' clocks are delayed, clock branches respect the cells' fanout
+  limit, and repair runs with electrical margins.
+* The stricter `flow/release_check.py` (zero electrical exceptions, actual
+  50 MHz timing at every corner, receipts for this exact netlist) verifies
+  every receipt and fails on exactly one thing: one net (7 cell inputs + 4
+  antenna diodes, 11 against a limit of 8), at every corner, unwaived.
+* Its netlist passes all 29 top-level tests at gate level (main suite 25,
+  compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
+  typ, slow and fast at the claimed clocks, with an overclocked control that
+  must fail; autonomous full-speed USB enumeration runs on it with real
+  delays. The GDS passes Tiny Tapeout's precheck.
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 63 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
   the current RTL routable ([docs/physical.md](docs/physical.md)).
 * [External review](docs/review.md): the bugs an independent review found and
   how they were fixed and tested. `flow/gen_config.py --check` verifies that
-  `src/config.json` is the generator's (v2c's settings).
+  `src/config.json` is the generator's (t48ba's settings).
 * [Optional board transport](docs/board-transport.md): RP2350 PIO/DMA quad
   SPI; board throughput and sampling margin remain unmeasured.
 * [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service
