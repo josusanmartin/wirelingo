@@ -4,15 +4,19 @@ Deadline misses are measured outcomes; PASS checks protocol and accounting.
 This invocation runs exactly six paired cases; the old optional pause is excluded.
 Only pins and returned registers/words are observed. The peer permits finite
 intra-frame pauses; no CPU, pad/Fmax, other mode or indefinite deadline claim.
-Artifact paths and the aggregate actual-clock ledger are explicitly supplied.
+Artifact paths and the clock ledger are optional; defaults use fresh temp output.
 """
 import json
 import os
+import tempfile
+import sys
 from pathlib import Path
 
 import cocotb
 from cocotb.triggers import ClockCycles, RisingEdge, Timer
 from cocotb.utils import get_sim_time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 
 from pe import asm, host, sim, spipacked
 from pe.profile import TAPEOUT
@@ -22,6 +26,18 @@ CLK_NS = 20
 MOSI, SCK, CS, MISO = 8, 9, 10, 16
 FW = Path(__file__).resolve().parents[1] / "firmware/spi_master_packed.pasm"
 ORDER = [(n, width) for n in (1, 5, 32) for width in (1, 4)]
+
+
+def artifact_paths(limit=200000):
+    """Optional artifacts; a direct Make invocation gets a fresh temp directory."""
+    root = Path(os.environ.get("PACKED_HOST_CHECK_DIR") or
+                tempfile.mkdtemp(prefix="wirelingo-spi-"))
+    root.mkdir(parents=True, exist_ok=True)
+    budget = Path(os.environ.get("PACKED_HOST_BUDGET", str(root / "clocks.json")))
+    output = Path(os.environ.get("PACKED_HOST_RESULTS", str(root / "observations.json")))
+    if not budget.exists():
+        budget.write_text(json.dumps(dict(cycles=0, limit=limit)) + "\n")
+    return root, budget, output
 
 
 def now_ps():
@@ -317,11 +333,10 @@ async def run_case(dut, ledger, row, save, *, length, width, pause=0):
 @cocotb.test()
 async def test_serial_host_paid_completion(dut):
     """Six fixed pairs; 12000-clock deadline misses are performance outcomes."""
-    assert float(os.environ["PE_CLK_NS"]) == CLK_NS
-    assert [int(os.environ[k]) for k in ("PE_NCORES", "PE_NBANKS", "PE_BANK_AW",
-                                       "PE_FIFO_LOG2")] == [2, 2, 8, 3]
-    budget_path = Path(os.environ["PACKED_HOST_BUDGET"])
-    output_path = Path(os.environ["PACKED_HOST_RESULTS"])
+    assert float(os.environ.get("PE_CLK_NS", "20")) == CLK_NS
+    assert [int(os.environ.get(k, v)) for k, v in zip(("PE_NCORES", "PE_NBANKS", "PE_BANK_AW",
+                                       "PE_FIFO_LOG2"), ("2", "2", "8", "3"))] == [2, 2, 8, 3]
+    _, budget_path, output_path = artifact_paths()
     ledger = json.loads(budget_path.read_text())
     initial = ledger["cycles"]
     result = dict(clock_ns=CLK_NS, host_sck_period_system_clocks=8,
@@ -355,3 +370,8 @@ async def test_serial_host_paid_completion(dut):
     finally:
         clock.cancel()
         save()
+
+
+if __name__ == "__main__":
+    from test_spi_preloaded_host import run_native
+    run_native(module="test_spi_packed_host", testcase="test_serial_host_paid_completion", limit=200000)

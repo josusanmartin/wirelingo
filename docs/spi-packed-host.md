@@ -1,0 +1,142 @@
+# Packed SPI on the existing protocol engine
+
+There are two interfaces. `spi_master_packed.pasm` accepts reusable queued
+messages: one FIFO header supplies the bit count and tail count, followed by
+packed payload words. `spi_master_preloaded_once.pasm` uses paid R0/R1 setup
+instead of a header, allowing all 32 payload bytes to fit an eight-word TX
+FIFO before starting. It releases CS and halts after one frame.
+
+These are existing-ISA firmware, not RTL changes. The queued CPHA0 image is
+60 bytes; the mode0 one-shot image is 44 bytes. The one-shot supports core0,
+mode0 and 1–32 bytes. It uses synchronized MISO and 32-bit shift thresholds.
+It does not provide arbitrary-length unattended transfers.
+
+## Preparation and execution
+
+PC-side preparation is transport independent:
+
+```python
+from pe import spipacked
+
+payload = bytes(range(32))
+plan = spipacked.preload_plan(payload, enabled_before=0)
+# plan has eight high-aligned payload words and no FIFO header.
+# R0 = 255; R1 = 0; RX count = 8.
+```
+
+Zero/33-byte lengths, non-bytes inputs, unsupported modes/cores/FIFO depths
+and invalid enable masks are rejected before any plan is returned. Payload
+bytes are copied. `enabled_before` is the caller-known two-core enable mask (core0's bit is
+ignored during disable/rearm);
+disable/restart actions preserve the unrelated core's enable. Shared pins
+must already belong to core0. The plan neither reads model state nor drives
+protocol pins.
+
+Load/configure the one-shot program **once**, while core0 is disabled. Use
+MOSI8/SCK9/CS10/MISO16 (MISO16 is `ui[0]`), mode0, divisor3, synchronizers on
+and depth8. A normal export command produces the `pe.load(...)` image/configuration:
+
+```sh
+PYTHONPATH=tools python -m pe.export firmware/spi_master_preloaded_once.pasm \
+  --define CPOL=0 --define WORD_BITS=32 --define CS=10 \
+  --out-pins 8,1 --side-pins 9 --in-pins 16 --clkdiv 3
+```
+
+The native example uses system period20ns and host SCK period8
+system clocks. Its external peer launches MISO two clocks after falling SCK.
+
+The following synchronous transport outline uses normal register reads and
+writes (`read` returns an integer for one word and a list for multiple):
+
+```python
+# Precondition: previous frame completed, CS high, no fault, both FIFOs empty.
+# Do not clear unexpected RX leftovers to manufacture an empty precondition.
+for address, value in plan['disable_writes']:
+    transport.write(address, [value])
+transport.write(plan['register_writes'][0][0],
+                [value for _, value in plan['register_writes']])
+transport.write(plan['fifo_address'], plan['tx_words'], fixed=True)
+for address, value in plan['start_writes']:
+    transport.write(address, [value])
+
+# Caller implements this fixed time from the declared system clock.
+# For the qualified div3 example: wait4096 clocks AFTER start returns.
+wait_system_clocks(4096)
+status = transport.read(0x409)
+assert status & 255 == plan['rx_words'] << 4
+assert status & (1 << 13) and not status & (1 << 14)  # HALT, no fault
+rx_words = transport.read(plan['fifo_address'], plan['rx_words'], fixed=True)
+if isinstance(rx_words, int):  # Single-word transports may return a scalar.
+    rx_words = [rx_words]
+response = spipacked.decode(rx_words, plan['length'])
+status = transport.read(0x409)
+assert status & 255 == 0 and status & (1 << 13) and not status & (1 << 14)
+pout = transport.read(0x809)
+assert pout & ((1 << 10) | (1 << 9)) == 1 << 10  # CS high, SCK idle
+```
+
+Apply a new plan to rearm the next message; no reset/reload is needed.
+Restart clears shift state and retains the newly written R0/R1. The partial
+last RX word is low aligned and `decode` rejects wrong word counts or
+phantom high tail bits. These checks cannot replace the caller's empty-FIFO
+and completed-frame preconditions.
+
+The regression additionally reads R0/R1 back before preloading, and charges
+that traffic. It starts resident timing at disable and ends at the returned
+final POUT, including the fixed wait, drain and all STATUS operations. An
+initial reset/FIFO-clear is charged to cold load; per-message rearm never
+clears FIFO contents.
+
+## Regression commands
+
+With pytest installed, from the checkout root:
+
+```sh
+PYTHONPATH=tools python -m pytest -q test/model/test_spi_preloaded.py test/model/test_spi_packed.py
+```
+
+With cocotb/Icarus already installed in the selected Python environment:
+
+```sh
+python test/test_spi_preloaded_host.py --output /tmp/spi-preloaded-fresh
+# If Icarus is not on PATH, add --icarus-bin /path/to/icarus/bin.
+```
+
+Output must be fresh/empty. Omitting `--output` uses a new temporary
+folder. The runner selects one exact native test, actual top RTL plus
+behavioral SRAM256, two cores/two banks/depth8, `make -j1`, the installed
+libpython and normal pygpi delegates. It handles the existing OSS suite's
+child-only loader environment without editing that suite. `-none` disables
+dumps; the log must confirm suppression and no waveform file may appear.
+No historical evidence path or hash manifest is required. Missing native
+dependencies do not prevent API/model tests; nothing is installed by the
+runner. The queued comparison is likewise runnable with
+`python test/test_spi_packed_host.py --output /tmp/spi-queued-fresh`.
+
+## Qualified boundary and measured costs
+
+The original 11-word proposal started CS about3 clocks before the host start
+call returned. The retained native trace caught this despite physically idle
+host pins during the API's trailing gap. The ISR-clear instruction now has
+`[2]`, adding six startup clocks at divisor3 without adding a word. Both the
+physical host pins and the complete start-call interval must be outside CS
+low; the oracle was not weakened.
+
+Two consecutive distinct32-byte messages pass that strict silence check,
+exact256samples/512edges, full-duplex data, HALT, RX8/TX0, exact drain and
+rearm. Both cost about **12688 paid resident clocks**, including784 clocks
+of R0/R1 readback. Cold load is8734.5clocks and134serial bytes, with44program
+bytes. Each resident message has nine real host transactions, eight TX
+payload words, eight RX words, eight CSR setup data bytes, and no FIFO
+header. The fixed4096-clock timer expires about1012 clocks after wire end;
+post-wire status/drain/POUT costs are separately recorded in the artifacts.
+Both messages miss the12000-clock comparison deadline by about688 clocks.
+
+The historical queued32-byte result was9216 paid clocks with a60-byte image,
+header plus eight TX payload words, only28 prestart payload bytes and active
+service. The one-shot is slower under its deliberately fixed wait/readback
+policy. This proves bounded capacity/silence, not a causal speed advantage.
+The native final CS hold is3system clocks, which does **not** meet Atlas's
+distinct4-clock peer requirement. Peers must tolerate finite intra-frame
+pauses; other host speeds/divisors need their own startup, sample, hold and
+wait qualification. CPU overhead, physical rates, Fmax and PPA are unknown.

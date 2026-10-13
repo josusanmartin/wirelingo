@@ -1,6 +1,7 @@
 """Transport-independent words for spi_master_packed.pasm; no pin execution.
 
-One header supplies all message length state to firmware. Payload padding is
+Queued frames use one header to supply all message length state.
+preload_plan instead supplies disabled-core CSR actions for one-shot frames. Payload padding is
 never clocked; partial RX words contain only their low 8*(N%4) bits. Length
 and mode are caller-known command context, not an autonomous RX descriptor.
 WORD_BITS=8 offers the same header/frame contract for traffic comparisons.
@@ -79,3 +80,44 @@ def host_sck_cost(length, *, word_bytes=4, burst_words=8):
                 single_sck=24 * tb + (24 + 8 * host.READ_DUMMY) * rb + 32 * (tx + rx),
                 quad_sck=12 * tb + (12 + 8 * host.READ_DUMMY) * rb + 8 * (tx + rx),
                 prestart_payload_capacity_bytes=7 * width)
+
+
+def preload_plan(payload, *, core=0, mode=0, enabled_before=0, fifo_depth=8,
+                 padding=0xD3):
+    """Prepare one headerless mode0 frame of 1..32 bytes; perform no bus I/O.
+
+    Load spi_master_preloaded_once first (32-bit shifts, synchronized MISO,
+    integer divider >=3). Before applying the plan, verify CS idle, no fault
+    and both FIFOs empty; stop any previous frame before disabling core0.
+    Apply disable_writes, register_writes, then one FIXED-address payload
+    burst, then start_writes. Never clear unexpected RX to make room.
+
+    Restart clears shift state but retains R0/R1. After the caller's fixed
+    wait, require HALT/no fault, TX empty and exactly rx_words available;
+    drain exactly that count, verify empty STATUS and returned idle POUT.
+    Repeat the whole plan to rearm, without reloading/resetting the chip.
+    Other core enables are retained from caller-supplied enabled_before.
+    This plan does not infer clock timing, completion or simulator state.
+    """
+    if type(core) is not int or core != 0:
+        raise ValueError("preloaded firmware reserves core0")
+    if type(mode) is not int or mode != 0:
+        raise ValueError("preloaded firmware supports mode0 only")
+    if type(enabled_before) is not int or not 0 <= enabled_before <= 3:
+        raise ValueError("enabled_before must be the two-core enable mask")
+    if type(fifo_depth) is not int or fifo_depth != 8:
+        raise ValueError("preloaded firmware requires depth8 FIFOs")
+    if not isinstance(payload, (bytes, bytearray, memoryview)):
+        raise ValueError("payload must be bytes-like")
+    payload = bytes(payload)
+    if not 1 <= len(payload) <= 32:
+        raise ValueError("preloaded length must be 1..32 bytes")
+    words = encode(payload, padding=padding)[1:]  # Count goes to actual CSRs.
+    disabled = enabled_before & ~1
+    return dict(length=len(payload), tx_words=words, rx_words=len(words),
+                fifo_address=sim.core_reg(0, sim.C_FIFO),
+                disable_writes=[(sim.A_CTRL, disabled)],
+                register_writes=[(sim.core_reg(0, sim.C_R0), 8 * len(payload) - 1),
+                                 (sim.core_reg(0, sim.C_R0 + 1), len(payload) % 4)],
+                start_writes=host.start_writes(1, disabled),
+                prestart_payload_capacity_bytes=32)
