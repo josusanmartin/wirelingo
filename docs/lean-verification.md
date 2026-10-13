@@ -932,3 +932,100 @@ core-bus, registered ownership and logical-port correspondence in the declared
 line-off/OD0/two-core WAIT domain. Manual source translation, universal RTL
 refinement, serial-host transport, pad/electrical/CDC and release approval
 remain outside the claim.
+
+
+## IN8/autopush32 full-RXF boundary — frozen C11 preparation failure
+
+The new `Wirelingo/RxAutopush.lean` proposes a manual finite-width transition:
+ISR32/PC10, reachable count0..32, explicit effective enable/restart/tick/bank,
+delay/halt/fault gate, and start-of-cycle full flag. Five declarations cover
+inactive no-push, accepted below-threshold accumulation, threshold-ready
+shift/push/clear, threshold-full ISR/count/PC retention, and conditional
+two-execution full-pop/resume with the current resume byte. Restart clears
+storage separately from disabled retention. These declarations have NOT
+completed a module build or axiom audit; no accepted new proof is claimed.
+
+| Actual source | Proposed manual/native boundary |
+| --- | --- |
+|pe_core n/in_bits, shared fs/in_isr, in_cnt_sum/in_cnt, push_th/in_autopush|IN PINS8, left/right BitVec32 arithmetic; count min32 and zero threshold encoding32|
+|pe_core active/attempt/bank_ok/exec; OP_IN rx_block branch; exec isr_we update|explicit gate; full leaves complete0/isr_we0/core_rxpush0; PC holds, ISR retains|
+|pe_fifos rx_block=fjoin OR rxf_full; pe_fifo do_push/pop from old cnt|FJOIN0/depth8, old-full pop bubble, queue update from old occupancy|
+|pe_core fifo_sel, res_n/res_v/res_real, rd_real/rd_word, host_pop|two reservations; snapshot captures head/read-ahead, commit consumes real oldest, cancel drops reservations|
+|pe_chip ctrl_pend/ctrl_data/enable/restart, sync1/sync2/pad_in|actual registered CTRL boundary and two-flop raw-pin pipeline; no bypass|
+|pe_imem and unchanged behavioral SRAM macro|normal bus loading/fetch; four identical IN words in bank0, wrap0..3; unknown cold memory explicit|
+
+The unmodified pe_chip witness uses2 cores/2 banks/256 words per bank/depth8,
+core1 disabled. It has no deposits, force/release or injected instructions.
+Input schedules are frozen before vvp: left/right96 clocks each, plus57-clock
+left mutant prefix (planned249 total,6 reset edges, all setup included).
+Program slots0..3 contain0x10020008 (`IN PINS,8`). Fixed raw byte at edgej is
+(37*j+11)%256; sync2 feeds the IN two edges later. Config is div1/frac0,
+autopush32, delay0, IN_BASE0, side_count0, CRC tap0, LINE0, FJOIN0, POE0.
+After8 words fill RXF, three bytes accumulate to count24 while full; subsequent
+threshold attempts stall. Cancelled one/two reservations consume no data.
+A real commit at67 must leave the IN partial/PC intact and reduce occupancy
+to7; edge68 must push exactly once and clear the partial. Planned ninth word
+is0x6a8fb495 left or0x95b48f6a right, using the current resumed input rather
+than the first stalled byte. Disabled partial retention and restart-while-
+disabled with RXF preserved follow, then all9 words drain in order.
+
+PRE observations settle4ns with clock low; POST storage/occupancy follows the
+rising edge after1ns/NBA and actual latch FIFO settling. Thirty-four fields
+are compared to closed Lean predictions, including push/data/ISR/count/PC,
+full/pop/reservations, sync pipeline, and actual snapped/drained word order.
+The evidence-local NONPRODUCT core mutant uniquely replaces the blocked-IN
+branch with incorrect ISR/count writes; both original and mutant elaborate.
+A behavioral mismatch at56 is required and has NOT been exercised.
+
+C11 outcome: two preparation checks failed, before any axiom audit, closed
+predictions or RTL simulation. First build: mutable record-field assignment at141.
+Second/source-final build: multi-field record-update syntax at154:59,
+`unexpected identifier; expected '}'`. Both actual RTL variants elaborated
+exit0 in both checks. Actual RTL clocks/model steps/deposits0; planned249
+clocks must not be reported as observed. Two source iterations and2/3 focused
+checks consumed; native check is unused, with no implicit retry authorization.
+The failed packet remains in `evidence/sol-euclid/C11-EUCLID-RX-AUTOPUSH/`.
+
+Proposed maintained command after a separately authorized syntax closure:
+
+```sh
+python3 formal/lean/check_rtl_rx_autopush.py \
+  --output /tmp/wirelingo-rx-autopush-review \
+  --lean /path/to/lean4.28/bin/lean \
+  --iverilog /path/to/iverilog --vvp /path/to/vvp
+```
+
+Installed Python3.10+/Lean4.28.0/Icarus/vvp/strace are required; tools may be
+explicit or resolve from PATH. Fresh output lies outside checkout/library;
+Std is installed and the new module builds into fresh scratch, without Lake,
+downloads, shared objects or historical receipts. Separate prepare/native
+phases bind exact sources, corpus, tools, read library inputs and artifacts;
+native takes the prepared receipt SHA. Until compilation/audit/native pass,
+this is a source/preparation artifact, not a shippable validated regression.
+LINE/CRC/side-set/FJOIN/concurrent config/PC/register writes/FIFO clear and
+arbitrary sampled reset/protocol semantics are excluded. The finite witness
+uses the parallel configuration bus, not paid serial-host timing or SPI/UART
+wire capture. Manual source correspondence/universal SV refinement and
+physical/pad/silicon behavior remain unproved.
+
+
+C12 syntax-only closure: putting the four-field `rxChipCycle` update on one
+line resolved the Lean layout error. Whitespace-normalized semantic tokens,
+all five theorem statements/proofs, audit, checker, bench, mutant and frozen
+C11 corpus are unchanged. The C11 failure packet remains historical. Fresh
+preparation passed10.52s: the module compiled, five manual lemmas audited
+(each uses only allowed `propext`), and192 closed prediction rows emitted.
+The sole grouped native check passed0.49s: two96-clock left/right settings
+matched all34 fields and drained9 ordered words each, including the retained
+partial plus current resume byte. The full host-pop edge67 left ISR/count/PC
+unchanged and occupancy7; resume68 pushed once, cleared ISR/count and restored
+occupancy8. Disabled partial retention and disabled restart clearing with
+queued data retained also matched. The actual57-clock blocked-IN mutant first
+diverged56: expected ISR0x006a8fb4/count24, mutant0x6a8fb4d9/count32; both
+kept PC3/no push. Aggregate249 RTL clocks include6 reset edges;0model/deposits.
+Exact input/source/tool/library/runtime pins, commands/ledgers, raw/predicted
+rows, drain order and first counterexample are in NEW
+`evidence/sol-euclid/C12-EUCLID-RX-SYNTAX/`. The maintained command above now
+builds/runs this fixed regression from the checkout. This is manual-model plus
+finite normal-fetch/FIFO/parallel-bus agreement, not universal SV refinement
+or lossless wire capture during stalls; all original exclusions remain.
