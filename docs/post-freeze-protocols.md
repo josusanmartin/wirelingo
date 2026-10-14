@@ -36,7 +36,7 @@ workarounds (section [ISA limitations](#isa-limitations-found)).
 | Quadrature encoder counter (X4) | `quad_enc` (20) | `graycode`: the same count | CLKDIV 1: a step every 14 (forward) or 15 (backward) clocks or slower counted exactly: 3.3 M steps/s at 50 MHz; faster, missed steps are flagged | (no standard: A/B in quadrature) |
 | HDMI-CEC device: initiator and follower | `cec` (244) | `cec`: headers, opcodes, operands, ACK/NACK | at 50 MHz: start bit low 185000 clocks (3.7 ms), next fall 225000 (4.5 ms), a 1 low 30000 (0.6 ms), a 0 75000 (1.5 ms), bits 120000 (2.4 ms) apart, exact; frames from initiators at the ends of the receiver's ranges received and acknowledged; arbitration lost (then received as a follower) and won; signal free time 3 / 5 / 7 bit periods + 0.1..0.3 ms | HDMI 1.3a Supplement 1: start 3.7 / 4.5 ms +-0.2, a bit 2.4 ms (receiver 2.05..2.75), low 0.6 / 1.5 +-0.2, sampled at 1.05 +-0.2 |
 | ISO 7816-3 T=0 reader, with the card clock | `iso7816` (218) + `iso7816_clk` (1): both cores | `uart` (even parity): both directions | 1 etu = 372 CLK exactly (4464 clocks at 50 MHz, every edge on that grid); characters 12 + N etu apart; our error signal 10.5 etu after the start, 1.5 etu long; a rejected character sent again 2 etu after the card's error signal ends; card to reader >= 16 etu | ISO/IEC 7816-3: 12 etu (+ N) start to start, error signal at 10.5 +-0.2 etu for 1..2 etu, repetition >= 2 etu after it, >= 16 etu between directions |
-| SMBus host with PEC | `smbus_host` (189) | `i2c`: addresses, data, ACK/NACK; the PEC recomputed over its bytes | at 50 MHz (CLKDIV 56): SCL low 5.6 us, high 4.5..5.6 us, 89..99 kHz; START hold 4.5 us, STOP setup 6.7 us; gives up 25.003 ms after a device holds SCL low | SMBus 3.2: 10..100 kHz, tLOW >= 4.7 us, tHIGH >= 4.0 us, T_TIMEOUT 25..35 ms; PEC = CRC-8 |
+| SMBus host with PEC | `smbus_host` (189) | `i2c`: addresses, data, ACK/NACK; the PEC recomputed over its bytes | at 50 MHz (CLKDIV 56): SCL low 5.6 us, high 4.5..5.6 us, 89..99 kHz; START hold 4.5 us, STOP setup 6.7 us; a device holding SCL low: given up 25.003 ms after we release it | SMBus 3.2: 10..100 kHz, tLOW >= 4.7 us, tHIGH >= 4.0 us, T_TIMEOUT 25..35 ms; PEC = CRC-8 |
 | RC-5 infrared transmitter, 36 kHz carrier | `rc5_tx` (49) | `ir_rc5` on the receiver module's output | every carrier period 3 ticks, on for 1, across half bits too (at 50 MHz 1388 or 1389 clocks, 35999.8 Hz on average); half bits of 32 periods (888.9 us), frames 113.78 ms apart, exact in ticks | RC-5: 36 kHz, half bit 889 us, a frame every 64 bits |
 | RC-5 infrared receiver | `rc5_rx` (33) | same | decodes a remote 10 % fast or slow with bursts 150 us longer or shorter; truncated frames and missing transitions reported | |
 
@@ -61,7 +61,8 @@ six more programs for four protocols, 734 words (the largest, `cec`, 244 of
 256: initiator and follower in one bank); ISO 7816-3 takes both cores of the
 IHP chip, because the card's clock needs a core of its own. Four more RTL
 tests through the SPI host port (`pf_cec`, `pf_iso7816`, `pf_smbus`,
-`pf_rc5`: test_post_freeze has 16) and 72 more model tests
+`pf_rc5`: test_post_freeze has 16, all passing on runner1, 168 s of icarus;
+locally with sigrok as well) and 72 more model tests
 (`test/model/test_{cec,iso7816,smbus,rc5}.py`: 56, and 16 in
 `test_post_freeze_timing.py`). Simulation only: none of these six has run on
 the FPGA or silicon.
