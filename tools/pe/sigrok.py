@@ -492,3 +492,57 @@ def pwm(trace, pin, polarity="active-high", **kw):
         if m := re.fullmatch(r"([0-9.]+)%", a.text):
             out.append((a.start, a.end, float(m[1])))
     return out
+
+
+def dali(trace, pin, polarity="active-low", **kw):
+    """sigrok's dali decoder: [(t_ns, kind, bytes)] with kind "forward"
+    (address byte, command byte: 16-bit frames only) or "backward" (the
+    answer). active-low is the decoder's name for a bus that idles high."""
+    anns = decode(trace, f"dali:dali={pin}:polarity={polarity}", "dali=raw", **kw)
+    out, pend = [], None
+    for a in anns:
+        if m := re.fullmatch(r"Raw data: ([0-9A-F]{2})", a.text):
+            if pend is None:
+                pend = (a.start, int(m[1], 16))
+            else:
+                out.append((pend[0], "forward", bytes([pend[1], int(m[1], 16)])))
+                pend = None
+        elif m := re.fullmatch(r"Reply: ([0-9A-F]{2})", a.text):
+            out.append((a.start, "backward", bytes([int(m[1], 16)])))
+    return out
+
+
+def uart_parity(trace, pin, baud, parity="even", **kw):
+    """sigrok's uart decoder with a parity bit: [(t_ns, byte)] and
+    [(t_ns, warning)] (parity and frame errors among them)."""
+    anns = decode(trace, f"uart:rx={pin}:baudrate={baud}:parity={parity}", "uart=rx-data:rx-warnings", **kw)
+    data, warn = [], []
+    for a in anns:
+        if re.fullmatch(r"[0-9A-F]{2}", a.text):
+            data.append((a.start, int(a.text, 16)))
+        else:
+            warn.append((a.start, a.text))
+    return data, warn
+
+
+def midi(trace, pin, baud=31250, **kw):
+    """sigrok's uart + midi decoders: the midi decoder's verbose texts, one
+    per message (real-time and errors included), in time order."""
+    anns = decode(trace, f"uart:rx={pin}:baudrate={baud},midi",
+                  "midi=text-verbose:text-sysreal-verbose:text-error", **kw)
+    return [a.text for a in anns]
+
+
+def modbus(trace, client, server, baud, parity="even", **kw):
+    """sigrok's uart + modbus stack, the client's requests on one channel
+    (uart TX) and the server's responses on another (uart RX). Returns
+    {"cs": [...], "sc": [...]}: per direction, the decoder's annotations
+    [(t_ns, text)] (server id, function, "CRC correct" or "CRC should be
+    ...", data, errors)."""
+    out = {}
+    for d in ("cs", "sc"):
+        anns = decode(trace, f"uart:rx={server}:tx={client}:baudrate={baud}:parity={parity},modbus",
+                      "modbus=" + ":".join(f"{d}-{k}" for k in ("server-id", "function", "crc", "address", "data",
+                                                                  "length", "error")), **kw)
+        out[d] = [(a.start, a.text) for a in anns]
+    return out

@@ -25,7 +25,7 @@ import cocotb
 from cocotb.triggers import ClockCycles, RisingEdge, ValueChange
 from cocotb.utils import get_sim_time
 
-from pe import asm, host, postfreeze as pf, sigrok, sim
+from pe import asm, host, postfreeze as pf, postfreeze2 as p2, sigrok, sim
 
 HERE = pathlib.Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("pe_top_tests", HERE / "test.py")
@@ -424,3 +424,188 @@ async def pf_dshot_bidir(dut):
     assert dedup[-3:] == [pf.dshot_bidir_frame(v >> 1, v & 1) for v in vals]   # after R0's motor-stop frame
     assert [t["value"] for t in tel] == esc.sent and all(t["checksum_ok"] for t in tel)
     assert esc.contention == 0
+
+
+# ------------------------------------------------------------------ DALI
+
+@cocotb.test()
+async def pf_dali(dut):
+    """dali_ctrl (core 0, TX uo0, RX ui0) against the pins-only control-gear
+    model on a wired-AND bus, the chip at 307.2 kHz (CLKDIV 4, TE = 32: tick
+    for tick 50 MHz / 651.04): a broadcast forward frame, two queries the gear
+    answers (8 ms settling time) and one it does not. sigrok's dali decodes
+    the bus."""
+    TE = 32
+    PERIOD = 1e9 / (2400 * TE * 4)
+    TX, RX = T.UO(0), T.UI(0)
+    spi = await T.setup(dut, clock_ns=round(PERIOD, 3))
+    spi.set_low_inputs(1)
+    await spi.write(sim.A_POUT, [1 << TX])
+    await T.run_program(spi, 0, load("dali_ctrl", **p2.dali_defines(TX, RX, TE)), clkdiv=4 << 8)
+    gear = p2.DaliGear(lambda v, n: {0x0390: 0x5A, 0x0399: 0xC3}.get(v), settle=8e6)
+
+    async def bus():
+        while True:
+            await RisingEdge(dut.clk)
+            t = get_sim_time(unit="ps") / 1000
+            b = int(dut.uo_out.value) & 1 & gear.player.level(t)
+            gear.step(t, b)
+            if b != (spi.ui & 1):
+                spi.set_low_inputs(b)
+    task = cocotb.start_soon(bus())
+    pads = Pads(dut)
+    await push_all(spi, 0, [p2.dali_word(0xFE40), p2.dali_word(0x0390, reply=True),
+                            p2.dali_word(0x0399, reply=True), p2.dali_word(0x0590, reply=True)])
+    words = []
+    for _ in range(26):
+        await wait_ns(dut, 10e6, PERIOD)
+        words += await drain(spi, 0)
+    task.cancel()
+    pads.stop()
+    recs = p2.dali_records(words)
+    tick = p2.DALI_TE / TE
+    dut._log.info(f"dali_ctrl: {[(r['answer'], r['n'], r['no_answer'], round(r['settle_ticks'] * tick / 1e3)) for r in recs]}"
+                  f"; the gear decoded {[(hex(v), n) for _, v, n, _ in gear.frames]}")
+    assert [r["answer"] for r in recs] == [0x5A, 0xC3, None] and recs[2]["no_answer"]
+    assert not any(r["violation"] for r in recs)
+    assert all(0 <= r["settle_ticks"] * tick - 8e6 <= 2 * tick for r in recs[:2])
+    assert [(v, n, e) for _, v, n, e in gear.frames] == [(0xFE40, 16, None), (0x0390, 16, None),
+                                                         (0x0399, 16, None), (0x0590, 16, None)]
+    fw = p2.dali_decode(pads.edges("uo", 0), pads.t_end)
+    assert [f["value"] for f in fw] == [0xFE40, 0x0390, 0x0399, 0x0590]
+    assert {round(d / tick) for f in fw for d in f["runs"]} <= {32, 64}
+    if HAVE_SIGROK:
+        got = sigrok.dali(pads.trace({"dali": ("ui", 0)}), "dali", res_ps=100_000)
+        s = [(k, b.hex()) for _, k, b in got]
+        dut._log.info(f"sigrok dali: {s}")
+        assert s == [("forward", "fe40"), ("forward", "0390"), ("backward", "5a"), ("forward", "0399"),
+                     ("backward", "c3"), ("forward", "0590")]
+
+
+# ------------------------------------------------------------------ Modbus RTU
+
+@cocotb.test()
+async def pf_modbus(dut):
+    """modbus_rtu (core 0: TX uo0, DE uo1, RX ui0) and the pins-only server
+    model on one RS-485 line, 19200 baud with the chip at 1.9968 MHz (CLKDIV 1,
+    TB = 104: tick for tick 50 MHz / 25.04): a read of 3 holding registers
+    (the published example request 11 03 00 6B 00 03, CRC 76 87) and a write
+    the server echoes. sigrok's uart + modbus decode both directions."""
+    BAUD, TB = 19200, 104
+    PERIOD = 500.8                      # ns: 1 / (19200 * 104) = 500.80 ns
+    TX, DE, RX = T.UO(0), T.UO(1), T.UI(0)
+    spi = await T.setup(dut, clock_ns=round(PERIOD, 3))
+    spi.set_low_inputs(1)
+    await spi.write(sim.A_POUT, [1 << TX])
+    await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [p2.MODBUS_CRCCTRL])
+    await T.run_program(spi, 0, load("modbus_rtu", **p2.modbus_defines(BAUD, TB, TX, DE, RX)), clkdiv=1 << 8)
+    regs = {0x6B: 0xAE41, 0x6C: 0x5652, 0x6D: 0x4340}
+
+    def respond(body):
+        if body[1] == 3:
+            return bytes([body[0], 3, 6]) + b"".join(regs[0x6B + i].to_bytes(2, "big") for i in range(3))
+        return bytes(body)
+    srv = p2.ModbusServer(respond, baud=BAUD)
+    state = {"drive": (0, 1), "contention": 0}
+
+    async def bus():
+        while True:
+            await RisingEdge(dut.clk)
+            t = get_sim_time(unit="ps") / 1000
+            uo = int(dut.uo_out.value)
+            sd, sl = state["drive"]
+            line = (uo & 1) if (uo >> 1) & 1 else (sl if sd else 1)
+            state["contention"] += (uo >> 1) & 1 & sd
+            state["drive"] = srv.step(t, line)
+            if line != (spi.ui & 1):
+                spi.set_low_inputs(line)
+    task = cocotb.start_soon(bus())
+    pads = Pads(dut)
+    reqs = [bytes.fromhex("1103006b0003"), bytes.fromhex("110600010003")]
+    words = []
+    for r in reqs:
+        await push_all(spi, 0, p2.modbus_words(r))
+        for _ in range(12):
+            await wait_ns(dut, 2e6, PERIOD)
+            words += await drain(spi, 0)
+    task.cancel()
+    pads.stop()
+    got = p2.modbus_response(words)
+    dut._log.info(f"modbus_rtu: {[(g['bytes'].hex(), g['crc_ok']) for g in got]}; the server decoded "
+                  f"{[(q[1].hex(), q[2], q[3]) for q in srv.requests]}")
+    assert [q[1] for q in srv.requests] == [bytes.fromhex("1103006b00037687"), p2.modbus_adu(reqs[1])]
+    assert all(q[2] and q[3] and q[4] for q in srv.requests)
+    assert [g["bytes"] for g in got] == [p2.modbus_adu(respond(r)) for r in reqs]
+    assert all(g["crc_ok"] and not (g["parity_error"] or g["framing_error"] or g["gap"]) for g in got)
+    assert state["contention"] == 0
+    if HAVE_SIGROK:
+        # split the bus into the client's and the server's characters by DE
+        de = pads.edges("uo", 1)
+        client, server = [(0.0, 1)], [(0.0, 1)]
+        for t, v in pads.edges("ui", 0):
+            on = [d for tt, d in de if tt <= t]
+            dst = client if on and on[-1] else server
+            if v != dst[-1][1]:
+                dst.append((t, v))
+        tr = sigrok.Trace()
+        pf.to_trace(tr, client, "client")
+        pf.to_trace(tr, server, "server")
+        tr.end(round(pads.t_end * 1000))
+        m = sigrok.modbus(tr, "client", "server", BAUD, res_ps=100_000)
+        cs = [t for _, t in m["cs"] if t.startswith("Function") or "CRC" in t]
+        sc = [t for _, t in m["sc"] if t.startswith("Function") or "CRC" in t]
+        dut._log.info(f"sigrok modbus: client->server {cs}; server->client {sc}")
+        want = ["Function 3: Read Holding Registers", "CRC correct", "Function 6: Write Single Register", "CRC correct"]
+        assert cs == want and sc == want
+
+
+# ------------------------------------------------------------------ MIDI
+
+@cocotb.test()
+async def pf_midi(dut):
+    """midi_tx (core 0, uo0, running status) wired to midi_rx (core 1, ui0)
+    with the chip at 4 MHz (midi_rx: CLKDIV 1, TB = 128; midi_tx: CLKDIV 4,
+    TB = 32): notes on one status (running status), program change, pitch
+    bend, a song position, a SysEx, real-time bytes between messages. The
+    receiver's messages equal those sent; sigrok's midi decodes the wire."""
+    PERIOD = 250.0
+    TX, RX = T.UO(0), T.UI(0)
+    spi = await T.setup(dut, clock_ns=PERIOD)
+    spi.set_low_inputs(1)
+    await spi.write(sim.A_POUT, [1 << TX])
+
+    async def wire():
+        while True:
+            await RisingEdge(dut.clk)
+            b = int(dut.uo_out.value) & 1
+            if b != (spi.ui & 1):
+                spi.set_low_inputs(b)
+    task = cocotb.start_soon(wire())
+    await T.run_program(spi, 1, load("midi_rx", RX=RX, TB=128, FOV=0), clkdiv=1 << 8)
+    await T.run_program(spi, 0, load("midi_tx", TX=TX, TB=32, RS=1), clkdiv=4 << 8)
+    pads = Pads(dut)
+    ev = [("msg", 0x90, (60, 100)), ("msg", 0x90, (64, 100)), ("msg", 0xF8, ()), ("msg", 0x90, (67, 100)),
+          ("msg", 0xC1, (12,)), ("msg", 0xE0, (0x00, 0x48)), ("msg", 0xF2, (0x10, 0x02)),
+          ("sysex", bytes([0x7E, 0x7F, 0x09, 0x01]), True), ("msg", 0xFA, ()), ("msg", 0x90, (60, 0)),
+          ("msg", 0x90, (64, 0))]
+    await push_all(spi, 0, p2.midi_tx_words(ev))
+    words = []
+    for _ in range(8):
+        await wait_ns(dut, 2e6, PERIOD)
+        words += await drain(spi, 1)
+    task.cancel()
+    pads.stop()
+    got = p2.midi_rx_events(words)
+    wire_bytes = p2.midi_encode(ev)
+    chars = p2.uart_decode(pads.edges("uo", 0), pads.t_end, 1e9 / p2.MIDI_BAUD, parity=None)
+    dut._log.info(f"midi_rx: {got}; on the wire {bytes(c['byte'] for c in chars).hex(' ')} "
+                  f"({len(wire_bytes)} bytes, {len(p2.midi_encode(ev, running_status=False))} without running status)")
+    assert bytes(c["byte"] for c in chars) == wire_bytes
+    assert got == ev
+    if HAVE_SIGROK:
+        sg = sigrok.midi(pads.trace({"midi": ("uo", 0)}), "midi", res_ps=100_000)
+        dut._log.info(f"sigrok midi: {sg}")
+        assert len(sg) == len(ev) and sg[0] == "Channel 1: note on (note = 60 'C4', velocity = 100)"
+        assert sg[2] == "System Realtime: timing clock" and sg[3].startswith("Channel 1: note on (note = 67")
+        assert sg[6] == "System Common: song position pointer 0x10 0x02 (272)"
+        assert sg[7] == "system exclusive: for 'Universal Non-Realtime' with payload 0x7f 0x09 0x01 "
