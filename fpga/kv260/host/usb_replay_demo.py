@@ -96,10 +96,19 @@ FS_WINDOW = 4096 * 8 - T_TRIG - 1600    # clocks of samples a quad burst at SCK 
 VERSION = "usb-replay-1"
 DEV, CFG = usbdev.DEVICE_DESC, usbdev.CONFIG_DESC
 PLANS = {"data": {}, "made": 0, "used": 0}
-# plans depend on this script, the host models and the model itself
-SOURCES = hashlib.sha1(b"".join((p).read_bytes() for p in (
-    pathlib.Path(__file__).resolve(), HERE.parents[2] / "tools/pe/usbhost.py", HERE.parents[2] / "tools/pe/usb.py",
-    HERE.parents[2] / "tools/pe/sim.py", HERE.parents[2] / "tools/pe/line.py"))).hexdigest()[:12]
+
+
+def sources_key():
+    """Plans depend on the scenario and plan code here (not the replay or the
+    judge), the host models and the cycle model."""
+    import inspect
+    objs = [sync_mid, FsClockHost, Recorder, segment_cost, make_segments, make_plan, owner_at, ack_states,
+            poll_in, enumerate_flow, ctl_write] + list(SCENARIOS.values())
+    text = "".join(inspect.getsource(o) for o in objs).encode()
+    text += b"".join((HERE.parents[2] / f).read_bytes() for f in (
+        "tools/pe/usbhost.py", "tools/pe/usb.py", "tools/pe/sim.py", "tools/pe/line.py", "tools/pe/usbenum.py",
+        "firmware/usb_enum.pasm"))
+    return hashlib.sha1(text).hexdigest()[:12]
 QUAD_RD_FIXED = 0x03 | 0x08 | 0x40
 
 
@@ -545,7 +554,7 @@ def make_plan(name):
     sp, sc = name.split("-", 1)
     speed = SPEED[sp]
     prog = prog_for(speed)
-    key = plan_key(VERSION, name, prog.words, T_TRIG, PG_MAX, FS_WINDOW, SAMPLES, SOURCES)
+    key = plan_key(VERSION, name, prog.words, T_TRIG, LEAD, PG_MAX, FS_WINDOW, SAMPLES, sources_key())
     hit = PLANS["data"].get(name)
     if hit and hit.get("key") == key:
         PLANS["used"] += 1
@@ -781,6 +790,10 @@ def judge(plan, segs, state, store):
     for k, (seg, got) in enumerate(zip(plan["segments"], segs)):
         want_e, want_ev = seg_expect(plan, seg)
         t_obs = got["t_obs"]
+        if speed == "full":
+            # the sampler's window depends on when the burst started: judge the same FS_WINDOW clocks
+            check(t_obs >= FS_WINDOW, f"segment {k}: {t_obs} clocks sampled after the trigger, under {FS_WINDOW}")
+            t_obs = FS_WINDOW
         want_e = [x for x in want_e if x[0] <= t_obs]
         got_e = [tuple(x) for x in got["edges"] if x[0] <= t_obs]
         # every edge: same level sequence, times compared
