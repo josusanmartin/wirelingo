@@ -11,7 +11,7 @@ import random
 
 import pytest
 
-from pe import asm, host, postfreeze as pf, sim, timing
+from pe import asm, host, postfreeze as pf, postfreeze2 as p2, sim, timing
 from pe.modelhost import ModelHost
 
 import test_timing_check as TC
@@ -29,6 +29,11 @@ DEFS = {
     "wiegand_rx": {"D0": 0, "FTO": 10000, "PMAX": 500},
     "lin_commander": {"TX": 8, "RX": 16, "TB": 104, "BTMO": 416},
     "lin_responder": {"TX": 9, "RX": 16, "BRK": 1144, "TMIN": 80, "TMAX": 130, "BTMO": 416},
+    "dali_ctrl": {"TX": 8, "RX": 16, "TE": 32},
+    "modbus_rtu": p2.modbus_defines(19200, 104, 8, 9, 16),
+    "midi_rx": {"RX": 16, "TB": 128, "FOV": 0},
+    "midi_tx": {"TX": 8, "TB": 32, "RS": 1},
+    "quad_enc": {"A": 16, "FERR": 6},
 }
 
 
@@ -207,3 +212,87 @@ def test_lin_sound():
             mh.pop_all(1)
     sound("lin_commander", tc, dc)
     sound("lin_responder", trs, dr)
+
+
+def test_dali_sound():
+    """dali_ctrl against the gear model: forward frames, queries answered at
+    5.5..10.4 ms, a violation, no answer."""
+    import test_dali as TD
+    waves = {0x0101: p2.dali_wave(0x5A, 8, te=250e3)}
+    gear = p2.DaliGear(lambda v, n: waves.get(v, v & 0xFF if v & 0x0100 else None), settle=5.5e6)
+    rig = TD.Rig([gear], start=False)
+    tr = timing.Tracer(rig.mh.chip, 0, 0)
+    rig.mh.start(1)
+    rig.command(p2.dali_word(0xFE10), p2.dali_word(0xFE11), p2.dali_word(0x0133, reply=True),
+                p2.dali_word(0x0101, reply=True), p2.dali_word(0x0400, reply=True), wait=250e6)
+    gear.settle = 10.4e6
+    rig.command(p2.dali_word(0x01FF, reply=True), p2.dali_word(0x0100, reply=True), wait=110e6)
+    sound("dali_ctrl", tr, 1 << 8)
+
+
+def test_modbus_sound():
+    """modbus_rtu against the server model: responses of every length mod 3,
+    a gap after t1.5, no response, a broadcast."""
+    import test_modbus as TM
+    char = 11 * 1e9 / 19200
+    plan = iter([TM.server_fn(bytes([0x11, 3, 0, 0, 0, n])) for n in (1, 2, 3)] +
+                [{"data": TM.server_fn(bytes([0x11, 3, 0, 0, 0, 2])), "gaps": {2: 2.5 * char}}, None])
+    srv = p2.ModbusServer(lambda b: next(plan, None))
+    rig = TM.Rig(srv, start=False)
+    tr = timing.Tracer(rig.mh.chip, 0, 0)
+    rig.mh.start(1)
+    for n in (1, 2, 3, 2, 4):
+        rig.request(bytes([0x11, 3, 0, 0, 0, n]))
+    rig.request(bytes([0, 6, 0, 1, 0, 1]), expect=False, wait=10e6)
+    sound("modbus_rtu", tr, 1 << 8)
+
+
+def test_midi_sound():
+    """midi_tx (core 0) -> V0 -> midi_rx (core 1), both traced, a random
+    stream of every message kind."""
+    import test_midi as TMI
+    import random as _r
+    ev = p2.midi_random_events(_r.Random(4), 40)
+    mh = ModelHost()
+    TMI.tx_rig(1, tx=24, core=0, mh=mh)
+    TMI.rx_rig(rx=24, core=1, mh=mh)
+    ttx, trx = timing.Tracer(mh.chip, 0, 0), timing.Tracer(mh.chip, 1, 256)
+    mh.start(3)
+    for w in p2.midi_tx_words(ev):
+        while mh.tx_level(0) >= 8:
+            mh.step(400)
+            mh.pop_all(1)
+        mh.push(0, w)
+    for _ in range(600):
+        mh.step(400)
+        mh.pop_all(1)
+    sound("midi_tx", ttx, 4 << 8)
+    sound("midi_rx", trx, 1 << 8)
+
+
+def test_quad_enc_sound():
+    """quad_enc: a random walk at 15..60 clocks per step, glitches, a double
+    step."""
+    import test_quad_enc as TQ
+    mh = ModelHost()
+    mh.apply(host.load_program(0, asm.assemble((FW / "quad_enc.pasm").read_text(), DEFS["quad_enc"]),
+                               clkdiv=1 << 8))
+    tr = timing.Tracer(mh.chip, 0, 0)
+    mh.start(1)
+    enc = TQ.Encoder(mh)
+    rng = random.Random(8)
+    d = 1
+    for i in range(800):
+        if rng.random() < 0.1:
+            d = -d
+        enc.step(d)
+        enc.hold(rng.choice([15, 16, 30, 60]))
+        if i % 100 == 50:
+            enc.set(TQ.SEQ[enc.phase] ^ 1)
+            enc.hold(1)
+            enc.set(TQ.SEQ[enc.phase])
+            enc.hold(30)
+    enc.phase = (enc.phase + 2) % 4
+    enc.set(TQ.SEQ[enc.phase])
+    enc.hold(40)
+    sound("quad_enc", tr, 1 << 8)

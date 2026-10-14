@@ -29,13 +29,27 @@ workarounds (section [ISA limitations](#isa-limitations-found)).
 | Wiegand receiver | `wiegand_rx` (63) | same | 20..100 us pulses, 0.2..5 ms intervals, 2 us glitches ignored; parity of 26- and 34-bit formats checked | |
 | DShot600 | `dshot600` (25) | `pwm` (no DShot decoder exists): frames rebuilt from duty cycles | 48 MHz: T1H 1250.0, T0H 625.0, bit 1666.7 ns, exact; 50 MHz: +-10 ns (one clock) | Betaflight's 1250 / 625 / 1667 ns |
 | Bidirectional DShot600 (eRPM telemetry) | `dshot_bidir` (59) | `pwm` (active low) for the frames; the telemetry has no sigrok decoder | frames as DShot600; telemetry recovered for an ESC clock 15 % fast or slow, turnarounds 20..60 us | |
+| DALI application controller | `dali_ctrl` (69) | `dali`: forward and backward frames (16-bit forward only: the decoder has no 24-bit frames) | at 50 MHz: every half bit 20833 or 20834 clocks (416.66 / 416.68 us); forward frames 14.15..14.57 ms apart; backward frames decoded from gear at 336..498 us half bits, asymmetric by up to 75 us, 5.5..10.4 ms after the forward frame; settling time reported to 0..2 ticks (26 us) | IEC 62386-101 ed. 2: receiver half bit 333.3..500 us, double 666.7..1000; backward frame 5.5..10.5 ms after; 13.5 ms between forward frames |
+| Modbus RTU client (request out, response in) | `modbus_rtu` (119) | `uart` (even parity) + `modbus`: function and "CRC correct" both ways | 19200 baud at 50 MHz: edges -33..+17 ns from the bit grid (-0.004 %); characters of a request 0.5..3.5 us apart; responses from a server 2 % fast or slow with 1.3-character gaps received; a character after t1.5 flagged; t3.5 ends a frame | Modbus over Serial Line V1.02: 11-bit characters, gaps < t1.5 inside a frame, >= t3.5 between |
+| MIDI receiver and parser | `midi_rx` (132) | `uart` + `midi` on the stream played in: the same messages | 31250 baud: every byte sampled 1600 clocks per bit at 50 MHz; the parser takes 14..39 ticks (checker: <= 48) of the 64 in half a stop bit; streams from a sender 2 % fast or slow parsed | MIDI 1.0: 31250 baud +-1 % |
+| MIDI transmitter (running status) | `midi_tx` (58) | `uart` + `midi`: notes, program change, pressure, pitch bend, clock | every bit 32.000 us (CLKDIV 50 at 50 MHz, exact); stop bit and space 40..61 us | |
+| Quadrature encoder counter (X4) | `quad_enc` (20) | `graycode`: the same count | CLKDIV 1: a step every 14 (forward) or 15 (backward) clocks or slower counted exactly: 3.3 M steps/s at 50 MHz; faster, missed steps are flagged | (no standard: A/B in quadrature) |
 
-Ten programs, 697 instruction words; the largest, `lin_responder`, uses 191
-of a bank's 256. Every one has an RTL test through the real SPI host port
-(`test/test_post_freeze.py`: 8 tests, all passing, 148 s of icarus) and
-model tests (`test/model/test_{dmx512,lin,nec,i2s,wiegand,dshot,dshot_bidir}.py`,
+The first round: ten programs, 697 instruction words; the largest,
+`lin_responder`, uses 191 of a bank's 256. Every one has an RTL test through
+the real SPI host port (`test/test_post_freeze.py`: 8 tests, all passing, 148
+s of icarus) and model tests (`test/model/test_{dmx512,lin,nec,i2s,wiegand,dshot,dshot_bidir}.py`,
 `test_post_freeze_timing.py`: 78 tests; the whole model suite, 517 tests,
-passes on this branch).
+passed on that branch).
+
+The second round ([below](#second-round-dali-modbus-rtu-midi-quadrature)):
+five more programs, 398 words (the largest, `midi_rx`, 132 of 256), each in
+one core's bank; a complete MIDI port (in and out at once) takes both cores
+of the IHP chip. Four more RTL tests through the SPI host port (`pf_dali`,
+`pf_modbus`, `pf_midi`, `pf_quad_enc`: test_post_freeze has 12, all passing
+on runner1) and 61 more model tests (`test/model/test_{dali,modbus,midi,quad_enc}.py`
+and 14 in `test_post_freeze_timing.py`). Simulation only: none of these five
+has run on the FPGA or silicon.
 
 On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs passed at 50 MHz; bidirectional DShot's bit timing was a clock short at 50 MHz (odd T0: the assembler divided exactly and truncated each half of a split delay). With `/` now integer division it measures exactly 62 / 31 / 83 clocks at 50 MHz on the same bitstream, and exact at 48 MHz.
 
@@ -53,7 +67,13 @@ On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "
   decodes the frames, checks the inverted checksum, answers with GCR
   telemetry and flags bus contention. Checksums and parities (LIN PID and
   checksum, Wiegand parity, DShot CRCs, GCR) are recomputed there from the
-  protocol definitions, independently of the firmware.
+  protocol definitions, independently of the firmware. Second round
+  (`tools/pe/postfreeze2.py`): a DALI decoder with the standard's receiver
+  ranges and a control-gear model answering at its own timing, a UART
+  decoder with parity, a Modbus RTU server model (CRC by the specification's
+  algorithm), a MIDI reference receiver and running-status encoder, and a pins-only
+  X4 quadrature decoder (with the tests' encoder model, which knows the
+  position it moved to).
 * **sigrok** (`sigrok-cli` 0.7.2, libsigrokdecode 0.5.3, installed in user
   space by `flow/install_sigrok.sh`): third-party decoders on the recorded
   waveform (model pins, or the RTL's pads). Their outputs are quoted below.
@@ -72,12 +92,16 @@ On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "
   for edge), and icarus simulates about 5000 clocks per second. The timing
   numbers above come from 50 MHz (or 48 MHz) model runs and the checker's
   clock bounds; DMX512's timing run, I2S, DShot600 and bidirectional DShot
-  run at 50/48 MHz on the RTL as well.
+  run at 50/48 MHz on the RTL as well. Second round: DALI at 307.2 kHz
+  (CLKDIV 4), Modbus at 1.9968 MHz and MIDI at 4 MHz (both CLKDIV 1 for the
+  receiver), the quadrature counter at 50 MHz; on the model DALI and Modbus
+  also run a frame at 50 MHz.
 
 ```
 PYTHONPATH=tools .venv/bin/python -m pytest test/model/test_dmx512.py test/model/test_lin.py \
     test/model/test_nec.py test/model/test_i2s.py test/model/test_wiegand.py \
-    test/model/test_dshot.py test/model/test_dshot_bidir.py test/model/test_post_freeze_timing.py
+    test/model/test_dshot.py test/model/test_dshot_bidir.py test/model/test_post_freeze_timing.py \
+    test/model/test_dali.py test/model/test_modbus.py test/model/test_midi.py test/model/test_quad_enc.py
 cd test && make COCOTB_TEST_MODULES=test_post_freeze          # RTL, about 3 minutes
 PYTHONPATH=tools python -m pe.timing firmware/dmx512_tx.pasm -D TX=8 -D MTBS=0   # each header has its command
 ```
@@ -325,10 +349,288 @@ BLHeli_32 sources; it has not been checked against a real ESC.
 depends on when the ESC answers. DShot150/300/1200 are other CLKDIVs (or
 defines); DShot1200 at 50 MHz would have one-clock steps of 6 % of T0H.
 
+## Second round: DALI, Modbus RTU, MIDI, quadrature
+
+Same rules (no change under `src/`, `flow/`, or to `tools/pe/{sim,isa,asm,line,timing}.py`),
+same standard of evidence: pins-only models (`tools/pe/postfreeze2.py`),
+sigrok, the static checker with a soundness run on the model for every
+deadline (`test_post_freeze_timing.py`: every one of the 5 programs' 19
+deadlines measured, none outside its bound), and an RTL test through the SPI
+host port.
+
+**Why these.** Each is widely deployed, has a public specification (or, for
+DALI, a standard whose timing tables are widely reproduced), has a sigrok
+decoder for an independent check, and leans on a different part of the
+chip than the first round did:
+
+* **DALI** (IEC 62386-101, building lighting): bi-phase coding in firmware
+  (the line unit is core 0's and does 802.3-style Manchester), a half-duplex
+  turnaround with a settling-time window, and a receiver that measures every
+  interval between edges against the standard's tables, with a negative
+  result (a violated frame) that the application must act on.
+* **Modbus RTU** (industrial RS-485): the CRC tap on a reflected CRC
+  (CRC-16/MODBUS), parity computed per byte, framing purely by silence (t1.5
+  inside a frame, t3.5 between), an RS-485 driver-enable line, and a
+  response of up to 256 bytes streamed to the host.
+* **MIDI 1.0** (musical instruments): a byte-stream parser with state
+  (running status, real-time bytes that may interrupt anything, SysEx of any
+  length), branch-heavy code that must finish inside half a stop bit; and a
+  transmitter that compresses with running status.
+* **Quadrature encoder** (motors, knobs): no standard body, but the most
+  common position sensor; it measures how fast the chip can follow two
+  asynchronous inputs (WAIT kind 7 at full clock rate).
+
+Not chosen: SENT (SAE J2716: the standard is not public, and sigrok has no
+decoder), SDI-12 (no sigrok decoder), HDMI-CEC (sigrok has one; left for a
+later round).
+
+Sources of the numbers. Modbus: *Modbus over Serial Line Specification and
+Implementation Guide V1.02* (modbus.org). MIDI: *MIDI 1.0 Detailed
+Specification*. DALI: IEC 62386-101 ed. 2 is not freely available; its
+transmitter and receiver timing tables (18, 19) are taken as reproduced in
+Renesas application note R01AN4653 (RL78/G13 DALI-2 driver) and its
+settling times (5.5..10.5 ms forward to backward, 13.5 ms between forward
+frames at the highest priority) from public application notes. A DALI
+certification lab would test against the standard itself.
+
+### DALI application controller (`dali_ctrl`)
+
+**Implemented.** A controller on one core: forward frames of 1..24 bits (16
+for control gear, 24 for ed. 2 control devices), MSB first after a start bit,
+bi-phase (a 1 is low then high), Te = 416.67 us per half bit; before each,
+the bus must have been idle for 14.0 ms (33.6 Te; a bus that goes low
+meanwhile, such as another controller, restarts the wait once it is idle).
+If the host asks, it then receives a backward frame: the start bit's fall
+must come within 10.5 ms of the forward frame's end; from there every
+interval between edges is measured (a kind-7 WAIT against the last level,
+with its timeout counter as the stopwatch, so an edge during the bookkeeping
+is not lost) and classified as tables 18/19 ask, the limits in the grey
+areas: a half bit 22..44 ticks (286..573 us at Te / 32; the standard accepts
+333.3..500), a double half bit 45..83 ticks (586..1081 us; 666.7..1000), only a
+half bit after a bit boundary or the start bit's fall. A frame ends with 2.6
+Te of high line and must stay idle until 2400 us after its last edge (the
+receiver's stop condition); anything else is a violation, reported with the
+bits received so far, after which the firmware waits for 2400 us of idle
+bus. Records: the bits (start bit included) and a status word with the bit
+count, violation, no answer, and the settling time in ticks. 1 tick = Te / 32
+(CLKDIV 651.04 at 50 MHz). 69 words.
+
+**Timing.** Checker: every half bit 32 ticks, the last one too; at least
+1087 ticks (14.16 ms) from the end of a forward frame to the next one when no
+answer is expected; the receiver's bookkeeping between two interval WAITs is
+exactly 8 or 11 ticks on every path (the constants its thresholds are built
+on: P_B and P_M in the source; the paths were padded to make them equal, and
+the checker proves it). Measured: at 50 MHz every run between edges 20833 or
+20834 clocks (Te) or 41666..41667 (2 Te); forward frames 14.15..14.57 ms
+apart (idle line between the last edge of one and the start of the next); a
+controller's frame already on the bus delays ours to 14.14 ms after its last
+edge. The settling time is reported 0..2 ticks (0..26 us) late (edge
+detection: synchroniser plus the tick).
+
+Against the gear model (`DaliGear`: decodes our frames with the standard's
+receiver ranges, answers at its own half bit and settling time): answers
+decoded with half bits of 336, 366.7, 416.67, 466.7 and 498 us, with low
+phases 75 us longer or shorter than high ones (and 40 us at 380 and 450 us),
+each at 5.5 and 10.4 ms settling time, 0x00/0xFF/0x55/0xAA/0x81/0x7E. (336
+and 498 rather than 333.3 and 500: the model samples the bus every 3.3 us,
+and its reference decoder must find the waveform legal.) Negative controls,
+none giving an answer: 250 us half bits (violation, 0 bits), a 1300 us double
+half bit (violation: table 19's 1200..1400 band), a bit without its mid-bit
+transition (violation), a well-formed 5-bit backward frame (n = 6 reported,
+not 9: the host rejects it), a reply 11.2 ms after the forward frame (no
+answer; our next frame then waits for 14 ms of idle after it), the bus held
+low for 3 ms (violation). Two gear answering at once (wired-AND): for 0x0F &
+0xF0, 0x80 & 0x01, 0xFF & 0x00 and 0x01 & 0x03 the bus carries an illegal
+waveform and the firmware reports a violation, as the reference decoder does;
+two equal answers decode as that answer.
+
+**sigrok** (`dali`, RTL at 307.2 kHz, CLKDIV 4: tick for tick 50 MHz):
+`sigrok dali: [('forward', 'fe40'), ('forward', '0390'), ('backward', '5a'), ('forward', '0399'), ('backward', 'c3'), ('forward', '0590')]`;
+the firmware: answers 0x5A and 0xC3 with 8021 us settling time (the gear's
+8000 us + 20.8 us of detection), and "no answer" for 0x0590. On the model the
+same with 0xFE7F, 0x0190 -> 0x42, 0x03A0 -> 0xFE, 0x0105.
+
+**Limits.** A controller, not control gear or a bus power supply; no
+multi-master collision detection while transmitting (ed. 2 controllers
+must back off); no forward-frame priorities other than the fixed 14 ms
+(priority 1 is 13.5..14.7 ms); 24-bit forward frames are sent but the
+received frames are expected to be backward (8-bit) ones, any length up to
+31 bits is reported; the stuck-bus wait has no timeout (the record of a
+violation comes when the bus has been idle for 2400 us). The timing tables
+were taken from secondary sources (above).
+
+### Modbus RTU client (`modbus_rtu`)
+
+**Implemented.** The serial-line layer of a Modbus client (master) on one
+core: it waits for t3.5 of silence, enables the RS-485 driver (DE), sends n
+bytes from the host (11-bit characters: start, 8 data bits LSB first, even
+parity computed here, stop), then the CRC computed by the CRC tap, low byte
+first, and releases DE after the last stop bit. The tap is set to POLY
+0x8005, width 16, preset 0xFFFF, and fed by every data bit in wire order
+(`out pins, 1` sending, `in r, 1` receiving; parity, start and stop bits are
+read with `mov`/`jmp pin`, so they do not feed it). CRC-16/MODBUS is the
+reflected CRC, and that order gives the bit-reversed register:
+`mov osr, ::crc` (the bit-reverse MOV) and `out null, 16` put it in the
+order the wire wants. Then, if the host asks (not for a broadcast), it
+receives the response: the first start bit within RTMO * 4099 ticks
+(100 ms; the 16-bit timeout counter needs the outer loop), every
+character re-synchronised on its start bit and sampled at mid-bit, parity
+checked, until t3.5 of silence after a stop bit; a character that starts
+after t1.5 but before t3.5 marks the frame broken (the specification says
+such a frame is discarded; the firmware keeps the bytes and flags it). The
+CRC tap is preset again and fed the response; over a correct frame and its
+CRC it ends at 0. Records: 3 bytes per word while receiving, then an end
+word with the last 0..2 bytes and flags (parity, framing, t1.5 gap, CRC ok,
+RX FIFO overflow). t1.5/t3.5 are defines in ticks: 16.5 and 38.5 bit times up
+to 19200 baud, 750 and 1750 us above (the specification's fixed values).
+Odd parity is a define; no parity with 2 stop bits is not supported. 119
+words.
+
+**Timing.** Checker, 19200 baud (TB = 104 ticks per bit, CLKDIV 25.04 at
+50 MHz): every sent start, data and parity bit 104 ticks; a stop bit and the
+space after it 105..111 ticks inside a request (+0.01..0.07 bit, the
+parity computation of the next character falls in its start bit); the last
+stop bit complete (104 ticks) when DE is released; received bits sampled 104
+ticks apart, the first 52 after the start bit is seen; from a stop bit's
+middle to watching for the next start bit 14..23 ticks (under half a bit).
+Measured: at 50 MHz every edge of a request within -33..+17 ns of its
+character's 19200 baud grid (the divider: 2604.06 clocks per bit for
+2604.17, -0.004 %); the server model saw characters 0.5..3.5 us apart
+(t1.5 is 859 us).
+
+Against the server model (`ModbusServer`: decodes 11-bit characters, frames
+by t3.5, checks the CRC with the specification's algorithm, answers):
+requests of functions 3, 6 and 8 and an exception response, with responses
+of every length mod 3 (the packing), a 255-byte response (125 registers)
+drained while it arrives; the server 2 % slow or fast, with 0 or 1.3
+characters of idle between its characters: all received, CRC ok, no flag.
+Two requests whose CRCs are published in Modbus literature come out with
+exactly those bytes: `01 03 00 00 00 0A` -> `C5 CD`, `11 03 00 6B 00 03` ->
+`76 87`. Negative controls: a wrong CRC (not ok), a parity error (flagged,
+CRC still ok: the data was right), a low stop bit (framing flagged), a
+2.5-character gap inside the response (gap flagged, bytes and CRC otherwise
+right), a 4-character gap (the frame ends at t3.5 after 3 bytes, CRC not ok),
+no response (an end word with no bytes). Odd parity at 38400 baud: t1.5 = 750
+us; a 1.0 ms gap is flagged, a 0.6 ms one is not.
+
+**sigrok** (`uart` with even parity + `modbus`, the client's characters on
+uart TX, the server's on RX, RTL at 1.9968 MHz, CLKDIV 1: tick for tick
+50 MHz): `client->server ['Function 3: Read Holding Registers', 'CRC correct', 'Function 6: Write Single Register', 'CRC correct']; server->client` the same.
+The firmware's records: `110306ae415652434049ad` and `1106000100039a9b`, CRC
+ok; the server decoded `1103006b00037687` (the published example) and
+`1106000100039a9b`.
+
+**Limits.** The framing layer only: the host builds requests and parses
+responses (function codes, exception responses, matching the server
+address). One request at a time; 255 bytes before the CRC. The receiver does
+not check the server's turnaround (the specification's t3.5 before a
+response) and keeps a frame broken by a t1.5 gap rather than dropping it.
+The response timeout is RTMO loops of 4099 ticks.
+
+### MIDI receiver (`midi_rx`) and transmitter (`midi_tx`)
+
+**Implemented.** Receiver: 8N1 at 31250 baud, every byte re-synchronised on
+its start bit (a level WAIT, so a start bit that comes while the parser is
+busy is not lost) and sampled at mid-bit, a low stop bit reported and the
+byte dropped. The parser follows MIDI 1.0's rules for a receiver: running
+status (data bytes after a complete channel message start another one with
+the same status; 1 data byte for program change and channel pressure, 2 for
+the others); system common clears running status (0xF1 and 0xF3 take 1 byte,
+0xF2 2, 0xF4..0xF7 none); real-time bytes (0xF8..0xFF) may come anywhere,
+inside another message or a SysEx, are passed on at once and change nothing;
+a SysEx is 0xF0, data, and 0xF7 or any other status, which is then parsed;
+data bytes with no status are dropped. One word per message (status, data,
+count), SysEx data 3 bytes per word. A full RX FIFO drops the item and sets a
+flag, so the receiver never stalls. TB = 128 ticks per bit (CLKDIV 12.5 at
+50 MHz). 132 words. Transmitter: takes the same words and leaves out the
+status byte of a channel message whose status equals the last one sent
+(running status; system common and SysEx cancel it, real-time leaves it; a
+define turns it off). TB = 32 (CLKDIV 50, exact). 58 words. In and out at
+the same time take two cores: both cores of the IHP chip.
+
+**Timing.** Receiver, checker: the start bit's middle 64 ticks after it is
+seen, every bit 128 ticks after the last; the parser, from the stop bit's
+sample to watching for the next start bit, at most 48 ticks of the 64 that
+half a stop bit leaves (measured 14..39 over 105 bytes). The worst path is a
+status byte that ends a SysEx holding 2 bytes and starts a channel message.
+At TB = 64 (CLKDIV 25, exact) it would not fit (48 > 32), which is why TB is
+128. Transmitter: every start and data bit 32 ticks (32.000 us at 50 MHz);
+stop bit and space 40..61 ticks with the host keeping up.
+
+Against the reference receiver (`midi_parse`, written from the
+specification and checked against the generator: parse(encode(events)) =
+events with and without running status, and the specification's example
+`90 3C 40 3E 40` is two note-ons): two random streams of every message kind
+with running status and 25 real-time bytes inserted anywhere, bytes back to
+back (153 bytes -> 76 messages, 3 SysEx and 28 real-time; 139 -> 76), equal;
+a sender 2 % slow or fast (MIDI allows 1 %), equal. Negative controls: data
+with no status, data after a system common message, a message cut short by a
+new status: dropped as the reference drops them; a low stop bit: the byte
+reported as a framing error, the stream resumes (running status then pairs
+the data bytes that remain, as the reference does with the byte removed);
+a host that stops reading: the first 8 messages kept, the rest dropped, flag
+set, and the receiver keeps going (everything after the host drains
+correct). Transmitter: the bytes on the wire equal the reference encoder's
+with running status (a random mix: 92 bytes for 109 without) and without
+(105). Loopback (midi_tx -> virtual pin -> midi_rx): 40 messages of every
+kind, the same 40 out.
+
+**sigrok** (`uart` + `midi`). Transmit, RTL at 4 MHz (midi_rx CLKDIV 1,
+midi_tx CLKDIV 4) with midi_rx receiving the same wire: `sigrok midi:
+["Channel 1: note on (note = 60 'C4', velocity = 100)", "Channel 1: note on
+(note = 64 'E4', velocity = 100)", 'System Realtime: timing clock', "Channel
+1: note on (note = 67 'G4', velocity = 100)", 'Channel 2: program change to
+instrument 13 (assuming Marimba)', 'Channel 1: pitch bend change 0x00 0x48
+(9216)', 'System Common: song position pointer 0x10 0x02 (272)', "system
+exclusive: for 'Universal Non-Realtime' with payload 0x7f 0x09 0x01 ",
+'System Realtime: start', ...]`: 28 bytes on the wire for 31 without running
+status, and midi_rx's 11 messages equal the 11 sent. Receive, on the model:
+sigrok decodes the stream played into midi_rx (67 note and pitch-bend messages with
+running status, 12 timing clocks inside messages); its messages equal the
+firmware's, in the same order apart from the clocks (sigrok places a message
+at its first byte, before a clock that came inside it; the firmware reports
+it when complete).
+
+**Limits.** No active-sensing timeout (a receiver may treat 300 ms without
+any byte as a lost connection: the host's job). midi_tx does not insert
+real-time bytes into a message (the host orders them between messages) and
+never refreshes running status. Undefined real-time bytes (0xF9, 0xFD) are
+passed on.
+
+### Quadrature encoder counter (`quad_enc`)
+
+**Implemented.** X4 decoding of A and B on one core at CLKDIV 1: every edge
+of either line is a step, forward when A leads B; the direction is the old B
+XOR the new A. WAIT kind 7 compares the two lines with the last state read,
+on every clock, so an edge that comes while the previous step is being
+counted is caught by the next WAIT; a pulse that is over before the state is
+read counts nothing; both lines changed between two reads (a missed step)
+sets a flag and does not move the position. The position is R3, which the
+host reads through the core's register (16 bits, wrapping). 20 words.
+
+**Timing.** Checker: 14 clocks per forward step, 15 backward (from the WAIT
+completing to the next WAIT, 8..15 ticks; measured 8..15 over 809 steps).
+Measured at CLKDIV 1, steady rotation with a step every n clocks: exact for
+n >= 14 forward and n >= 15 backward; at 10..13 (14 backward) steps are
+missed and the flag is set every time (the negative control). At 50 MHz:
+3.3 M steps/s, an 830 kHz quadrature signal. A 5000-step random walk at
+15..60 clocks per step, 1- and 3-clock glitches, a double step, and 40000
+steps (the 16-bit wrap): all as the encoder model moved.
+
+**sigrok** (`graycode`): RTL at 50 MHz, a 1500-step random walk: the
+firmware's position 76, the encoder's 76, sigrok's count 76 (1501 count
+changes, the double step counted as 0 by both); on the model a 600-step walk
+-42 = -42.
+
+**Limits.** No index (Z) input, no edge filter beyond "the state must have
+changed when it is read", no count capture: the host polls R3. Steps closer
+than 14/15 clocks on average are lost (and flagged).
+
 ## ISA limitations found
 
 What the challenge ran into, for a future revision. None stopped a protocol;
-each cost instructions, registers or generality.
+each cost instructions, registers or generality. (Items 11..16 come from the
+second round.)
 
 1. **No `jmp !t`.** T (the WAIT timeout flag) has a positive JMP condition
    only, unlike Z and C. `nec_rx` was first written with `jmp !t` and had to
@@ -364,6 +666,41 @@ each cost instructions, registers or generality.
    `jmp rxf` + `push noblock` + a flag instead. The FIFOs are 8 words.
 10. **One link register.** No problem in practice (`lin_responder` tail-calls
     with `jmp` to avoid a nested CALL).
+11. **The WAIT timeout counter is the only stopwatch, and it runs only while
+    waiting.** `dali_ctrl` measures intervals between edges with it, so the
+    instructions between two WAITs must be counted by hand and every path
+    padded to the same length (7 or 10 instructions; the checker proves
+    them). A free-running tick counter readable by MOV would remove the
+    padding and the constants.
+12. **16-bit timeout counters.** Modbus's 100 ms response timeout is 200000
+    ticks at 19200 baud with 104 ticks per bit: an outer loop around a level
+    WAIT (a level WAIT, so no edge falls between two of them).
+13. **No parity or population count.** Even parity takes 11 ALU instructions
+    per sent byte (a fold of `mov`/`shr`/`xor`), placed inside the start bit;
+    received bytes accumulate it with an `xor` per bit. Only 1-bit shifts feed
+    the CRC tap, which helped here (the parity bit is read with `mov`, so it
+    stays out of the CRC).
+14. **Registers again.** `modbus_rtu` keeps its receive status in the OSR,
+    `midi_tx` its running status in the ISR and the message's tag in the
+    OSR, `dali_ctrl` the window counter in r0 for the whole backward frame
+    (the settling time is reported from it).
+15. **No table lookup (again).** MIDI's data-byte count per status is a
+    chain of compares; with the SysEx bookkeeping the worst parser path is
+    48 ticks, which forced 128 ticks per bit (CLKDIV 12.5 at 50 MHz) so that
+    it fits in half a stop bit; a lookup would allow 64.
+16. **Two cores in the tapeout.** A MIDI port in and out at once, or any
+    full-duplex pair of these programs, uses both cores; nothing is left for a
+    third protocol. Each program alone fits one core's 256 words (at most
+    132).
+
+What helped in the second round: the bit-reverse MOV (`mov osr, ::crc`
+turns the tap's register into the reflected Modbus CRC in one instruction),
+the CRC residue (0 over a correct frame and its CRC: one compare), WAIT kind 7
+(the DALI receiver's edge timing without a missed edge, the encoder's two
+lines at clock resolution), level WAITs with timeouts for start bits (a late
+parser delays the samples a little instead of losing a byte), the host's
+direct access to R3 (the encoder needs no FIFO protocol), global flags as
+sticky error bits.
 
 What helped: timeouts on every WAIT (no receiver here can hang on a dead
 line), level WAITs with timeouts as interval timers, WAIT kind 7 (Wiegand's
@@ -382,4 +719,19 @@ noblock` loading R0 (I2S silence, DShot's repeated value), the CRC tap as a
 * **sigrok 0.5.3**: `dmx512` (above), `ir_nec` knows only standard NEC
   (extended addresses are an "Address# error"), there is no DShot decoder,
   `wiegand` frames bits by a fixed idle time (`bitwidth_ms`), and `lin`
-  closes a frame after two idle UART frames.
+  closes a frame after two idle UART frames. Second round: `dali` decodes
+  only 16-bit forward and 8-bit backward frames (not ed. 2's 24-bit ones);
+  `modbus` on a single line tries every frame both as a request and as a
+  response, so the tests give it the client's and the server's characters
+  on separate channels; `midi` places a message at its first byte, so a
+  real-time byte that came inside it is listed after it; `graycode`
+  annotates a count only when it changes (the last value shows after one
+  more step), and sigrok-cli aborts at exit after it ("free(): invalid
+  pointer", its output complete: `pe.sigrok.decode(abort_at_exit_ok=True)`
+  accepts exactly that); the capture must start at the encoder's idle state,
+  or the decoder takes its first sample as a step.
+* The **static checker** proved the DALI receiver's bookkeeping constants
+  and the MIDI parser's worst path, but cannot follow the receiver's
+  decisions (the thresholds compare a measured value), nor `midi_tx`'s
+  "every word sends a byte", which is an `@loop max=1` assumption (a channel
+  message with no data bytes would break it).
