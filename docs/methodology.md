@@ -108,6 +108,9 @@ mechanisms above rather than by the agent that made it:
 | Codex's reset fix was correct, but its netlists congested routing | physical experiments: a dozen place-and-route runs, then a different global-routing setting |
 | The two-core USB firmware took its own ACK for the host's | the concurrent RTL service test, once an unrelated cleanup made the host software faster |
 | Claude described the FPGA as running "exactly" and "at full speed" before either was measured | a second review of that explanation; the claims were then measured on the board |
+| The assembler computed `/` exactly and truncated each half of a split delay, so bidirectional DShot ran one clock short per level at 50 MHz | the KV260 board: `la_capture` measured lows of 600 and 1220 ns and a 1640 ns bit; the cycle model then showed the same, and `/` became integer division |
+| `ws2812` held a 0 bit high for 2 ticks, not the header's 3, so at 50 MHz some 0 bits were 240 ns, outside WS2812B's T0H window | the cycle-model pass of the KV260 run script at 50 MHz, before the board run |
+| `can_rx` missed the stuff bit after a CRC ending in five equal bits and drove its ACK a bit early (about one random frame in 31; the model tests' frames avoided it) | the same cycle-model pass, on a generator frame, before the board run |
 
 The full lists are in [verification.md](verification.md) (bugs found by the
 flow) and [review.md](review.md) (the independent review).
