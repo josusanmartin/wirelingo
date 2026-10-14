@@ -207,14 +207,14 @@ def check_test(out, data, test, rc):
     """Artifacts of one passing test, or a ValueError."""
     d = out / test
     if data["sdf_corner"]:
+        if rc != 0:
+            raise ValueError(f"{test}: gl_sdf_test.sh exited {rc} (no SDF receipt; log {d / 'sim.log'})")
         path = sdf_receipt((d / "sim.log").read_text(errors="replace"))
         sub = receipts.verify(path, data["worktree"], "sdf", data["validation_root"])
         plan = sub["plan"]
         if [(c["corner"], c["expect"], c["module"], c["tests"]) for c in plan] != \
                 [(data["sdf_corner"], "pass", data["module"], [test])]:
             raise ValueError(f"{test}: SDF receipt {path} has another plan")
-        if rc != 0:
-            raise ValueError(f"{test}: gl_sdf_test.sh exited {rc}")
         return {f"{test}/sim.log": receipts.digest(d / "sim.log"), f"{test}/status.json": receipts.digest(d / "status.json"),
                 f"{test}/sdf_receipt": str(path), f"{test}/sdf_receipt.sha256": receipts.digest(path)}
     if rc != 0:
@@ -240,7 +240,8 @@ def finish(out, data, results):
         try:
             artifacts.update(check_test(out, data, test, results[test]["returncode"]))
         except (OSError, ValueError, KeyError) as e:
-            failures.append(str(e))
+            message = str(e)
+            failures.append(message if message.startswith(test + ":") else f"{test}: {message}")
     summary = dict(data, results=results, failures=failures, finished_utc=datetime.now(timezone.utc).isoformat())
     receipts.write_new(out / "summary.json", summary)
     for test in data["tests"]:
