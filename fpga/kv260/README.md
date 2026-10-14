@@ -431,6 +431,134 @@ poll the GPIO from Python; every other step, including the core-to-core
 `loopback`, passed in all fifteen runs. Left loaded: `protoemu`, PMOD0/PMOD1
 = 0, pe_lab MODE 0, host port on the GPIO path.
 
+## Post-freeze protocols, second round, on hardware (2026-10-14, `host/postfreeze2_demo.py`)
+
+The five second-round firmwares (docs/post-freeze-protocols.md: `dali_ctrl`,
+`modbus_rtu`, `midi_rx`, `midi_tx`, `quad_enc`), which had only run in
+simulation, on the same FPGA build of the chip RTL. What ran is the RTL on an
+FPGA (fabric timing, inferred RAM, no IHP pads), not silicon. Every line is a
+virtual pin or a uio pad driven by a core or by pe_lab; no PMOD pin was
+enabled; no wiring was changed.
+
+    python3 fpga/kv260/host/postfreeze2_demo.py --model --save m2.json --plans plans.json   # cycle model first (about 6 min)
+    scp plans.json ubuntu@kria.[tailnet domain redacted]:pf2_logs/
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu/fpga/kv260/host/postfreeze2_demo.py --save pf2.json --plans pf2_logs/plans.json
+    python3 fpga/kv260/host/postfreeze2_demo.py compare pf2.json m2.json
+    python3 fpga/kv260/host/postfreeze2_demo.py sigrok pf2.json
+
+**Board state and build.** Run 2026-10-14 04:33:04-04:33:15 UTC (the four
+groups had also run separately at 04:21-04:32, all passing apart from the
+first DALI attempt, below). `protoemu` (50 MHz) was loaded: `bringup_kria.py
+--only build clock id` PASS, RTL revision `d1aa46f` (digest `3adc796c`,
+clk_div 24), clock 49.9980 MHz. The script measured 49.99920 MHz over 2 s
+and, within 200 ppm of 1200 MHz / 24, derived every CLKDIV and define for
+50.000 MHz. `src/*.v` is identical in d1aa46f and this branch's base `main`
+(35da4ed). Host software (`tools/`, `firmware/`, `fpga/kv260/host/`) was
+refreshed in `~/protoemu` by rsync as `install.sh` does, keeping
+`expected_build.json`. Each run's output went to a file, synced after the run
+(`~/pf2_logs/`).
+
+**Method.**
+* *Wired-AND lines in the generator mode.* kv260_top gives a uio pad
+  `uio_oe ? uio_out : generator`, so a firmware pin set open drain and
+  released reads what the pattern generator drives: the pad is the
+  wired-AND of the core and the generator. DALI's bus is uio0 (`dali_ctrl`
+  TX = RX = uio0, open drain); the generator is the rest of the bus (idle
+  high, the gear's backward frames, another controller's frame). Modbus's
+  RS-485 line is uio0 (TX open drain, RX), DE uio2; the server answers on the
+  same line, so the client also hears its own request, as on a half-duplex
+  bus.
+* *Pre-timed far ends.* The generator cannot react, so the DALI gear and
+  the Modbus server are pre-timed: each scenario first runs on the cycle
+  model with the test's pins-only model in the loop on the model's pad
+  (`pe.postfreeze2.DaliGear` at 307.2 kHz, `ModbusServer` at 104 x baud,
+  CLKDIV 1, tick for tick the 50 MHz firmware), and the far end's own
+  waveform from that run (its exact edges, relative to the trigger) is
+  what the generator plays on the board, after the 2-word trigger preamble
+  of `postfreeze_demo` releases the firmware. The firmware's start differs
+  from the model's by under a tick, so the answers land within about a
+  tick of the model's times; the captures and the firmware's records say
+  where they landed. `--plans` keeps these model runs in a file (33 runs,
+  keyed by everything they depend on), so the Kria reuses them.
+* *Transmitters* are recorded by `la_capture` on core 1 (1 tick = 1 clock;
+  uio0-7 with the trigger, or V0) and drained by one READ_FIXED burst, as in
+  postfreeze_demo; a gap record fails the run. *Receivers'* records are
+  polled. DALI and Modbus captures are also compared edge by edge with the
+  model's pads (the "board - model" spans below: one constant start offset
+  for edges the core times from its start, up to about 2 ticks after the
+  firmware re-synchronises on a generator edge).
+* *Judges*: the decoders and models of test/model/test_{dali,modbus,midi,quad_enc}.py
+  (`dali_decode` with IEC 62386-101's receiver ranges, `dali_records`,
+  `uart_decode`, `modbus_crc` (the specification's algorithm),
+  `ModbusServer`, `modbus_response`, `midi_parse`, `midi_encode`,
+  `midi_rx_events`, `quad_count`), with the tests' scenarios and seeds
+  where they fit; `compare` against the `--model` run; sigrok off the board.
+
+**Results at 50 MHz** (25 of 25 runs PASS; `compare` with the `--model`
+run: every run's deterministic results (values, records, flags, the MIDI
+waveform in us, the quadrature tables) equal; one clock = 20 ns):
+
+| Item | How | Result |
+|---|---|---|
+| DALI forward frames | bus uio0 -> la_capture | PASS. 0xFE80, 0x0105, 0xA300, 0xFFFF, 0x0000 (16 bits), 0xC10203 (24), 0x5A (8): all legal for the pins-only decoder. Every run between edges 20833/20834 clocks (416.66/416.68 us) or 41666/41667 (833.32/833.34 us), CLKDIV 651.043; idle from a frame's last edge to the next 14.154..14.570 ms (>= 14.0). Board - model: -7.7..-7.3 us over 214 edges (one start offset, under a tick of 13.02 us) |
+| DALI queries | generator gear, captured | PASS. 0x0190, 0xFF91, 0x0399 answered 0xAB, 0x00, 0xFF (9 bits, decoded legal on the bus), 0x0590 'no answer'. Settling time on the bus 8007.2..8020.2 us (the gear's 8000 us, pre-timed from the model's frames; the board's frames came 7..20 us earlier); the firmware reported 8007.8 / 8020.8 / 8020.8 us, 0.6..0.8 us after the bus (its stated detection: 0..2 ticks) |
+| DALI answer tolerance | generator gear, polled | PASS. Half bits 336, 366.7, 416.67, 466.7, 498 us, low phases +-75 us (416.67) and +40 / -40 us (380 / 450), each at 5.5 ms and 10.4 ms settling time: 72 answers right (0x00, 0xFF, 0x55, 0xAA, 0x81, 0x7E); every gear waveform legal for the reference decoder; reported settling times = the model's +-1 tick |
+| DALI negative controls | generator gear, captured | PASS. 250 us half bits: violation (n 0); a 1300 us double half bit: violation; no mid-bit edge: violation; a 5-bit frame: n = 6, no violation; an 11.2 ms reply: 'no answer', and the next forward frame started 14.11 ms after the late frame's last edge; bus low 3 ms: violation; then 0x3C answered |
+| DALI collisions | two generator gear, wired-AND, captured | PASS. 0x0F&0xF0, 0x80&0x01, 0xFF&0x00, 0x01&0x03: the pins-only decoder finds an illegal run on the bus (6666.7 / 1250 / 6666.7 / 1666.7 us) and the firmware reports a violation; 0x12&0x12: both 0x12 |
+| DALI bus busy | generator plays another controller | PASS. Another controller's 0xFE05 3 ms after our 0xFE80 was queued: ours started 14.114 ms after its last edge (>= 14.0) |
+| Modbus published CRCs | line + DE -> la_capture | PASS. Broadcasts `01 03 00 00 00 0A` -> `C5 CD`, `11 03 00 6B 00 03` -> `76 87` on the bus, even parity right; the server model heard both, CRC ok; no record (broadcast). Edges -33..+17 ns from each character's 19200 baud grid; characters 0.46..3.48 us apart (t1.5 = 859 us); DE high 1.50 us before the first start bit, low 20-40 ns before the end of the last stop bit (by the nominal bit time) |
+| Modbus request/response | generator server, captured | PASS. Requests `1103006b00037687`, `11060001beefeab6`; responses `1103067d9f7ea07fa18b06` and the echo received with CRC ok, no flag; response start 3001.5..3002.3 us after the request's last stop bit (the model's 3000 us); request edges -33..+13 ns off the grid. Board - model: -2.3..-0.8 us (1 tick = 0.5 us) |
+| Modbus lengths | generator server, polled | PASS. Functions 3 (1, 2, 3, 4, 10 registers), 6, 8, an exception: responses of 7, 9, 11, 13, 25, 8, 8, 5 bytes (every length mod 3) right, CRC ok, no flag |
+| Modbus 255-byte response | generator server, polled | PASS. 125 registers (byte values with few edges, so the waveform fits the generator: 879 entries), 85 records over about 146 ms drained while arriving: right, CRC ok, no overflow |
+| Modbus tolerance | generator server, polled | PASS. Server x0.98 and x1.02, 0 and 1.3 characters between its characters: 7- and 23-byte responses right, CRC ok, no flag |
+| Modbus negative controls | generator server, polled | PASS. Wrong CRC: not ok; parity error: flagged, CRC ok; low stop bit: framing (and parity) flagged; 2.5-character gap: gap flagged, CRC ok; 4-character gap: the frame ends after 3 bytes, CRC not ok; no response: an end word with no bytes after the 100 ms timeout; then a good one. The same flags as the model |
+| Modbus odd parity, 38400 | generator server, polled | PASS. 3 responses right; a 1.0 ms gap flagged (t1.5 = 750 us), none and a 0.6 ms gap not |
+| MIDI TX | midi_tx -> V0 -> la_capture | PASS. Running status on: 8 events -> 17 bytes (20 without); off: 6 events with a SysEx -> 18 bytes; the reference encoder's bytes; every run inside a byte a multiple of 32.000 us (CLKDIV 50, exact); stop bit + space 40..61 us |
+| MIDI RX | generator -> uio0 -> midi_rx (core 1), polled | PASS. Two random streams of every kind (121 and 108 bytes, 20 real-time bytes inserted anywhere, back to back) and two at x0.98 / x1.02 (88, 79 bytes): 60, 60, 41, 41 events equal to the reference parser's, FOV 0. Negative controls: stray data bytes dropped as the reference drops them; a low stop bit -> a framing-error record, the stream resumes. Host not reading: the first 8 messages kept, FOV set; the next 53 bytes right |
+| MIDI loopback | midi_tx (core 0) -> V0 -> midi_rx (core 1) | PASS. 40 events of every kind (92 bytes with running status), host feeding and draining: the same 40 events out |
+| MIDI full port | generator -> midi_rx (core 1) while midi_tx (core 0) sends on uio1 | PASS. RX: 18 bytes -> the 8 events sent. TX at the same time: 19 bytes right, read by the host polling the GPIO (uio_out[1]; host-timed, runs 29.9..1011.2 us: bytes only, the bit timing is the MIDI TX row) |
+| Quadrature, random walk | generator -> uio0/uio1, also la_capture | PASS. 1001 steps 15..60 clocks apart: R3 -41 = the encoder's position = the pins-only X4 decoder on the capture; every step captured at the generator's time + one constant; FERR 0. 5 x 1000 steps (5 plays): R3 after each = the encoder's |
+| Quadrature, rate | generator, 400 steps per cell | PASS. A step every n clocks: exact for n >= 14 forward and n >= 15 backward (3.57 / 3.33 M steps/s); at 10..13 (14 backward) steps missed and FERR set every time |
+| Quadrature, glitches, wrap | generator | PASS. 1- and 3-clock pulses move nothing; both lines at once: FERR, not counted; 7 steps back counted. 40000 steps at 14 clocks: R3 = -25536 = 40000 - 65536 |
+| Quadrature, asynchronous | generator on the 45.93 MHz alternate clock | PASS. A step every n alternate cycles (n x 1.0885 clocks, phase walking): exact forward from n = 13 (14.2 clocks), backward from 14 (15.2); at 11-12 (and 13 backward) missed and flagged: exact while the mean step is at least the loop. A 1000-step walk 15..60 alternate cycles apart: R3 316 = the encoder's |
+
+sigrok (`postfreeze2_demo.py sigrok pf2.json`, the board's captures):
+`dali` decodes every 16-bit forward frame and the backward frames 0xAB,
+0x00, 0xFF, 0x99, 0x3C (it lists the 8-bit forward frame 0x5A as backward
+and skips the 24-bit one: its known 16/8-bit limit); on the collision
+captures it reads bytes (0x00, 0x01) where the pins-only decoder and the
+firmware find illegal runs (it does not check run lengths); `uart` (even
+parity) + `modbus`: the client's bytes, "Function 3 / Function 6" and "CRC
+correct" in both directions; `midi`: the same messages as sent, both
+captures; `graycode`: last count -42, the firmware's R3 before the final
+step.
+
+**One failure on the way, a script bug.** The first DALI run (04:21) failed
+`dali_query`: the capture burst ended 4 ms after the last bus edge, before
+the firmware's 'no answer' record for the last query (it comes after the
+10.5 ms window), so 3 of 4 records were read. The capture now runs 14 ms
+past the last edge and checks the record count; on the model the burst now
+lasts as long as on the board (before, the model's minimum burst ran 0.4 s
+and hid it). No firmware or tool bug was found.
+
+**Not run / limits.** No protocol went over package pins (no PMOD pin
+enabled), so no real DALI gear or bus power supply, RS-485 transceiver,
+Modbus server, MIDI instrument or encoder: every far end is our pins-only
+model, played by the generator at clock-exact times (or the chip's other
+core). The DALI gear and Modbus server are pre-timed from a model run, not
+reactive. midi_tx's bit timing was measured alone (la_capture); in the
+full-port run both cores were busy, so its output was read by the host from
+the GPIO (bytes, not timing). Only up to 8 TX FIFO words are queued before a
+captured run (the host can't feed the FIFO during the burst), so captured
+runs are short (at most 4 DALI queries, 2 Modbus requests, 8 MIDI words).
+The asynchronous quadrature clock comes from the same VCO as protoemu's (its
+phase walks; not an independent oscillator). The `--model` run models the
+alternate clock as rounded-up protoemu clocks.
+
+**At the end** (04:34 UTC): `bringup_kria.py` (all steps) ALL PASS, clock
+49.9991 MHz; left loaded: `protoemu`, PMOD0/PMOD1 = 0, pe_lab MODE 0, host
+port on the GPIO path (pe_spim SEL 0).
+
 ## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
 
 ### Fabric master + PMOD build

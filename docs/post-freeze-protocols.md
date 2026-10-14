@@ -48,10 +48,12 @@ one core's bank; a complete MIDI port (in and out at once) takes both cores
 of the IHP chip. Four more RTL tests through the SPI host port (`pf_dali`,
 `pf_modbus`, `pf_midi`, `pf_quad_enc`: test_post_freeze has 12, all passing
 on runner1) and 61 more model tests (`test/model/test_{dali,modbus,midi,quad_enc}.py`
-and 14 in `test_post_freeze_timing.py`). Simulation only: none of these five
-has run on the FPGA or silicon.
+and 14 in `test_post_freeze_timing.py`). None of these five has run on
+silicon; on the FPGA, see below.
 
 On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs passed at 50 MHz; bidirectional DShot's bit timing was a clock short at 50 MHz (odd T0: the assembler divided exactly and truncated each half of a split delay). With `/` now integer division it measures exactly 62 / 31 / 83 clocks at 50 MHz on the same bitstream, and exact at 48 MHz.
+
+Second round on hardware (the RTL on the KV260 FPGA, 2026-10-14): see fpga/kv260/README.md, "Post-freeze protocols, second round, on hardware" (`fpga/kv260/host/postfreeze2_demo.py`): 25 of 25 runs passed at 50 MHz (DALI, Modbus RTU, MIDI in/out and both at once, quadrature), every far end a pins-only model played by pe_lab's pattern generator or the other core; results equal to the cycle model's.
 
 ## How they are judged
 
