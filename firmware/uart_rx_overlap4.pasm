@@ -1,6 +1,6 @@
-; Optional OVERLAP4 source candidate: PREPARATION ONLY, unexecuted.
-; Pair the unchanged256-word consumer and93-word cooperative producer.
-; Cycle29 SOURCE PROTOTYPE ONLY: no model/native/protocol qualification.
+; Cooperative UART receiver and four-byte USB report supplier.
+; Pair with usb_uart_overlap4.pasm: 256 + 93 words, existing RTL.
+; C32 finite model case passed; limits in docs/usb-uart-overlap4.md.
 ; Core1 divider256 (one tick/system clock), CRCCTRL=0x000f0000 mandatory.
 ; CRC is a 16-bit service scratch register: BOTH CRC taps disabled.
 ; Shiftctrl3: right IN/OUT, NO autopush/autopull, no FIFO/LINE instructions.

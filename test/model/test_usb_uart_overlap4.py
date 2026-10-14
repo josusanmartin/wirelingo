@@ -1,4 +1,4 @@
-"""Prepared fixed-calendar overlap4 witness. No preparation result is DUT evidence.
+"""Fixed-calendar overlap4 model regression with raw-pin and phase checks.
 
 One ordinary node, one cold load; UART edges advance inside every Chip.step,
 including all USB peer calls. Expected bytes come only from the external list.

@@ -1,4 +1,4 @@
-"""Optional cooperative fixed4 source pair. Preparation is not execution proof.
+"""Optional cooperative fixed4 pair; finite model scope in the workload guide.
 
 Cold-only ordinary loader: two cores/banks; no rearm/service/FIFO relay API.
 The external UART sender honors new READY and complete nominal 8N1 frames.

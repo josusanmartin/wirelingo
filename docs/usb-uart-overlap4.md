@@ -1,139 +1,134 @@
-# Cooperative fixed4 USB/UART overlap: preparation only
+# Receive the next UART report while USB retains the current report
 
-This optional source pair prepares a finite witness: serve one retained four-byte
-vendor report while capturing the next report through a maximum sampling gap,
-bad STOP and ACK crossings. It has **not been executed**. Source arithmetic,
-assembly, cold-write validation and pytest collection cannot establish model,
-RTL, electrical, energy, sustained-rate or PPA results.
+This optional program pair serves four-byte reports through low-speed USB EP0
+while the second core receives the next four UART bytes. It uses the existing
+instruction set and two cores. READY throttles the UART sender when both the
+retained report and pending group are full.
 
-The two immutable director images are copied with only program names/comments
-changed. Ordinary bank loaders accept core0's256-word consumer and core1's
-93-word producer:1396B,0/163 spare words. Both cores/banks, all eight flags and
-virtual pins24..31 are consumed. USB owns pads0/1 and the line unit; core1 owns
-RX16 (ui0), physical READY8 (uo0), sticky ERROR9 (uo1), and the virtual byte bus.
-The producer contains no FIFO, LINE, blocking WAIT or HALT instruction. There
-is no FIFO relay, rearm or loading-host runtime service API.
+The finite model regression passed with the two-core tapeout profile. It
+observes UART samples during an active USB DATA reply and checks partial,
+bad-byte rollback and fully pending groups at deliberately chosen ACK crossings.
+Sustained forwarding and native RTL behavior remain unmeasured for this pair.
 
-`pe.usb_uart_overlap4.load_writes()` proposes374 ordinary cold writes on the
-2core/2bank/256word/depth8 profile. Both cores are stopped/empty before loading.
-Ownership, outputs/flags and SYNC_BYPASS0 are paid once; both dividers are256
-(one instruction tick/system clock), clock48MHz. UART external source is nominal
-115200 baud,8N1; USB is low speed32clocks/bit with TURN63. Core0 CRC remains
-USB's existing configuration. **Core1 CRCCTRL0x000f0000 is mandatory**:16-bit
-scratch, both taps off. Default width1 truncates saved R0. SHIFTCTRL3 disables
-autopush/autopull and uses right shifts. MOV-to-ISR resets its hardware count;
-this program deliberately uses R3 fields instead, so that reset is not FIFO
-publication or lost-length metadata.
+## Load and communicate
 
-R1/R2 retain the old32bits; ISR holds0..4 next good bytes. R3 combines remaining
-bytes/bits and the cyclic byte cursor. CRC saves R0 during a24-clock service leaf;
-OSR is disposable, LR has one leaf return and no nested CALL. The service never
-sets F7. F6 advertises a virtual byte and the consumer WAIT clears it on capture;
-producer cold/inactive/promotion paths also clear speculative F6. After cold
-initialization, F7 clears only on the exact valid fixed4 ACK and sets only after
-complete promotion and initial F6 publication. UART bad STOP raises ERROR and
-removes only the suspect byte. USB reset preserves producer state; this witness
-does not add general reset or USB conformance coverage.
+The [cold-load helper](../tools/pe/usb_uart_overlap4.py) provides `assemble()`,
+`load_writes()` and `vendor_request()`. Start with both cores stopped and their
+FIFOs empty, then apply the helper's 374 register/memory writes. The plan loads
+both programs, sets exclusive pin/flag ownership and starts both cores. This
+count is host operations; serial loading latency has not been measured.
 
-Compared with the serial59-word supplier, this source costs34 more words and one
-CRC configuration write, and increases instruction cadence from divider3333 to
-256. CRC scratch is unavailable for simultaneous producer CRC. Power, physical
-effects and sustained throughput are unknown. At most one retained report plus
-one pending32-bit report is represented; READY throttles when both are full.
-External USB-host polling/ACK service is still required. This is not a claim of
-continuous115200 forwarding, an arbitrary queue, or a CPU-free system end to end.
+Send UART at nominal 115,200 baud, 8N1, with a 48 MHz system clock. Admit one
+complete frame for each new active-high READY grant. Complete its STOP interval
+even if the next READY grant appears early. A bad STOP discards that byte and
+sets sticky ERROR while preserving earlier good bytes. Partial groups have no
+idle timeout or short-report flush.
 
-## Frozen proposed workload and coverage
+The USB host issues the vendor/device IN request `c0 01 00 00 00 00 04 00`.
+Exactly four good bytes form a report. Polling and valid ACKs remain the USB
+host's responsibility. There is no active loading-host FIFO relay, refill or
+rearm API, and no claim of an autonomous external host.
 
-One maintained node is prepared:
+## Resource and state contract
+
+| Resource | Reservation |
+|---|---|
+| Core 0 / bank 0 | 256 words / 1,024 bytes; low-speed USB EP0; zero spare words |
+| Core 1 / bank 1 | 93 words / 372 bytes; cooperative UART receiver and byte supplier |
+| Physical pins | USB 0/1 on core 0; RX 16, READY 8 and ERROR 9 on core 1 |
+| Virtual pins and flags | Pins 24–31, F0–F7 reserved by this pair |
+| Profile | Two cores, two 256-word banks, depth-8 FIFOs; no active FIFO relay |
+| Cadence | Both encoded dividers 256: one instruction tick per system clock |
+| Line configuration | 32 clocks per low-speed bit, TURN 63, SYNC_BYPASS 0 |
+| Producer CRC | CRCCTRL `0x000f0000`: 16-bit scratch, both taps off |
+| Producer shifts | SHIFTCTRL 3: right shifts, no autopush or autopull |
+
+The images total 1,396 bytes. Relative to the separate 59-word serial supplier,
+this producer adds 34 words and one cold CRC configuration write, and executes
+more often. No additional RTL or SRAM is needed. Power and physical effects of
+the higher activity are unmeasured.
+
+R1/R2 retain the current report. ISR accumulates up to four subsequent good
+bytes. The service subroutine temporarily uses CRC to preserve the UART delay
+register; CRC cannot also hold a useful checksum. Its default one-bit width
+would corrupt that saved register, so the supplied configuration is mandatory.
+
+F6 announces one internal byte. Core 0 clears it before capture; core 1 waits
+for that clear before replacing the pins. The internal order is reversed bits
+of report bytes 1, 0, 3, 2; USB reconstructs their normal external order. F7 is
+set only after the promoted report and first internal byte are ready. A valid
+fixed-length DATA ACK releases the old report before status completion. This
+is not an application exactly-once delivery guarantee.
+
+The producer preserves a partial next group across old-report ACKs and removes
+only a bad-STOP byte. A fully pending report is promoted after the retained one
+is released. It does not reset on USB detector reset. Global reset, reload,
+preemption, runtime configuration writes and arbitrary aborted internal reads
+are outside this finite contract. These shared-pin transactions are firmware
+coordination, not an atomic hardware mailbox.
+
+## Measured finite model result
+
+On October 14, 2026, the sole C32 invocation passed in **310,000 model steps**,
+including 374 cold writes, in 27.97 seconds wall time. The same ordinary test
+node passed its saved-trace audit; three saved-only negative controls rejected
+a changed payload with valid CRC, missing phase coverage and late publication.
+These negatives are checks of the saved-data oracle, not additional DUT runs.
+
+The fixed external calendar contains 17 UART frames: 16 good bytes and one
+bad-STOP `a6`. It delivers the four exact USB reports `00000000`, `39d3815e`,
+`12345678` and `9abcdef0`, retaining earlier reports through the declared
+lost/malformed-ACK retries. An empty final four-byte request returns STALL.
+The trace records 99 USB transmissions: 98 complete packets and one deliberate
+ACK with a one-bit tail. Independent review checked 33 DATA CRCs and all 136
+UART data-sample windows. Loading-host activity and USB driver overlap are zero
+after startup.
+
+| Required crossing | Observed model behavior |
+|---|---|
+| Consumer clear and producer old-high poll at clock 150592 | Next publication at 150658: 66 clocks; next payload OUT meets the frozen queue deadline |
+| USB DATA versus UART receive | Actual UART IN1 samples at 150636, 151053 and 151470 occur during the first USB DATA reply |
+| Old report ACK during UART delay at 158241 | PC stays 280, delay count 19→18, ISR stays `0xa6720000` |
+| ACK during bad-byte rollback at 203989 | Earlier `12 34` prefix survives; bad `a6` is discarded and ERROR stays set |
+| ACK while the next full group is pending | Clear at 260541; guarded promotion sets F7 at 260566; READY rises at 260594 |
+
+The four valid report ACKs start 64 clocks after the DATA packet's first EOP J,
+or 32 clocks after that complete J cell. The distinction is explicit in the
+raw timing checks. The maximum observed clear-to-publication delay is a finite
+66-clock witness, not a universal timing proof.
+
+**282 line-RX overflow events remain recorded**, observed during device
+transmission. Their cause and general recovery behavior are unproven. This
+passing case does not establish that overflows are harmless.
+
+The previous C30 run reached the same final clock but failed in its observer:
+only executable instructions were logged, so a required ACK edge during RET
+delay was absent. Its later pin expectation also selected the next internal
+byte instead of the first. C32 adds a passive edge snapshot and corrects that
+expectation from `0x59` to `0x3d`. All 31 other original raw fields match C30;
+firmware, helper, inputs and schedules are unchanged. The original failure is
+preserved, and was not reclassified as a passing run.
+
+## Remaining validation
+
+This model pass does not establish sustained 115,200-baud forwarding.
+The schedule has planned idle periods and external USB service. Measure useful
+bytes per elapsed clock, READY duty and retry cost under a complete host workload
+before making a throughput claim. Native RTL, board/electrical USB behavior,
+broad baud/jitter tolerance, power and general reset recovery remain unqualified.
+The wider integration tree needs its own regression run; this result covers
+this one node and its pinned runtime dependencies.
+
+## Reproduce the focused test
 
 ```sh
-PYTHONPATH=tools python3 -m pytest -q test/model/test_usb_uart_overlap4.py::test_overlap4_retained_and_next
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools /usr/bin/python3 -B -m pytest \
+  -q -x -p no:cacheprovider \
+  test/model/test_usb_uart_overlap4.py::test_overlap4_retained_and_next
 ```
 
-This command is a future execution proposal, **not authorized or run by C30**.
-It uses tmp_path by default; a nonempty WIRELINGO_EVIDENCE chooses a fresh output
-directory. It refuses to overwrite `overlap4-raw.json`. A test-local timetable
-merges only RX16's external bit before every Chip.step, including all normal
-USB peer _drive/_response/idle calls and cold writes. No blocking UART frame call
-serializes the workload. No ui_mid/uio_mid, DUT-state deposits, FIFO drain or
-internal-state feedback drives the source. Physical READY can qualify a fixed
-START with a new observed grant; a missed grant fails without moving time/data.
-Each full frame lasts4167clocks with bit edges ceil(k*1250/3), preserving STOP
-regardless of an early READY rise.
-
-| Report | Fixed physical UART START clocks | Expected report |
-| --- | --- | --- |
-| A |5000,10000,15000,20000 |00000000 |
-| B |150009,155000,165000,170000 |39d3815e |
-| C |190000,195000,200000badSTOP,205000,210000 |12345678 (a6 excluded) |
-| D |230000,235000,240000,245000 |9abcdef0 |
-
-Enumeration starts30000 (device18/address5/config18/configure/GET_CONFIGURATION),
-and must finish before140000. A SETUP140000, IN148502, zero-tail ACK152000,
-retry154335, valid ACK157700, status159000. B SETUP180000, IN187000, retry200115,
-ACK203448, status204500. C SETUP220000, IN232000, retry256667, ACK260000,
-status261000. D SETUP270000, IN277667, ACK281000, status282000. Empty exact4
-request290000 must STALL without resurrection. Final fixed deadline310000.
-All action clocks are before-action; a late previous action fails. Nominal
-retries0/first-response and independent raw NRZI/stuff/PID/CRC/EOP oracles apply.
-Resolved USB pads and both driver enables reject external/device overlap.
-
-Mandatory future passive observations, separate from the report-byte oracle:
-
-- A's continuous device DATA overlaps B's actual IN1 samples. D150011, consumer
-  third F6 clear and producer old-high poll150592, FLAG6 publication150658:
-  exactly66clocks. Next consumer OUT<=150663, before earliest empty150682.
-- A's FLAG CLR7 instruction158241 (visible158242) lies between B samples6/7
-  at158130/158547. Prefix and pending byte survive; B promotes only after its
-  fourth good STOP while A survives malformed ACK/retry.
-- B's FLAG CLR7 instruction203989 coincides with the middle bad-byte rollback
-  instruction203989 (whole sequence203988..203990). ERROR rises203988; prefix
- 12/34 survives, with no inserted/dropped a6 in the later exact C report.
-- D is fully pending while C remains retained/retried. READY stays low after
-  its final admission fall245016 until promotion. ACK clear260541 is observed
-  at guard260554; both ISR halves copy before new F7 instruction260566. Initial
-  byte/F6, ISR cleanup/cursor reset and READY visible260594 must be in order.
-- Across valid old-report captures, F6 publication<=66clocks and no pin rewrite
-  before consumer IN. No active host API/strobes or FIFO service. All RX-overflow
-  events retain own/external TX phase observations, without a causal or
-  robustness claim.
-
-## Source checks and future slot gates
-
-The calendar is reconciled using finite syntactic CFG costs and static codec
-arithmetic, not a register interpreter or model pilot.374 writes predict first
-core1 instruction375, READY visible407, START poll431 then25-clock polls.
-Samples are D+625+417k, STOP D+3961. Default synchronized half-sampling of a
-normal d2 ACK predicts last PID sample A+498, SE0 A+530, IN4 completion A+531,
-FLAG CLR7 A+541 and visible low A+542. Release does not wait for full EOP; in
-the full-pending crossing READY260594 precedes ACK EOP completion260608.
-The original director proposal is preserved. Revision2 incorporates the reviewed
-source-only ACK-gap supplement: A retry154000->154335, B retry198000->200115,
-C retry254000->256667, D IN277000->277667. All ACKs, UART frames and critical
-first A IN148502 stay fixed. Original first-J-to-ACK gaps399/2179/2731/731
-were too long for the declared nominal spacing. Prepared valid ACKs are exactly
-64clocks after DATA's **first EOP J**,32clocks after that J cell completes.
-The saved raw audit separately requires both coordinates. Revision1's
-full-cell-end>=64 arithmetic omitted the upper spacing check; its successful
-source/collection receipt is preserved and does not validate that contract.
-Observed overlap coverage remains **none**.
-
-Preparation permits at most two serial60s/2GiB preflights and two source revisions,
-with Chip/Core constructors/step methods blocked, ordinary collection only. A
-future proposal is one serial node, one cold scenario,120s/2GiB/400000 aggregate
-Chip.step including all setup/helpers,5s TERM/KILL grace. Its launcher refuses a
-missing/wrong separate accepted model-slot receipt, input hashes, caps or pause.
-No launcher execution occurs during preparation. Qualified C26 runner/count/
-process-group mechanics are reused with only this node/root/400000-step cap and
-fresh outputs; Atlas's frozen files and model slot are untouched.
-
-A future saved-only audit requires the unique regular expected-node raw file,
-records its exact path/hash, preserves failure logs, checks all raw payloads and
-mandatory timing, and compares the external counter. After one complete pass it
-also rejects three disclosed saved-only mutants: a changed report byte with a
-valid recomputed CRC, removed actual overlap/rollback timing observations, and
-publication delayed beyond66. Mutants are not additional DUT results. No old raw
-packet is imported. Lead owns commits, later model authorization and integration.
-Preparation check results and frozen hashes are supplied in the team-root packet
-`evidence/sol-kepler/C30-KEPLER-OVERLAP4-PREP/` and Kepler's live report.
+The test uses pytest's fresh `tmp_path`, or a fresh explicit `WIRELINGO_EVIDENCE`
+directory, and refuses to overwrite `overlap4-raw.json`. This command does not
+itself impose external wall or address-space caps. The coordinated C32 run is
+limited to one invocation, 120 seconds, 2 GiB, 400,000 aggregate model steps and
+five seconds of termination grace. Collection alone is not a behavioral result.

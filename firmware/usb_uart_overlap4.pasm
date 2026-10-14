@@ -1,11 +1,10 @@
-; Optional OVERLAP4 source candidate: PREPARATION ONLY, unexecuted.
-; Pair the unchanged256-word consumer and93-word cooperative producer.
-; SOURCE STUDY ONLY, cycle25: fixed4 UART/USB, 256-word consumer.
-; Pair with cycle24 uart_rx_batch4_source.pasm (59 words), ERROR pin9.
+; Optional four-byte USB report consumer with overlapping UART capture.
+; Pair with uart_rx_overlap4.pasm: 256 + 93 words, existing RTL.
+; C32 finite low-speed model scenario passed; see docs/usb-uart-overlap4.md.
 ; F6 byte ready, F7 retained report. Exact wLength4 only, ACK cursor4133.
-; Existing descriptor bytes/addresses and ACK/reset/controller checks retained.
-; Timing is CHANGED and unqualified. No protocol/model/native execution.
-; Common pin24 byte interface; producer must observe F6 clear before writing.
+; Descriptor bytes/addresses and inherited ACK/reset checks remain fixed.
+; No sustained-rate, native RTL, physical or general USB conformance claim.
+; Pin24 byte interface; producer must observe F6 clear before writing.
 ; Uninterrupted cores, fixed configuration and eventual supplier progress.
 .program usb_uart_overlap4
 .origin 0                          ; `mov pc, r2` jumps to absolute table addresses
