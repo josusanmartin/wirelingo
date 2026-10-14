@@ -6,7 +6,46 @@ run constraint, electrical limits, complete functional GL, timing-annotated
 tests at the requested operating clocks, and precheck of the exact GDS.
 Passing tests do not override a failed physical check.
 
-## Generate evidence
+## One command
+
+On the compute runner, make a real git clone of the commit to certify (not an
+rsync copy) and run the orchestrator from it:
+
+```sh
+git clone -q --no-checkout "$REPO" "$V" && git -C "$V" checkout -q --detach "$REV"
+"$V"/flow/release_evidence.py "$RUN" --validation-root "$V"
+# or let it clone REV itself:  flow/release_evidence.py "$RUN" --validation-commit "$REV"
+```
+
+It runs the seven receipt jobs below (functional GL; SDF `standard` and `v2`;
+`test_usb_autonomous` and `test_usb_autonomous_fs` with SDF at typ, slow and
+fast at 20.834 ns; precheck), each in its own fresh output directory, with
+at most `--jobs` (default 6) simulator processes at once: the standard set
+counts 4, v2 counts 6, every other job 1. GL starts first (about 65 minutes for fo6).
+The runners' environment variables (`TESTS`, `MODULE`, `SLOW_CLK_NS`,
+`NEGATIVE_CLK_NS`, `VALIDATION_ROOT`, ...) are set explicitly, never inherited.
+Each receipt is taken from its own job's log and must sit in an output
+directory that did not exist before the run; an older receipt is never used.
+Then it runs `release_check.py` against the real `RUN` path and writes
+`verdict.json`, `release-check.log`, `release-evidence.log` and `logs/<job>.log`
+into the work directory (default `rcpt-<run>-<rev>-<UTC>` next to the clone).
+On a pass, `flow/archive_evidence.py` re-verifies every receipt and packs
+`wirelingo-release-evidence-<rev>-<run>.tar.gz` next to the work directory.
+Add `--repro RUN2` (repeatable) for a reproduction run's candidate files and
+`--extra FILE` for files such as a reproduction comparison. A failed job,
+a missing or stale receipt, or a failed gate exits 1 and builds no archive.
+The work directory and archive must not exist; nothing is overwritten.
+
+The physical run is only read. `gl_test.sh` writes its output under the run
+worktree it is given, so the orchestrator hands the runners a view: a
+directory of symlinks to the run's entries with a private `test/`. It checks
+that the view yields exactly the run's candidate file hashes before starting.
+Precheck defaults: `--tt-root RUN/tt`, `--flow-python
+~/protoemu-flow/protoemu/.venv-flow/bin/python`, `--klayout-dir
+~/protoemu-flow/kbin` (the docker wrapper), `--pdk-root $PDK_ROOT` or `~/ttpdk`;
+`--sim-path ~/tools/oss-cad-suite/bin` for Icarus and cocotb.
+
+## Generate evidence by hand
 
 Run these commands on the compute runner. `RUN` is a completed hardening
 worktree with `runs/wokwi/final`, not an intermediate checkpoint. The SDF
