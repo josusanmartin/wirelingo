@@ -38,6 +38,8 @@ DEFS = {
     "iso7816": p3.iso_defines(0, 8, wt=32, finv=5, fov=7),
     "iso7816_clk": {"CLK": 9},
     "smbus_host": p3.smbus_defines(0, 1, 7),
+    "rc5_tx": {"IR": 8},
+    "rc5_rx": {"IR": 16, "TB": 128, "FOV": 7},
 }
 
 
@@ -373,3 +375,26 @@ def test_smbus_sound():
     dev.hang = None
     rig.transact(p3.smbus_words(TS.BAT, [0x0D], 1, pec=True))
     sound("smbus_host", tr, p3.smbus_clkdiv(TS.F_CLK))
+
+
+def test_rc5_sound():
+    """rc5_tx -> the receiver-module model -> rc5_rx on one chip, both
+    traced: new keys, repeats, RC-5X commands."""
+    import test_rc5 as TR
+    mh = ModelHost()
+    mh.apply(host.load_program(0, TR.tx_prog(), side_pins=TR.LED, clkdiv=8 << 8))
+    mh.apply(host.load_program(1, TR.rx_prog(), in_pins=TR.RX, clkdiv=12 << 8))
+    ttx, trx = timing.Tracer(mh.chip, 0, 0), timing.Tracer(mh.chip, 1, 256)
+    tsop = pf.IrReceiverModule(f_carrier=p3.RC5_F)
+    mh.ui = 1
+    mh.start(3)
+    todo = [p3.rc5_word(1, 2), p3.rc5_word(1, 2, True), p3.rc5_word(31, 127), p3.rc5_word(0, 64)]
+    period = 1e9 / 864e3
+    for _ in range(int(480e6 / period)):
+        if todo and mh.tx_level(0) < 8 and mh.chip.cycle * period > 10e6:
+            mh.push(0, todo.pop(0))
+        mh.ui = tsop.step(mh.chip.cycle * period, (mh.chip.pin_out >> TR.LED) & 1)
+        mh.step()
+        mh.pop_all(1)
+    sound("rc5_tx", ttx, 8 << 8)
+    sound("rc5_rx", trx, 12 << 8)

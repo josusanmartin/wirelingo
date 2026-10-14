@@ -802,3 +802,115 @@ class SmbusDevice:
             hold = self.hang[1]
         if hold:
             self.scl_hold_until = t + hold
+
+
+# ================================================================== RC-5 infrared
+# Philips RC-5: 36 kHz carrier, a half bit of 32 carrier periods (888.9 us),
+# a 1 sent as a space then a burst, a 0 as a burst then a space; 14 bits MSB
+# first: S1 = 1, S2 (1, or the complement of command bit 6 in RC-5X), the
+# toggle bit, 5 address bits, 6 command bits; repeated every 64 bits
+# (113.78 ms) while a key is held; the toggle bit changes on a new press.
+
+RC5_F = 36e3
+RC5_HALF = 32e9 / RC5_F          # ns
+RC5_BIT = 2 * RC5_HALF
+
+
+def rc5_word(address, command, repeat=False):
+    """rc5_tx TX FIFO word (command 0..127: bit 6 sent as the complement of
+    S2, RC-5X)."""
+    return (command & 63) | ((command >> 6) & 1) << 6 | (address & 31) << 7 | int(repeat) << 12
+
+
+def rc5_bits(address, command, toggle):
+    """The 14 bits of a frame, S1 first."""
+    s2 = 1 - ((command >> 6) & 1)
+    v = 1 << 13 | s2 << 12 | (toggle & 1) << 11 | (address & 31) << 6 | (command & 63)
+    return [(v >> (13 - k)) & 1 for k in range(14)]
+
+
+def rc5_fields(bits14):
+    """(address, command (7 bits), toggle) from 14 bits (or a 14-bit int)."""
+    v = bits14 if isinstance(bits14, int) else int("".join(map(str, bits14)), 2)
+    return (v >> 6) & 31, (v & 63) | (1 - ((v >> 12) & 1)) << 6, (v >> 11) & 1
+
+
+def rc5_record(w):
+    """rc5_rx RX FIFO word -> {kind: frame, address, command, toggle, s1}
+    or {kind: error, bits_left}."""
+    if w >> 16 == 1:
+        a, c, t = rc5_fields(w & 0x3FFF)
+        return {"kind": "frame", "address": a, "command": c, "toggle": t, "s1": (w >> 13) & 1}
+    if w >> 16 == 2:
+        return {"kind": "error", "bits_left": w & 0xFFFF}
+    raise ValueError(f"not an rc5_rx word: {w:#x}")
+
+
+def rc5_envelope(address, command, toggle, scale=1.0, stretch=0.0, bits=None):
+    """An independent remote's demodulated output (a receiver module's: low
+    during bursts) as [(level, duration)]: half bits of RC5_HALF * scale,
+    every burst `stretch` ns longer (and the space after it as much
+    shorter), as receiver modules do. bits: send these instead."""
+    bits = rc5_bits(address, command, toggle) if bits is None else bits
+    halves = []
+    for b in bits:
+        halves += [1 - b, b]                     # 1 = burst
+    h = RC5_HALF * scale
+    out = []
+    for i, x in enumerate(halves):
+        lvl = 0 if x else 1
+        d = h
+        if x:
+            d += stretch
+        elif i and halves[i - 1]:
+            d -= stretch
+        if out and out[-1][0] == lvl:
+            out[-1] = (lvl, out[-1][1] + d)
+        else:
+            out.append((lvl, d))
+    if out and out[-1][0] == 1:
+        out.pop()
+    return out
+
+
+def rc5_decode(edges, t_end, tol=0.35):
+    """A pins-only RC-5 decoder of a demodulated (active-low) line, written
+    from the definition: runs of one or two half bits (+-tol); a frame
+    starts at a fall, S1's mid-bit edge; returns [(t, 14 bits)] and the
+    errors [(t, why)]."""
+    rs = runs(edges, t_end)
+    frames, errs, i = [], [], 0
+    h = RC5_HALF
+    near = lambda d, n: abs(d - n * h) <= tol * h
+    while i < len(rs):
+        lvl, t, d = rs[i]
+        if lvl != 0:
+            i += 1
+            continue
+        halves = [1]                              # S1's first half: the idle line; this run starts its burst
+        j = i
+        while len(halves) < 28 and j < len(rs):
+            lv, tt, dd = rs[j]
+            n = 1 if near(dd, 1) else 2 if near(dd, 2) else None
+            if n is None:
+                if lv == 1 and len(halves) >= 27:   # the idle line after a final 0's space
+                    halves.append(1)
+                    break
+                errs.append((tt, f"run of {dd / 1e3:.0f} us"))
+                break
+            halves += [lv] * n
+            j += 1
+        if len(halves) >= 28:
+            hv = halves[:28]
+            bits = []
+            for a, b in zip(hv[0::2], hv[1::2]):
+                if a == b:
+                    bits = None
+                    break
+                bits.append(1 if (a, b) == (1, 0) else 0)
+            if bits:
+                frames.append((t, bits))
+            else:
+                errs.append((t, "no mid-bit transition"))
+        i = j + 1
+    return frames, errs
