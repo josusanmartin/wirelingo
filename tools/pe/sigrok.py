@@ -561,3 +561,38 @@ def modbus(trace, client, server, baud, parity="even", **kw):
                                                                   "length", "error")), **kw)
         out[d] = [(a.start, a.text) for a in anns]
     return out
+
+
+# ---------------------------------------------------------------- third round
+
+def cec(trace, pin, **kw):
+    """sigrok's cec decoder: ([(t_ns, frame bytes as "40:04", section text
+    "HDR: ... | OPC: ... | R: ACK")], one per frame; [(t_ns, warning)])."""
+    anns = decode(trace, f"cec:cec={pin}", "cec=frames:sections:warnings", **kw)
+    frames = [a for a in anns if re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2})*", a.text)]
+    secs = [a for a in anns if a.text.startswith("HDR:")]
+    warn = [(a.start, a.text) for a in anns if a not in frames and a not in secs]
+    out = []
+    for f in frames:
+        s = next((x.text for x in secs if x.start == f.start), "")
+        out.append((f.start, f.text, s))
+    return out, warn
+
+
+def ir_rc5(trace, pin, polarity="active-low", protocol="standard", **kw):
+    """sigrok's ir_rc5 decoder on a demodulated line: [(t_ns, address,
+    command, toggle)] per frame (protocol "extended": the command's bit 6
+    from S2)."""
+    anns = decode(trace, f"ir_rc5:ir={pin}:polarity={polarity}:protocol={protocol}",
+                  "ir_rc5=togglebit-0:togglebit-1:address:command", **kw)
+    out, cur = [], None
+    for a in anns:
+        if m := re.match(r"Togglebit: (\d)", a.text):
+            cur = [a.start, None, None, int(m[1])]
+        elif (m := re.match(r"Address: (\d+)", a.text)) and cur:
+            cur[1] = int(m[1])
+        elif (m := re.match(r"Command: (\d+)", a.text)) and cur:
+            cur[2] = int(m[1])
+            out.append(tuple(cur))
+            cur = None
+    return out

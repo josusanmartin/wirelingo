@@ -34,6 +34,11 @@ workarounds (section [ISA limitations](#isa-limitations-found)).
 | MIDI receiver and parser | `midi_rx` (132) | `uart` + `midi` on the stream played in: the same messages | 31250 baud: every byte sampled 1600 clocks per bit at 50 MHz; the parser takes 14..39 ticks (checker: <= 48) of the 64 in half a stop bit; streams from a sender 2 % fast or slow parsed | MIDI 1.0: 31250 baud +-1 % |
 | MIDI transmitter (running status) | `midi_tx` (58) | `uart` + `midi`: notes, program change, pressure, pitch bend, clock | every bit 32.000 us (CLKDIV 50 at 50 MHz, exact); stop bit and space 40..61 us | |
 | Quadrature encoder counter (X4) | `quad_enc` (20) | `graycode`: the same count | CLKDIV 1: a step every 14 (forward) or 15 (backward) clocks or slower counted exactly: 3.3 M steps/s at 50 MHz; faster, missed steps are flagged | (no standard: A/B in quadrature) |
+| HDMI-CEC device: initiator and follower | `cec` (244) | `cec`: headers, opcodes, operands, ACK/NACK | at 50 MHz: start bit low 185000 clocks (3.7 ms), next fall 225000 (4.5 ms), a 1 low 30000 (0.6 ms), a 0 75000 (1.5 ms), bits 120000 (2.4 ms) apart, exact; frames from initiators at the ends of the receiver's ranges received and acknowledged; arbitration lost (then received as a follower) and won; signal free time 3 / 5 / 7 bit periods + 0.1..0.3 ms | HDMI 1.3a Supplement 1: start 3.7 / 4.5 ms +-0.2, a bit 2.4 ms (receiver 2.05..2.75), low 0.6 / 1.5 +-0.2, sampled at 1.05 +-0.2 |
+| ISO 7816-3 T=0 reader, with the card clock | `iso7816` (218) + `iso7816_clk` (1): both cores | `uart` (even parity): both directions | 1 etu = 372 CLK exactly (4464 clocks at 50 MHz, every edge on that grid); characters 12 + N etu apart; our error signal 10.5 etu after the start, 1.5 etu long; a rejected character sent again 2 etu after the card's error signal ends; card to reader >= 16 etu | ISO/IEC 7816-3: 12 etu (+ N) start to start, error signal at 10.5 +-0.2 etu for 1..2 etu, repetition >= 2 etu after it, >= 16 etu between directions |
+| SMBus host with PEC | `smbus_host` (189) | `i2c`: addresses, data, ACK/NACK; the PEC recomputed over its bytes | at 50 MHz (CLKDIV 56): SCL low 5.6 us, high 4.5..5.6 us, 89..99 kHz; START hold 4.5 us, STOP setup 6.7 us; a device holding SCL low: given up 25.003 ms after we release it | SMBus 3.2: 10..100 kHz, tLOW >= 4.7 us, tHIGH >= 4.0 us, T_TIMEOUT 25..35 ms; PEC = CRC-8 |
+| RC-5 infrared transmitter, 36 kHz carrier | `rc5_tx` (49) | `ir_rc5` on the receiver module's output | every carrier period 3 ticks, on for 1, across half bits too (at 50 MHz 1388 or 1389 clocks, 35999.8 Hz on average); half bits of 32 periods (888.9 us), frames 113.78 ms apart, exact in ticks | RC-5: 36 kHz, half bit 889 us, a frame every 64 bits |
+| RC-5 infrared receiver | `rc5_rx` (33) | same | decodes a remote 10 % fast or slow with bursts 150 us longer or shorter; truncated frames and missing transitions reported | |
 
 The first round: ten programs, 697 instruction words; the largest,
 `lin_responder`, uses 191 of a bank's 256. Every one has an RTL test through
@@ -50,6 +55,17 @@ of the IHP chip. Four more RTL tests through the SPI host port (`pf_dali`,
 on runner1) and 61 more model tests (`test/model/test_{dali,modbus,midi,quad_enc}.py`
 and 14 in `test_post_freeze_timing.py`). None of these five has run on
 silicon; on the FPGA, see below.
+
+The third round ([below](#third-round-hdmi-cec-iso-7816-3-smbus-with-pec-rc-5)):
+six more programs for four protocols, 734 words (the largest, `cec`, 244 of
+256: initiator and follower in one bank); ISO 7816-3 takes both cores of the
+IHP chip, because the card's clock needs a core of its own. Four more RTL
+tests through the SPI host port (`pf_cec`, `pf_iso7816`, `pf_smbus`,
+`pf_rc5`: test_post_freeze has 16, all passing on runner1, 168 s of icarus;
+locally with sigrok as well) and 72 more model tests
+(`test/model/test_{cec,iso7816,smbus,rc5}.py`: 56, and 16 in
+`test_post_freeze_timing.py`). Simulation only: none of these six has run on
+the FPGA or silicon.
 
 On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs passed at 50 MHz; bidirectional DShot's bit timing was a clock short at 50 MHz (odd T0: the assembler divided exactly and truncated each half of a split delay). With `/` now integer division it measures exactly 62 / 31 / 83 clocks at 50 MHz on the same bitstream, and exact at 48 MHz.
 
@@ -75,7 +91,15 @@ Second round on hardware (the RTL on the KV260 FPGA, 2026-10-14): see fpga/kv260
   decoder with parity, a Modbus RTU server model (CRC by the specification's
   algorithm), a MIDI reference receiver and running-status encoder, and a pins-only
   X4 quadrature decoder (with the tests' encoder model, which knows the
-  position it moved to).
+  position it moved to). Third round (`tools/pe/postfreeze3.py`): a CEC
+  decoder with the receiver's ranges and a CEC device model (a follower
+  that acknowledges its address, an initiator with its own timing that
+  arbitrates and checks ACKs); an ISO 7816 T=0 card that times everything
+  by counting the CLK it is given, checks parity, signals errors and repeats
+  what the reader rejects; an SMBus device that computes its own PEC over
+  what it saw, stretches the clock and resets itself after 35 ms of SCL low;
+  an RC-5 decoder written from the code's definition and an independent
+  remote's envelope (into round one's receiver-module model, at 36 kHz).
 * **sigrok** (`sigrok-cli` 0.7.2, libsigrokdecode 0.5.3, installed in user
   space by `flow/install_sigrok.sh`): third-party decoders on the recorded
   waveform (model pins, or the RTL's pads). Their outputs are quoted below.
@@ -97,14 +121,18 @@ Second round on hardware (the RTL on the KV260 FPGA, 2026-10-14): see fpga/kv260
   run at 50/48 MHz on the RTL as well. Second round: DALI at 307.2 kHz
   (CLKDIV 4), Modbus at 1.9968 MHz and MIDI at 4 MHz (both CLKDIV 1 for the
   receiver), the quadrature counter at 50 MHz; on the model DALI and Modbus
-  also run a frame at 50 MHz.
+  also run a frame at 50 MHz. Third round: CEC at 100 kHz (CLKDIV 1),
+  ISO 7816 at 4 MHz (the card's CLK at 2 MHz), SMBus at 3.571 MHz (CLKDIV
+  4), RC-5 at 108 kHz (CLKDIV 1 and 1.5), each tick for tick its 50 MHz
+  configuration; on the model each also runs at 50 MHz.
 
 ```
 PYTHONPATH=tools .venv/bin/python -m pytest test/model/test_dmx512.py test/model/test_lin.py \
     test/model/test_nec.py test/model/test_i2s.py test/model/test_wiegand.py \
     test/model/test_dshot.py test/model/test_dshot_bidir.py test/model/test_post_freeze_timing.py \
-    test/model/test_dali.py test/model/test_modbus.py test/model/test_midi.py test/model/test_quad_enc.py
-cd test && make COCOTB_TEST_MODULES=test_post_freeze          # RTL, about 3 minutes
+    test/model/test_dali.py test/model/test_modbus.py test/model/test_midi.py test/model/test_quad_enc.py \
+    test/model/test_cec.py test/model/test_iso7816.py test/model/test_smbus.py test/model/test_rc5.py
+cd test && make COCOTB_TEST_MODULES=test_post_freeze          # RTL, about 6 minutes
 PYTHONPATH=tools python -m pe.timing firmware/dmx512_tx.pasm -D TX=8 -D MTBS=0   # each header has its command
 ```
 
@@ -628,11 +656,335 @@ changes, the double step counted as 0 by both); on the model a 600-step walk
 changed when it is read", no count capture: the host polls R3. Steps closer
 than 14/15 clocks on average are lost (and flagged).
 
+## Third round: HDMI-CEC, ISO 7816-3, SMBus with PEC, RC-5
+
+Same rules (no change under `src/`, `flow/`, or to `tools/pe/{sim,isa,asm,line,timing}.py`),
+same standard of evidence: pins-only models (`tools/pe/postfreeze3.py`),
+sigrok, the static checker with a soundness run on the model for every
+deadline (`test_post_freeze_timing.py`: every one of the 6 programs' 43
+deadlines measured, none outside its bound), and an RTL test through the SPI
+host port for each protocol.
+
+**Why these.** Each is widely deployed, has a public specification (or, for
+ISO 7816-3, a standard whose character timing is reproduced in public
+documents), has a sigrok decoder, and leans on parts of the chip the first
+two rounds did not:
+
+* **HDMI-CEC** (televisions, players and receivers on HDMI): a multi-master
+  open-drain line where every device is initiator and follower. Bit-level
+  arbitration (an initiator that sees a 0 where it sent a 1 stops and goes
+  on as a follower, inside that bit), a follower that writes into the
+  initiator's bit (its ACK holds the line low past the initiator's own
+  pulse), a signal free time that depends on who sent last. It needs both
+  roles in one program: 244 of a bank's 256 words.
+* **ISO 7816-3 T=0** (SIM, bank and identity cards): half-duplex characters
+  with an error signal inside the guard time and repetition both ways, two
+  bit orders and polarities (direct and inverse convention, decided by the
+  first character), and a clock the reader gives the card, with every bit a
+  fixed number of its periods. It exercises the bit-reverse MOV, two cores
+  whose dividers must stay in an exact ratio, and reading back our own line
+  while sending.
+* **SMBus with PEC** (battery packs, power supplies, PMBus, temperature and
+  memory sensors): I2C transactions plus a CRC-8 over every byte, the
+  address bytes included, a length the device decides (block reads), and a
+  25..35 ms clock-low timeout. It uses the CRC tap as a non-reflected CRC-8
+  fed by OUT and IN in one transaction, with a residue check.
+* **RC-5** (Philips infrared remote controls): bi-phase on a 36 kHz carrier
+  with a toggle bit that is state kept from frame to frame. The carrier must
+  keep its period across half bits (no instruction to spare between them),
+  and the receiver re-synchronises on every bit's own transition.
+
+Not chosen: PS/2 host and an SPI flash command layer (mostly host work on
+top of round one's PS/2 device and SPI masters), RC-6 (the same machinery as
+RC-5 plus a leader and a double-length trailer bit: another program), S/PDIF
+(bi-phase mark at 2.8 Mbit/s and more), SDLC/HDLC (the line unit stuffs a 0
+after five 1s, as HDLC does, but it stuffs everything queued, a 0x7E flag
+included, and only the host can rewrite LINECFG between flags and data: a
+reading of isa.md section 4.7, not tried).
+
+Sources of the numbers. CEC: *High-Definition Multimedia Interface
+Specification 1.3a*, Supplement 1 (CEC), bit timing and arbitration; the same
+values are in sigrok's `cec` decoder (quoted in pe.postfreeze3). ISO 7816-3:
+ISO/IEC 7816-3:2006 is not free; the character timing used here (12 etu,
+error signal 10.5 +-0.2 etu for 1..2 etu, repetition >= 2 etu after it, 16
+etu between characters in opposite directions, answer to reset within
+400..40000 clock cycles) is as in EMV Book 1 (free from EMVCo) and smart-card
+reader application notes. SMBus: *System Management Bus Specification 3.2*
+(sbs-forum.org); the CRC-8 check value from the CRC catalogue (CRC-8/SMBUS,
+"123456789" -> 0xF4). RC-5: Philips' definition as widely reproduced (36 kHz,
+889 us half bit, 14 bits, 113.778 ms repetition) and sigrok's `ir_rc5`. A
+certification lab would test against the documents themselves.
+
+### HDMI-CEC device (`cec`)
+
+**Implemented.** One program is a whole CEC device on one core. Follower,
+always: a start bit must be low 3.5..3.9 ms with the next fall 4.3..4.7 ms
+after its fall (2 ticks of margin each way); every bit is sampled 1.05 ms
+after its fall, the line must be high again by 1.85 ms, the next fall must
+not come before 2.0 ms and, missing at 2.8 ms, ends the frame. The header's
+destination is compared with our logical address, kept in the CRC register
+(the taps off: the fifth register); frames to us are acknowledged by
+holding the ACK slot low from the fall to 1.5 ms; every block on the line is
+reported. Initiator, when the host queues a frame: it waits until the line
+has been idle for the frame's signal free time (the host gives it: 3, 5 or 7
+bit periods, for a retry, a new initiator, the same initiator again), sends
+the start bit and the blocks, checks at each 1 it sends that the line is
+high at 1.05 ms (else another initiator sent a 0: it stops driving, reports
+the loss at the end of the frame, and from that very bit goes on as a
+follower: it receives the winner's frame and acknowledges it if it is for
+us), and ends the frame on a NACK (directed) or a rejection (broadcast). The
+data words of a frame that was lost or refused are pulled from the TX FIFO
+(a 29-tick constant path, as it runs between two bit samples). No retries
+in firmware: the host resubmits (CEC allows up to 5 for a NACK). 1 tick =
+10 us (CLKDIV 500 at 50 MHz, exact). 244 words.
+
+**Timing.** Checker: start bit low 370 ticks, next fall 450; every bit we
+send 240 ticks apart, a 1 low 60, a 0 low 150, our sample at 105; the end of
+our last bit 240 ticks after its fall (the signal free time counts from
+there). Follower: the sample 105 ticks after the fall is seen (the WAIT's
+completion: 0..1 tick and the synchroniser's 2 clocks after the edge), our
+ACK driven 6 ticks after it and released at 150, every bookkeeping path
+exactly 19 ticks (the windows are measured by the WAIT's counter from that
+point: the paths were padded, the checker proves them equal), a lost
+arbitration joins the follower 151 ticks after the fall, as it would after
+its own release; the idle loop 31..33 ticks (it counts 31 per turn).
+Measured at 50 MHz: 185000 / 225000 / 30000 / 75000 / 120000 clocks, exact;
+on the RTL at 100 kHz, 3.7 / 4.5 / 0.6 / 1.5 / 2.4 ms. Signal free time,
+from the nominal end of the previous frame: 7.30 ms for 3 bit periods (7.2),
+12.28 ms for 5 after another initiator's frame (12.0; the end of a received
+frame is known only when no fall came by 2.8 ms, and the idle count starts
+conservatively), 16.90 ms for 7 (16.8).
+
+Against the device model (`CecNode`: a follower with the receiver's ranges
+that acknowledges its own address; an initiator with its own timing that
+samples its 1s and checks ACKs): our frames (a poll, a directed command, a
+broadcast, a 16-block frame) decoded and acknowledged by the TV model, our
+results ok; the TV's frames to us acknowledged by the firmware, to address 5
+not (the TV stops after its header, as CEC asks), broadcasts received;
+initiators at the ends of the receiver's ranges (start low 3.5 and 3.9 ms
+with the next fall at 4.3 and 4.7, a 1 low 0.4 and 0.8, a 0 low 1.3 and
+1.7, bits 2.05 and 2.75 ms apart, and the two corners): every frame received
+and acknowledged. Arbitration: the TV starts with us (0x04 against our
+0x40): we see its 0 at our second header bit, stop driving, receive its
+frame and acknowledge it, drop the 2 unsent data words of our 10-block frame
+and report the loss; the host's retry (3 bit periods) goes through. The
+other way (an initiator at address 8, 0x80 against 0x40, loses at the first
+bit): ours goes through. Negative controls: a 3.0 ms "start bit" and the line
+held low for 5 ms ignored; a bit 1.9 ms after the last one ("short"), a frame
+that stops 5 bits into a block ("partial"), a bit held low for 3.6 ms (a
+follower's error notification, "low"), then a good frame; a poll to an
+address nobody has: NACK.
+
+**sigrok** (`cec`, RTL at 100 kHz):
+`sigrok cec: ['40:04' 'HDR: Playback_1, TV | OPC: IMAGE_VIEW_ON | R: ACK', '4f:82:10:00' 'HDR: Playback_1, Broadcast | OPC: ACTIVE_SOURCE | OPS: 0x10, 0x00 | R: ACK', '4b' 'HDR: Playback_1, Playback_3 | OPC: PING | R: NACK', '04:8f' 'HDR: TV, Playback_1 | OPC: GIVE_DEVICE_POWER_STATUS | R: ACK']`;
+the firmware: ok, ok, NACK for its own three, and the TV's frame received
+with "to us". On the model the same frames and a 2-block retry after a NACK.
+
+**Limits.** One logical address (a device with several would compare a
+mask: more words, and there are 12 left); the signal free time is the
+host's number; as a follower it reports a timing error but does not send an
+error notification (the 3.6 ms low), and a notification during our own frame
+looks like a lost arbitration (the follower path then reports the long
+low); the host must push a frame's words together and only when the FIFO
+has room for them (the firmware does not wait for data in mid-frame), 16
+blocks at most (CEC's own limit); the follower's windows are a little wider
+than the receiver's ranges (2.0..2.8 ms for 2.05..2.75), for the detection's
+tick. No CEC application layer (opcodes, physical addresses, logical
+address allocation by polling): that is the host's.
+
+### ISO 7816-3 T=0 reader (`iso7816`) and card clock (`iso7816_clk`)
+
+**Implemented.** The reader's character layer on core 0; the card's clock
+on core 1, one instruction (`pin CLK, toggle` every tick): a core cannot
+make a continuous clock while it does anything else, so ISO 7816 takes both
+cores of the IHP chip. The dividers are locked: the clock core at CLKDIV D
+makes CLK = f / 2D; the reader at 6D with 124 ticks per etu, so one etu is
+exactly 372 CLK periods (Fi = 372, Di = 1; one CTRL write starts both).
+Commands from the host: RESET (RST low for 2 etu = 744 CLK, >= 400; I/O
+released; the convention cleared), RECV m characters (the first within a
+timeout in units of 8 etu, 112 etu for an answer to reset, which must start
+within 40000 CLK; then WT between characters; optionally the first is TS:
+3B is the direct convention, 3F the inverse, kept in flag FINV, anything
+else an error), SEND n bytes with N extra guard etu (after TURN = 6 etu of
+idle line, which with the end of a RECV gives >= 16 etu after the card's
+last character), DEACT (RST and I/O low). Every character's even parity is
+computed or checked; in the inverse convention the levels are complemented
+and MSB first: `in r, 8` + `mov r, ::isr` + `xor r, 0xFF` (the bit-reverse
+MOV through the ISR). Receiving, a parity error is signalled (I/O low from
+10.5 etu for 1.5 etu) and the repetition awaited, up to RMAX = 4 times; then
+the character is kept and flagged. Sending, I/O is sampled at 11 etu, and on
+an error signal the character is sent again 2 etu after the signal ends, up
+to RMAX times, then the command is aborted. Records: each character with its
+error count, and an end word per command (counts, timeout, bad TS,
+convention, repetitions, aborted). The T=0 procedure bytes (INS, NULL 60,
+SW1 SW2) are the host's (`pe.postfreeze3.t0_parse`): for a command that
+reads data it queues SEND header + RECV Le + 3 at once, since the card may
+answer its procedure byte with data at once. 218 + 1 words.
+
+**Timing.** Checker: every bit we send 124 ticks (1 etu); I/O released at
+10 etu and sampled at 11; the next character >= 12 etu after the last (+ N,
+a register: only the minimum is bounded); a repetition >= 2 etu after the
+error signal ends. Receiving: the start bit's middle 62 ticks after it is
+seen, every bit 124 ticks after the last; our error signal 123..131 ticks
+after the parity sample (10.49..10.56 etu after the start; the standard's
+10.5 +-0.2), 1.5 etu long; the next start bit watched for 30..46 ticks after
+the parity sample (before 9.9 etu). CLK: one tick per half period. Measured
+on the card model's own clock: the reader's characters exactly 12.000 etu
+apart (13 and 17 with N = 1 and 5); its error signals from 10.500 etu for
+1.500 etu; repetitions 14.05 etu after the previous start (2 etu after the
+card's 1.5-etu error signal ends; the standard asks >= 2 etu after the
+error is detected, which allows 13); our first character 18.2 etu or more
+after the card's last (the standard: >= 16; the card model answers 20 etu
+after our last). At 50 MHz (clock core CLKDIV 6: CLK 4.1667 MHz;
+reader 36): every edge of a SEND on the 4464-clock etu grid.
+
+Against the card model (`IsoCard`: times everything by counting the CLK it
+is given, samples at mid-etu, checks parity and signals errors, repeats
+what the reader rejects, runs READ and UPDATE BINARY): the answer to reset
+in both conventions (`3B B4 11 00 00 57 4C 47 4F` and its 3F form), READ
+BINARY (case 2) and UPDATE BINARY (case 3) through the procedure bytes, two
+NULL procedure bytes, an unknown instruction (6D 00), the inverse convention
+through a whole exchange; the card corrupting a character twice (two error
+signals, the right byte), or more often than RMAX (four signals, the fifth
+copy kept and flagged); the card rejecting our bytes once and twice
+(repetitions counted, the right bytes stored) and six times (the command
+aborted after five sends); a mute card (the first-character timeout); a
+first character that is not TS (reported, receiving stops); deactivation.
+
+**sigrok** (`uart` with even parity at f_CLK / 372 baud, I/O on the RTL at
+4 MHz, CLK 2 MHz): `sigrok uart: 3bb4110000574c474f 00b0001002 b0 10 10 11 9000 [Frame error]`
+(the answer to reset; the READ BINARY header; INS; the data byte the card
+sent with a wrong parity bit, our error signal, which makes the decoder's
+stop-bit sample low: the one frame error; its repetition; the second byte;
+SW1 SW2). The firmware's records: the same bytes, 1 error signal on the
+first data byte. On the model the same with 3 data bytes.
+
+**Limits.** T=0 characters only: procedure bytes, GET RESPONSE, PPS (another
+F/D is another TB and CLKDIV pair) and T=1 (blocks, LRC/CRC) are the
+host's or not done; no parsing of the answer to reset (the host knows its
+length from T0 and TDi, `pe.postfreeze3.atr_length`; a RECV ends after WT);
+WT is a define (9600 etu for a real card; the tests use 32 so that the end of
+an answer is found quickly, and the checker unrolls that loop, slowly at
+9600); VCC and stopping the clock are the host's; one card; both cores. The
+repetition comes 2 etu after the card's error signal ends rather than after
+it starts (later than needed).
+
+### SMBus host with PEC (`smbus_host`)
+
+**Implemented.** One transaction per host header: START, address + W, nw
+bytes (one per FIFO word), then, if nr: a repeated START, address + R, the
+bytes read (a block read's count is the device's first byte), the PEC
+appended after the last byte written or checked after the last byte read;
+the last byte read is not acknowledged. That covers quick command, send and
+receive byte, read and write byte and word, block read and write, process
+call and block process call. The PEC is the CRC tap (POLY 0x07, width 8,
+both taps): only data bits go through 1-bit shifts (`out r1, 1`, then `mov
+pins, r1` drives SDA; `in pins, 1`), ACK bits are driven and read with
+`mov`, so the register is CRC-8 over every byte, address bytes included, and
+0 after a correct received PEC. Every SCL release waits for SCL high (clock
+stretching) for at most TTO = 25 ms; longer, the transaction is abandoned
+with both lines released ("timeout"; SMBus devices reset at T_TIMEOUT).
+Every 1 we send is checked at SCL high: a 0 there is another master's, and
+we let go of both lines ("lost"). The bus must be idle before the START, or
+after TTO "busy". The data words of a failed transaction are drained. 189
+words.
+
+**Timing.** Checker (CLKDIV 56 at 50 MHz: 1.12 us ticks): SCL low 5 ticks
+(5.6 us) inside a byte, up to 22 between bytes; high 4..5 ticks without
+stretching (4.48..5.6 us), 10 around a repeated START; SDA changes >= 1 tick
+after SCL falls; START hold 4 ticks (4.48 us), STOP setup 6 (6.72 us), bus
+free >= 26 ticks; the timeout gives up 22324 ticks (25.003 ms) after
+releasing SCL. Measured on the model: SCL high >= 4.48 us, low >= 5.60 us,
+bit periods >= 10.08 us (99.2 kHz); the timeout's record 25.013 ms after SCL
+was released (pushed 9 ticks after giving up); the device's own reset after
+35.000 ms of SCL low.
+
+Against the device model (`SmbusDevice`: computes the PEC of what it saw,
+appends it to reads, checks it on writes, stretches the clock, resets after
+35 ms of SCL low): every protocol above with PEC (writes: the device found
+the PEC right every time; reads: the firmware did), and without; a PEC made
+wrong by one flipped bit, and a device without PEC answering a read that
+expects one: "pec_bad"; an absent address (NACK, the 4 data words dropped);
+a device that refuses a data byte (NACK, the rest dropped, the next
+transaction right); stretching of 3 us, 50 us and 2 ms after every ACK; a
+40 ms hold (the firmware gives up at 25 ms, the device resets at 35); a bus
+held busy; another master that wins the arbitration at our 6th address bit.
+The PEC function itself gives the CRC catalogue's check value.
+
+**sigrok** (`i2c`, RTL at 3.571 MHz with the device stretching 20 us after
+every ACK): `sigrok i2c: ['1609785686', '1609173412b8', '16201705576972656c91', 'a0']`
+(each transaction's bytes from the address on: a write word, a read word, a
+block read, a poll); the PEC recomputed over sigrok's bytes equals the last
+byte of each of the first three. The firmware: ok, pec_ok, pec_ok, NACK.
+
+**Limits.** A host only (no SMBus device side); no SMBALERT#, address
+resolution protocol or host notify; T_LOW:SEXT and T_LOW:MEXT (cumulative
+stretching per message and per byte) are not checked, only each wait's
+25 ms; the block count is not bounded (up to 255, as SMBus 3 allows); one
+byte per FIFO word (four times the SPI traffic of packed words, so that the
+words of a failed transaction are easy to drop); the host must keep the FIFO
+fed during a write (meanwhile the firmware holds SCL low: master clock
+stretching, which SMBus limits to 10 ms per byte); the 100 kHz class only.
+
+### RC-5 infrared transmitter (`rc5_tx`) and receiver (`rc5_rx`)
+
+**Implemented.** Transmitter: 14-bit frames (S1, S2 = the complement of
+command bit 6 for RC-5X, the toggle bit, 5 address and 6 command bits), the
+toggle bit kept in firmware (it flips for a new key and stays for a repeat
+word), 28 half bits on the 36 kHz carrier, frames 64 bits apart while the
+host keeps the FIFO fed. Each carrier period is three instructions, the
+same in a burst and in a space: `mov pins, r1` (on for a burst, off for a
+space) and two that hold the pin low by side-set (SIDE_OPT); the bookkeeping
+between half bits (the next level, the counter) takes the two off ticks of
+each half's last period, so the carrier keeps its period across half bits
+and a 1 followed by a 0 is one burst of 64 periods. The end of the frame:
+with PULL_THRESH = 29, `jmp !osre` sees the OSR empty in the 29th half (a
+space). Receiver: from S1's mid-bit edge (the first fall of the receiver
+module's output), every bit is sampled 3/4 bit after the last mid-bit edge
+(in its first half: its value), and its own mid-bit edge awaited by an edge
+WAIT started there, which ignores the boundary edge before it and accepts
+the mid-bit edge 3/4..5/4 bit after the last one: each bit re-synchronises.
+49 and 33 words.
+
+**Timing.** Checker: the carrier's period 3 ticks everywhere, across half
+bits too, on for 1 (108 kHz ticks: CLKDIV 462.96 at 50 MHz); every half bit
+96 ticks (32 periods, 888.9 us); frame to frame 12288 ticks (64 bits,
+113.78 ms). Receiver (128 ticks per bit): each sample 96 ticks after the
+mid-bit edge, the edge WAIT armed 3 ticks after the sample, the record 3..4
+ticks after the last edge. Measured: on the model at 432 kHz the same, and
+bursts of exactly 32 and 64 periods; at 50 MHz carrier periods of 1388 or
+1389 clocks (35999.8 Hz on average), on for 462 or 463.
+
+Against the remote model (`rc5_envelope`: its own half bit, bursts stretched
+or shrunk as receiver modules do) into rc5_rx: 10 % fast and slow, bursts
+150 us longer and shorter, and both together: every frame with its toggle
+bit; negative controls: a 200 us glitch ignored, a frame cut after 8 bits
+and a bit without its mid-bit transition reported as errors, then a good
+frame. Loopback (rc5_tx -> LED -> the 36 kHz receiver-module model ->
+rc5_rx, on one chip): random keys and repeats, every address, command and
+toggle bit as sent.
+
+**sigrok** (`ir_rc5` on the receiver module's output, RTL at 108 kHz):
+`sigrok ir_rc5: [(0, 12, 1), (0, 12, 1), (5, 53, 0), (20, 6, 1)]` (address,
+command, toggle; the decoder's "standard" protocol has 6 command bits: the
+RC-5X command 70 is its 6, with S2 = 0); rc5_rx: (0, 12), its repeat with
+the same toggle, (5, 53) toggled, (20, 70). On the model (0, 12, 1), (0, 12,
+1), (5, 53, 0), (31, 63, 1).
+
+**Limits.** RC-5 only (RC-6's leader, mode bits and double-length trailer
+are another program); the receiver needs 2 bit times of idle line before a
+frame (a frame that begins sooner after the core starts is missed: the
+loopback test sends its first key 10 ms in); each bit re-synchronises, so a
+sender may drift +-25 % per bit (the tests check +-10 % with 150 us of burst
+distortion); every repeat frame is reported (the host compares the toggle
+bit); the transmitter's frame begins 139 ticks (1.29 ms) after its word is
+pulled (the half bits are built first), then every 113.78 ms.
+
 ## ISA limitations found
 
 What the challenge ran into, for a future revision. None stopped a protocol;
 each cost instructions, registers or generality. (Items 11..16 come from the
-second round.)
+second round, 17..25 from the third.)
 
 1. **No `jmp !t`.** T (the WAIT timeout flag) has a positive JMP condition
    only, unlike Z and C. `nec_rx` was first written with `jmp !t` and had to
@@ -694,6 +1046,59 @@ second round.)
     full-duplex pair of these programs, uses both cores; nothing is left for a
     third protocol. Each program alone fits one core's 256 words (at most
     132).
+17. **A clock output costs a core.** ISO 7816's card clock must run while
+    the reader does everything else; a core can only make it with a
+    one-instruction loop, so the reader takes both cores of the IHP chip. A
+    divider output on a pin (or a PWM) would leave a core free.
+18. **The line unit cannot do infrared bi-phase.** Its Manchester receiver
+    tracks bits of at most 4095 clocks (an RC-5 bit is 88900 at 50 MHz), its
+    transmitter's symbol divider is 8 bits of clocks, it has no carrier, and
+    it is core 0's: RC-5 (like DALI) is all firmware. Its HDLC-style bit
+    stuffing would stuff a 0x7E flag as well, and only the host can rewrite
+    LINECFG between flags and data (a reading of isa.md, not tried).
+19. **No way for a core to drop queued words.** A CEC frame that loses
+    arbitration or is refused leaves its unsent data words in the TX FIFO;
+    the firmware pulls them itself, so it computes how many (a fixed
+    29-tick path, as it runs between two bit samples); `smbus_host` takes one
+    byte per FIFO word so that the count is the bytes left. A core-side TX
+    FIFO clear would do it in one instruction.
+20. **The bit-reverse MOV reverses 32 bits.** `mov r, ::r` reverses a
+    register's zero-extended 32 bits, so a byte ends outside the 16-bit
+    register; the inverse convention's reverse goes through the ISR (`in r,
+    8` puts the byte at the top, `mov r, ::isr` brings it back reversed):
+    three instructions and the ISR.
+21. **No parity (again)**, now for every character in both directions of
+    ISO 7816: a three-step fold (11 instructions) to send, an XOR per bit to
+    receive.
+22. **Registers (again).** The CRC register holds CEC's logical address and
+    ISO 7816's N or m and its error count (the taps off); `smbus_host` keeps
+    the header in the ISR and its flags in the OSR in the read phase; CEC's
+    r1 packs four flags, the block index and the blocks left; RC-5's toggle
+    bit has a register to itself for the program's life.
+23. **The stopwatch (again).** The CEC follower measures the next bit's
+    window with the WAIT's counter from a known point, so its bookkeeping is
+    padded to 18 ticks on every path, as DALI's was (item 11).
+24. **No `jmp osre`.** Only `!osre` exists; RC-5's carrier loop, three
+    instructions per period with none to spare, finds the end of the frame
+    with `jmp !osre` to the next-but-one instruction and a `jmp` out as its
+    fall-through, at the cost of a word; as with T (item 1), the negated
+    form would save it.
+25. **ALU immediates (again).** CEC's record marker (0x4000) and RC-5's S1
+    (0x2000) are above 8191: a different record layout, an `ldi` first.
+
+What helped in the third round: the CRC tap fed by OUT and IN alike (the
+SMBus PEC over bytes sent and received in one register, checked by its 0
+residue), edge WAITs that count only edges after they start (RC-5's
+receiver ignores the boundary edges by starting its WAIT at 3/4 bit),
+side-set with SIDE_OPT next to `mov pins` on the same pin (RC-5's carrier:
+on from a register, off from side-set, room for bookkeeping in the off
+ticks), open-drain pins read back at any time (CEC's ACK and arbitration,
+SMBus's arbitration and clock stretching, ISO 7816's error signals both
+ways), two cores' dividers in an integer ratio started by one CTRL write
+(ISO 7816's etu locked to its own CLK), `pull noblock` to discard words, the
+bit-reverse MOV again (ISO 7816's inverse convention), global flags as state
+the host can see (CEC's lost arbitration across a frame, ISO 7816's
+convention, which the host may also set), 256 words per core (CEC's 244).
 
 What helped in the second round: the bit-reverse MOV (`mov osr, ::crc`
 turns the tap's register into the reflected Modbus CRC in one instruction),
@@ -737,3 +1142,14 @@ noblock` loading R0 (I2S silence, DShot's repeated value), the CRC tap as a
   decisions (the thresholds compare a measured value), nor `midi_tx`'s
   "every word sends a byte", which is an `@loop max=1` assumption (a channel
   message with no data bytes would break it).
+* Third round. The **static checker** bounds only the minimum of ISO 7816's
+  guard time (N is a register) and unrolls loops with a known count, so
+  ISO 7816's WT loop at 9600 etu takes it minutes: the annotations and the
+  soundness runs use WT = 32 or 64, which only changes that loop's count.
+  **sigrok**: `uart` takes at most 1.5 stop bits and samples one, so an ISO
+  7816 error signal shows as a frame error on the rejected character (the
+  tests expect exactly one); `ir_rc5`'s "standard" protocol has 6 command
+  bits (an RC-5X command's bit 6 is its "start bit 2"); `i2c` has no SMBus
+  layer, so the tests recompute the PEC over its bytes; `cec` names opcodes
+  and logical addresses (quoted above), and checks bit timing against its
+  own table, the same as the specification's.

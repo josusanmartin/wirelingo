@@ -11,7 +11,7 @@ import random
 
 import pytest
 
-from pe import asm, host, postfreeze as pf, postfreeze2 as p2, sim, timing
+from pe import asm, host, postfreeze as pf, postfreeze2 as p2, postfreeze3 as p3, sim, timing
 from pe.modelhost import ModelHost
 
 import test_timing_check as TC
@@ -34,6 +34,12 @@ DEFS = {
     "midi_rx": {"RX": 16, "TB": 128, "FOV": 0},
     "midi_tx": {"TX": 8, "TB": 32, "RS": 1},
     "quad_enc": {"A": 16, "FERR": 6},
+    "cec": {"CEC": 0, "FOV": 7, "FLOST": 6},
+    "iso7816": p3.iso_defines(0, 8, wt=32, finv=5, fov=7),
+    "iso7816_clk": {"CLK": 9},
+    "smbus_host": p3.smbus_defines(0, 1, 7),
+    "rc5_tx": {"IR": 8},
+    "rc5_rx": {"IR": 16, "TB": 128, "FOV": 7},
 }
 
 
@@ -296,3 +302,99 @@ def test_quad_enc_sound():
     enc.set(TQ.SEQ[enc.phase])
     enc.hold(40)
     sound("quad_enc", tr, 1 << 8)
+
+
+# ------------------------------------------------------------------ third round
+
+def test_cec_sound():
+    """cec against the CEC device model: our frames (acknowledged, NACKed,
+    broadcast, 10 blocks), the TV's frames to us and to others, a lost
+    arbitration (the follower takes over mid-bit)."""
+    import test_cec as TC3
+    tv = p3.CecNode(addr=0)
+    rig = TC3.Rig([tv], start=False)
+    tr = timing.Tracer(rig.mh.chip, 0, 0)
+    rig.mh.start(1)
+    rig.run(10e6)
+    for f, s in ((b"\x40\x04", 5), (b"\x4b", 7), (b"\x4f\x82\x10\x00", 3), (b"\x40\x47Wireling", 7)):
+        rig.send(f, sft_bits=s)
+    for f in (b"\x04\x8f", b"\x05\x8f", b"\x0f\x36"):
+        tv.send(f)
+        rig.run(20e6 + 25 * TC3.BIT * len(f))
+    state = {"armed": True}
+
+    def start_tv(r, t, bus, cd):
+        if state["armed"] and cd == 0:
+            state["armed"] = False
+            tv.send(b"\x04\x44\x41", at=t)
+    rig.hooks.append(start_tv)
+    rig.send(b"\x40\x36\x00\x01\x02")
+    rig.run(20e6)
+    sound("cec", tr, p3.cec_clkdiv(TC3.F_CLK))
+
+
+def test_iso7816_sound():
+    """iso7816 and its clock core against the card model: the ATR, T=0
+    commands both ways with an extra guard time, characters the card
+    corrupts (our error signals) and rejects (our repetitions), an abort."""
+    import test_iso7816 as TI
+    card = p3.IsoCard(TI.ATR, corrupt={len(TI.ATR) + 3: 2}, reject={6: 1, 14: 6})
+    rig = TI.Rig(card, start=False)
+    t0, t1 = timing.Tracer(rig.mh.chip, 0, 0), timing.Tracer(rig.mh.chip, 1, 256)
+    rig.mh.start(3)
+    rig.run(1000)
+    rig.activate()
+    rig.t0([0x00, 0xB0, 0x00, 0x00, 0x05], le=5)
+    rig.t0([0x00, 0xD6, 0x00, 0x00, 0x04], data=b"\x01\x02\x03\x04")
+    rig.command(p3.iso_send(bytes([0x00, 0xB0, 0x00, 0x08, 0x02]), extra_guard=3) + p3.iso_recv(8), n_records=2)
+    rig.command(p3.iso_send(bytes([0x00, 0xB0, 0x00, 0x00, 0x01])))
+    d0, d1 = p3.iso_clkdivs(1)
+    sound("iso7816", t0, d0)
+    sound("iso7816_clk", t1, d1)
+
+
+def test_smbus_sound():
+    """smbus_host against the SMBus device model: every protocol with PEC,
+    clock stretching, NACKs, a clock-low timeout (stretching assumptions
+    broken there on purpose: counted apart)."""
+    import test_smbus as TS
+    dev = p3.SmbusDevice(TS.BAT, TS.REGS)
+    rig = TS.Rig([dev], start=False)
+    tr = timing.Tracer(rig.mh.chip, 0, 0)
+    rig.mh.start(1)
+    rig.run(50e3)
+    for w in (p3.smbus_words(TS.BAT, [0x09, 1, 2], pec=True), p3.smbus_words(TS.BAT, [0x09], 2, pec=True),
+              p3.smbus_words(TS.BAT, [0x20], 1, pec=True, block=True), p3.smbus_words(TS.BAT, b"", 1, pec=True),
+              p3.smbus_words(TS.BAT, quick_rw=1), p3.smbus_words(0x50, [1, 2])):
+        rig.transact(w)
+    dev.stretch = 30e3
+    rig.transact(p3.smbus_words(TS.BAT, [0x30, 2, 5, 6], pec=True))
+    dev.stretch, dev.hang = 0.0, (2, 40e6)
+    rig.transact(p3.smbus_words(TS.BAT, [0x09], 2, pec=True), wait=60e6)
+    rig.run(15e6)
+    dev.hang = None
+    rig.transact(p3.smbus_words(TS.BAT, [0x0D], 1, pec=True))
+    sound("smbus_host", tr, p3.smbus_clkdiv(TS.F_CLK))
+
+
+def test_rc5_sound():
+    """rc5_tx -> the receiver-module model -> rc5_rx on one chip, both
+    traced: new keys, repeats, RC-5X commands."""
+    import test_rc5 as TR
+    mh = ModelHost()
+    mh.apply(host.load_program(0, TR.tx_prog(), side_pins=TR.LED, clkdiv=8 << 8))
+    mh.apply(host.load_program(1, TR.rx_prog(), in_pins=TR.RX, clkdiv=12 << 8))
+    ttx, trx = timing.Tracer(mh.chip, 0, 0), timing.Tracer(mh.chip, 1, 256)
+    tsop = pf.IrReceiverModule(f_carrier=p3.RC5_F)
+    mh.ui = 1
+    mh.start(3)
+    todo = [p3.rc5_word(1, 2), p3.rc5_word(1, 2, True), p3.rc5_word(31, 127), p3.rc5_word(0, 64)]
+    period = 1e9 / 864e3
+    for _ in range(int(480e6 / period)):
+        if todo and mh.tx_level(0) < 8 and mh.chip.cycle * period > 10e6:
+            mh.push(0, todo.pop(0))
+        mh.ui = tsop.step(mh.chip.cycle * period, (mh.chip.pin_out >> TR.LED) & 1)
+        mh.step()
+        mh.pop_all(1)
+    sound("rc5_tx", ttx, 8 << 8)
+    sound("rc5_rx", trx, 12 << 8)
