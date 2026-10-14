@@ -301,8 +301,24 @@ def simple(out, jobs, only=None):
     proven = sum(r["proven"] or 0 for r in results)
     unproven = [u for r in results for u in r["unproven"]]
     bad = [i for i, r in enumerate(results) if r["equiv_cells"] is None]
+    # an unproven bit of a multi-bit port is reported as port[i]
+    ports = sorted({u if u in m["ports"] else re.sub(r"\[\d+\]$", "", u) for u in unproven})
+    cexs = [counterexample(cutdir, os.path.join(out, "cex", f"cex{i}"), p)
+            for i, p in enumerate(p for p in ports if p in m["ports"]) if i < 5]
     return {"equiv_cells": total, "proven": proven, "unproven": unproven, "failed_shards": bad,
-            "ports": len(outs)}
+            "ports": len(outs), "counterexamples": cexs}
+
+
+def counterexample(cutdir, dst, port):
+    """A SAT counterexample for one unproven output port: the values of every
+    cut-module input (design inputs, flop states S:, black-box outputs O:)
+    for which gold and gate differ, written to dst/cex.log."""
+    shard_ports(cutdir, dst, {port})
+    lf = os.path.join(dst, "cex.log")
+    yosys(f"read_json {dst}/gold_cut.json; read_json {dst}/gate_cut.json; "
+          f"miter -equiv -flatten -make_assert -make_outputs gold gate miter; hierarchy -top miter; opt_clean; "
+          f"sat -prove-asserts -show-inputs -show-outputs miter", lf, check=False)
+    return {"port": port, "log": lf}
 
 
 def categorize(out):
