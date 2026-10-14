@@ -26,8 +26,8 @@
 ; measured (the timeout counter of a kind-7 WAIT, which compares the line
 ; with its last level, so an edge during the bookkeeping is not lost) and
 ; classified as IEC 62386-101 ed. 2 tables 18/19 ask, with the limits in the
-; grey areas: a half bit is 0.7..1.4 Te (292..583 us; the standard accepts
-; 333.3..500), a double half bit 1.4..2.6 Te (583..1083; 666.7..1000), only
+; grey areas: a half bit is 22..44 ticks (286..573 us; the standard accepts
+; 333.3..500), a double half bit 45..83 ticks (586..1081; 666.7..1000), only
 ; a half bit after a bit boundary or the start bit's fall; a mid-bit edge
 ; gives the bit (the new level). No edge for 2.6 Te with the line high ends
 ; the frame, which must then stay idle for 2400 us after its last edge (the

@@ -405,8 +405,8 @@ must come within 10.5 ms of the forward frame's end; from there every
 interval between edges is measured (a kind-7 WAIT against the last level,
 with its timeout counter as the stopwatch, so an edge during the bookkeeping
 is not lost) and classified as tables 18/19 ask, the limits in the grey
-areas: a half bit 0.7..1.4 Te (292..583 us; the standard accepts
-333.3..500), a double half bit up to 2.6 Te (1083 us; 666.7..1000), only a
+areas: a half bit 22..44 ticks (286..573 us at Te / 32; the standard accepts
+333.3..500), a double half bit 45..83 ticks (586..1081 us; 666.7..1000), only a
 half bit after a bit boundary or the start bit's fall. A frame ends with 2.6
 Te of high line and must stay idle until 2400 us after its last edge (the
 receiver's stop condition); anything else is a violation, reported with the
