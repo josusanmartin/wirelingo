@@ -48,14 +48,19 @@ describes how, and what it caught.
 * Measured against the RP2040 PIO's reference programs, including where PIO
   is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon.
-* **Post-freeze protocol challenge:** with the RTL frozen at tag
-  `rc-93c2137-t48ba`, DMX512, LIN (commander and a self-synchronising
-  responder), NEC infrared (38 kHz carrier and receiver), I2S, Wiegand and
-  DShot600 (bidirectional too) were added in firmware alone: ten programs,
-  each checked by the static timing checker, pins-only models, sigrok's
-  decoders and an RTL test through the SPI port
-  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the
-  ISA limitations they ran into).
+* **Post-freeze protocol challenge:** with the RTL frozen (tag
+  `rc-93c2137-t48ba`; `src/` unchanged since), three rounds of protocols were
+  added in firmware alone. Round one: DMX512, LIN (commander and a
+  self-synchronising responder), NEC infrared (38 kHz carrier and receiver),
+  I2S, Wiegand, DShot600 (bidirectional too). Round two: DALI, Modbus RTU,
+  MIDI (receive and transmit), a quadrature encoder counter. Round three:
+  HDMI-CEC (multi-master arbitration), ISO 7816-3 T=0 smart card, SMBus with
+  PEC, RC-5 infrared. Each is checked by the static timing checker, pins-only
+  models, sigrok's decoders where one exists and an RTL test through the SPI
+  port. Rounds one and two also ran on the KV260 FPGA build of the RTL,
+  against the other core or the FPGA's pattern generator, with results equal
+  to the cycle model's ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md),
+  with the 25 ISA limitations they ran into).
 * **v2** (signed off as run v2c): four small additions over g4, each in the spec, RTL, model, assembler, lockstep, formal where an
   invariant applies, and a firmware that uses it. The line unit's NRZI sample
   point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
@@ -133,6 +138,14 @@ cycle-accurate model, which is lockstep-checked against the RTL.
 | `i2s_tx` (post-freeze) | **I2S** 16-bit stereo; on underrun the clocks keep running and the frame is silence | transmit only, no MCLK | RTL; sigrok `i2s` |
 | `wiegand_tx` + `wiegand_rx` (post-freeze) | **Wiegand** card-reader interface: parity computed (TX) and checked (RX, 26/34-bit) with the CRC tap; RX catches both lines with one WAIT | TX <= 32 data bits | RTL (TX -> RX); model: 20-100 us pulses, 0.2-5 ms intervals, glitches; sigrok `wiegand` |
 | `dshot600`, `dshot_bidir` (post-freeze) | **DShot600** ESC protocol, checksum in firmware, last value repeated; **bidirectional**: the ESC's GCR telemetry received on the same wire at 750 kbit/s, every edge timed | telemetry GCR decoded by the host | RTL; model: edges exact at 48 MHz, +-1 clock at 50 MHz; telemetry with ESC clock +-15 %; sigrok `pwm` (no DShot decoder exists) |
+| `dali_ctrl` (post-freeze, round 2) | **DALI** (IEC 62386) controller: Manchester forward frames, backward frames decoded against the standard's timing tables, collisions flagged | controller only | RTL; sigrok `dali`; KV260 |
+| `modbus_rtu` (post-freeze, round 2) | **Modbus RTU** client: CRC-16 through the CRC tap, even/odd parity, 3.5-character framing, RS-485 driver enable | client only | RTL; sigrok `modbus`; KV260 |
+| `midi_rx`, `midi_tx` (post-freeze, round 2) | **MIDI**: parser with running status and real-time bytes anywhere; transmitter with running status | a full port uses both cores | RTL; sigrok `midi`; KV260 |
+| `quad_enc` (post-freeze, round 2) | **quadrature encoder** counter, 20 words | exact to a step every 14 (forward) / 15 (back) clocks; faster steps flagged | RTL; sigrok `graycode`; KV260 |
+| `cec` (post-freeze, round 3) | **HDMI-CEC**: open-drain multi-master, arbitration loss turns the sender into a listener within the bit, ACKs | one logical address; host resubmits | RTL; sigrok `cec` |
+| `iso7816` + `iso7816_clk` (post-freeze, round 3, 2 cores) | **ISO 7816-3 T=0** reader: ATR conventions, parity, error signalling and repetition both ways; card clock on the second core | no PPS/T=1; WT fixed by define | RTL; sigrok `uart` |
+| `smbus_host` (post-freeze, round 3) | **SMBus** host, all protocols, PEC (CRC-8) over sent and received bytes, 25 ms clock-low timeout | host side only | RTL; sigrok `i2c` + PEC |
+| `rc5_tx`, `rc5_rx` (post-freeze, round 3) | **RC-5** infrared: 36 kHz carrier under bi-phase, toggle bit; receiver tolerates a remote ±10 % | no RC-6 | RTL; sigrok `ir_rc5` |
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
 sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
