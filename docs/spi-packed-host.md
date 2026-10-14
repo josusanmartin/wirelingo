@@ -162,6 +162,33 @@ distinct4-clock peer requirement. Peers must tolerate finite intra-frame
 pauses; other host speeds/divisors need their own startup, sample, hold and
 wait qualification. CPU overhead, physical rates, Fmax and PPA are unknown.
 
+## On the demo board (MicroPython)
+
+`tools/micropython/bringup.py` wraps both programs, and the all-mode byte
+firmware, for the Tiny Tapeout demo board. Pins are `uio` (SCK 2, MOSI 3,
+MISO 4, CS 5, with a pull-up on CS); the default divider is 12 (4 ticks per bit,
+1 MHz SCK at 48 MHz; the packed CPHA1 body takes 5), and `div=` takes any
+integer from 3.
+
+```python
+import bringup
+pe = bringup.setup()
+rx = bringup.spi_transfer(pe, b"\x9f\0\0\0", mode=1)     # spi_master_modes, host CS
+bringup.spi_packed_setup(pe, mode=2)                      # resident queued firmware
+rx1, rx2 = bringup.spi_packed_transfer(pe, [b"\x05\0", bytes(200)])
+bringup.spi_preloaded_setup(pe)                           # load once, core 0 stays disabled
+rx = bringup.spi_preloaded_transfer(pe, bytes(range(32)))  # plan, start, wait HALT, drain
+```
+
+The board copies of `encode`, `decode` and `preload_plan`
+(`spi_packed_encode`, `spi_packed_decode`, `spi_preload_plan`) must equal
+`pe.spipacked`'s, rejections included; a model test checks this.
+`spi_preloaded_transfer` checks the preconditions above and refuses, without
+clearing anything, if they fail; it waits for HALT by polling STATUS rather
+than a fixed timer. `test/model/test_micropython_spi_uart.py` runs all of
+this unmodified on the cycle model through the host-port model, against an
+exact-frame SPI device on the `uio` pins. It has not run on a demo board.
+
 ## On the FPGA build (2026-10-14)
 
 The packed (modes 0-3), preloaded (mode 0) and all-mode byte firmware also
