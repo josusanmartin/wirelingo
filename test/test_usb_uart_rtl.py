@@ -119,6 +119,7 @@ class RtlBench(pairs.Bench):
         self.chip = types.SimpleNamespace(cycle=0)     # ControlHost's clock count
         self.init_bench(frames)
         self.written = None
+        self.pad_mismatch = []                         # tb.v's uio_in[1:0] differing from bus_uio()
 
     def sample(self):
         d = self.dut
@@ -153,6 +154,8 @@ class RtlBench(pairs.Bench):
                 self.written = w
             await Timer(PERIOD_PS, unit="ps")
             self.sample()
+            if (int(d.uio_in.value) ^ self.bus_uio()) & 3 and len(self.pad_mismatch) < 10:
+                self.pad_mismatch.append((self.chip.cycle, int(d.uio_in.value) & 3, self.bus_uio() & 3))
             self.chip.cycle += 1
             if self.t is not None:
                 self.t += 1
@@ -222,6 +225,7 @@ async def run(dut, mode):
     result = dict(mode=mode, rtl=rec)
     try:
         assert not host_moves, ("loading host moved after the load", host_moves[:4])
+        assert not bench.pad_mismatch, ("pads differ from the host's view", bench.pad_mismatch)
         result["rtl_check"] = summary = pairs.check(mode, rec)
         model, _ = pairs.run_model(mode)
         result["model"] = model

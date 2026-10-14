@@ -31,6 +31,29 @@ def test_pair_scenario_on_model(mode):
     assert summary["reports"] == [r.hex() for r in pairs.MODES[mode].expect(pairs.MODES[mode].frames())]
 
 
+def test_oracle_controls():
+    """The judges are not vacuous: a changed report byte, a duplicated report,
+    a lost STALL and a READY edge one clock late are each caught."""
+    import copy
+    rec = model_run("overlap4")
+    pairs.check("overlap4", rec)
+
+    def rejected(edit):
+        bad = copy.deepcopy(rec)
+        edit(bad)
+        with pytest.raises(AssertionError):
+            pairs.check("overlap4", bad)
+        return bad
+    first = next(i for i, r in enumerate(rec["reads"]) if r["data"])
+    rejected(lambda r: r["reads"][first].update(data="01" + r["reads"][first]["data"][2:]))
+    rejected(lambda r: r["reads"].insert(first, dict(r["reads"][first])))
+    rejected(lambda r: r["reads"][-1].update(data="00000000"))
+    late = copy.deepcopy(rec)
+    late["edges"]["ready"][3][0] += 1
+    assert [d["key"] for d in pairs.compare(rec, late)] == ["edges.ready"]
+    assert pairs.compare(rec, copy.deepcopy(rec)) == []
+
+
 def _trace(rec):
     tr = sigrok.Trace()
     events = sorted((t, name, v) for name in ("rx", "dp", "dm") for t, v in rec["edges"][name])

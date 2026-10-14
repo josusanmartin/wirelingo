@@ -433,6 +433,11 @@ def check(mode, rec):
     if "descriptor" in rec:
         assert bytes.fromhex(rec["descriptor"]) == usbdev.DEVICE_DESC
 
+    # end state (flags read through the host port after the scenario on the RTL)
+    assert not rec["flags"] & 0x80, "a report is still retained"
+    if not spec.error_pin:
+        assert rec["flags"] & 0x40, "sticky bad-STOP flag F6 not set"
+
     stalls = sum(r["data"] is None for r in reads)
     return dict(simulated_clocks=rec["t_end"], simulated_ms=round(rec["t_end"] / 48000, 3),
                 frames=len(frames), good_bytes=sum(f["good"] for f in frames), reports=[d.hex() for d in data],
