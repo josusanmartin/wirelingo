@@ -45,6 +45,7 @@ the pre-timing runs (keyed by everything they depend on). --save keeps
 captures and results; `compare` and `sigrok` as in postfreeze2_demo.
 """
 import argparse
+import gc
 import json
 import math
 import pathlib
@@ -1493,7 +1494,7 @@ def iso_cap_rx(rig, store):
     check(all(10.3 <= r <= 10.7 for r in rel) and lens == [round(1.5 * etu / ck)], f"error signals {rel} {lens}")
     gaps = sorted({round((b - a) / ck) for a, b in zip(ch, ch[1:]) if b - a < 13 * etu})
     check(gaps == [round(12 * etu / ck)], f"our characters {gaps} clocks apart")
-    det(store, "iso_cap_rx", recs=recs, rel=[round(r, 2) for r in rel])
+    det(store, "iso_cap_rx", recs=recs, n_signals=len(sig))      # (the times are measurements, not compared)
     return [f"our error signals: {span(rel, '{:.3f}')} etu after the start of the card's character (10.5 +- 0.2), "
             f"{lens} clocks long (1.5 etu = {1.5 * etu / ck:.0f}); our {len(ch)} header characters {gaps} clocks apart "
             f"(12 etu); records: the first 8 = the model run's (then FOV: nobody drains during the burst)", line]
@@ -1541,35 +1542,54 @@ def iso_host(rig, store):
     prep3(rig, sc, sched=far_sched3(rig, plan, sc.pg_idle))
     span_ns = (TRIG_S * 1e9 + plan["t_last"] + 3e6)
     ctrl(rig, 0b11)
-    smp = []
+    smp, n_reads, gmax = [], 0, 0.0      # smp: (time, uio_out, uio_oe, time of the read before) at each change
     rig.pg_start()
     if rig.model:
         mh, per = rig.mh, 1e9 / rig.f_clk
         c0 = mh.chip.cycle
+        tp = 0.0
         while (mh.chip.cycle - c0) * per < span_ns:
             mh.step(8)
             _, out, oe = mh.chip.outputs()
-            smp.append(((mh.chip.cycle - c0) * per, out, oe))
+            t = (mh.chip.cycle - c0) * per
+            n_reads += 1
+            gmax = max(gmax, t - tp)
+            if not smp or (out & 3, oe & 3) != smp[-1][1:3]:
+                smp.append((t, out & 3, oe & 3, tp))
+            tp = t
     else:
         inp = rig.board.regs.inp
-        t0 = time.perf_counter_ns()
-        while True:
-            v = inp()
-            t = time.perf_counter_ns() - t0
-            smp.append((t, (v >> 8) & 0xFF, (v >> 16) & 0xFF))
-            if t > span_ns:
-                break
+        gc.disable()                     # no collector pauses while polling
+        try:
+            t0 = time.perf_counter_ns()
+            tp, last = 0, None
+            while True:
+                v = inp()
+                t = time.perf_counter_ns() - t0
+                n_reads += 1
+                if t - tp > gmax:
+                    gmax = t - tp
+                k = (v >> 8) & 3, (v >> 16) & 3
+                if k != last:
+                    smp.append((t, k[0], k[1], tp))
+                    last = k
+                tp = t
+                if t > span_ns:
+                    break
+        finally:
+            gc.enable()
     recs = rd(rig, FIFO(0), rxn(rig.read(STATUS(0))))
     finish(rig)
-    drv, rstl = [], []
-    for t, out, oe in smp:
+    drv, rstl, win = [], [], []
+    for t, out, oe, tp in smp:
         d = 0 if (oe & 1) and not out & 1 else 1
         r = (out >> RST) & 1
         if not drv or drv[-1][1] != d:
             drv.append((t, d))
+            win.append((t - tp) / 1e3)
         if not rstl or rstl[-1][1] != r:
             rstl.append((t, r))
-    gaps_us = [(b[0] - a[0]) / 1e3 for a, b in zip(smp, smp[1:])]
+    keep_win = sorted(win)
     keep(store, "iso_host", drive=drv, rst=rstl, t_end=span_ns, etu=etu)
     rise = next(t for t, v in rstl if v == 1)
     pd = pf.bit_edges(plan["drive"], IO)
@@ -1585,7 +1605,8 @@ def iso_host(rig, store):
     nsig = (len(b_rel) - len(strip_signals(b_rel, etu))) // 2
     check(recs == plan["words"][:len(recs)] and len(recs) == 8, f"records {[hex(w) for w in recs]}")
     det(store, "iso_host", chars=[c["byte"] for c in bdec])
-    return [f"host poll: {len(smp)} GPIO reads, {span(gaps_us)} us apart (1 etu = {etu / 1e3:.2f} us); RST rose "
+    return [f"host poll: {n_reads} GPIO reads, at most {gmax / 1e3:.1f} us apart; each drive edge seen within "
+            f"{span(keep_win, '{:.1f}')} us of the read before it (1 etu = {etu / 1e3:.2f} us); RST rose "
             f"once; the reader's drive: {len(b_rel)} edges, the model's drive edge for edge, board - model "
             f"{span([x / 1e3 for x in dd], '{:+.1f}')} us after RST's rise (host timing)",
             f"the drive read as characters (even parity, 1 etu bits): {bytes(c['byte'] for c in bdec).hex()} "
@@ -1885,8 +1906,8 @@ def sigrok_main(path):
                       f"{bytes(b for _, b in data).hex()} {[w for _, w in warn]}")
             elif name.startswith("rc5"):
                 pf.to_trace(tr, [(t + 1e6, v) for t, v in r["env"]], "ir", r["t_end"] + 30e6)
-                got = sigrok.ir_rc5(tr, "ir", res_ps=1_000_000)
-                gx = sigrok.ir_rc5(tr, "ir", protocol="extended", res_ps=1_000_000)
+                got = sigrok.ir_rc5(tr, "ir", res_ps=100_000)
+                gx = sigrok.ir_rc5(tr, "ir", protocol="extended", res_ps=100_000)
                 print(f"[{name}] sigrok ir_rc5 (address, command, toggle): {[tuple(g[1:]) for g in got]}; "
                       f"extended: {[tuple(g[1:]) for g in gx]}")
         except Exception as e:
