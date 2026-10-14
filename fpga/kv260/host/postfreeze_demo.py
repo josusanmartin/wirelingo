@@ -125,6 +125,15 @@ class HwRig:
     def gpio_uio(self, v):
         self.board.set_inputs(uio=v)
 
+    def spid_arm(self, resp, delay):
+        self.lab.spid_arm(resp, delay)
+
+    def spid_status(self):
+        return self.lab.spid_status()
+
+    def spid_rx(self):
+        return self.lab.spid_rx()
+
     def burst(self, core, n, div, quad):
         s = self.spim
         s.div, s.quad = div, quad
@@ -154,8 +163,8 @@ class HwRig:
 
 class FabricModel:
     """pe.modelhost.ModelHost with kv260_top's uio pads: uio_in = uio_oe ?
-    uio_out : what pe_lab's MODE drives (GPIO value, pattern generator, I2C
-    bus of uio0/2 and uio1/3)."""
+    uio_out : what pe_lab's MODE drives (GPIO value, pattern generator, SPI
+    device's MISO on uio4, I2C bus of uio0/2 and uio1/3)."""
 
     def __new__(cls, *a, **kw):
         from pe.modelhost import ModelHost
@@ -164,6 +173,7 @@ class FabricModel:
             def __init__(self):
                 super().__init__()
                 self.mode, self.gpio, self.pg_init, self.pg = GPIO, 0xFF, 0, None
+                self.spid = None
 
             def pg_value(self):
                 if self.pg is None:
@@ -172,10 +182,57 @@ class FabricModel:
                 i = bisect.bisect_right(ts, self.chip.cycle - t0) - 1
                 return vs[i] if i >= 0 else self.pg_init
 
+            def spid_arm(self, resp, delay):
+                """pe_lab's SPI device (MODE 2), modelled at protoemu clock
+                edges: arm puts bit 127 of RESP on MISO; after each SCK fall
+                the next bit reaches the pads (DELAY + 2) x 2.5 ns after the
+                clock edge that dropped SCK, i.e. at the first protoemu edge
+                more than that later; MOSI is taken with each SCK rise."""
+                r = int.from_bytes(bytes(resp).ljust(16, b"\0"), "big")
+                self.spid = dict(sh=r, miso=(r >> 127) & 1, delay=delay & 31, rises=0, rx=0,
+                                 pmin=0xFF, pmax=0, seen=False, last=None, pend=[],
+                                 sck=(self.chip.outputs()[1] >> 2) & 1)
+
+            def spid_status(self):
+                d = self.spid
+                return d["rises"] & 0xFFFF, d["pmin"], d["pmax"]
+
+            def spid_rx(self):
+                return self.spid["rx"].to_bytes(16, "big")
+
+            def spid_step(self, out):
+                d = self.spid
+                if d is None:
+                    return 1
+                cyc = self.chip.cycle          # the edge that ends this step
+                sck, mosi = (out >> 2) & 1, (out >> 3) & 1
+                if sck != d["sck"]:            # changed at the previous edge (cyc - 1)
+                    if not sck:
+                        d["pend"].append(cyc + (d["delay"] + 2) // 8)
+                    else:
+                        d["rx"] = ((d["rx"] << 1) | mosi) & ((1 << 128) - 1)
+                        d["rises"] += 1
+                        if d["seen"]:
+                            iv = min(8 * (cyc - d["last"]) - 1, 255)   # per saturates at 0xFF
+                            p1 = (iv + 1) & 0xFF                       # 8-bit per + 1
+                            if p1 < d["pmin"]:
+                                d["pmin"] = p1
+                            if p1 > d["pmax"]:
+                                d["pmax"] = p1
+                        d["seen"], d["last"] = True, cyc
+                    d["sck"] = sck
+                while d["pend"] and d["pend"][0] <= cyc:
+                    d["pend"].pop(0)
+                    d["sh"] = ((d["sh"] << 1) | (d["sh"] >> 127)) & ((1 << 128) - 1)
+                    d["miso"] = (d["sh"] >> 127) & 1
+                return d["miso"]
+
             def bus_uio(self):
                 _, out, oe = self.chip.outputs()
                 if self.mode == PG:
                     ext = self.pg_value()
+                elif self.mode == SPI:
+                    ext = (self.gpio & ~0x10) | (self.spid_step(out) << 4)
                 elif self.mode == I2C:
                     d = (~oe | out) & 0xFF
                     sda, scl = (d >> 0) & (d >> 2) & 1, (d >> 1) & (d >> 3) & 1
@@ -228,6 +285,15 @@ class ModelRig:
 
     def gpio_uio(self, v):
         self.mh.gpio = v & 0xFF
+
+    def spid_arm(self, resp, delay):
+        self.mh.spid_arm(resp, delay)
+
+    def spid_status(self):
+        return self.mh.spid_status()
+
+    def spid_rx(self):
+        return self.mh.spid_rx()
 
     def burst(self, core, n, div, quad):
         per = (8 if quad else 32) * div
