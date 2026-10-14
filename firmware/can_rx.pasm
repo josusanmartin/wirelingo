@@ -101,7 +101,16 @@ remote:
 eof:                                  ; S = sample of the last CRC bit
     mov r2, crc                       ; S+15
     jmp r2, bad                       ; S+16
-    nop                       [54]    ; S+17..71  CRC delimiter
+    cmp r1, 5                         ; S+17  the CRC ends in five equal bits:
+    jmp !z, delim                     ; S+18  a stuff bit comes before the delimiter
+    nop                       [28]    ; S+19..47
+    mov r2, pins                      ; S+48  the stuff bit, sampled on the grid
+    and r2, 1                         ; S+49
+    cmp r2, r3                        ; S+50
+    jmp z, stuff_error                ; S+51  six equal bits
+    nop                       [14]    ; S+52..66: everything below one bit later
+delim:
+    nop                       [52]    ; S+19..71  CRC delimiter
     pin TX, lo                [47]    ; S+72      ACK slot: dominant for one bit
     pin TX, hi                        ; S+120
     ldi r3, 1
