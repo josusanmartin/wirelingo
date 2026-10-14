@@ -8,9 +8,10 @@
 # OUT: a new work directory (default ~/protoemu-flow/equiv-<run>-<UTC time>).
 #
 # Needs python3 and yosys/yosys-abc (OSS CAD Suite: $OSS_CAD, default
-# ~/tools/oss-cad-suite). The PDK cell models are taken from the run's
-# resolved.json. Heavy: ~1 GB per job and about 5 minutes with -j 4 on runner1
-# (20 cores); -j sets how many equiv_simple processes run at once.
+# ~/tools/oss-cad-suite). Sources, defines and PDK cell models are taken from
+# the run's synthesis step. Heavy: up to 1.6 GB per process and about 9 minutes
+# with -j 4 on runner1 (20 cores); -j sets how many equiv_simple processes run
+# at once.
 # Exit status 0 only for a full proof (see the VERDICT line).
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail

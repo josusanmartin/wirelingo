@@ -103,9 +103,16 @@ result extends them to later firmware or grants release approval.
   [fpga/kv260](../fpga/kv260/README.md)); still open are the RP2350 transport,
   USB enumeration against a real host (prepared on the KV260, not yet
   wired), and the 10BASE-T analog front end.
-* A formal equivalence check of the RTL against the synthesized netlist. LVS
-  compares layout with netlist; gate-level simulation covers only the cases
-  the tests exercise.
+* Closed 2026-10-14: formal equivalence of the RTL and the netlist.
+  `formal/equiv/equiv_check.sh` proves fo6's final netlist (after P&R)
+  equivalent to the RTL as synthesised. Every flop's next state, clock and
+  reset, every latch, clock-gate and SRAM input, and every output is proved,
+  under a checked one-to-one state correspondence (the host port's `phase`
+  through its logged one-hot re-encoding). Planted netlist bugs are caught.
+  Not covered: the cells' insides (PDK models, the same SRAM and latch cells
+  on both sides), delays (STA, SDF), a front-end misreading common to yosys
+  versions, and the host port's state before CS_n has first been high
+  ([equivalence.md](equivalence.md)). LVS still links layout to netlist.
 * V2's stronger host-port proof: address/data ordering, read
   snapshot/commit/cancel epochs, partial words and reset reasserted at any
   step are now proved by k-induction against a pin-level reference model

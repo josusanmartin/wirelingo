@@ -306,6 +306,21 @@ setup/hold, every STA corner reports the SCK↔clk crossings against their
 one-period bound and the clock-gating, pulse-width and recovery/removal checks
 (`src/timing_checks.tcl`).
 
+**Formal equivalence** (`formal/equiv/equiv_check.sh <run>`,
+[equivalence.md](equivalence.md)). Gate-level simulation covers only what the
+tests exercise; this covers every input and state. The final netlist,
+with the PDK's cell models, is proved equivalent to the RTL as synthesised.
+All 1647 flops, 1024 latches, 54 clock gates and both SRAMs correspond one to
+one with the RTL's: by name, by simulation-proposed pairs (each proved), or,
+for the host port's `phase`, through its logged one-hot re-encoding. Each
+flop's next state, clock and reset, the inputs of each latch, clock gate and
+SRAM, and the outputs are proved equal: 7429 points, by ABC `&cec` and by
+yosys `equiv_simple`. Six RTL flops with no netlist flop are proved
+unobservable. Run fo6 and t48ba both pass, and five planted netlist bugs are
+each caught. It is zero-delay and functional: timing stays with STA and SDF
+simulation. The latch, clock-gate and SRAM cells are the same black boxes on
+both sides.
+
 **With delays** (`flow/gl_sdf_test.sh <run>`): the same netlist back-annotated
 with the run's extracted SDF (Icarus; `flow/sdf_prep.py` works around its SDF
 reader), five top-level tests at typ/50 MHz and slow/43.5 MHz must pass, and

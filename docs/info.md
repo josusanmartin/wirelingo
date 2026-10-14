@@ -41,7 +41,10 @@ one that enumerates on its own with no host traffic after the load, a
 10BASE-T transmitter (at 40 MHz, with link pulses) and receiver, CAN 2.0A
 TX/RX, an SWD debug probe, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
 DMX512, LIN, NEC infrared, I2S, Wiegand and DShot600 (also bidirectional).
-None of it has run on silicon yet.
+None of it has run on silicon yet. The hardened netlist is formally proved
+equivalent to the RTL: functionally, for every input and state, under the
+assumptions listed in `docs/equivalence.md`. Timing is checked separately,
+by STA.
 
 The full specification is in `docs/isa.md` in the repository.
 

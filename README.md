@@ -31,7 +31,9 @@ describes how, and what it caught.
   corner. A clean checkout rebuilt on a 4-CPU machine reproduces its netlist
   and GDS bit for bit. Hash-bound receipts: Tiny Tapeout precheck, all 29
   top-level tests at gate level, and timing-annotated (SDF) gate level at all
-  three corners ([docs/release-evidence.md](docs/release-evidence.md)). The
+  three corners ([docs/release-evidence.md](docs/release-evidence.md)). Its
+  netlist is formally proved equivalent to the RTL
+  ([docs/equivalence.md](docs/equivalence.md)). The
   last exception of the previous candidate, t48ba (antenna diodes taking a
   net to 11 loads against the IHP cells' fanout limit of 8), is removed by a
   flow step that buffers such nets after routing ([docs/physical.md](docs/physical.md)).
@@ -187,7 +189,7 @@ join) against reference queues at depths 4 and 8, SPI-slave bus safety, and
 core safety invariants. Firmware is developed against device models on the
 model, and the key cases repeat on the RTL through the SPI port. The
 signed-off netlist passes the same top-level tests at gate level
-(functional, no SDF). Deliberately injected bugs are caught. Details, limits and
+(functional, no SDF) and is formally equivalent to the RTL. Deliberately injected bugs are caught. Details, limits and
 the bugs this found: [docs/verification.md](docs/verification.md).
 
 ```
@@ -224,6 +226,13 @@ make -C formal                                                   # proofs
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
   delays. The GDS passes Tiny Tapeout's precheck.
+* Its final netlist is formally equivalent to the RTL
+  ([docs/equivalence.md](docs/equivalence.md)), for every input and state,
+  not only the tested cases. All 1647 flops, 1024 latches, 54 clock gates and
+  both SRAMs correspond one to one. Every next state, clock, reset, latch,
+  clock-gate and SRAM input and every output is proved, by ABC and by yosys,
+  with the PDK cell models (checked against Liberty). Planted netlist bugs are
+  caught. It is a functional, zero-delay check; timing is STA's.
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 63 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
   the current RTL routable ([docs/physical.md](docs/physical.md)).
