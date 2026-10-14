@@ -914,10 +914,11 @@ Ethernet PHY; every far end is our pins-only model or the chip's other core.
 10BASE-T ran at 50 MHz with CLKDIV 1.25 (the test suite's 50 MHz case), not
 the 40 MHz its header specifies; the FPGA builds are 50 and 48 MHz only.
 
-**At the end** (08:55:39 UTC, after the last 48 MHz run): `xmutil loadapp
-protoemu`, `bringup_kria.py` (all steps) ALL PASS, clock 49.9983 MHz; the
-legacy rerun at 08:58:59 left it loaded. Left loaded: `protoemu`,
-PMOD0/PMOD1 = 0, pe_lab MODE 0, host port on the GPIO path (pe_spim SEL 0).
+**At the end**: after the last 48 MHz run, `xmutil loadapp protoemu` and
+`bringup_kria.py` (all steps) ALL PASS at 08:55:39 UTC (49.9983 MHz); after
+the last legacy run, `bringup_kria.py` (all steps) ALL PASS again at
+09:07:15 UTC (49.9980 MHz). Left loaded: `protoemu`, PMOD0/PMOD1 = 0, pe_lab
+MODE 0, host port on the GPIO path (pe_spim SEL 0).
 
 ## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
 
