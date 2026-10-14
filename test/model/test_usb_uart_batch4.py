@@ -14,6 +14,7 @@ from pe import sim, usb, usbdev, usb_uart_batch4
 from pe.modelhost import ModelHost
 from pe.profile import TAPEOUT
 from pe.usbhost import ControlHost, Stall
+from line_echo import EchoProbe
 
 BIT = 32
 UART_BIT = Fraction(1250, 3)
@@ -139,6 +140,7 @@ class Host(ModelHost):
     def __init__(self):
         self.chip = sim.Chip(ncores=TAPEOUT.ncores, nbanks=TAPEOUT.nbanks,
                              bank_words=TAPEOUT.bank_words, fifo_depth=TAPEOUT.fifo_depth)
+        self.echo = EchoProbe(self.chip, lambda: self.ext_oe & 3)  # line-RX overflow is own echo only
         self.ui, self.uio, self.ext_oe, self.pull_up = 1, 0, 0, 2
 
 
@@ -481,6 +483,7 @@ def test_uart_batch4_control_mailbox(tmp_path):
         stage('incomplete-idle');rig.mh.step(5000)
         refused(0,4,'incomplete-refused')
         verdict = audit(rig.result(None))
+        rig.mh.echo.check()
         (out/'oracle.json').write_text(json.dumps(verdict,indent=2)+'\n')
     except BaseException as exc:
         error = type(exc).__name__+': '+str(exc)

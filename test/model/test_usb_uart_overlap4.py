@@ -13,6 +13,7 @@ from pathlib import Path
 from pe import isa, sim, usb, usbdev, usb_uart_overlap4
 from pe.modelhost import ModelHost
 from pe.usbhost import ControlHost, Stall
+from line_echo import EchoProbe
 
 NODE = "test/model/test_usb_uart_overlap4.py::test_overlap4_retained_and_next"
 RAW_NAME = "overlap4-raw.json"
@@ -112,6 +113,7 @@ def _json_bytes(value):
 class _Host(ModelHost):
     def __init__(self):
         self.chip=sim.Chip(ncores=2,nbanks=2,bank_words=256,fifo_depth=8)
+        self.echo=EchoProbe(self.chip,lambda:self.ext_oe&3)  # line-RX overflow is own echo only
         self.ui,self.uio,self.ext_oe,self.pull_up=1,0,0,2
 
 
@@ -438,7 +440,7 @@ def test_overlap4_retained_and_next(tmp_path):
             elif stage.endswith('-ACK'):peer.fixed_ack()
             elif stage.endswith('-status'):peer.data_out(5,usb.PID_DATA1,b'')
         rig.absolute('final',FINAL_DEADLINE)
-        audit(rig.snapshot(None,peer))
+        audit(rig.snapshot(None,peer));rig.mh.echo.check()
     except BaseException as exc:
         error=type(exc).__name__+': '+str(exc)
         raise

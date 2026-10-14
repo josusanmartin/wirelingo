@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from pe import isa, sim, usb, usbdev, usb_uart_envelope3
 from pe.modelhost import ModelHost
+from line_echo import EchoProbe
 NODE="test/model/test_usb_uart_envelope3.py::test_envelope3_admission_and_retention"
 RAW_NAME="envelope3-raw.json"
 MAX_STEPS,BIT,FINAL_DEADLINE=1000000,32,620000
@@ -267,6 +268,7 @@ def source_hashes():
 class _Host(ModelHost):
     def __init__(self):
         self.chip=sim.Chip(ncores=2,nbanks=2,bank_words=256,fifo_depth=8)
+        self.echo=EchoProbe(self.chip,lambda:self.ext_oe&3)  # line-RX overflow is own echo only
         self.ui,self.uio,self.ext_oe,self.pull_up=1,0,0,2
 
 
@@ -596,7 +598,7 @@ def test_envelope3_admission_and_retention(tmp_path):
             elif row['direction']=='host':peer.host(row)
             else:peer.device(row)
         rig.absolute('final',FINAL_DEADLINE)
-        result=rig.snapshot(None,peer);verdict=audit(result)
+        result=rig.snapshot(None,peer);verdict=audit(result);rig.mh.echo.check()
         (out/'oracle.json').write_text(json.dumps(verdict,indent=2)+'\n')
     except BaseException as exc:
         error=type(exc).__name__+': '+str(exc);raise

@@ -16,6 +16,7 @@ from pe import asm, host, isa, sim, uartcapture, uartcapture_peer, usb, usbdev, 
 from pe.modelhost import ModelHost
 from pe.profile import TAPEOUT
 from pe.usbhost import ControlHost, Stall
+from line_echo import EchoProbe
 from test_uart import _PinTimeline
 from test_uart_packed import BURST, DIV, RX
 from test_usb_autonomous import TransportIdle, enumerate_flow
@@ -95,6 +96,7 @@ class _Host(ModelHost):
     """Normal ModelHost fields and paid bus; explicit actual tapeout geometry."""
     def __init__(self, sources):
         self.chip = sim.Chip(ncores=2, nbanks=2, bank_words=256, fifo_depth=8)
+        self.echo = EchoProbe(self.chip, lambda: self.ext_oe & 3)  # line-RX overflow is own echo only
         self.ui = 1
         self.uio = self.ext_oe = 0
         self.pull_up = 2
@@ -421,6 +423,7 @@ def test_concurrent_enumeration_and_32byte_capture():
         assert any(p["direction"] == "device" for p in overlap)
         extra["overlapping_packets"] = overlap
         assert mh.trace["peak_rx"][1] == 8
+        mh.echo.check()
         assert mh.trace["controls"][-1]["data"] & 0x101 == 0x101
         assert all(e["after"] & 1 for e in mh.trace["enable_events"] if e["cycle"] >= both_start)
     except BaseException as exc:
@@ -471,6 +474,7 @@ def test_stall_bad_stop_clear_and_rearm_isolation():
         assert all(w["data"] & 1 and not w["data"] & 256 for w in later_controls)
         assert all(e["after"] & 1 for e in mh.trace["enable_events"] if e["cycle"] >= usb_started)
         assert mh.trace["peak_rx"][1] == 1
+        mh.echo.check()
     except BaseException as exc:
         _save("case2",_record(mh,peer,extra,repr(exc)))
         raise
