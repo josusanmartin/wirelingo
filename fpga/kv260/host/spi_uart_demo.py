@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The SPI and UART firmwares added after the 2026-10-13 board session
+"""SPI and UART firmwares that had only run in simulation
 (spi_master_modes, spi_master_packed, spi_master_preloaded_once,
-uart_rx_capture, uart_rx_packed, uart_rx_capture_peer) on the KV260 build of
-the chip RTL. Run as root on the Kria with the protoemu app (pe_lab) loaded.
+uart_rx_capture, uart_rx_packed, uart_rx_capture_peer, uart_rx_mailbox) on
+the KV260 build of the chip RTL. Run as root on the Kria with the protoemu app (pe_lab) loaded.
 Nothing leaves the FPGA: every line is a uio pad that a core or pe_lab's
 fabric drives; no PMOD pin is enabled.
 
@@ -22,7 +22,8 @@ register is rotated by one bit, because mode 3's first fall must present bit
 7. Modes 1 and 2 have no peer in the fabric.
 
 SPI with la_capture (all four modes): core 0 runs the master behind the
-2-word trigger preamble of postfreeze_demo, core 1 runs la_capture on uio0-7
+2-word trigger preamble of postfreeze_demo (its side-set holding SCK at
+CPOL), core 1 runs la_capture on uio0-7
 (SCK, MOSI, CS and the trigger; 1 tick = 1 clock, master CLKDIV 8 so every
 edge is >= 7 clocks from the previous one and timestamped exactly), and the
 pattern generator plays MISO: each bit D_LAUNCH clocks after the peer's
@@ -30,7 +31,8 @@ launch edge (CPHA0: CS fall, then each trailing edge; CPHA1: each leading
 edge) as the cycle model predicts it for the same set-up. On the board the
 master's tick phase against the trigger differs from the model's by delta
 (|delta| < 8 clocks, measured from the capture), so the bits land D_LAUNCH -
-delta clocks after the edge; the master samples 14 or more clocks after it.
+delta clocks after the edge (it is pre-timed, not a reactive peer); the
+master reads MISO as it was 14 or more clocks after the edge.
 The captured wire is checked with test_spi_packed.FramedPeer's rules, and
 compared edge for edge with the model's.
 
@@ -38,6 +40,8 @@ UART: pe_lab's pattern generator plays precomputed 8N1 lines (true baud
 offsets, start phase, alternating jitter, bad STOP bits, breaks) at exact
 clocks, built like test_uart._PinTimeline. The captures go through the host
 helpers pe.uartcapture / pe.uartcapture_peer with their documented checks.
+uart_rx_mailbox runs with the host standing in for usb_uart_byte's core 0
+(it clears F7, as core 0 does after a valid DATA ACK); no USB host.
 
 --model runs the same code on the cycle model (postfreeze_demo.ModelRig,
 which models pe_lab's pattern generator and SPI device), some runs at a
@@ -548,8 +552,8 @@ def spi_modes_la(rig, store):
             dets[name] = dict(recs=[(t - delta, s) for t, s in w["recs"]], frame={
                 k: fr[k] for k in ("active", "idle", "byte_period", "setup", "hold")})
             lines.append(f"{name}: 8 bytes, MOSI at the sample edges = TX, master RX = the generator's MISO; "
-                         f"{fmt_frame(fr, div)}; wire = model's +{delta} clocks; MISO landed "
-                         f"{sorted(actual)} clocks after the launch edge")
+                         f"{fmt_frame(fr, div)}; wire = model's {delta:+d} clocks; MISO changed "
+                         f"{sorted(actual)} clocks after the launch edge (negative: before)")
     det(store, "spi_modes_la", **dets)
     return lines
 
@@ -573,7 +577,7 @@ def spi_packed_la(rig, store):
         dets[f"mode {mode}"] = dict(recs=[(t - delta, s) for t, s in w["recs"]])
         lines.append(f"mode {mode}: 5 + 3 bytes in two CS frames, exactly 40 and 24 sample edges, wire = TX, "
                      f"RX decoded right; {fmt_frame(f0, LA_DIV)}; CS high between {w['cs_gaps'][0] / LA_DIV:g} ticks; "
-                     f"wire = model's +{delta} clocks; MISO {sorted(actual)} clocks after the launch edge")
+                     f"wire = model's {delta:+d} clocks; MISO {sorted(actual)} clocks after the launch edge (negative: before)")
     det(store, "spi_packed_la", **dets)
     return lines
 
@@ -596,8 +600,8 @@ def spi_preloaded_la(rig, store):
         fr = w["frames"][0]
         dets[f"{n} bytes"] = dict(recs=[(t - delta, s) for t, s in w["recs"]])
         lines.append(f"{n} bytes: one CS frame, {8 * n} sample edges, wire = TX, RX right, HALT; "
-                     f"{fmt_frame(fr, LA_DIV)}; wire = model's +{delta} clocks; MISO {sorted(actual)} clocks after "
-                     f"the launch edge")
+                     f"{fmt_frame(fr, LA_DIV)}; wire = model's {delta:+d} clocks; MISO {sorted(actual)} clocks after "
+                     f"the launch edge (negative: before)")
     det(store, "spi_preloaded_la", **dets)
     return lines
 
