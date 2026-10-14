@@ -37,6 +37,7 @@ DEFS = {
     "cec": {"CEC": 0, "FOV": 7, "FLOST": 6},
     "iso7816": p3.iso_defines(0, 8, wt=32, finv=5, fov=7),
     "iso7816_clk": {"CLK": 9},
+    "smbus_host": p3.smbus_defines(0, 1, 7),
 }
 
 
@@ -348,3 +349,27 @@ def test_iso7816_sound():
     d0, d1 = p3.iso_clkdivs(1)
     sound("iso7816", t0, d0)
     sound("iso7816_clk", t1, d1)
+
+
+def test_smbus_sound():
+    """smbus_host against the SMBus device model: every protocol with PEC,
+    clock stretching, NACKs, a clock-low timeout (stretching assumptions
+    broken there on purpose: counted apart)."""
+    import test_smbus as TS
+    dev = p3.SmbusDevice(TS.BAT, TS.REGS)
+    rig = TS.Rig([dev], start=False)
+    tr = timing.Tracer(rig.mh.chip, 0, 0)
+    rig.mh.start(1)
+    rig.run(50e3)
+    for w in (p3.smbus_words(TS.BAT, [0x09, 1, 2], pec=True), p3.smbus_words(TS.BAT, [0x09], 2, pec=True),
+              p3.smbus_words(TS.BAT, [0x20], 1, pec=True, block=True), p3.smbus_words(TS.BAT, b"", 1, pec=True),
+              p3.smbus_words(TS.BAT, quick_rw=1), p3.smbus_words(0x50, [1, 2])):
+        rig.transact(w)
+    dev.stretch = 30e3
+    rig.transact(p3.smbus_words(TS.BAT, [0x30, 2, 5, 6], pec=True))
+    dev.stretch, dev.hang = 0.0, (2, 40e6)
+    rig.transact(p3.smbus_words(TS.BAT, [0x09], 2, pec=True), wait=60e6)
+    rig.run(15e6)
+    dev.hang = None
+    rig.transact(p3.smbus_words(TS.BAT, [0x0D], 1, pec=True))
+    sound("smbus_host", tr, p3.smbus_clkdiv(TS.F_CLK))

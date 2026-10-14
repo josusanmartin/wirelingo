@@ -593,3 +593,212 @@ class IsoCard:
             self.commands.append((hdr, bytes(self.buf), b"\x90\x00"))
             self.app, self.buf = "header", bytearray()
             self._send_later(b"\x90\x00", n0)
+
+
+# ================================================================== SMBus with PEC
+# System Management Bus Specification 3.2: PEC = CRC-8 (x^8 + x^2 + x + 1,
+# preset 0, MSB first) over every byte of a transaction, address bytes
+# included; f_SCL 10..100 kHz, tLOW >= 4.7 us, tHIGH >= 4.0 us (100 kHz
+# class), T_TIMEOUT 25..35 ms: a device holding SCL low longer is reset.
+
+SMBUS_CRCCTRL = 0x07 | (7 << 16) | (1 << 20) | (1 << 21)    # POLY 0x07, width 8, IN and OUT taps
+SMBUS_TICK = 1120.0             # ns (CLKDIV 56 at 50 MHz)
+SMBUS_CODES = {0x80: "ok", 0x81: "pec_ok", 0x82: "pec_bad", 0x83: "addr_nack", 0x84: "data_nack",
+               0x85: "timeout", 0x86: "lost", 0x87: "busy"}
+
+
+def smbus_pec(data, crc=0):
+    """CRC-8 as SMBus specifies it (polynomial 0x07, preset 0, no
+    reflection, no final XOR)."""
+    for b in bytes(data):
+        crc ^= b
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x07) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
+    return crc
+
+
+def smbus_defines(sda=0, scl=1, fov=7, tto_ms=25.0, tick_ns=SMBUS_TICK):
+    """TTO: the clock-low timeout in ticks (the firmware gives up 3 ticks
+    after it: 25.003 ms at 1.12 us)."""
+    return {"SDA": sda, "SCL": scl, "FOV": fov, "TTO": int(tto_ms * 1e6 / tick_ns)}
+
+
+def smbus_clkdiv(f_clk, tick_ns=SMBUS_TICK):
+    return host.clkdiv_for(f_clk, 1e9 / tick_ns)
+
+
+def smbus_words(addr, write=b"", nread=0, pec=False, block=False, quick_rw=0):
+    """smbus_host TX FIFO words for one transaction: write the bytes (the
+    command code first), then read nread bytes (or, with block, a count and
+    that many), PEC appended or checked."""
+    write = bytes(write)
+    if len(write) > 255 or nread > 255 or not 0 <= addr < 128:
+        raise ValueError("at most 255 bytes each way, a 7-bit address")
+    flags = int(pec) | int(block) << 1 | (quick_rw & 1) << 3
+    return [nread << 24 | len(write) << 16 | addr << 8 | flags] + [b << 24 for b in write]
+
+
+def smbus_records(words):
+    """smbus_host RX FIFO words -> [{read (bytes, the count and PEC
+    included), result (SMBUS_CODES), unsent (data words dropped)}]."""
+    out, cur = [], b""
+    for w in words:
+        if w >> 16 == 1:
+            cur += bytes([w & 255])
+        elif w & 0x8000 and w < 0x10000:
+            out.append({"read": cur, "result": SMBUS_CODES.get(w >> 8, hex(w >> 8)), "unsent": w & 255})
+            cur = b""
+        else:
+            raise ValueError(f"not a smbus_host record: {w:#x}")
+    return out
+
+
+class SmbusDevice:
+    """A pins-only SMBus device (an I2C target that speaks PEC).
+    step(t, scl, sda) -> (its SCL drive, its SDA drive), 1 = released.
+
+    addr: its 7-bit address. regs: {command code: the bytes a read of that
+    command returns (a block read's count included)}; a read without a
+    command (receive byte) returns regs.get(None). With pec, a read is
+    followed by the PEC the device computes over the transaction as it saw
+    it, and a write that ends with STOP and has at least 2 bytes is taken to
+    end with a PEC, which is checked. More bytes read than it has: 0xFF.
+    stretch: hold SCL low that long (ns) after every ACK it sends; hang =
+    (k, ns): after the k-th byte of a transaction hold SCL low for ns. As
+    SMBus asks, it resets itself when SCL has been low for 35 ms.
+
+    transactions: [{t, write (bytes after the address + W), read (bytes it
+    sent), acks (the master's ACK bits after them), pec_ok (writes), sr
+    (a repeated START was used), aborted}]."""
+
+    def __init__(self, addr, regs=None, pec=True, stretch=0.0, hang=None, nack_after=None):
+        self.addr, self.regs, self.pec = addr, dict(regs or {}), pec
+        self.stretch, self.hang, self.nack_after = stretch, hang, nack_after
+        self.prev_scl, self.prev_sda = 1, 1
+        self.sda_out, self.scl_hold_until = 1, None
+        self.mode, self.bit, self.shift = "idle", 0, 0
+        self.tr, self.transactions = None, []
+        self.t_scl_low = None
+        self.bytes_in_tr = 0
+
+    # -- helpers
+    def _seen(self, b):
+        self.tr["bus"].append(b)
+
+    def _finish(self, aborted=False):
+        tr = self.tr
+        if tr is None:
+            return
+        tr["aborted"] = aborted
+        if not tr["read"] and len(tr["write"]) >= 2 and self.pec and not aborted:
+            body = bytes([self.addr << 1]) + tr["write"][:-1]
+            tr["pec_ok"] = smbus_pec(body) == tr["write"][-1]
+        self.transactions.append(tr)
+        self.tr = None
+
+    def _next_read_byte(self):
+        tr = self.tr
+        if tr["out"]:
+            return tr["out"].pop(0)
+        return 0xFF
+
+    def step(self, t, scl, sda):
+        # SMBus T_TIMEOUT: SCL low for 35 ms resets the device
+        if scl == 0:
+            if self.t_scl_low is None:
+                self.t_scl_low = t
+            elif t - self.t_scl_low > 35e6 and self.mode != "idle":
+                self._finish(aborted=True)
+                self.mode, self.sda_out, self.scl_hold_until = "idle", 1, None
+        else:
+            self.t_scl_low = None
+        if scl and self.prev_scl and sda != self.prev_sda:      # START / STOP
+            if sda == 0:
+                if self.tr is not None:
+                    self.tr["sr"] = True
+                    self.mode = "addr"
+                else:
+                    self.mode = "addr"
+                self.bit, self.shift, self.sda_out = 0, 0, 1
+            else:
+                if self.mode != "idle" or self.tr is not None:
+                    self._finish()
+                self.mode, self.sda_out = "idle", 1
+        elif scl and not self.prev_scl:                            # SCL rises: sample
+            self._rise(t, sda)
+        elif not scl and self.prev_scl:                            # SCL falls: drive
+            self._fall(t)
+        self.prev_scl, self.prev_sda = scl, sda
+        hold = self.scl_hold_until is not None and t < self.scl_hold_until
+        return (0 if hold else 1), self.sda_out
+
+    def _rise(self, t, sda):
+        if self.mode in ("addr", "write"):
+            if self.bit < 8:
+                self.shift = (self.shift << 1) | sda
+            self.bit += 1
+        elif self.mode == "read":
+            self.bit += 1
+            if self.bit == 9:                       # the master's ACK bit for the byte we sent
+                self.tr["read"] += bytes([self.cur])
+                self.tr["acks"].append(sda)
+                self.ack = sda
+
+    def _fall(self, t):
+        m = self.mode
+        if m in ("addr", "write"):
+            if self.bit == 8:                                      # a byte: ACK it?
+                b = self.shift & 0xFF
+                if m == "addr":
+                    if b >> 1 != self.addr:
+                        self.mode, self.sda_out = "ignore", 1
+                        return
+                    if self.tr is None:
+                        self.tr = {"t": t, "write": b"", "read": b"", "acks": [], "pec_ok": None, "sr": False,
+                                   "bus": [], "out": []}
+                        self.bytes_in_tr = 0
+                    self._seen(b)
+                    self.rw = b & 1
+                    if self.rw:
+                        cmd = self.tr["write"][0] if self.tr["write"] else None
+                        data = list(self.regs.get(cmd, b""))
+                        if self.pec:
+                            data = data + [smbus_pec(bytes(self.tr["bus"]) + bytes(data))]
+                        self.tr["out"] = data
+                    self.sda_out = 0
+                else:
+                    self._seen(b)
+                    self.tr["write"] += bytes([b])
+                    self.sda_out = 0 if (self.nack_after is None or len(self.tr["write"]) <= self.nack_after) else 1
+                self.bytes_in_tr += 1
+            elif self.bit == 9:                                    # after our ACK
+                self.sda_out = 1
+                self._after_ack(t)
+                if m == "addr":
+                    self.mode = "read" if self.rw else "write"
+                    if self.rw:
+                        self._load_byte()
+                        return
+                self.bit, self.shift = 0, 0
+        elif m == "read":
+            if self.bit < 8:
+                self.sda_out = (self.cur >> (7 - self.bit)) & 1
+            elif self.bit == 8:
+                self.sda_out = 1                                   # the master's ACK bit
+            elif self.bit == 9:
+                if self.ack == 0:
+                    self._load_byte()
+                else:
+                    self.mode, self.sda_out = "done", 1
+
+    def _load_byte(self):
+        self.cur = self._next_read_byte()
+        self.bit = 0
+        self.sda_out = (self.cur >> 7) & 1
+
+    def _after_ack(self, t):
+        hold = self.stretch
+        if self.hang is not None and self.bytes_in_tr == self.hang[0]:
+            hold = self.hang[1]
+        if hold:
+            self.scl_hold_until = t + hold
