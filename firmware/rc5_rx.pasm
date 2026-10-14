@@ -20,7 +20,7 @@
 ;
 ; RX FIFO: a frame: 1 << 16 | the 14 bits (S1 in bit 13, S2, T, A4..A0,
 ; C5..C0); an error: 2 << 16 | bits still expected (the frame is dropped).
-; A full RX FIFO drops the word and sets flag FOV. pe.postfreeze3.rc5_decode_word.
+; A full RX FIFO drops the word and sets flag FOV. pe.postfreeze3.rc5_record.
 ;
 ; r0 = bits left, r1 = scratch, r3 = timeouts; the ISR collects the bits.
 ;

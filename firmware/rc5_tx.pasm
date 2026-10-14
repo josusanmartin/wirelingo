@@ -37,6 +37,7 @@
 ; @deadline duty from=on to=off min=1 max=1 unit=tick "on for 1 tick of 3"
 ; @deadline half from=half to=half avoid=frame_end min=96 max=96 unit=tick reach=conditional "every half bit: 32 carrier periods"
 ; @deadline frame from=first to=first stall=next:0 min=12288 max=12288 unit=tick "frame to frame: 64 bits (113.78 ms)"
+; @deadline build from=next to=first min=139 max=139 unit=tick "the word pulled -> the frame's first half (S1: a space)"
 .program rc5_tx
 .side_set 1 opt
 .shift_out left 29
