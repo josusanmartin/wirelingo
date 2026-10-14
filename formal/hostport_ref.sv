@@ -134,6 +134,10 @@ module hostport_ref (
   always @(*) begin
     if (init) assume (ph == 2'd0);
     if (sck != sck_q) assume (!ph[0]);
+`ifdef COVER1
+    // the long 1-bit covers: SCK rises half a clk before a clk rise only
+    if (sck_rise) assume (ph == 2'd0);
+`endif
   end
 `endif
 

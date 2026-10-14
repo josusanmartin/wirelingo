@@ -110,25 +110,75 @@ reach the RTL's internals through `connect -set` after `flatten`. They are
 assertions like the properties, so they are proved too; they are not part of
 the specification.
 
-Runtime: TBD.
+The RTL under proof is `src/pe_hostport.sv` as taped out (sha256
+`05d2313596c411aecee3a733b63b0de02c9994a2aa947811edb1794868b28c38`),
+unchanged by this work.
+
+Runtime (single-threaded): `prove` 113 s and `cover` 187 s on runner1
+(Core i5-13500); about 3 min and 515 s on a shared AMD EPYC 7282. The whole
+`make -C formal`, which the CI job "Formal proofs and covers" runs, took
+456 s on runner1 (9 of 9 tasks PASS; the job now expects 9).
 
 ## Covers (non-vacuity)
 
-`make -C formal hostport_ref` also runs task `cover`; `hostport_ref_cover1`
-covers the 1-bit transactions, which need more steps. Both use a guided
-subset of the contract (fixed start phase, SCK edges with a clk rise or half
-a clk from one), so every trace they find is a legal one.
+`make -C formal hostport_ref` also runs task `cover` (depth 230);
+`make -C formal hostport_ref_cover1` covers the 1-bit transactions (depth
+300, slow, not in `all`). Both use a guided subset of the contract (fixed
+start phase, SCK edges only with a clk rise or half a clk from one), so every
+trace they find is a legal one. Each property's trigger is reached:
 
-TBD table.
+| Cover | Step |
+|---|---|
+| quad WRITE: second word written, at addr + 1 | 146 |
+| quad WRITE_FIXED: second word written, at addr | 146 |
+| quad READ: second word committed | 178 |
+| quad READ_FIXED: second word committed | 178 |
+| CS_n rises mid-word after one complete word; the read is cancelled | 158 |
+| CS_n rises mid-word in a write after one complete word | 110 |
+| reset asserted with two read words snapped | 99 |
+| reset asserted with a write word in flight | 101 |
+| a write completes after a reset hit a counted transaction | 170 |
+| a read word is committed after a reset hit a counted transaction | 202 |
+| a write completes after SCK ran in a transaction held through reset | 122 |
+| quad drivers on | 100 |
+| a write after exactly LW (4 clk) | 118 |
+| a commit after exactly LC | 150 |
+| a cancel after exactly LX | 90 |
+| 1-bit WRITE: a word written (`cover1`) | COVER1W |
+| 1-bit READ: a word committed (`cover1`) | COVER1R |
+
+The last three rows of the first group show the latency bounds are reached,
+so 4 clk is exact for this contract.
 
 ## Mutation check
 
-`make -C formal hostport_mutants` (`formal/hostport_mutants.py`) plants one
-bug at a time in a scratch copy of `pe_hostport.sv` (outside `src/`) and runs
-task `bmc` (guided, `abc bmc3`, properties only, no lemmas): every mutant must
-produce a counterexample trace that violates a specification property.
+`make -C formal hostport_mutants` (`formal/hostport_mutants.py`, `JOBS=2` by
+default) plants one bug at a time in a scratch copy of `pe_hostport.sv`
+(outside `src/`), first checks that the unmutated RTL passes `prove`, then
+runs task `mutant` for each: the guided subset of the contract, the
+specification properties of one group only (no lemmas), up to 240 steps.
+There, a violation sets a sticky flag that is asserted at the last step, so
+the solver answers one satisfiable query instead of proving every
+intermediate step; a mutant is killed only by a counterexample trace. The
+groups are P1A/P2A (operations, addresses, order, latency), P1D/P2D (data),
+P3, P5, P6.
 
-TBD table.
+| Mutant (one-line change) | Group | Violated at step |
+|---|---|---|
+| WRITE_FIXED increments the address | P1A | 174 |
+| READ_FIXED increments the snapshot address | P2A | MUT_FRI |
+| quad nibble bits reversed on input | P1A | MUT_QNR |
+| quad write data rotated by a nibble | P1D | MUT_QWD |
+| read word toggles its commit one SCK early | P2A | 142 |
+| CS_n rising does not close the read (only the next address does) | P3 | MUT_CRN |
+| a read's commit address not loaded from the new address | P2A | 150 |
+| `host_ready` set right after reset, without seeing CS_n high | P1A | 126 |
+
+Each trace was checked by hand for two of them: with the commit-early
+mutant the commit comes while the host has clocked 7 of 8 nibbles; with
+`host_ready` set early, a transaction selected across reset (CS_n fell
+during reset) gets its write executed, which is review finding R3. All eight
+are killed; the run took MUT_TIME on runner1 with 4 jobs.
 
 ## Not proved
 
