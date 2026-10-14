@@ -114,18 +114,20 @@ The RTL under proof is `src/pe_hostport.sv` as taped out (sha256
 `05d2313596c411aecee3a733b63b0de02c9994a2aa947811edb1794868b28c38`),
 unchanged by this work.
 
-Runtime (single-threaded): `prove` 113 s and `cover` 187 s on runner1
-(Core i5-13500); about 3 min and 515 s on a shared AMD EPYC 7282. The whole
-`make -C formal`, which the CI job "Formal proofs and covers" runs, took
-456 s on runner1 (9 of 9 tasks PASS; the job now expects 9).
+Runtime (each task single-threaded): `prove` 113 s and `cover` 187 s on
+runner1 (Core i5-13500, otherwise idle); about 3 min and 515 s on a shared
+AMD EPYC 7282. The whole `make -C formal`, which the CI job "Formal proofs
+and covers" runs, took 456 s on runner1 (9 of 9 tasks PASS; the job now
+expects 9), 634 s with two other jobs beside it.
 
 ## Covers (non-vacuity)
 
 `make -C formal hostport_ref` also runs task `cover` (depth 230);
 `make -C formal hostport_ref_cover1` covers the 1-bit transactions (depth
-300, slow, not in `all`). Both use a guided subset of the contract (fixed
-start phase, SCK edges only with a clk rise or half a clk from one), so every
-trace they find is a legal one. Each property's trigger is reached:
+300; 1551 s on runner1, so not in `all`). Both use a guided subset of the contract (fixed
+start phase, SCK edges only with a clk rise or half a clk from one; for
+`cover1` SCK rises only half a clk before a clk rise), so every trace they
+find is a legal one. Each property's trigger is reached:
 
 | Cover | Step |
 |---|---|
@@ -144,8 +146,8 @@ trace they find is a legal one. Each property's trigger is reached:
 | a write after exactly LW (4 clk) | 118 |
 | a commit after exactly LC | 150 |
 | a cancel after exactly LX | 90 |
-| 1-bit WRITE: a word written (`cover1`) | COVER1W |
-| 1-bit READ: a word committed (`cover1`) | COVER1R |
+| 1-bit WRITE: a word written (`cover1`) | 258 |
+| 1-bit READ: a word committed (`cover1`) | 290 |
 
 The last three rows of the first group show the latency bounds are reached,
 so 4 clk is exact for this contract.
@@ -163,22 +165,25 @@ intermediate step; a mutant is killed only by a counterexample trace. The
 groups are P1A/P2A (operations, addresses, order, latency), P1D/P2D (data),
 P3, P5, P6.
 
-| Mutant (one-line change) | Group | Violated at step |
+| Mutant (one-line change) | Group | First violation in the trace found |
 |---|---|---|
 | WRITE_FIXED increments the address | P1A | 174 |
-| READ_FIXED increments the snapshot address | P2A | MUT_FRI |
-| quad nibble bits reversed on input | P1A | MUT_QNR |
-| quad write data rotated by a nibble | P1D | MUT_QWD |
+| READ_FIXED increments the snapshot address | P2A | 210 |
+| quad nibble bits reversed on input | P1A | 214 |
+| quad write data rotated by a nibble | P1D | 226 |
 | read word toggles its commit one SCK early | P2A | 142 |
-| CS_n rising does not close the read (only the next address does) | P3 | MUT_CRN |
+| CS_n rising does not close the read (only the next address does) | P3 | 181 |
 | a read's commit address not loaded from the new address | P2A | 150 |
 | `host_ready` set right after reset, without seeing CS_n high | P1A | 126 |
 
-Each trace was checked by hand for two of them: with the commit-early
-mutant the commit comes while the host has clocked 7 of 8 nibbles; with
-`host_ready` set early, a transaction selected across reset (CS_n fell
-during reset) gets its write executed, which is review finding R3. All eight
-are killed; the run took MUT_TIME on runner1 with 4 jobs.
+The step is where the trace the solver returned first violates the group,
+not the shortest possible. Four traces were read by hand: the fixed write's
+second word goes to addr + 1; the early commit comes while the host has
+clocked 7 of 8 nibbles; the first read after reset commits word 0 at the
+reset value of the commit address; and with `host_ready` set early, a
+transaction selected during reset gets its write executed (the case of
+review finding R3). All eight are killed; the run, including the baseline
+proof, took 269 s on runner1 with `JOBS=2`.
 
 ## Not proved
 
