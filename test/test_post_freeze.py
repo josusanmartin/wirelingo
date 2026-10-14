@@ -130,8 +130,10 @@ async def pf_dmx512(dut):
                   f"slots {got[0]['slots']}, break to break {got[0]['break_to_break'] / 1e3} us, "
                   f"grid error max {max(abs(e) for e in got[0]['grid_err'])} ns")
     assert bytes(got[0]["slots"]) == slots and not got[0]["errors"]
-    assert got[0]["brk"] == 176e3 and got[0]["mab"] == 12e3 and got[0]["break_to_break"] == 1204e3
-    assert max(abs(e) for e in got[0]["grid_err"]) == 0
+    # exact in RTL; with SDF the pad's rise and fall delays differ by ~0.2 ns
+    assert abs(got[0]["brk"] - 176e3) < 1 and abs(got[0]["mab"] - 12e3) < 1
+    assert abs(got[0]["break_to_break"] - 1204e3) < 1
+    assert max(abs(e) for e in got[0]["grid_err"]) < 1
     assert bytes(got[1]["slots"]) == b"\x00\x99"
 
 
@@ -321,7 +323,9 @@ async def pf_wiegand(dut):
     assert [g["bits"] for g in got] == want and all(g["valid"] and not g["error"] for g in got)
     dec = pf.wiegand_decode(pads.log["uio"], gap_ns=1e6)
     assert [b for _, b, _, _ in dec] == want
-    assert {w for _, _, ws, _ in dec for w in ws} == {50e3} and {i for _, _, _, iv in dec for i in iv} == {200e3}
+    # to the ns: exact in RTL; with SDF the two lines' pad delays differ by < 0.1 ns
+    assert {round(w) for _, _, ws, _ in dec for w in ws} == {50000}
+    assert {round(i) for _, _, _, iv in dec for i in iv} == {200000}
     if HAVE_SIGROK:
         sg, bad = sigrok.wiegand(pads.trace({"d0": ("uio", 0), "d1": ("uio", 1)}), "d0", "d1",
                                  bitwidth_ms=1, res_ps=100_000)
