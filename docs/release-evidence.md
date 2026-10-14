@@ -6,7 +6,48 @@ run constraint, electrical limits, complete functional GL, timing-annotated
 tests at the requested operating clocks, and precheck of the exact GDS.
 Passing tests do not override a failed physical check.
 
-## Generate evidence
+## One command
+
+On the compute runner, make a real git clone of the commit to certify (not an
+rsync copy) and run the orchestrator from it:
+
+```sh
+git clone -q --no-checkout "$REPO" "$V" && git -C "$V" checkout -q --detach "$REV"
+"$V"/flow/release_evidence.py "$RUN" --validation-root "$V"
+# or let it clone REV itself:  flow/release_evidence.py "$RUN" --validation-commit "$REV"
+```
+
+It runs the seven receipt jobs below (functional GL; SDF `standard` and `v2`;
+`test_usb_autonomous` and `test_usb_autonomous_fs` with SDF at typ, slow and
+fast at 20.834 ns; precheck), each in its own fresh output directory, with
+at most `--jobs` (default 6) simulator processes at once: the standard set
+counts 4, v2 counts 6, every other job 1. GL starts first (48 minutes for fo6
+on a quiet runner). With the default budget, v2 starts only after GL ends;
+`--jobs 7` lets them overlap.
+The runners' environment variables (`TESTS`, `MODULE`, `SLOW_CLK_NS`,
+`NEGATIVE_CLK_NS`, `VALIDATION_ROOT`, ...) are set explicitly, never inherited.
+Each receipt is taken from its own job's log and must sit in an output
+directory that did not exist before the run; an older receipt is never used.
+Then it runs `release_check.py` against the real `RUN` path and writes
+`verdict.json`, `release-check.log`, `release-evidence.log` and `logs/<job>.log`
+into the work directory (default `rcpt-<run>-<rev>-<UTC>` next to the clone).
+On a pass, `flow/archive_evidence.py` re-verifies every receipt and packs
+`wirelingo-release-evidence-<rev>-<run>.tar.gz` next to the work directory.
+Add `--repro RUN2` (repeatable) for a reproduction run's candidate files and
+`--extra FILE` for files such as a reproduction comparison. A failed job,
+a missing or stale receipt, or a failed gate exits 1 and builds no archive.
+The work directory and archive must not exist; nothing is overwritten.
+
+The physical run is only read. `gl_test.sh` writes its output under the run
+worktree it is given, so the orchestrator hands the runners a view: a
+directory of symlinks to the run's entries with a private `test/`. It checks
+that the view yields exactly the run's candidate file hashes before starting.
+Precheck defaults: `--tt-root RUN/tt`, `--flow-python
+~/protoemu-flow/protoemu/.venv-flow/bin/python`, `--klayout-dir
+~/protoemu-flow/kbin` (the docker wrapper), `--pdk-root $PDK_ROOT` or `~/ttpdk`;
+`--sim-path ~/tools/oss-cad-suite/bin` for Icarus and cocotb.
+
+## Generate evidence by hand
 
 Run these commands on the compute runner. `RUN` is a completed hardening
 worktree with `runs/wokwi/final`, not an intermediate checkpoint. The SDF
@@ -137,6 +178,38 @@ new receipt after the fact: rerun the corresponding wrapper. Fixtures and
 tool substitutes in the Python tests verify failure handling only; they are
 not chip validation. The runners' real artifact results must be recorded
 separately.
+
+## Recorded release: fo6 with software f1cb7c9 (2026-10-14)
+
+Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`), validation root
+`f1cb7c9` = main `9c7aeae` plus `flow/release_evidence.py`,
+`flow/archive_evidence.py`, their tests and this document. Generated with the
+one command above on runner1 (clone `~/protoemu-flow/rel-f1cb7c9`, work
+directory `~/protoemu-flow/rcpt-fo6-f1cb7c9-20261014T045116Z`), 63 minutes
+with at most 6 simulator processes, all from fresh output directories:
+
+| Job | Result | Receipt |
+| --- | --- | --- |
+| functional GL | test 25/25, test_pio 2/2, test_eth_service 2/2 | `rcpt-…/candidate/test/sim_build/gl.vd8Mgr` |
+| SDF standard | typ/slow/fast 20 ns 5/5 each; slow 10 ns control fails as required | `rel-f1cb7c9/test/sim_build/gl_sdf.KVmaYm` |
+| SDF v2 | typ/slow/fast 20 ns 3/3, USB FS 20.834 ns 1/1 each | `rel-f1cb7c9/test/sim_build/gl_sdf.IiPCW7` |
+| autonomous USB, SDF | LS + FS enumeration 2/2 at 20.834 ns: typ, slow, fast | `gl_sdf.OQongm`, `gl_sdf.kwggKU`, `gl_sdf.0T2DPo` |
+| precheck | pass for the private GDS copy | `rcpt-…/precheck` |
+
+`release_check.py` against the real fo6 path with all seven receipts:
+`RELEASE PASSED (SDF profile v2, slow target 50 MHz)`, no waiver. The firmware,
+tool and test changes since `d916d40` introduced no GL or SDF regression. fo6
+itself was only read. Physical-build inputs (`src/`, the existing `flow/`
+scripts, `info.yaml`, the LibreLane plugin) are byte-identical in `f6b8ca0`,
+`d916d40` and `f1cb7c9`, so the ci7 reproduction (identical netlist and
+normalized GDS) still applies. The archive
+`wirelingo-release-evidence-f1cb7c9-fo6.tar.gz` (sha256 `091a1070…4209a`,
+461 payload files; runner1 `~/protoemu-flow/` and `[home directory redacted]/`) keeps every
+hashed input and result, the job logs, verdict and source bundle, the ci7
+candidate files and the reproduction comparison. Extracted elsewhere, its
+own `release_check.py` re-verifies all seven receipts and passes. A later
+commit that touches only docs keeps the same validation inputs; any change
+to `test/`, `tools/`, `firmware/` or `src/` needs a new run.
 
 ## Recorded release: fo6 with software d916d40 (2026-10-13)
 

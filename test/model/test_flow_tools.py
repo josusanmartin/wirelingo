@@ -199,3 +199,272 @@ def test_fpga_profile_replaces_asic_primitives(tmp_path):
     assert "`define PE_FLOP_IMEM" in project and "`define PE_NCORES 1" in project
     with pytest.raises(ValueError):
         fpga.stage(tmp_path / "fpga")                    # never overwrites
+
+
+# --- flow/release_evidence.py and flow/archive_evidence.py: the pure parts,
+# with fixture receipts and fake processes (never real EDA).
+
+def flow_module(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "flow" / f"{name}.py")
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+def evidence_args(tmp_path, *extra):
+    run = tmp_path / "protoemu-exp-fx"
+    (run / "runs/wokwi/final").mkdir(parents=True, exist_ok=True)
+    (run / "tt/precheck").mkdir(parents=True, exist_ok=True)
+    (run / "tt/precheck/precheck.py").write_text("")
+    for name in ("python", "kbin/klayout", "pdk/.keep"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("")
+    return [str(run), "--flow-python", str(tmp_path / "python"), "--klayout-dir", str(tmp_path / "kbin"),
+            "--pdk-root", str(tmp_path / "pdk"), *extra]
+
+
+def git_clone(tmp_path):
+    origin = tmp_path / "origin"
+    (origin / "test").mkdir(parents=True)
+    (origin / "test/test.py").write_text("x = 1\n")
+    subprocess.run(["git", "init", "-q", str(origin)], check=True)
+    subprocess.run(["git", "-C", str(origin), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(origin), "-c", "user.name=T", "-c", "user.email=t@example.invalid",
+                    "commit", "-qm", "v"], check=True)
+    clone = tmp_path / "V"
+    subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
+    return clone
+
+
+def test_release_evidence_arguments_and_preflight_refusals(tmp_path):
+    ev = flow_module("release_evidence")
+    with pytest.raises(SystemExit):
+        ev.parse_args(evidence_args(tmp_path))                     # needs a validation source
+    with pytest.raises(SystemExit):
+        ev.parse_args(evidence_args(tmp_path, "--validation-root", "a", "--validation-commit", "b"))
+    with pytest.raises(SystemExit):
+        ev.parse_args(evidence_args(tmp_path, "--validation-commit", "HEAD", "--jobs", "0"))
+    clone = git_clone(tmp_path)
+    a = ev.parse_args(evidence_args(tmp_path, "--validation-root", str(clone)))
+    assert a.tt_root == a.run / "tt" and a.jobs == 6
+    work, archive = ev.default_paths(a, "abc1234", ev.datetime(2026, 10, 14, 6, 0, tzinfo=ev.timezone.utc))
+    assert work == tmp_path / "rcpt-fx-abc1234-20261014T060000Z"
+    assert archive == tmp_path / "wirelingo-release-evidence-abc1234-fx.tar.gz"
+    assert ev.preflight(a, clone, work, archive) == []
+    # an rsync copy (no .git), a dirty clone, existing outputs: refused up front
+    copy = tmp_path / "copy"
+    shutil.copytree(clone, copy, ignore=shutil.ignore_patterns(".git"))
+    assert any("not a real git clone" in p for p in ev.preflight(a, copy, work, archive))
+    (clone / "test/new.py").write_text("")
+    assert any("uncommitted" in p for p in ev.preflight(a, clone, work, archive))
+    (clone / "test/new.py").unlink()
+    work.mkdir()
+    archive.write_text("old")
+    problems = ev.preflight(a, clone, work, archive)
+    assert any("work directory exists" in p for p in problems)
+    assert any("refusing to overwrite" in p for p in problems)
+    shutil.rmtree(a.run / "runs")
+    assert any("not a completed hardening run" in p for p in ev.preflight(a, clone, work, archive))
+
+
+def test_release_evidence_plan_sets_every_runner_variable(tmp_path):
+    ev = flow_module("release_evidence")
+    a = ev.parse_args(evidence_args(tmp_path, "--validation-commit", "HEAD"))
+    inherited = dict(PATH="/usr/bin", SLOW_CLK_NS="23", TESTS="test_id", MODULE="test_sigrok",
+                     VALIDATION_ROOT="/elsewhere", NEGATIVE_CLK_NS="30", HOME="/home/x")
+    jobs = ev.plan_jobs(a, tmp_path / "view", tmp_path / "V", tmp_path / "work", base_env=inherited)
+    by = {j.name: j for j in jobs}
+    assert sorted(by) == ["gl", "precheck", "sdf_auto_fast", "sdf_auto_slow", "sdf_auto_typ",
+                          "sdf_standard", "sdf_v2"]
+    assert jobs[0].name == "gl"                                    # the longest job starts first
+    assert [by[n].kind for n in ("gl", "precheck", "sdf_v2")] == ["gl", "precheck", "sdf"]
+    assert by["sdf_v2"].weight == 6 and by["sdf_standard"].weight == 4
+    assert by["gl"].argv[-2:] == [str(tmp_path / "view"), str(tmp_path / "V")]
+    assert by["sdf_standard"].argv[-1] == "standard" and by["sdf_v2"].argv[-1] == "v2"
+    for corner in ("typ", "slow", "fast"):
+        job = by[f"sdf_auto_{corner}"]
+        assert job.argv[-2:] == [corner, "20.834"]
+        assert job.env["TESTS"] == "test_usb_autonomous test_usb_autonomous_fs"
+    for job in jobs:
+        assert job.env["HOME"] == "/home/x"
+        assert "SLOW_CLK_NS" not in job.env and "NEGATIVE_CLK_NS" not in job.env and "MODULE" not in job.env
+        if not job.name.startswith("sdf_auto"):
+            assert "TESTS" not in job.env
+        if job.kind == "sdf":
+            assert job.env["VALIDATION_ROOT"] == str(tmp_path / "V")
+        else:
+            assert "VALIDATION_ROOT" not in job.env
+    assert by["gl"].env["PATH"].startswith(a.sim_path)
+    assert by["precheck"].env["PATH"].startswith(str(tmp_path / "kbin"))
+    assert by["precheck"].env["PDK_ROOT"] == str(tmp_path / "pdk")
+    assert by["precheck"].argv[-1] == str(tmp_path / "work/precheck")
+
+
+def test_release_evidence_view_leaves_the_run_untouched(tmp_path):
+    from test_release_evidence import candidate
+    ev = flow_module("release_evidence")
+    wt = candidate(tmp_path)
+    before = sorted(str(p.relative_to(wt)) for p in wt.rglob("*"))
+    view = ev.make_view(wt, tmp_path / "view")
+    assert (view / "test/sim_build").is_dir() and not (view / "test").is_symlink()
+    assert (view / "runs").is_symlink() and (view / "src").is_symlink()
+    assert sorted(str(p.relative_to(wt)) for p in wt.rglob("*")) == before
+    with pytest.raises(FileExistsError):
+        ev.make_view(wt, view)
+
+
+def test_release_evidence_collects_only_the_fresh_receipt(tmp_path):
+    from test_release_evidence import candidate, gl_output
+    ev = flow_module("release_evidence")
+    rec = flow_module("release_receipts")
+    wt = candidate(tmp_path)
+    parent = wt / "test/sim_build"
+    parent.mkdir(parents=True)
+    stale = gl_output(wt, parent / "gl.old")
+    rec.finish(stale)
+    job = ev.Job("gl", "gl", [], 1, out_parent=parent)
+    existing = ev.snapshot([job])
+    started = ev.time.time() - 1
+    out = gl_output(wt, parent / "gl.new")
+    receipt = rec.finish(out)
+    log = lambda o, extra="": f"netlist 0123  cores=2  outputs {o}\nreceipt: {o}/receipt.json\n{extra}"
+    assert ev.collect_receipt(job, log(out), existing, started) == receipt
+    with pytest.raises(ValueError, match="existed before"):
+        ev.collect_receipt(job, log(stale), existing, started)
+    with pytest.raises(ValueError, match="one receipt line"):
+        ev.collect_receipt(job, log(out, f"receipt: {stale}/receipt.json\n"), existing, started)
+    with pytest.raises(ValueError, match="one receipt line"):
+        ev.collect_receipt(job, f"netlist 0123 outputs {out}\n", existing, started)
+    with pytest.raises(ValueError, match="not in its output directory"):
+        ev.collect_receipt(job, f"x outputs {out}\nreceipt: {stale}/receipt.json\n", existing, started)
+    with pytest.raises(ValueError, match="not a completed sdf receipt"):
+        ev.collect_receipt(ev.Job("s", "sdf", [], 1, out_parent=parent), log(out), existing, started)
+    with pytest.raises(ValueError, match="not under"):
+        ev.collect_receipt(ev.Job("gl", "gl", [], 1, out_parent=tmp_path), log(out), existing, started)
+    with pytest.raises(ValueError, match="predates"):
+        ev.collect_receipt(job, log(out), existing, ev.time.time() + 60)
+    pre = ev.Job("precheck", "gl", [], 1, out=out)
+    assert ev.collect_receipt(pre, f"precheck outputs: {out}\nreceipt: {receipt}\n", set(), started) == receipt
+    with pytest.raises(ValueError, match="not the requested"):
+        ev.collect_receipt(ev.Job("precheck", "gl", [], 1, out=stale),
+                           f"precheck outputs: {out}\nreceipt: {receipt}\n", set(), started)
+
+
+def test_release_evidence_scheduler_respects_the_simulator_budget():
+    ev = flow_module("release_evidence")
+    clock = [0.0]
+
+    class Fake:
+        def __init__(self, job):
+            self.end, self.rc = clock[0] + job.duration, job.rc
+
+        def poll(self):
+            return self.rc if clock[0] >= self.end else None
+
+    def job(name, weight, duration, rc=0):
+        j = ev.Job(name, "sdf", [], weight)
+        j.duration, j.rc = duration, rc
+        return j
+
+    jobs = [job("gl", 1, 65), job("auto", 1, 32), job("pre", 1, 5, rc=1), job("std", 4, 15), job("v2", 6, 23),
+            job("huge", 9, 1)]
+    live = []
+
+    def launch(j):
+        live.append(j)
+        return Fake(j)
+
+    def sleep(_):
+        assert sum(min(j.weight, 6) for j in live if j.process.poll() is None) <= 6
+        clock[0] += 1
+
+    results, peak = ev.run_jobs(jobs, 6, launch, clock=lambda: clock[0], sleep=sleep, report=lambda m: None)
+    assert peak <= 6 and set(results) == {j.name for j in jobs}
+    assert results["pre"]["returncode"] == 1 and results["gl"]["returncode"] == 0
+    assert results["v2"]["seconds"] == 23
+
+
+def evidence_bundle(tmp_path):
+    """Fixture receipts sharing one validation root, and the verdict for them."""
+    from test_release_evidence import candidate, sdf_output, precheck_output, xml
+    rec = flow_module("release_receipts")
+    wt = candidate(tmp_path)
+    validator = wt.parent / "validator"
+    (validator / "test").mkdir(parents=True)
+    for name in ("test_pio", "test_eth_service"):
+        shutil.copy(wt / "test" / f"{name}.py", validator / "test")
+    sdf = rec.finish(sdf_output(wt))
+    gl = wt / "test/sim_build/gl.fresh"
+    rec.begin(wt, gl, "gl", validator)
+    shutil.copyfile(wt / "runs/wokwi/final/nl/design.nl.v", gl / "netlist.v")
+    for name in rec.GL_MODULES:
+        (gl / f"{name}.xml").write_text(xml(rec.test_names(validator / "test" / f"{name}.py")))
+        (gl / f"{name}.log").write_text("simulator completed\n")
+    paths = dict(gl=rec.finish(gl), sdf=sdf, precheck=rec.finish(precheck_output(wt)))
+    work = tmp_path / "work"
+    (work / "logs").mkdir(parents=True)
+    for name in ("logs/gl.log", "release-evidence.log", "release-check.log", "source.bundle"):
+        (work / name).write_text(name)
+    verdict = dict(run=str(wt), validation_root=str(validator), validation_head="f" * 40, view=str(wt),
+                   work=str(work), runner_root=str(ROOT / "flow"), exit=0,
+                   verdict="RELEASE PASSED (SDF profile v2, slow target 50 MHz)",
+                   receipts=[dict(job=k, kind=k, path=str(p), sha256=rec.digest(p)) for k, p in paths.items()])
+    (work / "verdict.json").write_text(json.dumps(verdict))
+    assert flow_module("release_check").main([str(wt), "--validation-root", str(validator),
+                                              "--gl-receipt", str(paths["gl"]), "--sdf-receipt", str(paths["sdf"]),
+                                              "--precheck-receipt", str(paths["precheck"])]) == 0
+    return wt, verdict, paths
+
+
+def test_archive_manifest_binds_every_hashed_file_and_never_overwrites(tmp_path):
+    import tarfile
+    ar = flow_module("archive_evidence")
+    rec = flow_module("release_receipts")
+    wt, verdict, paths = evidence_bundle(tmp_path)
+    manifest = ar.Manifest("/")
+    verified = ar.collect(verdict, manifest)
+    assert [v["kind"] for v in verified] == ["gl", "sdf", "precheck"]
+    names = set(manifest.files)
+    rel = lambda p: str(pathlib.Path(p).resolve().relative_to("/"))
+    for kind, path in paths.items():
+        data = rec.read_json(path)
+        for key, root in (("candidate", data["worktree"]), ("validation", data["validation_root"]),
+                          ("runner", data["runner_root"]), ("artifacts", path.parent)):
+            for name, digest in data[key].items():
+                assert manifest.files[rel(pathlib.Path(root) / name)]["sha256"] == digest
+        assert rel(path) in names and rel(path.parent / "inputs.json") in names
+    for name in ("verdict.json", "release-check.log", "source.bundle", "logs/gl.log"):
+        assert rel(tmp_path / "work" / name) in names
+    assert rel(ROOT / "flow/archive_evidence.py") in names
+    output = tmp_path / "evidence.tar.gz"
+    status = ar.write_archive(output, manifest, {"MANIFEST.json": b"{}\n"})
+    assert status["payload_files"] == len(manifest.files) and status["sha256"] == rec.digest(output)
+    with tarfile.open(output) as tf:
+        assert set(tf.getnames()) == names | {"MANIFEST.json"}
+    original = output.read_bytes()
+    with pytest.raises(ValueError, match="refusing to overwrite"):
+        ar.write_archive(output, manifest, {})
+    assert output.read_bytes() == original
+    with pytest.raises(ValueError, match="outside the archive base"):
+        ar.Manifest(tmp_path / "work").add(paths["gl"])
+
+
+@pytest.mark.parametrize("fault", ["artifact", "receipt", "verdict", "missing-precheck"])
+def test_archive_refuses_changed_or_incomplete_evidence(tmp_path, fault):
+    ar = flow_module("archive_evidence")
+    wt, verdict, paths = evidence_bundle(tmp_path)
+    if fault == "artifact":
+        (paths["gl"].parent / "test.log").write_text("edited after the receipt\n")
+    if fault == "receipt":
+        paths["sdf"].write_text(paths["sdf"].read_text() + "\n")
+    if fault == "verdict":
+        verdict.update(exit=1, verdict="RELEASE FAILED:\n- something")
+    if fault == "missing-precheck":
+        verdict["receipts"] = [r for r in verdict["receipts"] if r["kind"] != "precheck"]
+    with pytest.raises(ValueError):
+        ar.collect(verdict, ar.Manifest("/"))
+    # the command-line form refuses the same evidence and writes nothing
+    (tmp_path / "work/verdict.json").write_text(json.dumps(verdict))
+    out = tmp_path / "evidence.tar.gz"
+    assert ar.main([str(tmp_path / "work/verdict.json"), "--output", str(out), "--base", "/"]) == 1
+    assert not out.exists() and not (tmp_path / "work/archive-status.json").exists()
