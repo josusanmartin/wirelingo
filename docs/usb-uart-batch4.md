@@ -6,6 +6,12 @@ banks. The sender must honor READY; acquisition pauses until the report is
 acknowledged. This is a model-tested workload, not continuous UART forwarding.
 The [one-byte mode](usb-uart-byte.md) remains a separate program.
 
+Evidence: one finite scenario on the cycle model
+([below](#measured-finite-model-result)), at a 48 MHz system clock and
+nominal 115,200 baud. It has not run on RTL, at gate level, on the KV260
+FPGA build or on a board; the [four-byte overlap pair](usb-uart-overlap4.md)
+is the variant with an RTL scenario and a measured baud envelope.
+
 ## Load and use
 
 The [cold-load helper](../tools/pe/usb_uart_batch4.py) exposes `assemble()`,
@@ -48,7 +54,7 @@ A good STOP advances the group. A bad STOP discards the suspect byte, restores
 the prior good bytes and sets sticky ERROR. ERROR is separate from the USB
 payload and clears only on cold restart. Four good bytes are retained in R1/R2;
 F7 is set after the first byte and F6 are published. Core 0 clears F6 with WAIT
-before IN8; core 1 observes the clear before changing the virtual pins. This
+before `in pins, 8`; core 1 observes the clear before changing the virtual pins. This
 requires uninterrupted core 0 execution at one clock per tick and exclusive
 pin/flag ownership; it is not an atomic hardware mailbox operation.
 

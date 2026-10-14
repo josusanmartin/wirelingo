@@ -1,45 +1,91 @@
 # One retained UART byte over USB EP0
 
-This optional workload occupies both tapeout cores/banks and the existing
-line/CRC resources. Core1 receives one nominal115200 8N1 UART frame per
-active-high READY grant. Core0 returns that byte through a vendor/device
-control read, retaining it until a matching valid DATA ACK. It is a one-byte
-mailbox with an external admission wire, not a continuous stream or a USB
-class driver. Existing enumeration and UART capture programs are separate
-modes and remain unchanged.
+## Summary
+
+**What it does.** Core 1 receives one 115200-baud 8N1 UART byte for each
+active-high READY grant. Core 0 returns that byte to a USB host through a
+vendor control read on low-speed EP0, and keeps it until the host's DATA ACK.
+It is a one-byte mailbox with an admission wire, not a continuous stream or
+a USB class driver. It occupies both cores and banks; the existing
+enumeration and UART capture programs are separate modes and are unchanged.
+
+**How to use it.**
+
+* Load: `pe.usb_uart_byte.assemble()` builds the two images and
+  `load_writes()` gives the 300 cold host writes that load them and start
+  both cores. Load with both cores disabled.
+* Read: the host sends `vendor_request()`, `c0 01 00 00 00 00 01 00`. An
+  empty slot answers STALL; send a fresh SETUP after the next UART frame.
+* Pins: USB D+ on `uio[0]`, D− on `uio[1]`; UART RX on pin 16 (`ui[0]`) by
+  default, or any other pad input with `rx_pin=`; READY on pin 8 (`uo[0]`),
+  active high.
+* Demo board: `bringup.usb_uart(pe, "byte")` loads a build with RX on
+  `uio[6]`. On the PC, `PYTHONPATH=tools python3 -m pe.usb_uart_reports byte`
+  prints each byte. Wiring is in [info.md](info.md).
+
+**Envelope.** Tested at a 48 MHz system clock and nominal 115200 baud only:
+no baud tolerance, jitter or continuous rate is tested. Capacity is one
+byte, and the sender must wait for READY. In the tests READY rose again
+89–123 clocks after the end of the releasing ACK (cycle model) or 651–689
+clocks after the releasing ACK began (RTL). These are observations from
+finite scenarios, not bounds or a sustained rate. A full slot may stall the
+sender indefinitely.
+
+**Evidence.**
+
+* Cycle model: one fault and recovery scenario
+  (`test/model/test_usb_uart_byte.py`): three good bytes delivered in order
+  through lost and malformed ACKs, a descriptor interleave, deconfigure and
+  reconfigure, a USB detector reset and a bad STOP, judged by an oracle that
+  decodes the raw pads.
+* RTL simulation: one pins-only scenario on the top level (`test_byte_rtl`,
+  Icarus Verilog, behavioral SRAM): four bytes and one bad STOP, identical
+  to the cycle model clock for clock; sigrok's decoders agree. It does not
+  include the model scenario's fault cases.
+* The demo-board build (RX on `uio[6]`): cycle model only.
+* FPGA: the UART half (`uart_rx_mailbox`) ran on the KV260 build with the
+  host standing in for the USB core
+  ([uart-capture-host.md](uart-capture-host.md#on-the-fpga-build-2026-10-14)).
+  The pair has not run there.
+* Not run: gate level, a demo board, a PC, electrical USB or a real UART
+  sender.
+
+## Contract and resources
 
 | Resource | Reservation |
 |---|---|
-| Core0 / bank0 | `usb_uart_byte.pasm`:256words/1024B, no spare words |
-| Core1 / bank1 | `uart_rx_mailbox.pasm`:20words/80B, <=32word budget |
-| USB | LS D+ uio0 / D− uio1; line period32, TURN63, core divider1 |
-| UART | RX logical16 / ui0; nominal115200, eight execution ticks/bit |
-| READY | logical8 / uo0, **active high**; one frame per observed grant |
-| Communication | virtual24..31 owned by core1; core0 IN_BASE24 |
-| Flags | F0..5 USB; F6 sticky discarded bad-STOP; F7 occupied |
-| FIFOs | no runtime queue/service; depth8 profile still charged |
+| Core 0 / bank 0 | `usb_uart_byte.pasm`: 256 words / 1024 B, no spare words |
+| Core 1 / bank 1 | `uart_rx_mailbox.pasm`: 20 words / 80 B, within a 32-word budget |
+| USB | low speed, D+ uio0 / D− uio1; line period 32, TURN 63, core divider 1 |
+| UART | RX logical 16 / ui0; nominal 115200 baud, eight execution ticks per bit |
+| READY | logical 8 / uo0, **active high**; one frame per observed grant |
+| Communication | virtual pins 24..31 owned by core 1; core 0 IN_BASE 24 |
+| Flags | F0..5 USB; F6 sticky discarded bad STOP; F7 occupied |
+| FIFOs | no runtime queue or service; the depth-8 profile is still charged |
 
-The UART divider is `52 + 21/256` clocks/tick (encoded13333), from
-`host.clkdiv_for(48e6, 8*115200)`. This differs slightly from the exact nominal
-source period1250/3 clocks/bit. The finite C23 nominal scenario passed at
-this divider. There is no tolerance, continuous-rate, USB throughput, CPU,
-PPA or physical claim. A full slot may stall the producer indefinitely.
+The UART divider is `52 + 21/256` clocks per tick (encoded 13333), from
+`host.clkdiv_for(48e6, 8*115200)`. This differs slightly from the exact
+nominal source period of 1250/3 clocks per bit. The finite nominal scenario
+below passed at this divider. There is no tolerance, continuous-rate, USB
+throughput, CPU, PPA or physical claim.
 
 ## Cold load and request
 
 `pe.usb_uart_byte.assemble()` returns the two complete images.
-`load_writes()` uses supported tapeout loaders/owner/config writes, cold
-clears flags/outputs, and starts both cores. Use a cold/disabled workload;
-do not apply it to a running capture or enumeration mode. Runtime device-side
-loading-host APIs, FIFO relay and rearm are absent. Normal external USB host
-transactions perform the reads and are a real service cost.
+`load_writes()` uses the supported tapeout loaders, owner and configuration
+writes, cold-clears flags and outputs, and starts both cores. Use a cold or
+disabled workload; do not apply it to a running capture or enumeration mode.
+There is no runtime loading-host API, FIFO relay or rearm on the device side.
+Normal external USB host transactions perform the reads and are a real
+service cost.
 
-`vendor_request()` is `c0 01 00 00 00 00 01 00`: vendor/device IN request1,
-wValue0/wIndex0/wLength1. Firmware ignores wValue/wIndex, clamps wLength to
-0..1 and accepts this optional request in default/addressed/configured state.
-An empty slot STALLs; issue a fresh SETUP after a new UART grant/frame.
-The original18/18-byte descriptors retain zero noncontrol endpoints; this
-is not HID, CDC, bulk or interrupt USB.
+`vendor_request()` is `c0 01 00 00 00 00 01 00`: vendor/device IN request 1,
+wValue 0, wIndex 0, wLength 1. The firmware ignores wValue and wIndex, clamps
+wLength to 0..1 and accepts this optional request in the default, addressed
+and configured states. An empty slot STALLs; issue a fresh SETUP after a new
+UART grant and frame. The original 18-byte device and configuration
+descriptors keep zero non-control endpoints; this is not HID, CDC, bulk or
+interrupt USB.
 
 ### From the demo board and a PC
 
@@ -58,95 +104,105 @@ runs the board code on the cycle model: a pins-only sender on `uio[6]` sends
 `a5 00 ff` and F6 is set, with the host port idle after the load. Model
 evidence only; not yet run on RTL with RX on `uio[6]`, on a board or on a PC.
 
-The mailbox table entry is at37, whose bit3 is clear for initial DATA1.
+The mailbox table entry is at 37, whose bit 3 is clear for the initial DATA1.
 Only its low byte is sent; rotated physical USB inputs in the upper byte
-are not a second stable payload byte. Current single-LR call/return flow is
-preserved; there is no nested supplier call or hardware return stack.
+are not a second stable payload byte. The current single-LR call/return flow
+is preserved; there is no nested supplier call or hardware return stack.
 
 ## Admission, release and recovery
 
-The UART peer must observe READY high, then emit at most one complete8N1
-frame. Idle-high RX is established before READY is granted, followed directly by
-START detection. READY falls after START and stays low while data is pending.
-Good STOP publishes virtual data before setting F7. Bad STOP discards the
-frame, sets F6, waits for idle and offers a new grant. F6 remains sticky until
-cold setup. A peer that transmits while READY is low is outside the lossless
-contract: that byte can be lost, but must not overwrite a pending byte.
-READY is explicitly active high, without an unspecified conventional RTS
-polarity or an implicit in-flight buffer.
+The UART peer must observe READY high, then send at most one complete 8N1
+frame. Idle-high RX is established before READY is granted, followed directly
+by START detection. READY falls after START and stays low while data is
+pending. A good STOP publishes the virtual data before setting F7. A bad STOP
+discards the frame, sets F6, waits for idle and offers a new grant. F6 stays
+set until cold setup. A peer that transmits while READY is low is outside the
+lossless contract: that byte can be lost, but must not overwrite a pending
+byte. READY is explicitly active high; there is no unspecified conventional
+RTS polarity and no implicit in-flight buffer.
 
-Valid ACK/F_SENT and exact one-byte vendor cursor1061 release F7. Lost or
-malformed ACK, another EP0 packet, an abandoned SETUP and wLength0 cannot
-release it. A fresh vendor SETUP re-reads the pending byte. SET_CONFIGURATION
-0/1 and USB reset retain the producer byte/F7; after reset a new default-
-address SETUP starts a new transfer. Cold load starts empty. Release is on
-DATA ACK **before** status completion; application exactly-once delivery
-across USB host failures is not promised. The USB source inherits the final-
-bit dribble guard and its shared EOP/error-indication limitations.
+A valid ACK (F_SENT) at the exact one-byte vendor cursor 1061 releases F7. A
+lost or malformed ACK, another EP0 packet, an abandoned SETUP and wLength 0
+cannot release it. A fresh vendor SETUP re-reads the pending byte.
+SET_CONFIGURATION 0/1 and USB reset keep the producer's byte and F7; after a
+reset, a new default-address SETUP starts a new transfer. Cold load starts
+empty. Release happens on the DATA ACK, **before** status completion, so
+exactly-once delivery to the application across USB host failures is not
+promised. The USB side inherits the final-bit dribble guard and its shared
+EOP and error-indication limits.
 
-## Maintained finite scenario
+## The model scenario
 
-The new `test/model/test_usb_uart_byte.py` declares one serial scenario on
-actual2cores/2banks/256words/depth8 with enabled synchronizers. It enumerates
-once at address5 and drives good0x00/0xa5/0xff, bad-STOP0x3c, and a distinct
-READY-violating0x5a. The nominal UART sender uses rational edge lists and
-only physical READY for admission, with8 clocks observation/reaction and
-completion of any started frame.
+`test/model/test_usb_uart_byte.py` declares one serial scenario on two
+cores, two banks, 256 words and depth 8, with synchronizers enabled. It
+enumerates once at address 5 and drives good 0x00, 0xa5 and 0xff, a bad-STOP
+0x3c, and a separate READY-violating 0x5a. The nominal UART sender uses
+rational edge lists and only the physical READY pin for admission, with 8
+clocks of observation and reaction, and finishes any frame it started.
 
-Before enumeration, a default-address empty-slot probe precedes bad STOP0x3c;
-the next compliant0x00 START is exactly8 system clocks after the NEW physical
-READY rising edge. No USB work or settling is inserted before that witness.
-Enumeration then runs while0x00 is retained. The scenario checks empty-slot
-STALL/fresh-SETUP recovery, lost and malformed
-ACK retry, a descriptor interleave, a deliberate zero-length IN/ZLP ACK probe,
-one maximum valid final-level hold, deconfigure/reconfigure retention, and
-a short USB reset while data is pending. Its144-clock SE0/4800-clock recovery
-is a model detector test, not a normative10ms or electrical reset qualification.
-All nominal USB attempts are accounted; retries are disabled. Complete
-resolved pad windows, direction-tagged packets, READY/UART edges, zero-active-
-API/strobe observations and line RX overflow/ownTX overlap are saved. Internal
-flags/mailbox/PC snapshots corroborate, never decide UART drives or substitute
-for decoded DATA/PID/CRC. Logical consumption means the three matching DATA
+Before enumeration, a default-address empty-slot probe precedes the bad-STOP
+0x3c; the next compliant 0x00 START comes exactly 8 system clocks after the
+new physical READY rising edge. No USB work or settling is inserted before
+that witness. Enumeration then runs while 0x00 is retained. The scenario
+checks:
+
+* empty-slot STALL and recovery by a fresh SETUP;
+* lost and malformed ACK retries;
+* a descriptor interleave;
+* a deliberate zero-length IN/ZLP ACK probe;
+* one maximum valid final-level hold;
+* retention across deconfigure and reconfigure;
+* a short USB reset while data is pending. Its 144-clock SE0 and
+  4800-clock recovery test the model's detector; they are not a normative
+  10 ms or electrical reset qualification.
+
+All nominal USB attempts are accounted for; retries are disabled. Complete
+resolved pad windows, direction-tagged packets, READY and UART edges,
+observations of zero active loading-host API calls and strobes, and line-RX
+overflow and own-TX overlap are saved. Internal flags, mailbox and PC
+snapshots only corroborate; they never decide UART drives or substitute for
+decoded DATA, PID and CRC. Logical consumption means the three matching DATA
 ACK releases in source order, not one physical transmission per byte.
 
-The independent oracle decodes saved pads and CRC, counts all expected
-responses (including errors rather than eventual success), and rejects
-recomputed-CRC retry corruption, early READY/release and an extra nominal
-error repaired by later success. Model evidence for this scenario does not
-qualify concurrent third work, electrical USB/UART, every malformed ending,
-or a continuous rate/phase envelope. No generated bundle is included.
+The independent oracle decodes the saved pads and CRCs, counts every expected
+response (errors included, not only eventual success), and must reject three
+corrupted copies of the saved trace: a retried payload changed with a
+recomputed CRC, an early READY release, and an extra nominal error repaired
+by a later success. The test runs these three controls after its audit.
+This scenario does not qualify concurrent third work, electrical USB or
+UART, every malformed ending, or a continuous rate or phase envelope. No
+generated bundle is included.
 
-## Measured model scope
+### Recorded model run
 
-C23 executed this one fault/recovery scenario once:237290 `Chip.step` calls
-including loading and helpers,19.852919s wall, actual2cores/2banks/256words/
-depth8 and SYNC_BYPASS0. The programs occupy256+20words/1104B and require
-300 cold host writes. Its independent raw-pad oracle decoded155 packets
-from101 external USB-host transactions and consumed0x00/0xa5/0xff in order.
-The post-error0x00 START followed the new physical READY rising edge by8
-system clocks. Three fixed64-clock no-ACK handoffs separated the retained
-DATA EOP-J from descriptor/deconfigure SETUP or detector-reset SE0. Active
-loading APIs, observed loading bus strobes and USB driver overlap were all0.
+One recorded run of this scenario (2026-10-13; see
+[Run history](#run-history)) made 237290 `Chip.step` calls including loading
+and helpers, in 19.852919 s wall time, on two cores, two banks, 256 words,
+depth 8 and SYNC_BYPASS 0. The programs occupy 256 + 20 words / 1104 B and
+need 300 cold host writes. The raw-pad oracle decoded 155 packets from 101
+external USB host transactions and saw 0x00, 0xa5 and 0xff consumed in
+order. The post-error 0x00 START followed the new physical READY rising edge
+by 8 system clocks. Three fixed 64-clock gaps after an unacknowledged
+transfer separated the retained DATA EOP-J from the descriptor and
+deconfigure SETUPs and from the detector-reset SE0. Active loading APIs,
+observed loading bus strobes and USB driver overlap were all 0.
 
-Observed consuming-ACK EOP-J to next READY latencies were89/111/123clocks for
-0x00/0xa5/0xff. These are observations from that one fault/recovery scenario,
-not maximum bounds or a sustained service rate. The 276 line-RX overflow
-events are the device's [own echo](usb-uart-overlap4.md#line-rx-overflow-is-the-devices-own-echo):
-six descriptor replies drop 46 bits each. The test asserts that every dropped
-bit belongs to a device-started receiver frame and that every peer packet
-starts on an empty, idle receiver. External USB-host work remains a
-service cost. Capacity is one byte, core0's256-word bank is full, and sender
-admission still requires physical READY. Beyond the
-[RTL scenario](#rtl-simulation) below, there is no RTL, board, physical
-or continuous-stream qualification.
+Observed latencies from the consuming ACK's EOP-J to the next READY were
+89, 111 and 123 clocks for 0x00, 0xa5 and 0xff. They are observations from
+that one fault and recovery scenario, not maximum bounds or a sustained
+service rate. The 276 line-RX overflow events are the device's
+[own echo](usb-uart-overlap4.md#line-rx-overflow-is-the-devices-own-echo):
+six descriptor replies drop 46 bits each. The test asserts that every
+dropped bit belongs to a receiver frame the device started and that every
+peer packet starts on an empty, idle receiver. External USB host work
+remains a service cost. Capacity is one byte, core 0's 256-word bank is
+full, and sender admission still requires the physical READY pin. Beyond the
+[RTL scenario](#rtl-simulation) below, there is no RTL, board, physical or
+continuous-stream qualification.
 
-C23's saved offline oracle also rejected three mutations: retained retry
-payload changed with recomputed CRC, early READY release and an extra
-nominal error hidden by later success. Its evidence is in
-`evidence/sol-atlas/C23-ATLAS-NOACK-GAP/` (source-frozen.json, dynamic.json,
-saved-audit.json and saved-gaps.json), a team directory that is not part of
-this repository. Historical assembly hypotheses are
-not measured artifact identities.
+That run's evidence is outside this repository; its location is in the
+[Run history](#run-history). Historical assembly hypotheses are not measured
+artifact identities.
 
 ## RTL simulation
 
@@ -180,33 +236,62 @@ The test checks the following against the sender's byte list:
 The model run of the same scenario is identical in reports, packets with
 their clocks, frame and grant clocks, and every pin edge. sigrok decodes the
 saved RTL pins as the same 5 bytes (one framing error) and 53 packets without
-errors. This is RTL simulation with ideal edges. It does not cover the C23
-fault cases (malformed ACK, reset, deconfigure), gate-level timing or
-electrical USB.
+errors. This is RTL simulation with ideal edges. It does not cover the model
+scenario's fault cases (malformed ACK, reset, deconfigure), gate-level timing
+or electrical USB.
 
-## Running the maintained test
+## Running the tests
 
-Ordinary pytest needs no WIRELINGO_EVIDENCE setting. Output uses pytest's
-isolated `tmp_path`; an unset or empty variable selects that default.
-From the repository root, with bytecode suppressed:
+Ordinary pytest needs no `WIRELINGO_EVIDENCE` setting. Output goes to
+pytest's isolated `tmp_path`; an unset or empty variable selects that
+default. From the repository root, with bytecode suppressed:
 
     PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools /usr/bin/python3 -B -m pytest \
       -q -x -p no:cacheprovider test/model/test_usb_uart_byte.py
 
-A nonempty override selects an explicit directory, which the test creates
-if needed. Use a fresh path to retain each run's raw scenario separately:
+A nonempty value selects an explicit directory, which the test creates if
+needed. Use a fresh path to keep each run's raw scenario separately:
 
     PYTHONDONTWRITEBYTECODE=1 WIRELINGO_EVIDENCE=/path/to/new/evidence \
       PYTHONPATH=tools /usr/bin/python3 -B -m pytest -q -x -p no:cacheprovider \
       test/model/test_usb_uart_byte.py
 
-C24 separately qualifies the default-output adapter with this same scenario
-and WIRELINGO_EVIDENCE absent; it compares the newly generated raw trace
-byte-for-byte with C23. The C23 measurements above remain the accepted
-protocol evidence and do not imply a C24 result before that check completes.
-The optional override selection is reviewed in source, without another live
-scenario. Team runs require explicit ticket/resource acceptance and caps;
-ordinary invocation does not grant release approval or a full-suite claim.
+In the recorded runs, the override's handling of an explicit or empty value
+was reviewed in source, not run. A passing run is not a release approval or
+a full-suite result.
 
 The RTL scenario: `make COCOTB_TEST_MODULES=test_usb_uart_rtl
 COCOTB_TEST_FILTER=test_byte_rtl` in `test/`.
+
+## Run history
+
+This feature was developed on 2026-10-13 by a team of agents working in
+numbered tickets (C18, C21, C23, C24) and integrated on `main` as `5131faa`.
+Each ticket ran the scenario at most once, with fixed firmware and oracles.
+
+* **C18**: the first attempt failed before the model was built (a Python
+  import error in the launcher's environment). No model result.
+* **C21**: the scenario ran and failed at the descriptor interleave. The test
+  fixture sent the next SETUP with no gap after an unacknowledged transfer,
+  overlapping the device's own transmission by 32 clocks. That was a test
+  scheduling fault; no firmware defect was established.
+* **C23**: the test schedule gained fixed 64-clock gaps at the three such
+  handoffs, with the same firmware, expected packets and assertions. The
+  scenario passed; the figures in [Recorded model run](#recorded-model-run)
+  are from this run, and its saved trace rejected the three corrupted copies.
+  Its evidence (`source-frozen.json`, `dynamic.json`, `saved-audit.json` and
+  `saved-gaps.json`) is in `evidence/sol-atlas/C23-ATLAS-NOACK-GAP/` under the
+  team's directory, which is not part of this repository. The test then
+  required `WIRELINGO_EVIDENCE` to be set.
+* **C24** made `WIRELINGO_EVIDENCE` optional (default `tmp_path`) and ran the
+  same scenario once without it, on 2026-10-13: 1 passed, 237290 `Chip.step`
+  calls, 19.35 s wall. The raw trace it wrote was byte-identical to C23's
+  (both SHA-256 `ad5baab5…`). The team lead accepted it; the five files of
+  that accepted commit are the ones in `5131faa`. An earlier version of this
+  page, written before C24 ran, called its result pending. The team's
+  records (`evidence/sol-atlas/C24-ATLAS-PYTEST-DEFAULT/` and the lead's
+  acceptance, not part of this repository) show it ran and passed.
+
+Since then the test has gained the line-echo attribution, runs the three
+corruption controls itself, and accepts `rx_pin=` for the board build
+(`a2b79fd`, `708a64a`, `8c889f1`); it runs in the model suite.
