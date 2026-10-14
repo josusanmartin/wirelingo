@@ -49,6 +49,7 @@ sys.path.insert(0, str(HERE))
 import postfreeze_demo as pfd  # noqa: E402  (sets up sys.path for tools/)
 import postfreeze2_demo as p2d  # noqa: E402
 import spi_uart_demo as sud  # noqa: E402
+import usb_replay_demo as urd  # noqa: E402  (imported here: a first import inside a capture takes ms on the Kria)
 from postfreeze_demo import (FIFO, STATUS, PG, SPI, I2C, GPIO, TRIG, PRE, V0, HALTED, FAULT, HwRig,  # noqa: E402
                              ModelRig, check, fw, load, setup, finish, model_clock, split_long, trigger_preamble)
 from postfreeze2_demo import rd, rxn, det, keep, span, ctrl, PLANS  # noqa: E402
@@ -76,7 +77,6 @@ def ctrl_raw(rig, v):
 def go_burst(rig, core, n, div, quad=True):
     """Start the generator and, right after it, one READ_FIXED burst of core's RXF
     (as usb_replay_demo: the two AXI writes back to back)."""
-    import usb_replay_demo as urd
     return urd.go_burst(rig, core, n, div, quad)
 
 
@@ -278,7 +278,8 @@ def ws2812(rig, store):
         lines.append(f"run {run}: {len(cols)} colours right ({' '.join(f'{x:06x}' for x in cols[:4])} ...); "
                      f"T0H {span(t0h, '{:.0f}')} ns, T1H {span(t1h, '{:.0f}')} ns, bit {span(periods, '{:.0f}')} ns, "
                      f"then low {tail / 1e3:.0f} us")
-        det(store, f"ws2812_{run}", colours=got, highs=[round(h * rig.f_clk / 1e9) for h in highs])
+        # (the high times depend on the fractional divider's phase at the trigger: not compared)
+        det(store, f"ws2812_{run}", colours=got)
         keep(store, f"ws2812_{run}", dout=e, t_end=c.t_end)
     return lines
 
@@ -580,7 +581,9 @@ def ps2_device(rig, store):
             check(falls[0] > 3e6, "the device clocked while the host held CLK low")
         lines.append(msg)
         det(store, f"ps2_{'inhibit' if inhibit else 'plain'}", codes=got,
-            clk=[(round(t * rig.f_clk / 1e9), v) for t, v in e["clk"]])
+            # the device's CLK runs from its first fall (integer CLKDIV: exact in clocks)
+            clk_runs=[round((b[0] - a[0]) * rig.f_clk / 1e9) for a, b in zip(e["clk"], e["clk"][1:])
+                      if a[0] >= falls[0]])
         keep(store, f"ps2_{'inhibit' if inhibit else 'plain'}", clk=e["clk"], dat=e["dat"], t_end=t_end)
     return lines
 
@@ -1286,7 +1289,6 @@ def eth10_loop(rig, store):
 @model_clock(50e6)
 def eth10_tx_wave(rig, store):
     """eth10_tx (core 0) on uio3/uio4 (TD+/TD-), sampled every clock by usb_sampler on core 1: Manchester cells, preamble/SFD, frame and FCS, TP_IDL."""
-    import usb_replay_demo as urd
     tx = fw("eth10_tx", F_GO=F_GO)
     samp = asm.assemble((HERE / "usb_sampler.pasm").read_text(), {"TRIG": 2})
     lines = []
@@ -1354,7 +1356,7 @@ def eth10_tx_wave(rig, store):
                  f"(preamble, SFD, frame, FCS ok), every bit 5 clocks with its mid-bit transition; driven runs "
                  f"{halves} clocks (half cells 40/60 ns); link pulse before it {[n * 20 for _, n in pulses]} ns H; "
                  f"TP_IDL: the last H lasts {last_h[1] * 20} ns, then the line is idle")
-    det(store, "eth10_tx_wave", bits=len(bits), start_runs=runs[:40])
+    det(store, "eth10_tx_wave", bits=bits)
     keep(store, "eth10_tx_wave", samples=samples[:20000])
     return lines
 
@@ -1414,9 +1416,8 @@ def sigrok_main(path):
             elif name.startswith("ps2"):
                 pfd.pf.to_trace(tr, [(t + 50e3, v) for t, v in r["clk"]], "clk")
                 pfd.pf.to_trace(tr, [(t + 50e3, v) for t, v in r["dat"]], "data", r["t_end"] + 100e3)
-                anns = sigrok.decode(tr, "ps2:clk=clk:data=data", "ps2=data-bit:data-byte:parity-ok:parity-err",
-                                     res_ps=100_000)
-                print(f"[{name}] sigrok ps2: {[a.text for a in anns if 'Data' in a.text or 'arity' in a.text][:20]}")
+                anns = sigrok.decode(tr, "ps2:clk=clk:data=data", "ps2=word:parity-ok:parity-err", res_ps=100_000)
+                print(f"[{name}] sigrok ps2: {[a.text for a in anns][:24]}")
             elif name.startswith("onewire"):
                 pfd.pf.to_trace(tr, [(t + 50e3, v) for t, v in r["dq"]], "owr", r["t_end"] + 100e3)
                 anns = sigrok.decode(tr, "onewire_link:owr=owr,onewire_network", "onewire_network=text",
@@ -1426,8 +1427,9 @@ def sigrok_main(path):
                 for k in ("tck", "tms", "tdi", "tdo"):
                     pfd.pf.to_trace(tr, [(t + 1e3, v) for t, v in r[k]], k)
                 tr.end(round((r["t_end"] + 2e3) * 1000))
-                anns = sigrok.decode(tr, "jtag:tck=tck:tms=tms:tdi=tdi:tdo=tdo", "jtag=new-state", res_ps=10_000)
-                print(f"[{name}] sigrok jtag states: {' '.join(a.text for a in anns)[:400]}")
+                anns = sigrok.decode(tr, "jtag:tck=tck:tms=tms:tdi=tdi:tdo=tdo", "jtag=bitstring-tdo:bitstring-tdi",
+                                     res_ps=10_000)
+                print(f"[{name}] sigrok jtag bit strings (TDI/TDO): {[a.text for a in anns][:12]}")
         except Exception as e:
             print(f"[{name}] sigrok: {type(e).__name__}: {e}")
 

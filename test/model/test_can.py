@@ -260,7 +260,7 @@ def test_trailing_stuff_frames_have_a_stuff_bit_after_the_crc():
 def test_can_rx_acks_after_a_stuff_bit_that_follows_the_crc():
     """can_rx used to drive its ACK one bit early (in the CRC delimiter) when
     a stuff bit followed the CRC: the transmitter saw no ACK in the slot.
-    Found on the KV260 (fpga/kv260/host/legacy_demo.py, can_rx_gen)."""
+    Found by fpga/kv260/host/legacy_demo.py's model run (can_rx_gen), before the KV260 run."""
     for ident, data in TRAILING_STUFF:
         RXQ.clear()
         mh = setup()

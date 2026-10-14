@@ -57,7 +57,7 @@ def test_ws2812_bit_timing_is_the_documented_one():
     3 ticks high and 7 low (375 / 875 ns), a 1 is 7 high and 3 low. The code
     used to drive a 0 for 2 ticks (250 ns, the bottom of the datasheet window),
     which a fractional divider (6.25 at 50 MHz) pushed out of it (240 ns; found
-    on the KV260, fpga/kv260/host/legacy_demo.py)."""
+    by fpga/kv260/host/legacy_demo.py's model run at 50 MHz, before the KV260 run)."""
     highs, lows = waveform(6 << 8, [0x0F0F0F, 0xF0F0F0], 2 * 24 * 60 + 200)
     assert sorted(set(highs)) == [18, 42], sorted(set(highs))
     assert all(h + lo == 60 for h, lo in zip(highs, lows)), "a bit is 10 ticks"

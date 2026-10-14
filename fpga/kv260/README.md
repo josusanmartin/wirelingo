@@ -719,6 +719,206 @@ model run that overflows the same way.
 49.9983 MHz. Left loaded: `protoemu`, PMOD0/PMOD1 = 0, pe_lab MODE 0, host
 port on the GPIO path (pe_spim SEL 0).
 
+## USB enumeration with a replayed host, no PC (2026-10-14, `host/usb_replay_demo.py`)
+
+The autonomous USB device (`firmware/usb_enum.pasm`,
+[docs/usb-enumeration.md](../../docs/usb-enumeration.md)) and the one-core
+device firmwares `usb_ls_dev` / `usb_fs_dev`, run on the 48 MHz build
+(`protoemu48`) against a USB host that pe_lab's pattern generator replays on
+the D+/D- pads. No PC, cable or PMOD pin is involved. What ran is the RTL on
+an FPGA with digital levels on fabric pads, not silicon and not a real host
+controller.
+
+    python3 fpga/kv260/host/usb_replay_demo.py --model --plans up.json --save m.json      # plans + replay on the model (~15 min)
+    scp up.json ubuntu@kria.[tailnet domain redacted]:usb_logs/
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu48/fpga/kv260/host/usb_replay_demo.py \
+        --expect 60b0692 --plans usb_logs/up.json --save usb_logs/hw.json
+    python3 fpga/kv260/host/usb_replay_demo.py compare hw.json m.json
+    python3 fpga/kv260/host/usb_replay_demo.py sigrok hw.json --plans up.json
+
+**Board state and build.** Final run 2026-10-14 08:55:09-08:55:29 UTC
+(earlier full runs at 08:04:59 and 08:19:11 gave the same results with the
+14 enumeration scenarios). `xmutil loadapp protoemu48`; `bringup_kria.py --mhz
+48 --expect 60b0692 --only build clock id` PASS: RTL revision `60b0692`
+(digest `036faa21`, clk_div 25), clock 47.9982 MHz (the script: 47.99924 MHz
+over 2 s). `src/*.v` is identical in 60b0692 and this branch. Host software
+(`tools/`, `firmware/`, `fpga/kv260/host/`) was refreshed in `~/protoemu48`
+and `~/protoemu` as `install.sh` does, keeping `expected_build.json` (there is
+none in `~/protoemu48`, hence `--expect`). Each run's output went to a file,
+synced after the run (`~/usb_logs/`).
+
+**Method.**
+* *Plan.* Each scenario first runs on the cycle model with an independent
+  host model in the loop: `pe.usbhost.ControlHost` at low speed (32 clocks per
+  bit), the same transaction logic at 4 clocks per bit for full speed
+  (`FsClockHost`: edges on the clock grid, a SOF every ms;
+  `pe.usbfs.FsControlHost` places edges in continuous time, which the
+  generator can't play). The host's own line levels (its drive, or the idle J
+  of the pull-up when nobody drives) are recorded clock by clock, and cut at
+  idle points into segments of at most 1000 generator entries that the
+  observer can cover. `--plans` stores these runs (16 scenarios, 2.3 MB).
+* *Replay.* The device firmware is loaded and started on core 0 once and never
+  touched again (usb_enum), or, for `usb_ls_dev`/`usb_fs_dev`, served by
+  `pe.usbdev.DeviceSoftware` over the host port between segments, exactly
+  where and with the clock the plan served it. For each segment, core 1 is
+  restarted with the observer, the generator plays the host's levels on uio0
+  (D+ at low speed, D- at full speed) and uio1, relative to a trigger on uio2,
+  and one READ_FIXED burst, started a few microseconds after the generator,
+  drains the observer.
+* *Observers.* Low speed: `la_capture` (1 tick = 1 clock; USB edges are at
+  least 32 clocks apart, so every edge is timestamped exactly; quad burst at
+  SCK = clk/div, div chosen so the burst outlasts the segment and drains
+  faster than the edges come). Full speed has edges 4 clocks apart, under
+  `la_capture`'s 7-tick dead time, so core 1 runs `host/usb_sampler.pasm`:
+  `in pins, 3` every clock, 10 samples per word, drained at 8 clocks per word
+  (quad, SCK = clk) from the trigger on: 0.55 ms of every clock per segment.
+  Every edge of a full-speed segment must fall in that window, except the end
+  of a 10 ms bus reset.
+* *Pads and electrical simplification.* kv260_top gives `uio_in = uio_oe ?
+  uio_out : generator`: while the line unit drives, the pads are the device's;
+  otherwise the generator's, which plays the host's drive or the idle J. There
+  is no USB transceiver or PHY: no differential receiver, no single-ended
+  thresholds, no 1.5 kohm pull-up or 15 kohm pull-downs (J is a generator
+  value), no edge rates, no contention model (the device's drive wins). All
+  pad changes are launched by clock edges, so the line unit's falling-edge
+  sample sees the next rising edge's value; the model runs with `uio_mid =
+  uio_in` (`sync_mid`). With the model's default (an asynchronous edge, seen
+  half a clock later) the full-speed plan's device answers are one clock
+  later than the board's (turnaround 3.50-4.25 instead of 3.25-4.00 bit
+  times), so the comparison below resolves one clock.
+* *Judge.* Every pad edge of every segment, relative to the trigger, against
+  the plan: the host's edges (the generator: a check of the replay) and the
+  device's (the chip). Then the packets decoded from the board's edges
+  (`pe.usb`, run lengths at the nominal bit time) against the plan's, bytes
+  and owner; the device's end state (address and Configured from the host
+  port after the last segment; for the `*-dev` scenarios the device software's
+  requests, address and re-stage count). `compare` checks the board's bus
+  events with their times in clocks against the `--model` replay; `sigrok`
+  decodes the board's edges with usb_signalling + usb_packet.
+
+**Results at 48 MHz** (16 of 16 scenarios PASS; every device edge of every
+scenario at the clock the model gives, `compare`: all 16 equal):
+
+| Scenario | Low speed (1.5 Mbit/s) | Full speed (12 Mbit/s) |
+|---|---|---|
+| `enum`: device descriptor (8), SET_ADDRESS 5, device (18), configuration (9, 18), string STALLed, SET_CONFIGURATION 1, GET_STATUS | PASS: 2 segments, 51 host / 26 device packets, 834 device edges board - model 0 clocks, turnaround 2.16 bit times, address 5 Configured | PASS: same packets, 834 edges 0 clocks, turnaround 3.25-4.00 |
+| `linux`: 64-byte read at address 0, 10 ms bus reset, SET_ADDRESS 7, ..., GET_CONFIGURATION | PASS: 4 segments, 52/26 packets, 913 edges 0 clocks, address 7 Configured | PASS: 3 segments, 53/26, 913 edges 0 |
+| `faults`: per step 0-2 lost device ACKs (host retries), host ACKs not sent, DATA treated as damaged (13 injected) | PASS: 61/33 packets, 1168 edges 0 clocks, address 9 Configured | PASS: same |
+| `reset`: resets in the data stage, after the address, configured (50 us SE0), at 6 clock phases, a 3 us reset unconfiguring | PASS: 6 segments, 155/73 packets, 2220 edges 0 clocks; address 5 ignored after each reset; end address 0, not Configured | PASS: 10 segments, 164/73, 2220 edges 0 |
+| `ack`: after a GET_DESCRIPTOR's first DATA1, the host's ACK nominal, dribbled 1-3 bits, with 1 or 3 extra bytes, or cut short (7 partial patterns) | PASS: nominal and dribbled accepted (next IN: DATA0 with bytes 8-15), the 11 malformed ones rejected (the same DATA1 again, then a nominal ACK advances it); 112/56 packets, 3404 edges 0 clocks | PASS: same verdicts, 3404 edges 0 |
+| `stall`: 9 unsupported requests STALLed and cleared by the next SETUP; other addresses/endpoints, bad CRC5, bad CRC16 ignored; wLength 0-255 on both descriptors | PASS: 15 segments, 347/179 packets, 6292 edges 0 clocks | PASS: 348/179, 6292 edges 0 |
+| `addr`: SET_ADDRESS's status ACK lost, then a SETUP first; then an IN first to the new address | PASS: 33/17 packets, 587 edges 0 clocks; the IN-first answered 2.16 bit times after the EOP; address 78 Configured | PASS: the IN-first answered 4.75 bit times (19 clocks; limit 6.5 = 26) |
+| `dev`: `usb_ls_dev` / `usb_fs_dev` + DeviceSoftware: 64-byte read, SET_ADDRESS 5, descriptors, SET_CONFIGURATION, then a DATA1 not ACKed, re-staged after 100 us | PASS: 27 segments, 49/25 packets, 1022 edges 0 clocks, turnaround 2.16-2.22; requests and re-stage count = the model's | PASS: same, turnaround 2.75-3.75 |
+
+Off the board, sigrok's `usb_signalling` + `usb_packet` on the board's edges
+give exactly the plan's packets for every scenario, with no errors other than
+the two deliberate ones (`stall`: "CRC5 ERROR", "CRC16 ERROR"). sigrok reads
+each of the 14 malformed ACKs as a plain ACK; the firmware rejects the 11 that
+USB 2.0 §8.4.5 excludes (extra bytes, short) and takes the dribbles (§7.1.9.1).
+
+**Not run / limits.** No real host: the host is our model's waveform,
+pre-timed, so it can't react to an answer that differs from the model's (any
+difference shows as a mismatch, and none happened). No PHY or analogue
+behaviour (above). Full speed is observed only in the sampler's 0.55 ms
+window per segment: the last 9.5 ms of a 10 ms bus reset (no edges) are
+not observed. `usb_ls_rx` + `usb_ls_tx` (the two-core device) and the
+USB-UART pairs (`usb_uart_*` with `uart_rx_batch4` / `overlap4` /
+`envelope3` / `capture_peer` / `mailbox`) use both cores, leaving none to
+observe the pads: not run. The real-PC demo (`host/usb_demo.py`, below) still
+waits for the wiring.
+
+## Firmwares that had never run on the FPGA (2026-10-14, `host/legacy_demo.py`)
+
+`ws2812`, `spi_master`, `i2c_sniff`, `ps2_device`, `onewire`, `jtag`,
+`can_tx` + `can_rx` and `eth10_tx` + `eth10_rx` on the 50 MHz build. What ran
+is the RTL on an FPGA, not silicon; every line is a virtual pin or a uio pad
+driven by a core or pe_lab; no PMOD pin was enabled.
+
+    python3 fpga/kv260/host/legacy_demo.py --model --save ml.json --plans pl.json     # ~10 min
+    scp pl.json ubuntu@kria.[tailnet domain redacted]:legacy_logs/
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu/fpga/kv260/host/legacy_demo.py \
+        --save legacy_logs/hl.json --plans legacy_logs/pl.json
+    python3 fpga/kv260/host/legacy_demo.py compare hl.json ml.json
+    python3 fpga/kv260/host/legacy_demo.py sigrok hl.json
+
+**Board state and build.** Final run 2026-10-14 08:58:59-08:59:14 UTC.
+`protoemu` loaded: `bringup_kria.py --only build clock id` PASS, RTL
+revision `d1aa46f` (digest `3adc796c`, clk_div 24), clock 49.9982 MHz; the
+script measured 49.99917 MHz over 2 s and derived every CLKDIV for 50.000 MHz.
+Same host-software refresh as above. Earlier runs (08:51:59, 08:54:18) gave
+the same results except `ws2812` at 08:51:59 (below).
+
+**Method.** The post-freeze rounds' toolkit. Transmitters on core 0 behind the
+trigger preamble, `la_capture` on core 1 (1 tick = 1 clock), drained by one
+quad READ_FIXED burst started a few microseconds after the generator. Far ends
+that answer are pre-timed: the scenario first runs on the cycle model with a
+pins-only model of the far end that sees every uio pad (1-Wire slave, JTAG
+TAP, I2C EEPROM, CAN nodes; from the model tests), and the generator replays
+that far end's edges relative to the trigger. Receivers get the generator's
+waveforms; CAN's two cores share pe_lab's wired-AND line (I2C mode). Judges:
+the model tests' decoders and models; `compare` with the `--model` run (every
+run's deterministic results equal); sigrok off the board.
+
+**Results at 50 MHz** (13 of 13 runs PASS; one clock = 20 ns):
+
+| Firmware | How | Result |
+|---|---|---|
+| `ws2812` | V0 -> la_capture, CLKDIV 6.25 (8 MHz ticks), 2 x 8 colours | PASS. All 16 colours right. T0H 380 ns, T1H 880 ns, bit 1240-1260 ns (WS2812B: 400 / 800 +-150 ns, 1.25 us +-600 ns), then low for 3.9 ms. **Bug found and fixed** (below): before, a 0 was 2 ticks high |
+| `spi_master` | pe_lab's SPI device, 2 x 8 random bytes per DELAY 0..31 | PASS. CLKDIV 3 (4.17 MHz SCK): right up to DELAY 29 (MISO 77.5 ns after the clock edge that dropped SCK); CLKDIV 2 (6.25 MHz): up to DELAY 13 (37.5 ns); CLKDIV 1 (12.5 MHz): every DELAY reads MISO a bit late (two from DELAY 30), as test_spi_fast predicts; CLKDIV 1 with SYNC_BYPASS on MISO: right up to DELAY 5 (17.5 ns). MOSI right in all 256 rounds, SCK rise to rise exact (32/64/96 x 2.5 ns) |
+| `i2c_sniff` | generator plays an I2C bus at 100 kHz, 400 kHz, 1 MHz | PASS. 21 events each = the waveform's: 5 STARTs (2 repeated), 4 STOPs, 16 bytes with their ACK/NACK bits (reads driven by the "device", the master's NACK) |
+| `i2c_sniff` + `i2c_master` | master on core 0 (open drain), sniffer on core 1, EEPROM pre-timed (2 us after SCL falls) | PASS. Master: write 0x50 [10 42] ACKed, 0x51 NACKed (replies 0 0 0 1). Sniffer: START A0 10 42 STOP START A2(NACK) STOP |
+| `ps2_device` | CLK uio0, DAT uio1 open drain; the generator is the pull-ups / the host | PASS. 8 frames = the codes, odd parity, start/stop right; CLK low 40 us, fall to fall 80-90 us (12.2 kHz; PS/2: 10-16.7 kHz). Host inhibit (CLK held low 3 ms before the device starts): the first CLK fall 44.5 us after the release. Not covered: an inhibit during a frame (the firmware checks CLK only before a frame) |
+| `onewire` | DQ uio0 open drain, 1 us ticks, slave pre-timed | PASS. Reset/presence 1, write 0x33 done, READ ROM 28 ff 4c 60 91 16 (6 bytes, as queued); no slave: presence 0, a read 0xff. Reset low 480.0 us; DQ edges within a tick (1 us) of the model's |
+| `jtag` | TDI/TMS/TCK uio4-6, TDO uio0 from a pre-timed TAP, CLKDIV 4 and 8 | PASS. IDCODE 0x4ba00477; IR = 1111 (BYPASS), 8 bits through: TDO = TDI one TCK later. TCK/TMS/TDI 134 edges, each the model's + one start offset (0 / -140 ns, under a tick); 20 records closer than la_capture's 7 ticks not compared. At CLKDIV 2 (6.25 MHz) the model needs TDO within 1 clock (20 ns) of TCK's fall at the pad, 3 at CLKDIV 3: a pre-timed TAP can't promise that against the core's start offset, so those ran only on the model |
+| `can_tx` + `can_rx` | both cores, open drain on pe_lab's wired-AND line, 500 kbit/s (CLKDIV 2.08) | PASS. 5 frames (IDs 0x123, 0x7f0, 0x001, 0x555, 0x2aa; DLC 0-8): TX status 0 (ACKed), RX CRC ok, every destuffed bit right |
+| `can_rx` | generator frames at 0, +-0.5 %, +-1 %; CRC corrupted; stuff error | PASS. Status 1 and every bit right, ACK slot driven 2.0 us; corrupted CRC: status 0, no ACK; stuff error: status 2, error flag (11.7 bits dominant on the bus, with the transmitter's dominant bits). **Bug found and fixed** (below) |
+| `can_tx` | pre-timed ACKing node, nobody, a node with ID 0x100 | PASS. Status 0 / 1 / 2 (lost arbitration); the bus carries 0x123's 58 destuffed bits with CRC15 and the ACK slot dominant / recessive, or the winner's frame bit for bit; bus edges within 20 ns (a clock) of the model's |
+| `eth10_rx` | generator Manchester frames (64 bytes) on uio0, on protoemu's clock (half bits 2 or 3 clocks: +-10 ns) and on the 45.93 MHz alternate clock (phase walking) | PASS. 4 frames received, FCS ok |
+| `eth10_tx` -> `eth10_rx` | core 1 on V0/V1 at CLKDIV 1.25 (40/60 ns half cells, test_eth10's 50 MHz case) -> core 0, RXP = V0 | PASS. 2 x 64-byte frames, FCS ok |
+| `eth10_tx` | core 0 on uio3/uio4, sampled every clock by `usb_sampler` | PASS. 576 wire bits (preamble, SFD, frame, FCS ok), every bit 5 clocks with its mid-bit transition, runs 2/3/5 clocks; a 100 ns link pulse first; TP_IDL high 280 ns |
+
+sigrok on the board's captures: `can` decodes every frame with the bus's ACK
+bit as above (the stuff-error capture with EOF warnings, as expected);
+`onewire_network` "Reset/presence: true/false", "ROM command 0x33 'Read
+ROM'"; `jtag` "DR TDO 0x4ba00477", "IR TDO 0001", the bypass bits. sigrok's
+`ps2` decodes the first frame and then loses the framing on both captures,
+the board's and the model's: its decoder takes 12 falling edges per frame
+(`handle_bits` emits at bitcount 11), so it swallows the next frame's start
+bit; our falling-edge decoder and the model test's agree on all 8 frames.
+
+**Two firmware bugs, found while preparing these runs and fixed** (both by
+this script's `--model` pass at 50 MHz, before the board; failing model tests
+first, then the fixes; the board ran the fixed firmware):
+* `ws2812`: a 0 bit was 2 ticks high and 8 low (250 ns at 48 MHz, the bottom
+  edge of WS2812B's T0H window), while the header says 3 / 7 (375 / 875 ns).
+  At 50 MHz (CLKDIV 6.25) T0H came out 240-260 ns, outside the window. Fixed
+  by moving one delay (same 4 words); `test_ws2812_bit_timing_is_the_documented_one`.
+* `can_rx`: when a frame's CRC ends in five equal bits, the transmitter sends
+  a stuff bit before the CRC delimiter (`can_tx` does); `can_rx` didn't skip it
+  and drove its ACK one bit early, in the delimiter, so the transmitter saw no
+  ACK. About one random frame in 31 (20,000 sampled); the generator's +0.5 %
+  frame here was one. The model tests' frames happened to avoid it. Fixed:
+  the stuff bit is sampled (six equal bits: stuff error) and the delimiter and
+  ACK come a bit later; three tests (`test_can.py`).
+
+**One failure on the way, a script bug.** `ws2812` failed at 08:51:59 (three
+times in a row) with a gap record: the first `import usb_replay_demo` happened
+between starting `la_capture` and the burst and took long enough on the Kria
+for eight idle records to fill the FIFO. The import is now at the top.
+
+**Not run.** `swd_probe` (parked). The USB-UART pairs and `uart_rx_batch4` /
+`uart_rx_overlap4` / `uart_rx_envelope3` (their only consumer is the USB core;
+see above). `usb_ls_rx` + `usb_ls_tx` (above). Nothing over package pins: no
+LEDs, SPI chip, PS/2 host, 1-Wire device, JTAG target, CAN transceiver or
+Ethernet PHY; every far end is our pins-only model or the chip's other core.
+10BASE-T ran at 50 MHz with CLKDIV 1.25 (the test suite's 50 MHz case), not
+the 40 MHz its header specifies; the FPGA builds are 50 and 48 MHz only.
+
+**At the end** (08:55:39 UTC, after the last 48 MHz run): `xmutil loadapp
+protoemu`, `bringup_kria.py` (all steps) ALL PASS, clock 49.9983 MHz; the
+legacy rerun at 08:58:59 left it loaded. Left loaded: `protoemu`,
+PMOD0/PMOD1 = 0, pe_lab MODE 0, host port on the GPIO path (pe_spim SEL 0).
+
 ## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
 
 ### Fabric master + PMOD build
