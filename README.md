@@ -151,8 +151,8 @@ Evidence below applies to the named cases and configurations.
 
 | Workload | Use | Evidence and limits |
 |---|---|---|
-| [Packed SPI and one-shot preload](docs/spi-packed-host.md) | Pack FIFO words; preload a 1–32-byte mode-0 transfer, then drain and rearm through the host | Model tests and documented serialized-host RTL cases; one-shot mode is core 0 only |
-| [Declared UART capture](docs/uart-capture-host.md) | Capture 1–32 bytes with framing status and a partial final word | Model tests and a serialized-host RTL regression with paid drain/rearm; length must be known before arming |
+| [Packed SPI and one-shot preload](docs/spi-packed-host.md) | Pack FIFO words; preload a 1–32-byte mode-0 transfer, then drain and rearm through the host | Model tests and documented serialized-host RTL cases; one-shot mode is core 0 only; demo-board helpers in `bringup.py`, model-tested only |
+| [Declared UART capture](docs/uart-capture-host.md) | Capture 1–32 bytes with framing status and a partial final word | Model tests and a serialized-host RTL regression with paid drain/rearm; length must be known before arming; `bringup.uart_capture()` for the demo board, model-tested only |
 | [USB plus UART peer capture](docs/usb-uart-coexist.md) | Enumerate on core 0 while core 1 captures UART to its host FIFO | Two finite model cases; this mode does not forward the captured bytes through USB |
 | [One-byte USB/UART mailbox](docs/usb-uart-byte.md) | Return one retained UART byte through a vendor USB EP0 request | Finite low-speed model test; READY admits each frame and the USB host supplies polling/ACK service |
 | [Four-byte USB/UART mailbox](docs/usb-uart-batch4.md) | Retain four UART bytes through USB retries before admitting the next group | Finite low-speed model test with a measured publication deadline; UART pauses until ACK, sustained forwarding unmeasured |

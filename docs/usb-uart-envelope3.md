@@ -45,6 +45,19 @@ report DATA ACK was accepted. The count byte is not a sequence number; this
 example does not provide an application-level exactly-once delivery guarantee
 across fresh requests or resets.
 
+On a PC, [`pe.usb_uart_reports`](../tools/pe/usb_uart_reports.py) polls this
+request through pyusb and returns the first `n` bytes of each report; it
+rejects a count outside 1–3 or nonzero padding. pyusb is needed only to open
+the device:
+
+```sh
+PYTHONPATH=tools python3 -m pe.usb_uart_reports envelope3
+```
+
+[`test_usb_uart_reports.py`](../test/model/test_usb_uart_reports.py) reads
+`39d38103` and, after the idle timer, `00a50002` from the model through the
+same code. No PC has read a report from silicon.
+
 ## Loading and resource cost
 
 The [cold-loading helper](../tools/pe/usb_uart_envelope3.py) provides

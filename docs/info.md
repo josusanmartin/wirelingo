@@ -67,7 +67,27 @@ bringup.uart_loopback(pe)       # no wiring: core 0 UART TX -> internal pin -> c
 bringup.uart_tx(pe, b"hi\r\n")  # 115200 8N1 on uo[0]
 ```
 
-`protoemu_fw.py` holds assembled programs (UART, SPI, I2C, WS2812, USB, 10BASE-T TX)
+SPI master and UART receive helpers use core 0 and the `uio` pins (the driver
+writes all of `ui_in`): SCK `uio[2]`, MOSI `uio[3]`, MISO `uio[4]`, CS `uio[5]`
+(add a pull-up: CS floats until the first SPI call), UART RX `uio[6]`.
+
+```
+rx = bringup.spi_transfer(pe, b"\x9f\0\0\0", mode=3)  # modes 0-3, CS held low by the host
+bringup.spi_packed_setup(pe, mode=0)                   # firmware CS: exact 8N-bit frames
+rx = bringup.spi_packed_transfer(pe, [b"\x06", b"\x02\0\x10" + data])  # queued, 1-8192 B each
+bringup.spi_preloaded_setup(pe)                        # mode 0, 1-32 B preloaded, halts after
+rx = bringup.spi_preloaded_transfer(pe, bytes(range(32)))
+data, framing_error = bringup.uart_capture(pe, 16)     # 8N1: 1-32 B, or a multiple of 4 above
+```
+
+SCK is 1 MHz by default (`div=12`: 4 ticks of 12 clocks per bit). The
+packed/preloaded framing and the capture's framing-error rule are those of
+`docs/spi-packed-host.md` and `docs/uart-capture-host.md`. These helpers pass
+model tests (`test/model/test_micropython_spi_uart.py`); none has run on a
+demo board yet.
+
+`protoemu_fw.py` holds assembled programs (UART, UART capture, SPI in modes 0-3,
+packed and preloaded SPI, I2C, WS2812, USB, 10BASE-T TX)
 ready for `pe.load(**PROGRAM)`, and the autonomous USB device for
 `bringup.usb_enum(pe, "low")` or `"full"` (wiring below). Assemble your own with `tools/pe/asm.py`.
 Clock per demo: 48 MHz for UART/I2C/SPI/USB, 40 MHz for 10BASE-T
@@ -122,6 +142,10 @@ derived from the specifications, not yet validated on silicon):
   internal TX→RX loopback now passes at 50 MHz with TX divider 1.25 and RX
   period 5. Its TX half cells are 40/60 ns; that mode has no established
   electrical compliance or simultaneous board result.
+* **UART over USB to a PC (overlap4, envelope3 pairs):** on the PC,
+  `PYTHONPATH=tools python3 -m pe.usb_uart_reports overlap4` (or `envelope3`)
+  polls the vendor request and prints the UART bytes; it needs pyusb, the
+  decoders do not. Tested against the cycle model's USB packets only.
 * **I2C:** SDA `uio[0]`, SCL `uio[1]`, open drain (set `OD_MASK`), 4.7 kΩ
   pull-ups to 3.3 V.
 * **CAN:** a 3.3 V transceiver (for example SN65HVD230); TXD from an output

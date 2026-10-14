@@ -29,6 +29,27 @@ answered with STALL, and the host must issue a fresh SETUP. Polling and valid
 ACKs remain the USB host's responsibility. There is no loading-host FIFO relay,
 refill or rearm API.
 
+### Reading the reports on a PC
+
+[`pe.usb_uart_reports`](../tools/pe/usb_uart_reports.py) issues this request
+with pyusb, treats STALL as "no report yet" and decodes the replies. The
+decoders and the polling loop take any object with pyusb's `ctrl_transfer`,
+so pyusb is optional for tests and only needed to open the device.
+
+```sh
+PYTHONPATH=tools python3 -m pe.usb_uart_reports overlap4 --bytes 64
+```
+
+```python
+from pe import usb_uart_reports as r
+dev = r.open_device()                      # VID 0x1209, PID 0x5634
+data = r.read_bytes(dev, "overlap4", 16)   # whole four-byte reports
+```
+
+[`test_usb_uart_reports.py`](../test/model/test_usb_uart_reports.py) answers
+`ctrl_transfer` with the model's control transfers to this pair. No PC has
+read a report from silicon.
+
 ## Resource and state contract
 
 | Resource | Reservation |

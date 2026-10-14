@@ -132,6 +132,30 @@ SRAM. Source timing never follows host or DUT readiness. It does not extend
 the baud envelope, prove indefinite-stream capture, live-core1 concurrency,
 CPU cost, pad/Fmax/PPA, silicon or board operation.
 
+## On the demo board (MicroPython)
+
+`bringup.uart_capture(pe, n, baud=115200, clock_hz=48_000_000, timeout_ms=2000,
+after_arm=None)` loads the capture on core 0 with RX on `uio[6]`, applies the
+same five-write plan, then calls `after_arm()` (if given: make the device send
+there). It returns `(data, framing_error)`, where `framing_error` is F0 read
+before any FCLR: a low STOP keeps its byte in `data` and sets the flag.
+
+```python
+data, framing_error = bringup.uart_capture(pe, 3)    # e.g. (b"\x39\xd3\x81", False)
+data, framing_error = bringup.uart_capture(pe, 64)   # above 32: uart_rx_packed
+```
+
+For 1–32 bytes it waits for HALT, then requires no fault, the exact RX count
+and TX0, decodes with the board copy of `decode_capture`, and checks the FIFOs
+are empty after the drain. Above 32 bytes, `n` must be a multiple of 4: it
+runs `uart_rx_packed` and drains words while they arrive, then raises if the
+RX FIFO was ever seen full. On a timeout, fewer bytes than declared for
+example, it stops core 0, clears its FIFOs and F0, and raises. The firmware is
+loaded on every call; this is not the paid-rearm schedule measured above.
+`test/model/test_micropython_spi_uart.py` runs it unmodified on the cycle
+model through the host-port model (lengths 3, 4, 5, 32, 36 and 40, ±3 %
+baud, bad STOPs, a break, under-supply). It has not run on a demo board.
+
 ## On the FPGA build (2026-10-14)
 
 `uart_rx_capture`, `uart_rx_packed`, `uart_rx_capture_peer` (live beside a
