@@ -53,6 +53,33 @@ data = r.read_bytes(dev, "overlap4", 16)   # whole four-byte reports
 `ctrl_transfer` with the model's control transfers to this pair. No PC has
 read a report from silicon.
 
+### From the Tiny Tapeout demo board
+
+The board's MicroPython driver writes the whole `ui_in` byte, so it holds
+`ui[0]`, this pair's default RX (pin 16), low. RX is an assembler define
+(`assemble(rx_pin=…)`, `load_writes(rx_pin=…)`; any pad input except the USB
+pins 0 and 1), so the bundle (`protoemu_fw.USB_UART_OVERLAP4`) is built with
+RX on `uio[6]` (pin 6), the board's UART capture pin. READY (`uo[0]`), ERROR
+(`uo[1]`) and USB (`uio[0]`/`uio[1]`) are unchanged. Only core 1's
+instructions and PINCTRL1 and the PIN_OWNER pair differ from the default
+image; core 0's bank and the write count (374) are the same, and the default
+`load_writes()` is byte-identical to before.
+
+```python
+import bringup
+pe = bringup.setup()                 # 48 MHz
+bringup.usb_uart(pe, "overlap4")     # loads and starts both cores; no host traffic after
+```
+
+Wiring and the PC command are in [info.md](info.md) (external hardware).
+[`test_micropython_usb_uart.py`](../test/model/test_micropython_usb_uart.py)
+runs the board code unmodified on the cycle model: it loads the pair over
+the bit-banged SPI port, then with the host port refused a pins-only sender
+on `uio[6]` that sees only READY sends `39 d3 81 5e`, a bad-STOP `a6` (ERROR
+rises) and `12 34 56 78`; the `ControlHost` model enumerates at address 5 and
+`pe.usb_uart_reports` reads `39d3815e` and `12345678`. This is model
+evidence only: the `uio[6]` image has not run on RTL, a demo board or a PC.
+
 ## Resource and state contract
 
 | Resource | Reservation |

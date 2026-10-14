@@ -60,6 +60,18 @@ PYTHONPATH=tools python3 -m pe.usb_uart_reports envelope3
 `39d38103` and, after the idle timer, `00a50002` from the model through the
 same code. No PC has read a report from silicon.
 
+From the Tiny Tapeout demo board, `bringup.usb_uart(pe, "envelope3")` loads
+`protoemu_fw.USB_UART_ENVELOPE3`: the same pair with RX moved from `ui[0]`,
+which the board driver holds low, to `uio[6]` (`load_writes(rx_pin=6)`; only
+core 1's words and the pin owners change, and the default image is
+byte-identical). READY, ERROR and USB pins are unchanged; wiring and the PC
+command are in [info.md](info.md).
+[`test_micropython_usb_uart.py`](../test/model/test_micropython_usb_uart.py)
+runs that board code on the cycle model with a pins-only sender on `uio[6]`
+and reads `39d38103` and `00a50002` through the PC reader after enumeration,
+with the host port idle after the load. Model evidence only; not yet run on
+RTL with RX on `uio[6]`, on a demo board or on a PC.
+
 ## Loading and resource cost
 
 The [cold-loading helper](../tools/pe/usb_uart_envelope3.py) provides

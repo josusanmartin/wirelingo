@@ -8,11 +8,12 @@ Copy protoemu.py, protoemu_fw.py and this file to the board, then:
     bringup.uart_tx(pe, b"hi\\r\\n")  # 115200 8N1 on uo0 (to a USB-UART's RX)
     bringup.spi_transfer(pe, b"\\x9f\\0\\0\\0", mode=0)   # SPI master, CS on uio5
     data, framing_error = bringup.uart_capture(pe, 16)  # 16 bytes 8N1 on uio6
+    bringup.usb_uart(pe, "overlap4")  # UART on uio6 (READY uo0) -> USB on uio0/1 -> PC
 
 setup() needs the TT SDK; the other functions only need a ProtoEmu, so they
 also run against the model (test/model/test_micropython_driver.py). The SPI
-master and UART capture helpers are tested on that model only: none of them
-has run on a demo board yet.
+master, UART capture and UART-over-USB helpers are tested on that model only:
+none of them has run on a demo board yet.
 """
 import protoemu_fw as fw
 from protoemu import (ProtoEmu, A_ID, A_CTRL, A_FSET, A_FCLR, A_POUT, A_POE, C_R0, C_FIFO,
@@ -144,6 +145,44 @@ def usb_enum_state(pe):
         addr |= ((a >> i) & 1) << (6 - i)
     return dict(address=addr, configured=bool(flags >> 5 & 1),
                 pending_address=bool(flags >> 1 & 1), stalled=bool(flags & 1))
+
+
+USB_UART_MODES = ("overlap4", "envelope3", "byte")
+
+
+def usb_uart(pe, mode="overlap4", rx_pin=None):
+    """Cold-load a UART -> low-speed USB pair (docs/usb-uart-overlap4.md,
+    usb-uart-envelope3.md, usb-uart-byte.md) and start both cores; after
+    this call the chip needs no host-port traffic. 48 MHz project clock.
+
+    The driver writes the whole ui_in byte, so the board images take UART
+    RX on uio6 (logical pin 6), not on ui0 as the default helpers do.
+    115200 8N1, idle high; the sender starts one frame per fresh READY rise
+    (uo0, active high) and finishes any frame it started. ERROR on uo1
+    (overlap4, envelope3) goes high, sticky, on a bad STOP. USB as for
+    usb_enum(pe, "low"): D+ uio0, D- uio1, 27 ohm each, 1.5k from D- to
+    3.3 V. The PC reads the reports with
+    `PYTHONPATH=tools python3 -m pe.usb_uart_reports <mode>`.
+
+    rx_pin: None or the image's RX pin (6); another pin needs a regenerated
+    bundle (pe.mpy_bundle, USB_UART_RX). Returns the image's pins. Tested
+    on the cycle model only; not yet run on a demo board or a PC.
+    """
+    image = {"overlap4": fw.USB_UART_OVERLAP4, "envelope3": fw.USB_UART_ENVELOPE3,
+             "byte": fw.USB_UART_BYTE}.get(mode)
+    if image is None:
+        raise ValueError("mode must be one of %s" % ", ".join(USB_UART_MODES))
+    if rx_pin is not None and rx_pin != image["rx"]:
+        raise ValueError("this bundle's %s image takes RX on logical pin %d, not %r: "
+                         "regenerate protoemu_fw.py for another pin" % (mode, image["rx"], rx_pin))
+    if (pe.ncores, pe.nbanks, pe.bank_words, pe.depth) != (2, 2, 256, 8):
+        raise ValueError("the UART/USB pairs need the tapeout profile: 2 cores and banks, 256 words, depth 8")
+    pe.stop(3)                          # both stopped with empty FIFOs before the cold load
+    pe.clear_fifos(3)
+    for addr, words in image["writes"]:
+        pe.write(addr, words)           # ends with the start of both cores
+    pe._owners = pe._owner_words(image["owners"])   # the PIN_OWNER the writes set
+    return dict(mode=mode, rx=image["rx"], ready=image["ready"], error=image["error"])
 
 
 def eth10_receive(pe, timeout_us=100000, max_frames=1):

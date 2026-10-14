@@ -17,17 +17,20 @@ BYTE_READY, REPORT_VALID = 6, 7
 UART_DIVIDER = host.clkdiv_for(CLOCK_HZ, 32 * UART_HZ)
 
 
-def assemble():
+def assemble(rx_pin=RX):
+    """rx_pin: the UART RX pad, P16 (ui0) by default; any pad input but
+    USB's P0/P1. Only the default is the image the RTL tests ran."""
+    rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
     usb = asm.assemble((FW / "usb_uart_batch4.pasm").read_text(),
                        {"DP": 0, "DM": 1, "TURN": 63})
     uart = asm.assemble((FW / "uart_rx_batch4.pasm").read_text(),
-                        {"RX": RX, "READY": READY, "ERROR": ERROR})
+                        {"RX": rx_pin, "READY": READY, "ERROR": ERROR})
     if len(usb.words) != 256 or len(uart.words) != 59:
         raise ValueError("fixed4 candidate image size differs from256/59")
     return usb, uart
 
 
-def load_writes(programs=None):
+def load_writes(programs=None, rx_pin=RX):
     """Cold setup only: disable, clear flags/outputs, assign owners, load/start.
 
     Applying this list replaces both cores and consumes all virtual pins and
@@ -36,10 +39,11 @@ def load_writes(programs=None):
     """
     if (TAPEOUT.ncores, TAPEOUT.nbanks, TAPEOUT.bank_words, TAPEOUT.fifo_depth) != (2, 2, 256, 8):
         raise ValueError("fixed4 helper requires tapeout2/2/256/8")
-    usb, uart = assemble() if programs is None else programs
+    rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
+    usb, uart = assemble(rx_pin) if programs is None else programs
     writes = [(sim.A_CTRL, 0), (sim.A_FCLR, 0xff), (sim.A_SYNCBYP, 0),
               (sim.A_POUT, 0), (sim.A_POE, 0)]
-    owners = {0: 0, 1: 0, RX: 1, READY: 1, ERROR: 1, **{p: 1 for p in range(24, 32)}}
+    owners = {0: 0, 1: 0, rx_pin: 1, READY: 1, ERROR: 1, **{p: 1 for p in range(24, 32)}}
     writes += host.pin_owner_writes(owners, profile=TAPEOUT)
     writes += host.load_program(0, usb, 0, profile=TAPEOUT,
                                 in_pins=MAILBOX, clkdiv=1 << 8)

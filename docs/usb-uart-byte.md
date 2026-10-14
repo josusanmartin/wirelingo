@@ -41,6 +41,23 @@ An empty slot STALLs; issue a fresh SETUP after a new UART grant/frame.
 The original18/18-byte descriptors retain zero noncontrol endpoints; this
 is not HID, CDC, bulk or interrupt USB.
 
+### From the demo board and a PC
+
+`assemble(rx_pin=…)` and `load_writes(rx_pin=…)` move RX to another pad input
+(not the USB pins 0/1); the default stays pin 16 (`ui[0]`) and its image is
+byte-identical. The Tiny Tapeout board driver holds `ui[0]` low, so
+`bringup.usb_uart(pe, "byte")` loads `protoemu_fw.USB_UART_BYTE`, built with
+RX on `uio[6]` (pin 6); READY stays on `uo[0]` and USB on `uio[0]`/`uio[1]`.
+Only core 1's words and the pin owners differ. On the PC,
+`PYTHONPATH=tools python3 -m pe.usb_uart_reports byte` issues this request
+(wLength 1) through pyusb and prints each byte; wiring is in
+[info.md](info.md).
+[`test_micropython_usb_uart.py`](../test/model/test_micropython_usb_uart.py)
+runs the board code on the cycle model: a pins-only sender on `uio[6]` sends
+`a5`, `00`, a bad-STOP `3c` and `ff`; after enumeration the PC reader returns
+`a5 00 ff` and F6 is set, with the host port idle after the load. Model
+evidence only; not yet run on RTL with RX on `uio[6]`, on a board or on a PC.
+
 The mailbox table entry is at37, whose bit3 is clear for initial DATA1.
 Only its low byte is sent; rotated physical USB inputs in the upper byte
 are not a second stable payload byte. Current single-LR call/return flow is
