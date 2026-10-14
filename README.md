@@ -156,7 +156,7 @@ Evidence below applies to the named cases and configurations.
 | [USB plus UART peer capture](docs/usb-uart-coexist.md) | Enumerate on core 0 while core 1 captures UART to its host FIFO | Two finite model cases; this mode does not forward the captured bytes through USB |
 | [One-byte USB/UART mailbox](docs/usb-uart-byte.md) | Return one retained UART byte through a vendor USB EP0 request | Finite low-speed model test; READY admits each frame and the USB host supplies polling/ACK service |
 | [Four-byte USB/UART mailbox](docs/usb-uart-batch4.md) | Retain four UART bytes through USB retries before admitting the next group | Finite low-speed model test with a measured publication deadline; UART pauses until ACK, sustained forwarding unmeasured |
-| [Overlapping UART/USB reports](docs/usb-uart-overlap4.md) | Receive the next four UART bytes while USB retains the current report | Finite low-speed model case with actual concurrent samples and ACK crossings; at most two groups, READY required, sustained rate unmeasured |
+| [Overlapping UART/USB reports](docs/usb-uart-overlap4.md) | Receive the next four UART bytes while USB retains the current report | Model only: 109,050–121,059 baud at every START phase; 115,200-baud line rate kept when the host releases each report within 346 µs of its last STOP (tested over 12–26 reports); slower hosts throttle via READY without loss |
 
 The [current Lean guide](docs/lean-verification.md) documents manual proofs and
 finite comparisons against actual RTL, including normally fetched pin ownership,

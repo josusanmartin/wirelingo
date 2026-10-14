@@ -461,6 +461,7 @@ def test_overlap4_complete_service(tmp_path):
             rig.absolute(stage,clock);peer.complete_report(i)
         rig.absolute("final",FINAL_DEADLINE)
         audit(rig.snapshot(None,peer));rig.mh.echo.check()
+        mutate_and_reject(rig.snapshot(None,peer))  # saved-trace oracle controls
     except BaseException as exc:
         error=type(exc).__name__+": "+str(exc)
         raise

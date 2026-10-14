@@ -113,9 +113,11 @@ loading APIs, observed loading bus strobes and USB driver overlap were all0.
 
 Observed consuming-ACK EOP-J to next READY latencies were89/111/123clocks for
 0x00/0xa5/0xff. These are observations from that one fault/recovery scenario,
-not maximum bounds or a sustained service rate. The trace retained276
-line-RX overflow events during own TX; the successful scenario does not
-establish general overflow robustness. External USB-host work remains a
+not maximum bounds or a sustained service rate. The 276 line-RX overflow
+events are the device's [own echo](usb-uart-overlap4.md#line-rx-overflow-is-the-devices-own-echo):
+six descriptor replies drop 46 bits each. The test asserts that every dropped
+bit belongs to a device-started receiver frame and that every peer packet
+starts on an empty, idle receiver. External USB-host work remains a
 service cost. Capacity is one byte, core0's256-word bank is full, and sender
 admission still requires physical READY. There is no RTL, board, physical
 or continuous-stream qualification.

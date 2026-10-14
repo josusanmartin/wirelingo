@@ -193,11 +193,11 @@ API/strobes, UART PUSH/autopush stalls, host FIFO drops or nonempty clears.
 Normal WAIT/line blocking remains observable (core stall clocks141916/8645
 and97630/42185); these include idle time, not loss of captured bytes.
 
-The existing line unit reports276/92 RX overflow events in the two cases,
-all recorded while its own transmitter was active. That observation does
-not establish the cause. Neither line unit nor USB code changed;
-passing the finite packet oracle does not establish overflow robustness.
-No such claim, full-speed envelope, live serialized-host concurrency,
+The line unit reports 276/92 RX overflow events in the two cases: 46 echo
+bits from each of six/two eight-byte descriptor replies. They are the device's
+[own echo](usb-uart-overlap4.md#line-rx-overflow-is-the-devices-own-echo); both cases assert that every dropped bit belongs to a
+device-started receiver frame and that every peer packet starts on an empty,
+idle receiver. No full-speed envelope, live serialized-host concurrency,
 UART-to-USB forwarding, indefinite input stream, CPU/PPA/electrical or
 concurrent native/RTL qualification is provided. Both engines are occupied;
 this result uses the existing1060B program allocation and8-word UART FIFO,

@@ -101,9 +101,10 @@ This finite observation is distinct from the source arithmetic over all 256
 fractional states and is not a general RTL timing proof.
 
 Active loading API calls, loading bus strobes and external/device USB driver
-overlap were all zero. **636 line-RX overflow events remain in the trace**, all
-observed during device transmission. Their cause and general recovery behavior
-are unproven; this result does not establish that overflows are harmless.
+overlap were all zero. The 636 line-RX overflow events are the device's
+[own echo](usb-uart-overlap4.md#line-rx-overflow-is-the-devices-own-echo): 12 descriptor replies drop 46 bits each and 6 reports 14 each. The test
+asserts that every dropped bit belongs to a device-started receiver frame and
+that every peer packet starts on an empty, idle receiver.
 
 Observed ACK EOP-J to next READY delays were 66 and 54 clocks. The scenario
 includes enumeration, deliberate retries, resets and idle periods; its elapsed

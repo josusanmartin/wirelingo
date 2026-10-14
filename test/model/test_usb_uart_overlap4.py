@@ -441,6 +441,7 @@ def test_overlap4_retained_and_next(tmp_path):
             elif stage.endswith('-status'):peer.data_out(5,usb.PID_DATA1,b'')
         rig.absolute('final',FINAL_DEADLINE)
         audit(rig.snapshot(None,peer));rig.mh.echo.check()
+        mutate_and_reject(rig.snapshot(None,peer))  # saved-trace oracle controls
     except BaseException as exc:
         error=type(exc).__name__+': '+str(exc)
         raise

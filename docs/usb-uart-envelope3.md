@@ -103,12 +103,15 @@ The saved-trace checker rejected three deliberate corruptions: a wrong count
 with recomputed CRC, a removed legal late-START observation, and the alias ACK
 incorrectly clearing report ownership. These are oracle controls, not mutated
 RTL tests. The run recorded no active loading-host calls or bus strobes and no
-USB driver overlap. It also recorded 558 line-RX overflow events; their presence
-is preserved, and this result does not establish that they are harmless.
+USB driver overlap. Its 558 line-RX overflow events are the device's
+[own echo](usb-uart-overlap4.md#line-rx-overflow-is-the-devices-own-echo): 10 descriptor replies drop 46 bits each and 7 reports 14 each. The test
+asserts that every dropped bit belongs to a device-started receiver frame and
+that every peer packet starts on an empty, idle receiver.
 
 Detector reset uses 144 SE0 clocks plus 4800 recovery clocks; it does not qualify
 normative or electrical reset timing. Deliberately delayed retry/ACK intervals
 stress retention rather than establish general ACK timing compliance. Arbitrary
 core gating, global reset, preemption, faults, active loader service, aborted
 internal supplier traversals, sustained rate and physical I/O timing remain
-outside this result. The full combined model suite has not run with this pair.
+outside this result. The baud and rate envelope measured for the fixed
+four-byte pair does not transfer: this producer polls START every 26 clocks.

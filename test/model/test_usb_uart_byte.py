@@ -450,6 +450,7 @@ def test_uart_byte_control_mailbox(tmp_path):
         result = rig.result(None)
         verdict = audit(result)
         rig.mh.echo.check()
+        mutate_and_reject(result)  # saved-trace oracle controls
         (out/"oracle.json").write_text(json.dumps(verdict,indent=2)+"\n")
     except BaseException as exc:
         error = type(exc).__name__+": "+str(exc)

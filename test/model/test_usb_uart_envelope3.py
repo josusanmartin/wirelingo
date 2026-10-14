@@ -599,6 +599,7 @@ def test_envelope3_admission_and_retention(tmp_path):
             else:peer.device(row)
         rig.absolute('final',FINAL_DEADLINE)
         result=rig.snapshot(None,peer);verdict=audit(result);rig.mh.echo.check()
+        mutate_and_reject(result)  # saved-trace oracle controls
         (out/'oracle.json').write_text(json.dumps(verdict,indent=2)+'\n')
     except BaseException as exc:
         error=type(exc).__name__+': '+str(exc);raise
