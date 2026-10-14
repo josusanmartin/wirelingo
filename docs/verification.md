@@ -111,6 +111,17 @@ lost when pushed 210 clocks into the read).
   transaction. Covers reach a write, a commit with two outstanding, a cancel.
   Data integrity at speed is checked by `test_host_port_fast` and
   `test_spi_port_timing`.
+* **`pe_hostport` against a reference model** of the §6.1 protocol decoded
+  from the pins, under the host timing contract, with reset reasserted at
+  any step (k-induction, [formal-hostport.md](formal-hostport.md)): every
+  write goes to the right address (incrementing or fixed) with the host's
+  data, once and in order; each word read out equals its own snapshot of the
+  right address; a word is committed only after its last bit was clocked out;
+  a read is cancelled once, after CS_n rises; a word cut by CS_n is neither
+  written nor committed; after reset nothing happens until a legally re-armed
+  transaction, which then works; the clock-domain crossings keep their
+  margins. Covers reach each case; planted RTL bugs are caught
+  (`make -C formal hostport_mutants`).
 * **`pe_core`**, with a completely unconstrained instruction stream, pins,
   flags and host:
   * no side effects (pins, flags, FIFOs) unless executing on a tick;

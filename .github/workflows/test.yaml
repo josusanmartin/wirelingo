@@ -129,12 +129,13 @@ jobs:
       - name: Install OSS CAD Suite (yosys, sby, yices)
         uses: YosysHQ/setup-oss-cad-suite@v3
 
-      # FIFOs, host port, core and line unit (docs/verification.md §3)
+      # FIFOs, host port (safety, and against the reference model:
+      # docs/formal-hostport.md), core and line unit (docs/verification.md §3)
       - name: Formal proofs and covers
         run: |
           make -C formal 2>&1 | tee formal.log
           ! grep -E "DONE \((FAIL|ERROR|UNKNOWN)" formal.log
-          test "$(grep -c 'DONE (PASS' formal.log)" -ge 7
+          test "$(grep -c 'DONE (PASS' formal.log)" -ge 9
 
   mutants:
     runs-on: ubuntu-24.04

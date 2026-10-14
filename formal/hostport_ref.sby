@@ -1,0 +1,68 @@
+[tasks]
+prove
+cover guide
+cover1 guide
+mutant guide
+
+[options]
+multiclock on
+prove: mode prove
+prove: depth 20
+cover: mode cover
+cover: depth 230
+cover1: mode cover
+cover1: depth 300
+mutant: mode bmc
+mutant: depth 240
+mutant: skip 239
+
+[engines]
+prove: smtbmc yices
+cover: smtbmc yices
+cover1: smtbmc yices
+mutant: smtbmc yices
+
+[script]
+prove: read_verilog -sv -formal -DLEMMAS pe_hostport.sv hostport_ref.sv
+cover: read_verilog -sv -formal -DGUIDE pe_hostport.sv hostport_ref.sv
+cover1: read_verilog -sv -formal -DGUIDE -DCOVER1 pe_hostport.sv hostport_ref.sv
+mutant: read_verilog -sv -formal -DGUIDE -DSTICKY pe_hostport.sv hostport_ref.sv
+prep -top hostport_ref
+flatten
+connect -set i_phase dut.phase
+connect -set i_cnt dut.cnt
+connect -set i_cmd dut.cmd
+connect -set i_quad dut.quad
+connect -set i_rd dut.rd
+connect -set i_inc dut.inc
+connect -set i_wpar dut.wpar
+connect -set i_sh dut.sh
+connect -set i_osh dut.osh
+connect -set i_w_hold dut.w_hold
+connect -set i_buf0 dut.buf0
+connect -set i_buf1 dut.buf1
+connect -set i_a_hold dut.a_hold
+connect -set i_snap_addr dut.snap_addr
+connect -set i_com_addr dut.com_addr
+connect -set i_m_hold dut.m_hold
+connect -set i_outstanding dut.outstanding
+connect -set i_a_tog dut.a_tog
+connect -set i_w_tog dut.w_tog
+connect -set i_r_tog dut.r_tog
+connect -set i_host_ready dut.host_ready
+connect -set i_a_s dut.a_s
+connect -set i_w_s dut.w_s
+connect -set i_r_s dut.r_s
+connect -set i_cs_s dut.cs_s
+connect -set i_active dut.active
+connect -set i_c_rd dut.c_rd
+connect -set i_c_inc dut.c_inc
+connect -set i_fill dut.fill
+connect -set i_a_pend dut.a_pend
+connect -set i_w_pend dut.w_pend
+connect -set i_need_commit dut.need_commit
+connect -set i_need_snap dut.need_snap
+
+[files]
+../src/pe_hostport.sv
+hostport_ref.sv
