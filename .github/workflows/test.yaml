@@ -44,6 +44,36 @@ jobs:
           make COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml
           python3 check_results.py eth_service.xml $(grep -c '^@cocotb.test()' test_eth_service.py)
 
+      - name: Post-freeze protocol firmware through the SPI port
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_post_freeze SIM_BUILD=sim_build/post_freeze COCOTB_RESULTS_FILE=post_freeze.xml
+          python3 check_results.py post_freeze.xml $(grep -c '^@cocotb.test()' test_post_freeze.py)
+
+      - name: Packed SPI framing through a serialized host
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_spi_packed_host SIM_BUILD=sim_build/spi_packed_host COCOTB_RESULTS_FILE=spi_packed_host.xml
+          python3 check_results.py spi_packed_host.xml $(grep -c '^@cocotb.test()' test_spi_packed_host.py)
+
+      - name: Preloaded SPI frames through a serialized host
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_spi_preloaded_host SIM_BUILD=sim_build/spi_preloaded_host COCOTB_RESULTS_FILE=spi_preloaded_host.xml
+          python3 check_results.py spi_preloaded_host.xml $(grep -c '^@cocotb.test()' test_spi_preloaded_host.py)
+
+      - name: Declared UART capture through a serialized host
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_uart_capture_host SIM_BUILD=sim_build/uart_capture_host COCOTB_RESULTS_FILE=uart_capture_host.xml
+          python3 check_results.py uart_capture_host.xml $(grep -c '^@cocotb.test()' test_uart_capture_host.py)
+
+      - name: UART/USB pair modes against the model, clock for clock
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_usb_uart_rtl SIM_BUILD=sim_build/usb_uart_rtl COCOTB_RESULTS_FILE=usb_uart_rtl.xml
+          python3 check_results.py usb_uart_rtl.xml $(grep -c '^@cocotb.test()' test_usb_uart_rtl.py)
+
       - name: Firmware tests on the model, assembler and driver tests
         run: |
           pip install pytest
@@ -71,6 +101,11 @@ jobs:
             test/top.xml
             test/pio.xml
             test/eth_service.xml
+            test/post_freeze.xml
+            test/spi_packed_host.xml
+            test/spi_preloaded_host.xml
+            test/uart_capture_host.xml
+            test/usb_uart_rtl.xml
             test/lockstep_tapeout.xml
             test/lockstep_4core.xml
         if: always()
