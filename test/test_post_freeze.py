@@ -26,7 +26,7 @@ import cocotb
 from cocotb.triggers import ClockCycles, RisingEdge, ValueChange
 from cocotb.utils import get_sim_time
 
-from pe import asm, host, postfreeze as pf, postfreeze2 as p2, sigrok, sim
+from pe import asm, host, postfreeze as pf, postfreeze2 as p2, postfreeze3 as p3, sigrok, sim
 
 HERE = pathlib.Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("pe_top_tests", HERE / "test.py")
@@ -665,3 +665,244 @@ async def pf_quad_enc(dut):
         counts = sigrok.graycode(pads.trace({"a": ("ui", 0), "b": ("ui", 1)}), ["a", "b"], res_ps=10_000)
         dut._log.info(f"sigrok graycode: {len(counts)} count changes, the last shown {counts[-1]}")
         assert counts[-1] == pos
+
+
+# ------------------------------------------------------------------ third round: HDMI-CEC
+
+@cocotb.test()
+async def pf_cec(dut):
+    """cec (core 0, uio0 open drain, pulled up, logical address 4) and the
+    pins-only CEC device model (the TV, address 0) on one line, the chip at
+    100 kHz with CLKDIV 1 (1 tick = 10 us: tick for tick 50 MHz / 500): our
+    frames to the TV (acknowledged), a broadcast, a poll nobody answers
+    (NACK); then the TV's frame to us, which the firmware acknowledges.
+    sigrok's cec decodes the line."""
+    PERIOD = 10_000.0
+    CEC = T.UIO(0)
+    spi = await T.setup(dut, clock_ns=PERIOD)
+    dut.pull_up.value = 1 << CEC
+    await spi.write(sim.A_POUT, [1 << CEC])
+    await spi.write(sim.A_OD, [1 << CEC])
+    await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [p3.CEC_CRCCTRL])
+    await spi.write(sim.core_reg(0, sim.C_CRC), [4])
+    await T.run_program(spi, 0, load("cec", **p3.cec_defines(CEC)), clkdiv=1 << 8)
+    tv = p3.CecNode(addr=0)
+
+    async def bus():
+        while True:
+            await RisingEdge(dut.clk)
+            t = get_sim_time(unit="ps") / 1000
+            d = tv.step(t, int(dut.uio_in.value) >> CEC & 1)
+            T.EXT.set(CEC, not d, 0)
+    task = cocotb.start_soon(bus())
+    pads = Pads(dut)
+    ours = [bytes([0x40, 0x04]), bytes([0x4F, 0x82, 0x10, 0x00]), bytes([0x4B])]
+    await push_all(spi, 0, p3.cec_words(ours[0], 5) + p3.cec_words(ours[1], 7) + p3.cec_words(ours[2], 7))
+    words = []
+    for _ in range(25):
+        await wait_ns(dut, 10e6, PERIOD)
+        words += await drain(spi, 0)
+    tv.send(bytes([0x04, 0x8F]))
+    for _ in range(10):
+        await wait_ns(dut, 10e6, PERIOD)
+        words += await drain(spi, 0)
+    task.cancel()
+    pads.stop()
+    frames, tx, err = p3.cec_records(words)
+    dut._log.info(f"cec: ours {tx}; received {[(f['blocks'].hex(), f['ack'], f['to_us']) for f in frames]}; "
+                  f"the TV received {[(f['blocks'].hex(), f['ack']) for f in tv.frames]}, sent {tv.results}")
+    assert [(r["ok"], r["nack"]) for r in tx] == [(True, False), (True, False), (False, True)] and not err
+    assert [f["blocks"] for f in tv.frames] == ours + [bytes([0x04, 0x8F])]
+    assert [f["blocks"] for f in frames] == [bytes([0x04, 0x8F])] and frames[0]["to_us"] and frames[0]["ack"] == [0, 0]
+    assert tv.results[0][2] == "ok"
+    dec = p3.cec_decode(pads.edges("uio", CEC), pads.t_end)
+    assert [f["blocks"] for f in dec] == ours + [bytes([0x04, 0x8F])] and not any(f["error"] for f in dec)
+    if HAVE_SIGROK:
+        got, warn = sigrok.cec(pads.trace({"cec": ("uio", CEC)}), "cec", res_ps=100_000)
+        dut._log.info(f"sigrok cec: {got} {warn}")
+        assert [g[1] for g in got] == ["40:04", "4f:82:10:00", "4b", "04:8f"]
+        assert [g[2].endswith("R: ACK") for g in got] == [True, True, False, True]
+
+
+# ------------------------------------------------------------------ ISO 7816-3 T=0
+
+@cocotb.test()
+async def pf_iso7816(dut):
+    """iso7816 (core 0: I/O = uio0 open drain, RST = uo0) and its clock
+    (core 1: CLK = uo1, CLKDIV 1: 2 MHz) with the chip at 4 MHz, against the
+    pins-only T=0 card timed by that CLK (one etu = 372 periods): cold reset
+    and the answer to reset (direct convention detected), then READ BINARY
+    of 2 bytes, the first of which the card sends with a wrong parity bit
+    once: the reader's error signal and the card's repetition. sigrok's
+    uart (even parity) decodes I/O."""
+    PERIOD = 250.0
+    IO, RST, CLK = T.UIO(0), T.UO(0), T.UO(1)
+    ATR = bytes.fromhex("3BB4110000574C474F")
+    spi = await T.setup(dut, clock_ns=PERIOD)
+    dut.pull_up.value = 1 << IO
+    await spi.apply(host.pin_owner_writes({CLK: 1}, profile=T.PROFILE))
+    await spi.write(sim.A_POUT, [1 << IO])
+    await spi.write(sim.A_OD, [1 << IO])
+    await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [p3.ISO_CRCCTRL])
+    d0, d1 = p3.iso_clkdivs(1)
+    card = p3.IsoCard(ATR, corrupt={len(ATR) + 1: 1})
+
+    async def contacts():
+        while True:
+            await RisingEdge(dut.clk)
+            uo = int(dut.uo_out.value)
+            d = card.step(get_sim_time(unit="ps") / 1000, uo >> 1 & 1, uo & 1, int(dut.uio_in.value) & 1)
+            T.EXT.set(IO, not d, 0)
+    task = cocotb.start_soon(contacts())
+    prog = load("iso7816", **p3.iso_defines(IO, RST, wt=16, finv=5, fov=7))
+    await spi.apply(host.load_program(0, prog, 0, profile=T.PROFILE, clkdiv=d0))
+    await spi.apply(host.load_program(1, load("iso7816_clk", CLK=CLK), 256, profile=T.PROFILE, clkdiv=d1))
+    pads = Pads(dut)
+    await spi.write(sim.A_CTRL, [3 | (3 << 8)])               # both cores together
+    etu = 744 * PERIOD
+    await push_all(spi, 0, [p3.ISO_RESET] + p3.iso_recv(33, first_timeout_etu=112, ts=True))
+    words = []
+    for _ in range(20):
+        await wait_ns(dut, 10 * etu, PERIOD)
+        words += await drain(spi, 0)
+        if any(r[0] == "recv" for r in p3.iso_records(words)):
+            break
+    await push_all(spi, 0, p3.iso_send(bytes([0x00, 0xB0, 0x00, 0x10, 0x02])) + p3.iso_recv(7))
+    for _ in range(30):
+        await wait_ns(dut, 10 * etu, PERIOD)
+        words += await drain(spi, 0)
+        if sum(r[0] == "recv" for r in p3.iso_records(words)) == 2:
+            break
+    task.cancel()
+    pads.stop()
+    recs = p3.iso_records(words)
+    chars = [r[1] for r in recs if r[0] == "char"]
+    dut._log.info(f"iso7816: {recs}; the card: received {[hex(b) for _, b, _, _ in card.received]}, "
+                  f"commands {card.commands}, errors seen {card.err_seen}")
+    assert bytes(chars[:len(ATR)]) == ATR
+    assert bytes(chars[len(ATR):]) == bytes([0xB0, 0x10, 0x11, 0x90, 0x00])
+    assert [r[2] for r in recs if r[0] == "char"][len(ATR) + 1] == 1          # one error signal for 0x10
+    assert card.commands[0][0] == bytes([0x00, 0xB0, 0x00, 0x10, 0x02])
+    rises = [t for t, v in pads.edges("uo", 1) if v]
+    per = {round(b - a) for a, b in zip(rises, rises[1:])}
+    assert per == {500}                                          # CLK 2 MHz, steady
+    if HAVE_SIGROK:
+        tr = pads.trace({"io": ("uio", IO)})
+        data, warn = sigrok.uart_parity(tr, "io", round(1e9 / etu), res_ps=100_000)
+        got = bytes(b for _, b in data)
+        dut._log.info(f"sigrok uart: {got.hex()} {warn}")
+        assert got == ATR + bytes.fromhex("00b0001002" "b0" "10" "10" "11" "9000")
+        assert [w for _, w in warn] == ["Frame error"]
+
+
+# ------------------------------------------------------------------ SMBus with PEC
+
+@cocotb.test()
+async def pf_smbus(dut):
+    """smbus_host (core 0: SDA = uio0, SCL = uio1, open drain, pulled up)
+    and the pins-only SMBus device model (a smart battery at 0x0B, with PEC,
+    stretching SCL 20 us after every ACK), the chip at 3.571 MHz with CLKDIV
+    4 (tick for tick 50 MHz / 56): write word, read word, block read, all
+    with PEC; then a poll of an absent address (NACK). sigrok's i2c decodes
+    the bus and the PECs are recomputed over its bytes."""
+    PERIOD = 280.0
+    SDA, SCL = T.UIO(0), T.UIO(1)
+    BAT = 0x0B
+    regs = {0x09: bytes([0x34, 0x12]), 0x20: bytes([5]) + b"Wirel"}
+    spi = await T.setup(dut, clock_ns=PERIOD)
+    dut.pull_up.value = 3
+    await spi.write(sim.A_POUT, [3])
+    await spi.write(sim.A_OD, [3])
+    await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [p3.SMBUS_CRCCTRL])
+    await T.run_program(spi, 0, load("smbus_host", **p3.smbus_defines(SDA, SCL, 7)), clkdiv=4 << 8)
+    dev = p3.SmbusDevice(BAT, regs, stretch=20e3)
+
+    async def bus():
+        while True:
+            await RisingEdge(dut.clk)
+            v = int(dut.uio_in.value)
+            sc, sd = dev.step(get_sim_time(unit="ps") / 1000, v >> SCL & 1, v >> SDA & 1)
+            T.EXT.set(SCL, not sc, 0)
+            T.EXT.set(SDA, not sd, 0)
+    task = cocotb.start_soon(bus())
+    pads = Pads(dut)
+    plan = [p3.smbus_words(BAT, [0x09, 0x78, 0x56], pec=True), p3.smbus_words(BAT, [0x09], 2, pec=True),
+            p3.smbus_words(BAT, [0x20], 1, pec=True, block=True), p3.smbus_words(0x50, [0x01])]
+    words = []
+    for w in plan:
+        await push_all(spi, 0, w)
+        for _ in range(40):
+            await wait_ns(dut, 200e3, PERIOD)
+            words += await drain(spi, 0)
+            if len(p3.smbus_records(words)) == plan.index(w) + 1:
+                break
+    task.cancel()
+    pads.stop()
+    recs = p3.smbus_records(words)
+    dut._log.info(f"smbus_host: {recs}; the device: "
+                  f"{[(t['write'].hex(), t['read'].hex(), t['pec_ok']) for t in dev.transactions]}")
+    assert [r["result"] for r in recs] == ["ok", "pec_ok", "pec_ok", "addr_nack"]
+    assert recs[1]["read"][:2] == regs[0x09] and recs[2]["read"][:-1] == regs[0x20]
+    assert dev.transactions[0]["write"][:3] == bytes([0x09, 0x78, 0x56]) and dev.transactions[0]["pec_ok"]
+    if HAVE_SIGROK:
+        tr = pads.trace({"scl": ("uio", SCL), "sda": ("uio", SDA)})
+        toks = sigrok.i2c(tr, "scl", "sda", res_ps=10_000)
+        frames, cur = [], None
+        for _, k in toks:
+            if k == "S":
+                cur = []
+                frames.append(cur)
+            elif isinstance(k, tuple) and k[0] in ("AW", "AR", "DW", "DR"):
+                cur.append((k[1] << 1 | (k[0] == "AR")) if k[0][0] == "A" else k[1])
+        dut._log.info(f"sigrok i2c: {[bytes(f).hex() for f in frames]}")
+        assert len(frames) == 4
+        for f in frames[:3]:
+            assert p3.smbus_pec(bytes(f[:-1])) == f[-1]
+
+
+# ------------------------------------------------------------------ RC-5
+
+@cocotb.test()
+async def pf_rc5(dut):
+    """rc5_tx (core 0, LED on uo0, CLKDIV 1: 108 kHz ticks) -> the 36 kHz
+    receiver-module model -> ui0 -> rc5_rx (core 1, CLKDIV 1.5: 128 ticks
+    per bit), the chip at 108 kHz (tick for tick 50 MHz / 462.96 and 694.4):
+    a key, its repeat, a new key (toggle), an RC-5X command. sigrok's ir_rc5
+    decodes the receiver module's output."""
+    PERIOD = 9260.0                     # ns: 108 kHz (107.99), an even number of ps for the clock
+    LED, RX = T.UO(0), T.UI(0)
+    spi = await T.setup(dut, clock_ns=PERIOD)
+    spi.set_low_inputs(1)
+    tsop = pf.IrReceiverModule(f_carrier=p3.RC5_F)
+
+    async def ir():
+        while True:
+            await RisingEdge(dut.clk)
+            o = tsop.step(get_sim_time(unit="ps") / 1000, int(dut.uo_out.value) & 1)
+            if o != (spi.ui & 1):
+                spi.set_low_inputs(o)
+    task = cocotb.start_soon(ir())
+    await T.run_program(spi, 1, load("rc5_rx", IR=RX, TB=128, FOV=7), in_pins=RX, clkdiv=(1 << 8) | 128)
+    await T.run_program(spi, 0, load("rc5_tx", IR=LED), side_pins=LED, clkdiv=1 << 8)
+    pads = Pads(dut)
+    await wait_ns(dut, 10e6, PERIOD)
+    keys = [(0, 12, False), (0, 12, True), (5, 53, False), (20, 70, False)]
+    await push_all(spi, 0, [p3.rc5_word(a, c, r) for a, c, r in keys])
+    words = []
+    for _ in range(10):
+        await wait_ns(dut, 50e6, PERIOD)
+        words += await drain(spi, 1)
+    task.cancel()
+    pads.stop()
+    recs = [p3.rc5_record(w) for w in words]
+    dut._log.info(f"rc5_rx: {recs}")
+    assert [(r["address"], r["command"]) for r in recs] == [(a, c) for a, c, _ in keys]
+    tg = [r["toggle"] for r in recs]
+    assert tg[0] == tg[1] != tg[2] != tg[3]
+    rises = [t for t, v in pads.edges("uo", 0) if v]
+    per = {round((b - a) / PERIOD) for a, b in zip(rises, rises[1:]) if b - a < 10 * PERIOD}
+    assert per == {3}                                            # 36 kHz carrier, 3 ticks
+    if HAVE_SIGROK:
+        got = sigrok.ir_rc5(pads.trace({"ir": ("ui", 0)}), "ir", res_ps=100_000)
+        dut._log.info(f"sigrok ir_rc5: {got}")
+        assert [(g[1], g[2], g[3]) for g in got] == [(r["address"], r["command"] & 63, r["toggle"]) for r in recs]

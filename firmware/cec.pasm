@@ -17,12 +17,15 @@
 ; 1.5 ms; for a broadcast (destination 15) a 0 means "rejected".
 ;
 ; Follower (always): the start bit must be low 3.5..3.9 ms and the next fall
-; come 4.3..4.7 ms after its fall (+-1 tick); every bit is sampled at
-; 1.05 ms, the line must be high again by 1.85 ms (a 0 is low 1.3..1.7 ms),
-; the next bit's fall must come 2.05..2.75 ms after this one's, else the
-; frame ends (normally after a block with EOM = 1, or after a NACK: the
-; initiator stops). Frames to our address are acknowledged, every frame on
-; the bus is reported.
+; come 4.3..4.7 ms after its fall (2 ticks of margin each way: 3.48..3.92
+; and 4.28..4.72); every bit is sampled 1.05 ms after its fall is seen, the
+; line must be high again by 1.85 ms (a 0 is low 1.3..1.7 ms), the next
+; bit's fall must not come sooner than 2.0 ms (the receiver's 2.05 with
+; margin) and, if it does not come by 2.8 ms (2.75), the frame has ended
+; (normally after a block with EOM = 1, or after a NACK: the initiator
+; stops). Frames to our address are acknowledged, every frame on the bus is
+; reported. The follower's bookkeeping is padded to P_R ticks on every path
+; (the timeout counter is the only stopwatch, and only while waiting).
 ;
 ; Initiator (when the host has queued a frame): waits until the line has
 ; been idle for the frame's signal free time (the host gives it in ticks:

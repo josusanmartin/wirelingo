@@ -34,6 +34,11 @@ workarounds (section [ISA limitations](#isa-limitations-found)).
 | MIDI receiver and parser | `midi_rx` (132) | `uart` + `midi` on the stream played in: the same messages | 31250 baud: every byte sampled 1600 clocks per bit at 50 MHz; the parser takes 14..39 ticks (checker: <= 48) of the 64 in half a stop bit; streams from a sender 2 % fast or slow parsed | MIDI 1.0: 31250 baud +-1 % |
 | MIDI transmitter (running status) | `midi_tx` (58) | `uart` + `midi`: notes, program change, pressure, pitch bend, clock | every bit 32.000 us (CLKDIV 50 at 50 MHz, exact); stop bit and space 40..61 us | |
 | Quadrature encoder counter (X4) | `quad_enc` (20) | `graycode`: the same count | CLKDIV 1: a step every 14 (forward) or 15 (backward) clocks or slower counted exactly: 3.3 M steps/s at 50 MHz; faster, missed steps are flagged | (no standard: A/B in quadrature) |
+| HDMI-CEC device: initiator and follower | `cec` (244) | `cec`: headers, opcodes, operands, ACK/NACK | at 50 MHz: start bit low 185000 clocks (3.7 ms), next fall 225000 (4.5 ms), a 1 low 30000 (0.6 ms), a 0 75000 (1.5 ms), bits 120000 (2.4 ms) apart, exact; frames from initiators at the ends of the receiver's ranges received and acknowledged; arbitration lost (then received as a follower) and won; signal free time 3 / 5 / 7 bit periods + 0.1..0.3 ms | HDMI 1.3a Supplement 1: start 3.7 / 4.5 ms +-0.2, a bit 2.4 ms (receiver 2.05..2.75), low 0.6 / 1.5 +-0.2, sampled at 1.05 +-0.2 |
+| ISO 7816-3 T=0 reader, with the card clock | `iso7816` (218) + `iso7816_clk` (1): both cores | `uart` (even parity): both directions | 1 etu = 372 CLK exactly (4464 clocks at 50 MHz, every edge on that grid); characters 12 + N etu apart; our error signal 10.5 etu after the start, 1.5 etu long; a rejected character sent again 2 etu after the card's error signal ends; card to reader >= 16 etu | ISO/IEC 7816-3: 12 etu (+ N) start to start, error signal at 10.5 +-0.2 etu for 1..2 etu, repetition >= 2 etu after it, >= 16 etu between directions |
+| SMBus host with PEC | `smbus_host` (189) | `i2c`: addresses, data, ACK/NACK; the PEC recomputed over its bytes | at 50 MHz (CLKDIV 56): SCL low 5.6 us, high 4.5..5.6 us, 89..99 kHz; START hold 4.5 us, STOP setup 6.7 us; gives up 25.003 ms after a device holds SCL low | SMBus 3.2: 10..100 kHz, tLOW >= 4.7 us, tHIGH >= 4.0 us, T_TIMEOUT 25..35 ms; PEC = CRC-8 |
+| RC-5 infrared transmitter, 36 kHz carrier | `rc5_tx` (49) | `ir_rc5` on the receiver module's output | every carrier period 3 ticks, on for 1, across half bits too (at 50 MHz 1388 or 1389 clocks, 35999.8 Hz on average); half bits of 32 periods (888.9 us), frames 113.78 ms apart, exact in ticks | RC-5: 36 kHz, half bit 889 us, a frame every 64 bits |
+| RC-5 infrared receiver | `rc5_rx` (33) | same | decodes a remote 10 % fast or slow with bursts 150 us longer or shorter; truncated frames and missing transitions reported | |
 
 The first round: ten programs, 697 instruction words; the largest,
 `lin_responder`, uses 191 of a bank's 256. Every one has an RTL test through
@@ -50,6 +55,16 @@ of the IHP chip. Four more RTL tests through the SPI host port (`pf_dali`,
 on runner1) and 61 more model tests (`test/model/test_{dali,modbus,midi,quad_enc}.py`
 and 14 in `test_post_freeze_timing.py`). Simulation only: none of these five
 has run on the FPGA or silicon.
+
+The third round ([below](#third-round-hdmi-cec-iso-7816-3-smbus-with-pec-rc-5)):
+six more programs for four protocols, 734 words (the largest, `cec`, 244 of
+256: initiator and follower in one bank); ISO 7816-3 takes both cores of the
+IHP chip, because the card's clock needs a core of its own. Four more RTL
+tests through the SPI host port (`pf_cec`, `pf_iso7816`, `pf_smbus`,
+`pf_rc5`: test_post_freeze has 16) and 72 more model tests
+(`test/model/test_{cec,iso7816,smbus,rc5}.py`: 56, and 16 in
+`test_post_freeze_timing.py`). Simulation only: none of these six has run on
+the FPGA or silicon.
 
 On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs passed at 50 MHz; bidirectional DShot's bit timing was a clock short at 50 MHz (odd T0: the assembler divided exactly and truncated each half of a split delay). With `/` now integer division it measures exactly 62 / 31 / 83 clocks at 50 MHz on the same bitstream, and exact at 48 MHz.
 
@@ -73,7 +88,15 @@ On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "
   decoder with parity, a Modbus RTU server model (CRC by the specification's
   algorithm), a MIDI reference receiver and running-status encoder, and a pins-only
   X4 quadrature decoder (with the tests' encoder model, which knows the
-  position it moved to).
+  position it moved to). Third round (`tools/pe/postfreeze3.py`): a CEC
+  decoder with the receiver's ranges and a CEC device model (a follower
+  that acknowledges its address, an initiator with its own timing that
+  arbitrates and checks ACKs); an ISO 7816 T=0 card that times everything
+  by counting the CLK it is given, checks parity, signals errors and repeats
+  what the reader rejects; an SMBus device that computes its own PEC over
+  what it saw, stretches the clock and resets itself after 35 ms of SCL low;
+  an RC-5 decoder written from the code's definition and an independent
+  remote's envelope (into round one's receiver-module model, at 36 kHz).
 * **sigrok** (`sigrok-cli` 0.7.2, libsigrokdecode 0.5.3, installed in user
   space by `flow/install_sigrok.sh`): third-party decoders on the recorded
   waveform (model pins, or the RTL's pads). Their outputs are quoted below.
@@ -95,13 +118,17 @@ On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "
   run at 50/48 MHz on the RTL as well. Second round: DALI at 307.2 kHz
   (CLKDIV 4), Modbus at 1.9968 MHz and MIDI at 4 MHz (both CLKDIV 1 for the
   receiver), the quadrature counter at 50 MHz; on the model DALI and Modbus
-  also run a frame at 50 MHz.
+  also run a frame at 50 MHz. Third round: CEC at 100 kHz (CLKDIV 1),
+  ISO 7816 at 4 MHz (the card's CLK at 2 MHz), SMBus at 3.571 MHz (CLKDIV
+  4), RC-5 at 108 kHz (CLKDIV 1 and 1.5), each tick for tick its 50 MHz
+  configuration; on the model each also runs at 50 MHz.
 
 ```
 PYTHONPATH=tools .venv/bin/python -m pytest test/model/test_dmx512.py test/model/test_lin.py \
     test/model/test_nec.py test/model/test_i2s.py test/model/test_wiegand.py \
     test/model/test_dshot.py test/model/test_dshot_bidir.py test/model/test_post_freeze_timing.py \
-    test/model/test_dali.py test/model/test_modbus.py test/model/test_midi.py test/model/test_quad_enc.py
+    test/model/test_dali.py test/model/test_modbus.py test/model/test_midi.py test/model/test_quad_enc.py \
+    test/model/test_cec.py test/model/test_iso7816.py test/model/test_smbus.py test/model/test_rc5.py
 cd test && make COCOTB_TEST_MODULES=test_post_freeze          # RTL, about 3 minutes
 PYTHONPATH=tools python -m pe.timing firmware/dmx512_tx.pasm -D TX=8 -D MTBS=0   # each header has its command
 ```
