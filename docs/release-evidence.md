@@ -222,7 +222,8 @@ hash-bound receipt `rel-beddbe2/test/sim_build/glm.hra0lnoh/receipt.json`
 its own `gl_sdf_test.sh` receipt. `pf_dmx512` and `pf_wiegand` fail on
 exact-equality timing assertions: the pads' rise and fall delays differ by
 50–170 ps, so a 176 us BREAK measures 175999.83 ns. The protocols are
-decoded correctly. A test change is needed before they pass; see
+decoded correctly. After a 1 ns tolerance in those two assertions (commit
+8dd249a), both pass at SDF typ on fo6 (separate single-case receipt); see
 [post-freeze-protocols.md](post-freeze-protocols.md#results). Archive
 `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz` (sha256 `7466b8f8…0485`).
 

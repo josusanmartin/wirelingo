@@ -88,7 +88,7 @@ validation commit `beddbe2` (`main` a1561d6 plus that runner; its `test/`,
 * **SDF, typical corner** (each test through `flow/gl_sdf_test.sh`'s
   single-case mode at 20 ns; tests that start a slower clock keep it):
   **14/16 pass**, each with that runner's own SDF receipt, 38.5 min wall.
-  **`pf_dmx512` and `pf_wiegand` fail**, on exact-equality timing
+  **`pf_dmx512` and `pf_wiegand` failed**, on exact-equality timing
   assertions written for zero-delay simulation: the pads' rise and fall
   delays differ by tens of picoseconds. DMX512's BREAK measures
   175999.83 ns, not 176000.00 (uo_out[0] falls 2.615 ns and rises 2.445 ns
@@ -102,6 +102,12 @@ validation commit `beddbe2` (`main` a1561d6 plus that runner; its `test/`,
   Wiegand decoder included. The committed tests still fail with SDF; this
   needs a test change (a tolerance under SDF) to become a pass.
 * Not run: SDF at the slow and fast corners.
+  **Follow-up (2026-10-14):** both assertions now allow 1 ns (commit
+  8dd249a; RTL timing is still exact, `test_post_freeze` 16/16 on RTL).
+  Re-run at SDF typ on fo6 with validation `8dd249a`: **`pf_dmx512` and
+  `pf_wiegand` pass** (354 s, `gl_sdf_test.sh` single-case receipt). With
+  the 14 above, all 16 pass at SDF typ, in two runs at two validation
+  commits.
 
 Per test, wall time in seconds (each with its own Icarus compile):
 

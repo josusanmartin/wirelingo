@@ -600,8 +600,9 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
   per test, outputs outside the run, with a hash-bound receipt;
   `--sdf-corner` sends each test through `flow/gl_sdf_test.sh`'s single-case
   mode. On fo6 (2026-10-14, validation `beddbe2`): functional 16/16; SDF
-  typ 14/16, with `pf_dmx512` and `pf_wiegand` failing on exact-picosecond
-  assertions (pad rise/fall delays differ by 50–170 ps;
+  typ 14/16 in that run; `pf_dmx512` and `pf_wiegand` failed only on
+  exact-picosecond assertions (pad rise/fall delays differ by 50–170 ps) and
+  pass at SDF typ after a 1 ns tolerance (8dd249a;
   [post-freeze-protocols.md](post-freeze-protocols.md)). Supplementary:
   `flow/release_check.py` does not read these receipts.
 

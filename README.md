@@ -75,9 +75,9 @@ describes how, and what it caught.
   HDMI-CEC (multi-master arbitration), ISO 7816-3 T=0 smart card, SMBus with
   PEC, RC-5 infrared. Each is checked by the static timing checker, pins-only
   models, sigrok's decoders where one exists and an RTL test through the SPI
-  port, which also passes on fo6's gate-level netlist (functional; with SDF
-  at the typical corner 14 of 16, two failing only on exact-picosecond
-  assertions). All three rounds also ran on the KV260 FPGA build of the RTL,
+  port, which also passes on fo6's gate-level netlist (functional 16/16;
+  with SDF at the typical corner 16/16, two of them after their timing
+  assertions got a 1 ns tolerance for sub-ns pad skew). All three rounds also ran on the KV260 FPGA build of the RTL,
   against the other core or the FPGA's pattern generator playing our own
   (mostly pre-timed) device models, with results equal to the cycle model's
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the
@@ -135,9 +135,10 @@ Each program talks to an independent device model that sees only the pins.
 main suite (`test/test.py`) also passes on the signed-off gate-level netlist.
 "GL" = the post-freeze module (`test_post_freeze`, 16 tests) passes on that
 netlist too (fo6, functional, 2026-10-14). With SDF delays at the typical
-corner, 14 of its 16 tests pass. `pf_dmx512` and `pf_wiegand` fail there
-on exact-picosecond timing assertions (pad rise and fall delays differ by
-50–170 ps): [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md).
+corner all 16 pass: 14 in the first run; `pf_dmx512` and `pf_wiegand`
+failed only on exact-equality timing assertions (pad rise and fall delays
+differ by 50–170 ps) and pass after a 1 ns tolerance (commit 8dd249a):
+[docs/post-freeze-protocols.md](docs/post-freeze-protocols.md).
 The host-workflow modules (`test_usb_uart_rtl`, ...) ran on the RTL only.
 "Model" = on the cycle-accurate model, which is lockstep-checked against the RTL. "KV260" =
 the RTL built for the Kria KV260 FPGA, against the other core or the FPGA's
