@@ -35,6 +35,8 @@ DEFS = {
     "midi_tx": {"TX": 8, "TB": 32, "RS": 1},
     "quad_enc": {"A": 16, "FERR": 6},
     "cec": {"CEC": 0, "FOV": 7, "FLOST": 6},
+    "iso7816": p3.iso_defines(0, 8, wt=32, finv=5, fov=7),
+    "iso7816_clk": {"CLK": 9},
 }
 
 
@@ -326,3 +328,23 @@ def test_cec_sound():
     rig.send(b"\x40\x36\x00\x01\x02")
     rig.run(20e6)
     sound("cec", tr, p3.cec_clkdiv(TC3.F_CLK))
+
+
+def test_iso7816_sound():
+    """iso7816 and its clock core against the card model: the ATR, T=0
+    commands both ways with an extra guard time, characters the card
+    corrupts (our error signals) and rejects (our repetitions), an abort."""
+    import test_iso7816 as TI
+    card = p3.IsoCard(TI.ATR, corrupt={len(TI.ATR) + 3: 2}, reject={6: 1, 14: 6})
+    rig = TI.Rig(card, start=False)
+    t0, t1 = timing.Tracer(rig.mh.chip, 0, 0), timing.Tracer(rig.mh.chip, 1, 256)
+    rig.mh.start(3)
+    rig.run(1000)
+    rig.activate()
+    rig.t0([0x00, 0xB0, 0x00, 0x00, 0x05], le=5)
+    rig.t0([0x00, 0xD6, 0x00, 0x00, 0x04], data=b"\x01\x02\x03\x04")
+    rig.command(p3.iso_send(bytes([0x00, 0xB0, 0x00, 0x08, 0x02]), extra_guard=3) + p3.iso_recv(8), n_records=2)
+    rig.command(p3.iso_send(bytes([0x00, 0xB0, 0x00, 0x00, 0x01])))
+    d0, d1 = p3.iso_clkdivs(1)
+    sound("iso7816", t0, d0)
+    sound("iso7816_clk", t1, d1)

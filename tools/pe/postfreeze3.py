@@ -305,3 +305,291 @@ def cec_wave_bits(blocks):
     for i, b in enumerate(bytes(blocks)):
         bits += [(b >> (7 - k)) & 1 for k in range(8)] + [int(i == len(blocks) - 1), 1]
     return bits
+
+
+# ================================================================== ISO 7816-3, T=0
+# ISO/IEC 7816-3: etu = F / D card clock periods (372 until a PPS); a
+# character is a start bit, 8 data bits and an even parity bit; 12 etu from
+# start to start (+ N extra guard etu from the interface device); a receiver
+# that sees a parity error holds I/O low from 10.5 +- 0.2 etu for 1..2 etu
+# and the sender repeats the character >= 2 etu after detecting it; >= 16
+# etu between the leading edges of characters in opposite directions; the
+# answer to reset starts 400..40000 clock cycles after RST rises.
+
+ISO_F = 372
+ISO_TB = 124
+ISO_SEND, ISO_RECV, ISO_RESET, ISO_DEACT = 0, 1, 2, 3
+ISO_CRCCTRL = 15 << 16          # width 16, no taps: the CRC register is storage
+
+
+def iso_defines(io=0, rst=8, tb=ISO_TB, wt=9600, rmax=4, rstlo=2, turn=6, finv=5, fov=7):
+    return {"IO": io, "RST": rst, "TB": tb, "WT": wt, "RMAX": rmax, "RSTLO": rstlo, "TURN": turn,
+            "FINV": finv, "FOV": fov}
+
+
+def iso_clkdivs(d=1):
+    """(the reader core's CLKDIV, the clock core's): f_CLK = f_clk / 2d, one
+    etu = 372 CLK periods = 124 ticks of the reader core."""
+    return (6 * d) << 8, d << 8
+
+
+def iso_send(data, extra_guard=0):
+    """iso7816 TX FIFO words: SEND the bytes (N extra guard etu)."""
+    data = bytes(data)
+    if not 1 <= len(data) <= 255:
+        raise ValueError("1..255 bytes")
+    w = [ISO_SEND | len(data) << 8 | extra_guard << 16]
+    for i in range(0, len(data), 4):
+        w.append(int.from_bytes(data[i:i + 4].ljust(4, b"\0"), "little"))
+    return w
+
+
+def iso_recv(m, first_timeout_etu=0, ts=False):
+    """iso7816 RECV command word: up to m characters; the first within
+    first_timeout_etu (rounded up to 8 etu; 0: WT); ts: the first is TS."""
+    return [ISO_RECV | m << 8 | -(-first_timeout_etu // 8) << 16 | int(ts) << 24]
+
+
+def iso_records(words):
+    """Decode iso7816's RX FIFO words: [("char", byte, error signals sent,
+    gave up), ("recv", received, errors, timeout, bad TS, inverse),
+    ("send", not sent, repetitions, aborted)]."""
+    out = []
+    for w in words:
+        tag = w >> 24
+        if tag == 1:
+            out.append(("char", w & 255, w >> 8 & 15, bool(w >> 12 & 1)))
+        elif tag == 2:
+            out.append(("recv", w & 255, w >> 8 & 255, bool(w >> 16 & 1), bool(w >> 17 & 1), bool(w >> 18 & 1)))
+        elif tag == 3:
+            out.append(("send", w & 255, w >> 8 & 255, bool(w >> 16 & 1)))
+        else:
+            raise ValueError(f"not an iso7816 record: {w:#x}")
+    return out
+
+
+def iso_parity(b):
+    return bin(b & 255).count("1") & 1
+
+
+def iso_levels(b, inverse=False, bad_parity=False):
+    """The 10 levels of a character (start, 8 data, parity) on I/O (1 = H)."""
+    if inverse:
+        data = [1 - ((b >> (7 - k)) & 1) for k in range(8)]
+        par = 1 - iso_parity(b)
+    else:
+        data = [(b >> k) & 1 for k in range(8)]
+        par = iso_parity(b)
+    return [0] + data + [par ^ int(bad_parity)]
+
+
+def iso_byte(levels9, inverse=False):
+    """(byte, parity ok) from the 9 levels after the start bit."""
+    d, par = levels9[:8], levels9[8]
+    if inverse:
+        b = sum((1 - d[k]) << (7 - k) for k in range(8))
+        return b, (1 - par) == iso_parity(b)
+    b = sum(d[k] << k for k in range(8))
+    return b, par == iso_parity(b)
+
+
+def atr_length(atr):
+    """The length of an answer to reset from its first bytes (None if more
+    are needed): TS, T0, the interface bytes TAi..TDi, K historical bytes,
+    and TCK if any protocol other than T=0 is offered."""
+    if len(atr) < 2:
+        return None
+    n, y, k, t_other, i = 2, atr[1] >> 4, atr[1] & 15, False, 1
+    while True:
+        cnt = bin(y).count("1")
+        if len(atr) < n + cnt:
+            return None
+        td = atr[n + cnt - 1] if y & 8 else None
+        n += cnt
+        if td is None:
+            break
+        if td & 15:
+            t_other = True
+        y, i = td >> 4, i + 1
+    return n + k + int(t_other)
+
+
+def t0_parse(chars, ins):
+    """A T=0 card's answer after a command header: (NULL bytes, procedure
+    byte INS seen, data, SW1 SW2) from the characters received."""
+    nulls, i = 0, 0
+    while i < len(chars) and chars[i] == 0x60:
+        nulls, i = nulls + 1, i + 1
+    if i < len(chars) and chars[i] == ins:
+        return nulls, True, bytes(chars[i + 1:-2]), bytes(chars[-2:])
+    return nulls, False, b"", bytes(chars[i:i + 2])
+
+
+class IsoCard:
+    """A pins-only ISO 7816-3 T=0 card. step(t, clk, rst, io) -> its drive
+    of I/O (1 released, 0 low). It counts CLK rising edges: one etu is `f`
+    of them (372); it knows nothing else of the reader's timing.
+
+    On RST rising it sends `atr` (convention `inverse`) `atr_delay` CLK
+    cycles later; characters `gt` etu apart, an answer to the reader `turn`
+    etu after the leading edge of its last character. It samples the
+    reader's characters at mid-etu from their start edge, checks the parity
+    and signals errors (I/O low from 10.5 etu for `err_len` etu); reject =
+    {k: r}: signal an error on the reader's k-th character (counting those
+    accepted before it) r times regardless. Sending, it samples I/O at 11 etu and repeats
+    a character on an error signal 13 etu after its start, at most `max_rep`
+    times; corrupt = {k: r}: send its k-th distinct character with a wrong
+    parity bit the first r times.
+
+    The application: READ BINARY (INS B0: answers INS, P3 bytes from `mem`
+    at P1 P2, 90 00), UPDATE BINARY (D6: INS, then takes P3 bytes, 90 00),
+    others 6D 00; `nulls` NULL procedure bytes (60) before INS.
+
+    Records: received [(n0, byte, parity ok, error signalled)], sent [(n0,
+    byte, attempt)], commands [(header, data in, answer)], err_seen [(n0 of
+    our character, CLK count of the error)]."""
+
+    def __init__(self, atr=bytes.fromhex("3BB4110000574C474F"), inverse=False, atr_delay=5000, f=ISO_F,
+                 gt=12, turn=20, err_len=1.5, max_rep=4, corrupt=None, reject=None, nulls=0, mem=None):
+        self.atr, self.inverse, self.atr_delay, self.etu = bytes(atr), inverse, atr_delay, f
+        self.gt, self.turn, self.err_len, self.max_rep = gt, turn, err_len, max_rep
+        self.corrupt, self.reject, self.nulls = dict(corrupt or {}), dict(reject or {}), nulls
+        self.mem = bytearray(mem if mem is not None else range(256))
+        self.n, self.prev_clk, self.prev_rst, self.prev_io = 0, 0, 0, 1
+        self.received, self.sent, self.commands, self.err_seen = [], [], [], []
+        self.n_rx = 0          # the reader's characters seen (every attempt)
+        self.n_tx = 0          # our distinct characters
+        self._reset()
+
+    def _reset(self):
+        self.queue, self.tx, self.rx, self.next_tx = [], None, None, None
+        self.lows = []                  # [n0, n1) CLK counts we hold I/O low (error signals)
+        self.app, self.buf, self.need = "header", bytearray(), 0
+        self.mute_until = -1
+
+    def _drive(self):
+        if any(a <= self.n < b for a, b in self.lows):
+            return 0
+        if self.tx is not None:
+            e = (self.n - self.tx["n0"]) // self.etu
+            if 0 <= e < 10:
+                return self.tx["levels"][e]
+        return 1
+
+    def step(self, t, clk, rst, io):
+        edge = clk and not self.prev_clk
+        self.prev_clk = clk
+        if edge:
+            self.n += 1                         # (n counts every CLK cycle the card is given)
+        if not rst:
+            if self.prev_rst:
+                self._reset()
+            self.prev_rst = 0
+            return 1
+        if not self.prev_rst:
+            self._reset()
+            self.queue = list(self.atr)
+            self.next_tx = self.n + self.atr_delay
+            self.prev_rst = 1
+        if edge:
+            self._edge(io)
+        return self._drive()
+
+    def _send_later(self, data, after_n0):
+        self.queue += list(data)
+        start = after_n0 + self.turn * self.etu
+        self.next_tx = start if self.next_tx is None else max(self.next_tx, start)
+
+    def _edge(self, io):
+        n, etu = self.n, self.etu
+        self.lows = [(a, b) for a, b in self.lows if b > n]
+        tx = self.tx
+        if tx is not None:
+            k = n - tx["n0"]
+            if k == 11 * etu:
+                if io == 0:                         # the reader signalled an error
+                    self.err_seen.append((tx["n0"], n))
+                    tx["rep"] += 1
+                    if tx["rep"] <= self.max_rep:
+                        tx["n0"] = tx["n0"] + 13 * etu
+                        tx["levels"] = iso_levels(tx["byte"], self.inverse,
+                                                  self.corrupt.get(tx["k"], 0) > tx["rep"])
+                        self.sent.append((tx["n0"], tx["byte"], tx["rep"]))
+                    else:
+                        self.tx = None
+                        self.next_tx = n + 2 * etu
+                else:
+                    self.next_tx = max(self.next_tx or 0, tx["n0"] + self.gt * etu)
+                    self.tx = None
+            self.prev_io = io
+            return
+        if self.queue and self.next_tx is not None and n >= self.next_tx and self.rx is None:
+            b = self.queue.pop(0)
+            k = self.n_tx
+            self.n_tx += 1
+            self.tx = {"n0": n, "byte": b, "rep": 0, "k": k,
+                       "levels": iso_levels(b, self.inverse, self.corrupt.get(k, 0) > 0)}
+            self.sent.append((n, b, 0))
+            self.prev_io = io
+            return
+        rx = self.rx
+        if rx is None:
+            if io == 0 and self.prev_io == 1 and n > self.mute_until and self._drive():
+                self.rx = {"n0": n, "lv": []}
+        else:
+            k = n - rx["n0"]
+            for e in range(10):
+                if k == round((e + 0.5) * etu):
+                    if e == 0 and io:
+                        self.rx = None              # a glitch
+                    elif e:
+                        rx["lv"].append(io)
+                    break
+            if self.rx is not None and len(rx["lv"]) == 9:
+                b, ok = iso_byte(rx["lv"], self.inverse)
+                self.rx = None
+                rej = self.reject.get(self.n_rx, 0)
+                bad = not ok or rej > 0
+                if rej:
+                    self.reject[self.n_rx] = rej - 1
+                if not bad:
+                    self.n_rx += 1
+                self.received.append((rx["n0"], b, ok, bad))
+                if bad:
+                    a = rx["n0"] + round(10.5 * etu)
+                    self.lows.append((a, a + round(self.err_len * etu)))
+                    self.mute_until = a + round(self.err_len * etu)
+                else:
+                    self._app(b, rx["n0"])
+        self.prev_io = io
+
+    def _app(self, b, n0):
+        if self.app == "header":
+            self.buf.append(b)
+            if len(self.buf) < 5:
+                return
+            hdr, self.buf = bytes(self.buf), bytearray()
+            cla, ins, p1, p2, p3 = hdr
+            off = p1 << 8 | p2
+            if ins == 0xB0:
+                le = p3 or 256
+                data = bytes(self.mem[(off + i) % len(self.mem)] for i in range(le))
+                ans = bytes([0x60] * self.nulls + [ins]) + data + b"\x90\x00"
+                self.commands.append((hdr, b"", ans))
+                self._send_later(ans, n0)
+            elif ins == 0xD6:
+                self.app, self.need, self.cur = "data", p3, (hdr, off)
+                self._send_later(bytes([0x60] * self.nulls + [ins]), n0)
+            else:
+                self.commands.append((hdr, b"", b"\x6d\x00"))
+                self._send_later(b"\x6d\x00", n0)
+        else:
+            self.buf.append(b)
+            if len(self.buf) < self.need:
+                return
+            hdr, off = self.cur
+            for i, x in enumerate(self.buf):
+                self.mem[(off + i) % len(self.mem)] = x
+            self.commands.append((hdr, bytes(self.buf), b"\x90\x00"))
+            self.app, self.buf = "header", bytearray()
+            self._send_later(b"\x90\x00", n0)
