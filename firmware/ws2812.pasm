@@ -7,10 +7,10 @@
 .shift_out left autopull 24
 .wrap_target
 bitloop:
-    out r0, 1           side 0 [2]    ; low part (stalls here, low, when the FIFO is empty)
-    jmp !r0, do_zero    side 1 [1]    ; rising edge
+    out r0, 1           side 0 [2]    ; low: 3 ticks (stalls here, low, when the FIFO is empty)
+    jmp !r0, do_zero    side 1 [2]    ; rising edge, high: 3 ticks
 do_one:
-    jmp bitloop         side 1 [4]    ; long high
+    jmp bitloop         side 1 [3]    ; a 1 stays high: 7 ticks in all
 do_zero:
-    nop                 side 0 [4]    ; short high, then low
+    nop                 side 0 [3]    ; a 0 goes low: 7 ticks with the next `out`
 .wrap

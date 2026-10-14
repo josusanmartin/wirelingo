@@ -244,3 +244,43 @@ def test_can_arbitration_lost():
 
     status, _ = run_bus(mh, 400 * TPB, other)
     assert status == [2], status
+
+
+# Frames whose CRC ends in five equal bits: a stuff bit follows the last CRC bit
+# (stuffing covers SOF..CRC), so the CRC delimiter and the ACK slot come a bit later.
+TRAILING_STUFF = [(0x054, bytes([1, 2, 3])), (0x07E, bytes([0x7E])), (0x10A, b"")]
+
+
+def test_trailing_stuff_frames_have_a_stuff_bit_after_the_crc():
+    for ident, data in TRAILING_STUFF:
+        bits = frame_bits(ident, data)
+        assert len(stuff(bits)) == len(stuff(bits[:-1])) + 2, hex(ident)
+
+
+def test_can_rx_acks_after_a_stuff_bit_that_follows_the_crc():
+    """can_rx used to drive its ACK one bit early (in the CRC delimiter) when
+    a stuff bit followed the CRC: the transmitter saw no ACK in the slot.
+    Found by fpga/kv260/host/legacy_demo.py's model run (can_rx_gen), before the KV260 run."""
+    for ident, data in TRAILING_STUFF:
+        RXQ.clear()
+        mh = setup()
+        bits = frame_bits(ident, data)
+        assert send(mh, bits) is True, f"no ACK in the ACK slot for {ident:#x}"
+        mh.step(3000)
+        words = RXQ + mh.pop_all(0)
+        RXQ.clear()
+        [(status, got)] = records(words)
+        assert status == 1 and unpack(got, len(bits)) == bits
+
+
+def test_can_loopback_with_a_stuff_bit_after_the_crc():
+    mh = loop_setup()
+    for ident, data in TRAILING_STUFF:
+        bits = frame_bits(ident, data)
+        for w in tx_words(bits[:-15]):
+            mh.push(0, w)
+        status, rx_words = run_bus(mh, 400 * TPB)
+        assert status == [0], f"TX status {status} for {ident:#x}"
+        rx_words += mh.pop_all(1)
+        [(st, got)] = records(rx_words)
+        assert st == 1 and unpack(got, len(bits)) == bits

@@ -388,7 +388,10 @@ the netlist implements the RTL. Timing is covered by signoff STA: typ met at
   RP2350 delivers 48 MHz to the TT clock pin (e.g. from its 48 MHz USB PLL via a
   GPOUT clock, not a PIO/PWM divider with fractional jitter) and the jitter
   through the TT clock path. None of this is measured.
-* **Real hosts.** Only the pins-only model host is tested here. Not covered:
+* **Real hosts.** Only the pins-only model host is tested here (on the KV260,
+  2026-10-14, `usb_fs_dev` and `usb_enum` at 48 MHz answered that host's replayed
+  waveform with every pad edge at the model's clock: [fpga/kv260/README.md](../fpga/kv260/README.md);
+  digital levels on FPGA fabric, no PHY, so the analogue items above stay open). Not covered:
   xHCI/EHCI-companion timing, hubs (FS traffic for other devices; PRE plus
   low-speed traffic, which the receiver should reject as stuffing errors but
   which isn't tested), suspend/resume (3 ms idle, firmware does nothing),

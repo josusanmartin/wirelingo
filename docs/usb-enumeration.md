@@ -289,6 +289,27 @@ make COCOTB_TEST_MODULES=test_sigrok COCOTB_TEST_FILTER=sigrok_usb_autonomous
 Not run: gate level (the netlist is v2c's, unchanged by firmware; the existing
 GL flow would run these tests as-is).
 
+## On the KV260, with a replayed host (2026-10-14)
+
+`fpga/kv260/host/usb_replay_demo.py` ([fpga/kv260/README.md](../fpga/kv260/README.md#usb-enumeration-with-a-replayed-host-no-pc-2026-10-14-hostusb_replay_demopy))
+runs usb_enum on the FPGA build of the chip RTL at 48 MHz with no PC: each
+scenario above first runs on the cycle model against the host model, and
+pe_lab's pattern generator then plays that host's line levels on the D+/D-
+pads at the exact clocks, segment by segment, while core 1 records the pads
+(la_capture at low speed; a sampler taking the pads every clock at full
+speed). Results (2026-10-14 08:55 UTC): 7 scenarios at each speed (the
+standard sequence, Linux's with a 10 ms reset, lost and damaged handshakes,
+bus resets at six phases and a 3 µs one, 15 ACK variants incl. dribble and
+malformed, 9 STALLed requests, bad CRCs and wLength 0-255, SET_ADDRESS's lost
+status ACK with an IN first) plus `usb_ls_dev` / `usb_fs_dev` with their
+device software: **every device edge at the clock the model gives** (0 clocks
+difference on all 32,880 device edges, 16,440 per speed), every device packet byte for byte,
+the end states equal, and sigrok's decode of the board's edges equal to the
+host model's packet record. Turnaround on the pads: 2.16 bit times (low
+speed), 3.25-4.00 (full speed; 4.75 for the IN that commits a new address).
+This is the RTL on FPGA fabric with digital pad levels: no transceiver, no
+analogue receiver, no real host controller.
+
 ## What remains
 
 * **Data endpoints.** An interrupt IN endpoint (HID, or vendor) needs an
@@ -306,7 +327,8 @@ GL flow would run these tests as-is).
   today.
 * **Suspend/resume** (3 ms idle): not detected; the device keeps its state.
 * **Real hosts.** Tested against independent host models and sigrok, not yet
-  against a Linux/Windows host. Requests outside the list above are STALLed,
+  against a Linux/Windows host (the KV260 run replays the host model's waveform; it is
+  not a real host either). Requests outside the list above are STALLed,
   which hosts accept (Windows' 0xEE string, the device qualifier); SET_INTERFACE
   is STALLed too, which Linux tolerates for single-setting interfaces.
 * **Full speed on silicon** needs the chip at exactly 48 MHz and the line
