@@ -55,6 +55,18 @@ def core_config(prog, *, out_pins=None, set_pins=None, side_pins=None, in_pins=N
     return dict(clkdiv=clkdiv, pinctrl0=pinctrl0, pinctrl1=pinctrl1, shiftctrl=shiftctrl)
 
 
+INPUT_PADS = tuple(range(8)) + tuple(range(16, 21))   # uio0..7 = P0-P7, ui0..4 = P16-P20
+
+
+def input_pad(pin, *, avoid=()):
+    """pin, if a core can read it as a pad input (docs/isa.md §2: P0-P7 on
+    uio, P16-P20 on ui0..4) and it is not one of `avoid`; else ValueError."""
+    if not isinstance(pin, int) or isinstance(pin, bool) or pin not in INPUT_PADS or pin in avoid:
+        raise ValueError("input pin must be a pad input P0-P7 or P16-P20%s, got %r"
+                         % (", not %s" % sorted(avoid) if avoid else "", pin))
+    return pin
+
+
 def load_program(core, prog, base=None, *, profile=TAPEOUT, **cfg_kw):
     """Register writes to load `prog` into IMEM at `base` and configure `core`.
     The core must be disabled. Doesn't enable it."""

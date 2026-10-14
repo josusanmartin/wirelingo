@@ -16,27 +16,31 @@ FRAMING_ERROR, OCCUPIED = 6, 7
 UART_DIVIDER = host.clkdiv_for(CLOCK_HZ, 8 * UART_HZ)
 
 
-def assemble():
+def assemble(rx_pin=RX):
+    """rx_pin: the UART RX pad, P16 (ui0) by default; any pad input but
+    USB's P0/P1. Only the default is the image the RTL tests ran."""
+    rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
     usb = asm.assemble((FW / "usb_uart_byte.pasm").read_text(),
                        {"DP": 0, "DM": 1, "TURN": 63})
     uart = asm.assemble((FW / "uart_rx_mailbox.pasm").read_text(),
-                        {"RX": RX, "READY": READY})
+                        {"RX": rx_pin, "READY": READY})
     if len(usb.words) > 256 or len(uart.words) > 32:
         raise ValueError("optional mailbox image exceeds its declared bank budget")
     return usb, uart
 
 
-def load_writes(programs=None):
+def load_writes(programs=None, rx_pin=RX):
     """Cold setup only: disable, clear flags/outputs, assign owners, load/start.
 
     Applying this list replaces both cores and consumes all virtual pins and
     flags. Call only for this optional workload, with cores disabled. After
     start, the peer uses USB packets and physical READY/RX, not loading APIs.
     """
-    usb, uart = assemble() if programs is None else programs
+    rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
+    usb, uart = assemble(rx_pin) if programs is None else programs
     writes = [(sim.A_CTRL, 0), (sim.A_FCLR, 0xff), (sim.A_SYNCBYP, 0),
               (sim.A_POUT, 0), (sim.A_POE, 0)]
-    owners = {RX: 1, READY: 1, **{p: 1 for p in range(24, 32)}}
+    owners = {rx_pin: 1, READY: 1, **{p: 1 for p in range(24, 32)}}
     writes += host.pin_owner_writes(owners, profile=TAPEOUT)
     writes += host.load_program(0, usb, 0, profile=TAPEOUT,
                                 in_pins=MAILBOX, clkdiv=1 << 8)

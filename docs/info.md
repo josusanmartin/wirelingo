@@ -88,8 +88,10 @@ demo board yet.
 
 `protoemu_fw.py` holds assembled programs (UART, UART capture, SPI in modes 0-3,
 packed and preloaded SPI, I2C, WS2812, USB, 10BASE-T TX)
-ready for `pe.load(**PROGRAM)`, and the autonomous USB device for
-`bringup.usb_enum(pe, "low")` or `"full"` (wiring below). Assemble your own with `tools/pe/asm.py`.
+ready for `pe.load(**PROGRAM)`, the autonomous USB device for
+`bringup.usb_enum(pe, "low")` or `"full"`, and the UART-to-USB pairs for
+`bringup.usb_uart(pe, "overlap4")`, `"envelope3"` or `"byte"` (UART in on
+`uio[6]`, reports read by a PC; wiring below). Assemble your own with `tools/pe/asm.py`.
 Clock per demo: 48 MHz for UART/I2C/SPI/USB, 40 MHz for 10BASE-T
 (`bringup.setup(40_000_000)`, then `pe.eth10_send(core, frame)`).
 The optional [PIO/DMA transport](board-transport.md) keeps the same driver
@@ -142,10 +144,27 @@ derived from the specifications, not yet validated on silicon):
   internal TX→RX loopback now passes at 50 MHz with TX divider 1.25 and RX
   period 5. Its TX half cells are 40/60 ns; that mode has no established
   electrical compliance or simultaneous board result.
-* **UART over USB to a PC (overlap4, envelope3 pairs):** on the PC,
-  `PYTHONPATH=tools python3 -m pe.usb_uart_reports overlap4` (or `envelope3`)
-  polls the vendor request and prints the UART bytes; it needs pyusb, the
-  decoders do not. Tested against the cycle model's USB packets only.
+* **UART over USB to a PC (overlap4, envelope3 and the one-byte mailbox):**
+  48 MHz project clock. USB as for the low-speed device above: D+ on `uio[0]`,
+  D- on `uio[1]`, 27 Ω in series with each, 1.5 kΩ from D- to 3.3 V. The UART
+  sender's TX goes to `uio[6]` (3.3 V, 115200 8N1; a 10 kΩ pull-up to 3.3 V
+  keeps it idle high when the sender is unplugged) and its flow-control input
+  to READY on `uo[0]`, active high. The sender may start one frame per fresh
+  READY rise, only while READY is high, and must finish each frame it starts;
+  a USB-UART adapter's active-low, byte-granular CTS is not this contract, so
+  the sender is typically a small microcontroller. ERROR on `uo[1]` (overlap4,
+  envelope3) goes high, sticky, after a bad STOP bit. On the RP2350 call
+  `bringup.usb_uart(pe, "overlap4")` (or `"envelope3"`, `"byte"`): it loads both
+  cores and starts them, and the chip needs no host-port traffic afterwards.
+  On the PC, `PYTHONPATH=tools python3 -m pe.usb_uart_reports overlap4` (or
+  `envelope3`, `byte`) polls the vendor request and prints the UART bytes; it
+  needs pyusb, the decoders do not. The pairs' own default RX is `ui[0]`, which
+  the board driver holds low, so the board images move RX to `uio[6]`; that
+  changes only the receiving core's words and the pin owners. Tested on the
+  cycle model only (`test/model/test_micropython_usb_uart.py`: the board code
+  loads the pair, a pins-only sender drives `uio[6]`, the USB host model
+  enumerates and the PC reader reads the reports). It has not run on a demo
+  board or a PC; the RTL tests ran the default `ui[0]` images.
 * **I2C:** SDA `uio[0]`, SCL `uio[1]`, open drain (set `OD_MASK`), 4.7 kΩ
   pull-ups to 3.3 V.
 * **CAN:** a 3.3 V transceiver (for example SN65HVD230); TXD from an output

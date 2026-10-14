@@ -1,10 +1,12 @@
-"""PC side of the UART-over-USB pairs: read their four-byte EP0 reports.
+"""PC side of the UART-over-USB pairs: read their EP0 reports.
 
 usb_uart_overlap4 (docs/usb-uart-overlap4.md) answers vendor/device IN
 request 1 with four UART bytes; usb_uart_envelope3 (docs/usb-uart-envelope3.md)
 answers request 2 with [b0, b1, b2, n], n = 1..3 payload bytes and zero
-padding. Either answers STALL while no report is ready; the next request is a
-fresh control transfer. The device is VID 0x1209, PID 0x5634.
+padding; the one-byte mailbox usb_uart_byte (docs/usb-uart-byte.md) answers
+request 1 with wLength 1 with one byte. Each answers STALL while no report is
+ready; the next request is a fresh control transfer. The device is VID
+0x1209, PID 0x5634.
 
 The decoders and the polling loop are pure Python and take any object with
 pyusb's `ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, length,
@@ -25,8 +27,9 @@ import time
 
 VENDOR_ID, PRODUCT_ID = 0x1209, 0x5634
 REQUEST_TYPE = 0xC0                 # device to host, vendor, device recipient
-REPORT_LENGTH = 4
-REQUESTS = {"overlap4": 1, "envelope3": 2}
+REPORT_LENGTH = 4                   # overlap4 and envelope3
+REQUESTS = {"overlap4": 1, "envelope3": 2, "byte": 1}
+LENGTHS = {"overlap4": REPORT_LENGTH, "envelope3": REPORT_LENGTH, "byte": 1}
 LIBUSB_ERROR_PIPE = -9
 
 
@@ -52,18 +55,26 @@ def decode_envelope3(report):
     return report[:n]
 
 
-DECODERS = {"overlap4": decode_overlap4, "envelope3": decode_envelope3}
+def decode_byte(report):
+    """The mailbox's one UART byte."""
+    report = bytes(report)
+    if len(report) != 1:
+        raise ValueError("byte report must be exactly 1 byte, got %d" % len(report))
+    return report
+
+
+DECODERS = {"overlap4": decode_overlap4, "envelope3": decode_envelope3, "byte": decode_byte}
 
 
 def _mode(mode):
     if mode not in REQUESTS:
-        raise ValueError("mode must be overlap4 or envelope3")
+        raise ValueError("mode must be overlap4, envelope3 or byte")
     return mode
 
 
 def setup_packet(mode):
     """The 8-byte SETUP of a report request (pe.usb_uart_*.vendor_request())."""
-    return bytes([REQUEST_TYPE, REQUESTS[_mode(mode)], 0, 0, 0, 0, REPORT_LENGTH, 0])
+    return bytes([REQUEST_TYPE, REQUESTS[_mode(mode)], 0, 0, 0, 0, LENGTHS[mode], 0])
 
 
 def is_stall(exc):
@@ -75,7 +86,7 @@ def is_stall(exc):
 def read_report(dev, mode, timeout_ms=100):
     """One report's payload bytes, or None if the device STALLed (none ready)."""
     try:
-        data = dev.ctrl_transfer(REQUEST_TYPE, REQUESTS[_mode(mode)], 0, 0, REPORT_LENGTH, timeout_ms)
+        data = dev.ctrl_transfer(REQUEST_TYPE, REQUESTS[_mode(mode)], 0, 0, LENGTHS[mode], timeout_ms)
     except Exception as exc:
         if is_stall(exc):
             return None
