@@ -1,4 +1,40 @@
-# Team integration checklist — October 13, 2026
+# Team integration checklist
+
+## Current review delivery — October 14, 2026
+
+The dated `shipping1913` dependency table below is historical. The later
+review delivery is `2d08f141fa0c61ef2117fd7f07710eac636d1072` on
+`team/20261014-overlap4-service`, based on main
+`34de7a06a884e99976be1e99d589e4d63d267a8a`. Its complete apply order is in the
+[October 14 handoff]([home directory redacted]/wirelingo-team-20261011/control/resume-20261013/integration-20261014-handoff.md).
+Use that sequence for this delivery; do not reapply the older table's commits
+to a main tree that already contains them. This note is a documentation-only
+successor and changes no tested inputs.
+
+The current evidence closes several gaps left open in the historical table:
+
+- Exact `85991cdd` passed the full software/model suite: 1,194 tests across
+  52 modules, no failures, errors, skips, xfails or deselection. The separate
+  complete-service test added in `6052028` passed once on the same runtime
+  inputs. There is no combined 1,195-test result for `2d08f141`.
+- [UART serialized-host capture](uart-capture-host.md) passed the later
+  C16 two-message RTL schedule. The earlier C14/C15 failures remain history;
+  the pass does not establish continuous capture or concurrent core 1 use.
+- [UART IN1/partial-PUSH verification](lean-verification.md) now includes
+  13 audited manual lemmas and ten positive finite RTL streams plus an
+  actual mutant, totaling 9,101 clocks. This does not enlarge the earlier
+  IN8 result into a whole-core proof.
+- [Concurrent UART-to-USB forwarding](usb-uart-overlap4.md) has separate
+  finite model evidence for retention, retry and eight complete reads.
+  Idle one-to-three-byte tails, arbitrary host blackouts and native/board
+  operation remain outside that fixed-four-byte profile's qualification.
+
+The [review record](review.md) connects the later ACK and tracer fixes to
+their maintained tests. None of these updates promotes main, changes fo6's
+receipt identity, or authorizes a release. The saved results below remain
+bound to their original snapshots.
+
+## Historical dependency snapshot — October 13, 2026
 
 This is a review checklist for lead/Claude integration, not permission to merge,
 run another lane's tests, start a harden or use runner1. Workers keep their own

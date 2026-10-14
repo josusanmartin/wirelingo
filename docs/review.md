@@ -17,6 +17,41 @@ tests now cover each fix. Finding codes are the review's.
 | V1 | `flow/gl_test.sh` could report an old results file after a failed build. | Each GL run uses fresh private output directories and fails if any suite fails or produces no results. | `test_flow_tools.py` (compile, startup, missing-XML and per-suite failures) |
 | C1 | `src/config.json` and `flow/gen_config.py` had drifted apart. | `gen_config.py --check` fails if the committed config isn't exactly the generator's; CI runs it. | `test_flow_tools.py`, GDS workflow |
 
+## Follow-up fixes and verification — October 14, 2026
+
+The later review found two USB ACK parsing bugs and a timing-observer bug.
+These fixes use the existing ISA and tools; they do not change RTL.
+
+| Finding | Fix | Regression and scope |
+|---|---|---|
+| An ACK followed by extra data could advance the autonomous transfer or publish the FIFO firmware's completion flag. | Check the handshake tail before publishing completion. Accept the supported final-level stretch, reject extra bytes, and clear discarded ISR bits before they can enter RX records. | [ACK regression](../test/model/test_usb_ack.py): low/full-speed autonomous and FIFO variants, next DATA packet and toggle checked externally. |
+| After an invalid short tail had already ended, draining again could consume the first retry token. | Return to idle when the end has already been consumed; drain only a still-open invalid packet. | The same regression checks the first retry explicitly. Saved autonomous gaps are 64 clocks at low speed and 9 at full speed (2 and 2.25 bit times); this is finite model evidence, not every phase or minimum-spacing throughput. |
+| The timing tracer omitted an instruction still pending at the end of observation, losing its entry and stall evidence. | Retain the final pending instance, with completion unset. | [Tracer regressions](../test/model/test_timing_tracer.py) distinguish entry from completion and reject invented completion. Finite observation does not prove an instruction can never finish. |
+
+The ACK corpus has 125 passing cases using the two-core, two-bank,
+256-word, depth-eight model profile. The two maintained MicroPython USB
+driver tests separately check the corresponding generated images in that
+profile. See [ACK behavior and remaining limits](usb-full-speed.md) and
+[enumeration](usb-enumeration.md). These results do not qualify the updated
+ACK paths on native RTL, a board or silicon.
+
+The UART follow-up added baud/phase, framing, rearm and packed-capture tests;
+it did not require rewriting the standalone receiver. Its later
+[serialized-host RTL test](uart-capture-host.md) captures 32 bytes with a bad
+final STOP, then three good bytes after paid drain/rearm. That finite test
+uses core 0 with core 1 disabled and behavioral SRAM. The separate
+[UART IN1 and partial-PUSH checks](lean-verification.md) combine manual Lean
+lemmas with finite RTL comparisons; they are not whole-core equivalence.
+
+Combined software/model regression passed **1,194 tests across 52 modules**
+at `85991cddf99d8bffa0bc8208ded123e263e23e16`, with no failures or skips.
+The later [complete UART-to-USB service test](usb-uart-overlap4.md) passed
+separately on the same firmware/runtime inputs: 32 UART bytes, eight complete
+USB reads and one lost-ACK retry. Its test and measured documentation are
+`6052028` and `2d08f141`. A combined 1,195-test run is not claimed.
+Physical receipts retain their own named validation roots; neither model
+result extends them to later firmware or grants release approval.
+
 ## Verification added
 
 * **USB:** concurrent device service over the real SPI port on the RTL for both
