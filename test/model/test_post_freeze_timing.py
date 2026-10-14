@@ -11,7 +11,7 @@ import random
 
 import pytest
 
-from pe import asm, host, postfreeze as pf, postfreeze2 as p2, sim, timing
+from pe import asm, host, postfreeze as pf, postfreeze2 as p2, postfreeze3 as p3, sim, timing
 from pe.modelhost import ModelHost
 
 import test_timing_check as TC
@@ -34,6 +34,7 @@ DEFS = {
     "midi_rx": {"RX": 16, "TB": 128, "FOV": 0},
     "midi_tx": {"TX": 8, "TB": 32, "RS": 1},
     "quad_enc": {"A": 16, "FERR": 6},
+    "cec": {"CEC": 0, "FOV": 7, "FLOST": 6},
 }
 
 
@@ -296,3 +297,32 @@ def test_quad_enc_sound():
     enc.set(TQ.SEQ[enc.phase])
     enc.hold(40)
     sound("quad_enc", tr, 1 << 8)
+
+
+# ------------------------------------------------------------------ third round
+
+def test_cec_sound():
+    """cec against the CEC device model: our frames (acknowledged, NACKed,
+    broadcast, 10 blocks), the TV's frames to us and to others, a lost
+    arbitration (the follower takes over mid-bit)."""
+    import test_cec as TC3
+    tv = p3.CecNode(addr=0)
+    rig = TC3.Rig([tv], start=False)
+    tr = timing.Tracer(rig.mh.chip, 0, 0)
+    rig.mh.start(1)
+    rig.run(10e6)
+    for f, s in ((b"\x40\x04", 5), (b"\x4b", 7), (b"\x4f\x82\x10\x00", 3), (b"\x40\x47Wireling", 7)):
+        rig.send(f, sft_bits=s)
+    for f in (b"\x04\x8f", b"\x05\x8f", b"\x0f\x36"):
+        tv.send(f)
+        rig.run(20e6 + 25 * TC3.BIT * len(f))
+    state = {"armed": True}
+
+    def start_tv(r, t, bus, cd):
+        if state["armed"] and cd == 0:
+            state["armed"] = False
+            tv.send(b"\x04\x44\x41", at=t)
+    rig.hooks.append(start_tv)
+    rig.send(b"\x40\x36\x00\x01\x02")
+    rig.run(20e6)
+    sound("cec", tr, p3.cec_clkdiv(TC3.F_CLK))
