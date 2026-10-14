@@ -22,14 +22,17 @@
 //      was clocked out, within LC steps; at most two words snapped and not
 //      committed.
 //   P3 epochs: a read transaction is cancelled exactly once, after CS rises,
-//      after all its complete words are committed, within LX steps; no
-//      operation of a transaction is pending when the next address arrives.
+//      after all its complete words are committed, within LX steps; nothing
+//      of a transaction is pending once the host selects the chip again.
 //   P4 a word cut by CS rising is neither written nor committed (from P1-P3:
 //      every bus operation must match a completed word or the read epoch).
 //   P5 reset at any step (SCK running or stopped, CS high or low, mid-word,
 //      with reads outstanding): no later bus operation unless a new, legally
 //      re-armed transaction asks for it (the checks above, with the reference
 //      flushed by reset); the quad drivers stay off in an aborted transaction.
+//   P6 the clock-domain crossings keep a margin: the clk side takes a write
+//      word or an address >= 2 clk after its last bit, and the SCK side loads a
+//      read word >= 1 clk after its snapshot was captured.
 `default_nettype none
 module hostport_ref (
     input wire        sck,
@@ -124,6 +127,16 @@ module hostport_ref (
     if (quad_en != quad_q) assume ((cs_n && cs_q) || (!rst_n && !quad_en));
   end
 
+`ifdef GUIDE
+  // Guided runs (covers, mutants) explore a subset of the contract, so every
+  // trace they find is a legal one: a fixed start phase, and SCK edges only
+  // with a clk rise or half a clk from one.
+  always @(*) begin
+    if (init) assume (ph == 2'd0);
+    if (sck != sck_q) assume (!ph[0]);
+  end
+`endif
+
   // ------------------------------------------------------------ reference: serial side
   // Decodes the pins as the host sees them: bits on IO3 (1-bit) or IO[3:0]
   // (quad, IO3 = MSB) at each SCK rise; read data as the chip drove it just
@@ -136,7 +149,6 @@ module hostport_ref (
   reg [31:0] r_out;     // read data bits the host sampled, in arrival order
   reg        r_quad, r_rd, r_inc;
   reg        r_ok;      // counted: selected with rst_n high and no reset since
-  reg        r_sync;    // CS_n has been high since the start
   reg [15:0] r_wa;      // address of the next write word
   reg        r_wp;      // data words completed in this transaction, mod 2
 
@@ -161,17 +173,17 @@ module hostport_ref (
   reg [5:0]  nn;
   reg [7:0]  ncmd;
   reg [31:0] nin, nout;
-  reg        nquad, nrd, ninc, nok, nsync, nwp;
+  reg        nquad, nrd, ninc, nok, nwp;
   reg        ev_addr, ev_word;   // a counted address / data word completed in this step
   always @(*) begin
     nf = r_f; nn = r_n; ncmd = r_cmd; nin = r_in; nout = r_out;
-    nquad = r_quad; nrd = r_rd; ninc = r_inc; nwp = r_wp; nsync = r_sync;
+    nquad = r_quad; nrd = r_rd; ninc = r_inc; nwp = r_wp;
     nok = rst_n && !cs_n && (cs_fall || r_ok);
     ev_addr = 1'b0;
     ev_word = 1'b0;
     if (cs_n) begin
       nf = F_CMD; nn = 6'd0; ncmd = 8'd0; nin = 32'd0; nout = 32'd0;
-      nquad = 1'b0; nrd = 1'b0; ninc = 1'b0; nwp = 1'b0; nsync = 1'b1;
+      nquad = 1'b0; nrd = 1'b0; ninc = 1'b0; nwp = 1'b0;
     end else if (sck_rise) begin
       case (r_f)
         F_CMD: begin
@@ -243,7 +255,8 @@ module hostport_ref (
   reg [1:0]  nn_snap, nn_done, nn_com;
   reg        ck_addr_clear;   // at a new address: nothing of the last transaction pending
   reg        ck_wslot;        // at a write word: the previous one was written
-  reg        ck_rword;        // at a read word: snapped, and equal to what the host got
+  reg        ck_rsnap;        // at a read word: its snapshot was captured in this transaction
+  reg        ck_rword;        // at a read word: equal to what the host got
   reg        ck_rcom;         // at a read word: the previous one was committed
   always @(*) begin
     nws_v = ws_v; nws_a = ws_a; nws_d = ws_d;
@@ -251,7 +264,7 @@ module hostport_ref (
     ne_snap = e_snap; ne_com = e_com; nwa = r_wa;
     nn_snap = n_snap; nn_done = n_done; nn_com = n_com;
     nD0 = D0; nD1 = D1;
-    ck_addr_clear = 1'b1; ck_wslot = 1'b1; ck_rword = 1'b1; ck_rcom = 1'b1;
+    ck_addr_clear = 1'b1; ck_wslot = 1'b1; ck_rsnap = 1'b1; ck_rword = 1'b1; ck_rcom = 1'b1;
     // bus operations (checked below against the values before this step)
     if (capture) begin
       if (n_snap[0]) nD1 = rdata_q; else nD0 = rdata_q;
@@ -290,8 +303,8 @@ module hostport_ref (
       nwa = r_wa + {15'd0, r_inc};
     end
     if (ev_word && r_rd) begin
-      ck_rword = rd_live && (nn_snap - n_done == 2'd1 || nn_snap - n_done == 2'd2) &&
-                 nout == (n_done[0] ? nD1 : nD0);
+      ck_rsnap = rd_live && (nn_snap - n_done == 2'd1 || nn_snap - n_done == 2'd2);
+      ck_rword = nout == (n_done[0] ? nD1 : nD0);
       ck_rcom = nn_com == n_done;
       nn_done = n_done + 2'd1;
     end
@@ -311,7 +324,7 @@ module hostport_ref (
 
   always @($global_clock) begin
     r_f <= nf; r_n <= nn; r_cmd <= ncmd; r_in <= nin; r_out <= nout;
-    r_quad <= nquad; r_rd <= nrd; r_inc <= ninc; r_ok <= nok; r_sync <= nsync; r_wp <= nwp;
+    r_quad <= nquad; r_rd <= nrd; r_inc <= ninc; r_ok <= nok; r_wp <= nwp;
     r_wa <= nwa;
     ws_v <= nws_v; ws_a <= nws_a; ws_d <= nws_d;
     rd_live <= nrd_live; rd_end <= nrd_end; rd_inc <= nrd_inc;
@@ -323,7 +336,6 @@ module hostport_ref (
     end_age <= nrd_live && nrd_end ? (rd_live && rd_end ? end_age + 6'd1 : 6'd1) : 6'd0;
   end
   initial begin
-    r_sync = 1'b0;
     r_ok = 1'b0;
     ws_v = 1'b0;
     rd_live = 1'b0;
@@ -337,44 +349,76 @@ module hostport_ref (
   end
 
   // ------------------------------------------------------------ properties
+  // All groups are checked unless PSEL selects some (the mutation check runs
+  // one group at a time: A = operations, addresses and order, D = data).
+  // With STICKY (mutation check only) a violation sets `bad`, asserted at the
+  // last step, so one satisfiable query finds a mutant's counterexample.
+`ifdef STICKY
+`define CHK(c) if (!(c)) pv = 1'b1
+`else
+`define CHK(c) assert (c)
+`endif
+  reg pv;
+`ifndef PSEL
+`define P1A
+`define P1D
+`define P2A
+`define P2D
+`define P3
+`define P5
+`define P6
+`endif
   always @(*) begin
+    pv = 1'b0;
     // P1 writes
-    if (op_we) assert (ws_v && bus_addr == ws_a && bus_wdata == ws_d);
-    assert (ck_wslot);
-    assert (ws_age <= LW);
+`ifdef P1A
+    if (op_we) `CHK(ws_v && bus_addr == ws_a);
+    `CHK(ck_wslot);
+    `CHK(ws_age <= LW);
+`endif
+`ifdef P1D
+    if (op_we) `CHK(bus_wdata == ws_d);
+`endif
     // P2 reads
-    if (op_snap) assert (rd_live && nn_snap - n_com < 2'd2 && bus_addr == e_snap);
-    if (op_commit) assert (rd_live && n_com != n_done && bus_addr == e_com);
-    assert (ck_rword);
-    assert (ck_rcom);
-    assert (com_age <= LC);
+`ifdef P2A
+    if (op_snap) `CHK(rd_live && nn_snap - n_com < 2'd2 && bus_addr == e_snap);
+    if (op_commit) `CHK(rd_live && n_com != n_done && bus_addr == e_com);
+    `CHK(ck_rsnap);
+    `CHK(ck_rcom);
+    `CHK(com_age <= LC);
+`endif
+`ifdef P2D
+    `CHK(ck_rword);
+`endif
+`ifdef P3
     // P3 epochs
-    if (op_cancel) assert (rd_live && rd_end && n_com == n_done);
-    assert (end_age <= LX);
-    assert (ck_addr_clear);
-    // one operation per cycle
-    assert ((bus_we + bus_snap + bus_commit + bus_cancel) <= 1);
-    // P5 the quad drivers: on only in a counted quad read's data, and on
-    // whenever the host samples one
-    if (io_oe) assert (nok && nf == F_DATA && nrd && nquad);
-    if (sck_rise && ok && r_f == F_DATA && r_rd && r_quad) assert (io_oe_q);
+    if (op_cancel) `CHK(rd_live && rd_end && n_com == n_done);
+    `CHK(end_age <= LX);
+    `CHK(ck_addr_clear);
+    if (!cs_n && nf == F_CMD) `CHK(!nws_v && !nrd_live);   // nothing pending once reselected
+`endif
+`ifdef P5
+    // P5 one operation per cycle; the quad drivers on only in a counted quad
+    // read's data, and on whenever the host samples one
+    `CHK((bus_we + bus_snap + bus_commit + bus_cancel) <= 1);
+    if (io_oe) `CHK(nok && nf == F_DATA && nrd && nquad);
+    if (sck_rise && ok && r_f == F_DATA && r_rd && r_quad) `CHK(io_oe_q);
+`endif
   end
 
-  // ------------------------------------------------------------ inductive lemmas
-  // Not part of the specification: invariants that relate the reference to
-  // the RTL's internal state, so that k-induction closes. They are asserted
-  // (and so proved) like the properties above. The internals are bound by
-  // `connect -set` in hostport_ref.sby after flattening.
-  wire [2:0]  i_phase;
-  wire [5:0]  i_cnt;
-  wire [7:0]  i_cmd;
-  wire        i_quad, i_rd, i_inc, i_wpar;
-  wire [31:0] i_sh, i_osh, i_w_hold, i_buf0, i_buf1;
-  wire [15:0] i_a_hold, i_snap_addr, i_com_addr;
-  wire [1:0]  i_m_hold, i_outstanding;
-  wire        i_a_tog, i_w_tog, i_r_tog, i_host_ready;
-  wire [2:0]  i_a_s, i_w_s, i_r_s, i_cs_s;
-  wire        i_active, i_c_rd, i_c_inc, i_fill, i_a_pend, i_w_pend, i_need_commit, i_need_snap;
+  // ------------------------------------------------------------ RTL internals, raw events
+  // RTL internal signals, bound by `connect -set` in hostport_ref.sby after
+  // flattening. P6 uses `active`; the lemmas below use the rest.
+  (* keep *) wire [2:0]  i_phase;
+  (* keep *) wire [5:0]  i_cnt;
+  (* keep *) wire [7:0]  i_cmd;
+  (* keep *) wire        i_quad, i_rd, i_inc, i_wpar;
+  (* keep *) wire [31:0] i_sh, i_osh, i_w_hold, i_buf0, i_buf1;
+  (* keep *) wire [15:0] i_a_hold, i_snap_addr, i_com_addr;
+  (* keep *) wire [1:0]  i_m_hold, i_outstanding;
+  (* keep *) wire        i_a_tog, i_w_tog, i_r_tog, i_host_ready;
+  (* keep *) wire [2:0]  i_a_s, i_w_s, i_r_s, i_cs_s;
+  (* keep *) wire        i_active, i_c_rd, i_c_inc, i_fill, i_a_pend, i_w_pend, i_need_commit, i_need_snap;
 
   // raw SCK-side events (counted or not): the RTL toggles for each of these
   // while out of reset (an edge in the step reset is released still sees it)
@@ -394,15 +438,29 @@ module hostport_ref (
     act_q <= i_active;
   end
 
+  reg pv6;
   always @(*) begin
+    pv6 = 1'b0;
+`ifdef P6
     // P6 clock-domain crossings keep a margin (in steps): the clk side takes
     // a write word >= 2 clk after its last bit; the SCK side loads a read
     // word >= 1 clk after its snapshot was captured; the clk side takes an
     // address >= 2 clk after its last bit
-    if (op_we) assert (ws_age >= 6'd8);
-    if (load) assert (nn_snap - nn_done != 2'd0 && (nn_done[0] ? dage1 : dage0) >= 4'd4);
-    if (i_active && !act_q) assert (ad_age >= 5'd8);
+`ifdef STICKY
+`define CHK6(c) if (!(c)) pv6 = 1'b1
+`else
+`define CHK6(c) assert (c)
+`endif
+    if (op_we) `CHK6(ws_age >= 6'd8);
+    if (load) `CHK6(nn_snap - nn_done != 2'd0 && (nn_done[0] ? dage1 : dage0) >= 4'd4);
+    if (i_active && !act_q) `CHK6(ad_age >= 5'd8);
+`endif
   end
+`ifdef STICKY
+  reg bad = 1'b0;
+  always @($global_clock) if (pv || pv6) bad <= 1'b1;
+  always @(*) assert (!bad);
+`endif
 
   // clk rises since the last raw event of each kind (sat 15; 15 after reset)
   reg [3:0] a_ck, w_ck, r_ck;
@@ -457,7 +515,6 @@ module hostport_ref (
 
   wire        sel   = !cs_n;
   wire [31:0] Dk    = nn_done[0] ? nD1 : nD0;   // data of the word being clocked out
-  wire [31:0] Dp    = nn_done[0] ? nD0 : nD1;   // ... and of the one before
   wire [5:0]  bpsn  = nquad ? 6'd4 : 6'd1;
   wire        rdat  = sel && nok && nf == F_DATA && nrd;   // a counted read's data phase
   reg         r_any;                         // a data word completed in this transaction
@@ -475,10 +532,17 @@ module hostport_ref (
   always @($global_clock) x_ck <= nx_ck;
   initial x_ck = 4'd0;
 
+  // ------------------------------------------------------------ inductive lemmas
+  // Not part of the specification: invariants that relate the reference to
+  // the RTL's internal state, so that k-induction closes (prove task only).
+  // They are asserted, and so proved, like the properties.
+`ifdef LEMMAS
   always @(*) if (!init) begin
     // shadows
     assert (i_cs_s == ncs_h);
     assert (i_host_ready == nhr);
+    assert (nf <= F_IGN);
+    if (sel && nf != F_CMD) assert (ncs_h == 3'd0);   // CS_n low for >= 7 clk by then
     // the serial parser is in step with the reference decoder
     if (sel) begin
       assert (i_phase == fmap(nf));
@@ -504,6 +568,8 @@ module hostport_ref (
     assert (chain_ok(i_w_tog, i_w_s, nw_ck));
     assert (chain_ok(i_r_tog, i_r_s, nr_ck));
     // host_ready: set in every counted transaction, clear in an ignored one
+    // (and still clear while an ignored transaction's event is in flight)
+    if ((na_ck <= 4'd3 && !na_ok) || (nw_ck <= 4'd3 && !nw_ok) || (nr_ck <= 4'd3 && !nrw_ok)) assert (!nhr);
     if (nok) assert (nhr);
     if (sel && !nok) assert (!nhr);
     if (!nhr) assert (!i_active && !i_a_pend && !i_w_pend && !i_need_commit && !i_need_snap &&
@@ -544,6 +610,7 @@ module hostport_ref (
       if (!nrd_end) assert (sel && nok);
     end
     if (!nrd_live) assert (!nrd_end);
+    if (nr_ck <= 4'd3 && nrw_ok) assert (nrd_live);
     if (nrd_live && nrd_end) assert (end_age <= LX);
     assert (i_buf0 == nD0 && i_buf1 == nD1);
     // the output shifter holds the rest of the word being clocked out
@@ -557,7 +624,8 @@ module hostport_ref (
       else         assert (nr_ck >= rises && (nr_ck >= 4'd6 ? ahead == 2'd2 : ahead == 2'd1));
     end
     if (sel && nok && nrd && nf == F_DUMMY) assert (nrd_live && na_ck >= nn[3:0] && nn_done == 2'd0 && nn_com == 2'd0);
-    if (sel && nok && !nrd && nf == F_DATA && nr_any) assert (nw_ck >= rises);
+    if (sel && nok && !nrd && nf == F_DATA && nr_any) assert (nw_ck >= rises && na_ck >= 4'd8);
+    if (sel && nok && !nrd && nf == F_DATA && !nr_any) assert (na_ck >= rises);
     if (!i_active) assert (!i_need_snap && i_outstanding == 2'd0 && !i_need_commit);
     if (i_active && !i_c_rd) assert (!i_need_snap && i_outstanding == 2'd0 && !i_need_commit);
     // ages in steps are bounded by the clk rises counted since
@@ -576,6 +644,7 @@ module hostport_ref (
       if (owed != 2'd0) assert (nr_ck >= nx_ck + 4'd1);
     end
   end
+`endif
 
   // ------------------------------------------------------------ covers
   // bookkeeping for the covers only
@@ -598,7 +667,7 @@ module hostport_ref (
     end
     if (cs_rise && rd_live && !rd_end && r_f == F_DATA && r_n != 6'd0) rd_cut <= 1'b1;
     if (!rst_n && r_ok && r_f != F_CMD) rst_mid <= 1'b1;
-    if (sck_rise && !cs_n && !r_ok && r_sync && rst_n) ign_run <= 1'b1;
+    if (sck_rise && !cs_n && !r_ok && rst_n) ign_run <= 1'b1;
   end
   initial begin
     c_k = 2'd0;
@@ -606,18 +675,25 @@ module hostport_ref (
     ign_run = 1'b0;
   end
   always @(*) begin
-    cover (op_we && !ws_quad && ws_inc);                 // 1-bit WRITE
-    cover (op_we && ws_quad && ws_inc && ws_k == 2'd1);  // quad WRITE, second word at addr+1
-    cover (op_we && ws_quad && !ws_inc && ws_k == 2'd1); // quad WRITE_FIXED, second word at addr
+`ifdef COVER1
+    cover (op_we && !ws_quad && ws_inc);                 // 1-bit WRITE, a word written
     cover (op_commit && !rd_quad);                       // 1-bit READ, a word committed
-    cover (op_commit && rd_quad && rd_inc && n_com == 2'd1);   // quad READ, second word
+`else
+    cover (op_we && ws_quad && ws_inc && ws_k == 2'd1);  // quad WRITE, second word (at addr+1)
+    cover (op_we && ws_quad && !ws_inc && ws_k == 2'd1); // quad WRITE_FIXED, second word (at addr)
+    cover (op_commit && rd_quad && rd_inc && n_com == 2'd1);   // quad READ, second word committed
     cover (op_commit && rd_quad && !rd_inc && n_com == 2'd1);  // quad READ_FIXED, second word
-    cover (op_cancel && rd_cut && n_com == 2'd1);        // CS rose mid-word after one word
+    cover (op_cancel && rd_cut && n_com == 2'd1);        // CS rose mid-word after one complete word
     cover (cs_rise && r_ok && r_f == F_DATA && !r_rd && r_n != 6'd0 && c_k != 2'd0);  // write cut mid-word
     cover (!rst_n && rst_q && rd_live && n_snap - n_com == 2'd2);  // reset with two words snapped
+    cover (!rst_n && rst_q && ws_v);                     // reset with a write word in flight
     cover (op_we && rst_mid);                            // writes again after a reset mid-transaction
     cover (op_commit && rst_mid);                        // reads again after a reset mid-transaction
-    cover (op_we && ign_run);                            // after SCK ran in an ignored transaction
-    cover (io_oe);
+    cover (op_we && ign_run);                            // ... and after SCK ran in an ignored one
+    cover (io_oe);                                       // quad drivers on
+    cover (op_we && ws_age == LW);                       // the latency bounds are reached
+    cover (op_commit && com_age == LC);
+    cover (op_cancel && end_age == LX);
+`endif
   end
 endmodule

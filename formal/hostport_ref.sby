@@ -1,27 +1,32 @@
 [tasks]
-bmc
 prove
-pdr
-cover
+cover guide
+cover1 guide
+mutant guide
 
 [options]
 multiclock on
-bmc: mode bmc
-bmc: depth 80
 prove: mode prove
 prove: depth 20
-pdr: mode prove
 cover: mode cover
-cover: depth 320
+cover: depth 230
+cover1: mode cover
+cover1: depth 300
+mutant: mode bmc
+mutant: depth 240
+mutant: skip 239
 
 [engines]
-bmc: smtbmc yices
 prove: smtbmc yices
 cover: smtbmc yices
-pdr: abc pdr
+cover1: smtbmc yices
+mutant: smtbmc yices
 
 [script]
-read_verilog -sv -formal pe_hostport.sv hostport_ref.sv
+prove: read_verilog -sv -formal -DLEMMAS pe_hostport.sv hostport_ref.sv
+cover: read_verilog -sv -formal -DGUIDE pe_hostport.sv hostport_ref.sv
+cover1: read_verilog -sv -formal -DGUIDE -DCOVER1 pe_hostport.sv hostport_ref.sv
+mutant: read_verilog -sv -formal -DGUIDE -DSTICKY pe_hostport.sv hostport_ref.sv
 prep -top hostport_ref
 flatten
 connect -set i_phase dut.phase

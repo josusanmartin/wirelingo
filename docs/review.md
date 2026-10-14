@@ -106,12 +106,14 @@ result extends them to later firmware or grants release approval.
 * A formal equivalence check of the RTL against the synthesized netlist. LVS
   compares layout with netlist; gate-level simulation covers only the cases
   the tests exercise.
-* V2's stronger host-port proof remains open: address/data integrity and
-  ordering across abort/reset boundaries are checked by finite RTL tests,
-  not by the [host-port formal harness](../formal/hostport_props.sv). That
-  harness proves operation/count safety and uses initial reset only.
-  `test_host_reset_aborts_selected_transaction` covers reasserted reset in
-  the selected parser phases; it is not a proof over all reset sequences.
+* V2's stronger host-port proof: address/data ordering, read
+  snapshot/commit/cancel epochs, partial words and reset reasserted at any
+  step are now proved by k-induction against a pin-level reference model
+  ([formal-hostport.md](formal-hostport.md), `formal/hostport_ref.sv`),
+  under the §6.1 host timing contract. Still open there: behaviour outside
+  that contract (only `hostport_props.sv`'s count safety covers it),
+  power-up with CS_n low, metastability and pad timing, and what the chip
+  does with the bus operations (FIFO reservation and pop).
 * Closed 2026-10-13: the last electrical exception (a fanout count of 11
   against 8, of which 4 were antenna diodes) was removed, not waived. Run fo6
   passes `flow/release_check.py` with no waiver.
