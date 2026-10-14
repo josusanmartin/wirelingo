@@ -181,7 +181,8 @@ separately.
 
 ## Recorded release: fo6 with software f1cb7c9 (2026-10-14)
 
-Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`), validation root
+Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`; `5e0e3c6e…` with
+its timestamps zeroed, the hash in tag `rc-d916d40-fo6`), validation root
 `f1cb7c9` = main `9c7aeae` plus `flow/release_evidence.py`,
 `flow/archive_evidence.py`, their tests and this document. Generated with the
 one command above on runner1 (clone `~/protoemu-flow/rel-f1cb7c9`, work
@@ -209,7 +210,10 @@ hashed input and result, the job logs, verdict and source bundle, the ci7
 candidate files and the reproduction comparison. Extracted elsewhere, its
 own `release_check.py` re-verifies all seven receipts and passes. A later
 commit that touches only docs keeps the same validation inputs; any change
-to `test/`, `tools/`, `firmware/` or `src/` needs a new run.
+to `test/`, `tools/`, `firmware/` or `src/` needs a new run. `main` has since
+changed `firmware/`, `test/` and `tools/` (the third post-freeze round, the
+`ws2812` and `can_rx` timing fixes, the bundled MicroPython images): those
+are not covered by this record. `src/` is unchanged.
 
 ## Recorded release: fo6 with software d916d40 (2026-10-13)
 

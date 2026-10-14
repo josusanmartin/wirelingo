@@ -156,7 +156,7 @@ policy and is not a matched speed comparison.
 The historical queued32-byte result was9216 paid clocks with a60-byte image,
 header plus eight TX payload words, only28 prestart payload bytes and active
 service. The one-shot is slower under its deliberately fixed wait/readback
-policy. This proves bounded capacity/silence, not a causal speed advantage.
+policy. This run shows bounded capacity/silence, not a causal speed advantage.
 The native final CS hold is3system clocks, which does **not** meet Atlas's
 distinct4-clock peer requirement. Peers must tolerate finite intra-frame
 pauses; other host speeds/divisors need their own startup, sample, hold and

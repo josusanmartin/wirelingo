@@ -8,8 +8,8 @@ counts or nonzero low padding. Decoder success alone does not validate
 framing or data. F0 belongs to this capture workload.
 
 The source dependency is commit `82ba9b24f88d7df04b68419aab956208e2e67bfd`:
-`firmware/uart_rx_capture.pasm` and `tools/pe/uartcapture.py`. Integrate those
-files before this test/docs change. The firmware is 19 words/76 bytes;
+`firmware/uart_rx_capture.pasm` and `tools/pe/uartcapture.py`. Both are on main,
+byte-identical to that commit. The firmware is 19 words/76 bytes;
 no generic host, model, RTL or runtime change is needed.
 
 Load once with core0 disabled, RX16 mapped to `ui[0]`, synchronized inputs,

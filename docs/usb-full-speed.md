@@ -14,7 +14,10 @@ lists what the runs can't show.
 > where g4 ACKed 11/24, and the turnarounds are 10.5 / 13.4 / 14.9 clocks.
 > Like g4's, these are digital simulations at exactly 48 MHz: whether the v2
 > chip runs at 48 MHz is up to its own signoff (g4's slow corner reaches about
-> 44 MHz; typ met 50 MHz).
+> 44 MHz; typ met 50 MHz). The current candidate, run fo6, meets 50 MHz at all
+> three corners, and its release receipts run `test_usb_fs_device` and the
+> autonomous enumeration on the netlist with SDF at 20.834 ns (48 MHz) at typ,
+> slow and fast ([release-evidence.md](release-evidence.md)).
 
 ## Bottom line
 
@@ -320,7 +323,7 @@ Files on this branch:
     gap. It doesn't use the firmware or the line model.
   * `SpiService`, device-side host software running concurrently, with quad
     SPI transaction costs from docs/isa.md §6.1.
-* `test/model/test_usb_fs.py`, 16 tests:
+* `test/model/test_usb_fs.py`, 16 tests (19 now):
   * control transaction;
   * jitter/ppm;
   * 2-bit gaps with SOFs;
@@ -366,8 +369,9 @@ TESTS=1 PASS=1 FAIL=0
 ```
 
 The gate-level run is functional (no SDF), the way TT's CI runs it. It shows
-the netlist implements the RTL. Timing is covered by signoff STA: typ met at
-50 MHz; slow −2.88 ns at 50 MHz, about −2.0 ns at 48 MHz.
+the netlist implements the RTL. Timing is covered by signoff STA: on g4, typ
+met at 50 MHz; slow −2.88 ns at 50 MHz, about −2.0 ns at 48 MHz. (Run fo6
+meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
 
 ## 5. What remains unproven
 
@@ -428,9 +432,9 @@ Run the [maintained packet/toggle regression](../test/model/test_usb_ack.py):
 It covers autonomous enumeration at LS/FS and the software-serviced FIFO
 FS program, ordinary/stretched ACKs, extra00/55/ff bytes, longer tails,
 identical retransmission and advancement after a valid retry ACK. External
-replies must have the exact PID, payload and CRC. The FS program is135
-words (540bytes), four words more than before this guard; the autonomous
-program remains241words. No host ABI, timing sidecar, model or RTL changes
+replies must have the exact PID, payload and CRC. The FS program was then 135
+words (540 bytes), four words more than before this guard; the autonomous
+program remained 241 words (current sizes: [below](#partial-ack-data-and-immediate-retry)). No host ABI, timing sidecar, model or RTL changes
 are required.
 
 This byte-length guard does not separately certify EOP duration or

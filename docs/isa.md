@@ -377,8 +377,9 @@ So the loop locks on the first mid-bit transitions with a wide window and a
 fast loop gain, then follows the sender with gain 1/32 and a quarter-bit
 window: it measures each transition against a prediction rather than against
 the previous (also jittered) transition. At 50 MHz (P = 5) it receives
-10BASE-T with 802.3's ±13.5 ns of edge jitter and ±200 ppm (model sweep: 30/30
-frames at ±15 ns). The wide window holds for the first 32 mid-bit
+10BASE-T with 802.3's ±13.5 ns of edge jitter and ±200 ppm (a one-off model
+sweep when the loop was added: 30/30 frames at ±15 ns; the regression tests
+run ±13.5 ns). The wide window holds for the first 32 mid-bit
 transitions, which the 802.3 preamble's 62 alternating bits cover; a sender
 without a preamble works with up to about ±7 ns of jitter there.
 

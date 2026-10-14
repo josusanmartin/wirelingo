@@ -144,7 +144,8 @@ C23's saved offline oracle also rejected three mutations: retained retry
 payload changed with recomputed CRC, early READY release and an extra
 nominal error hidden by later success. Its evidence is in
 `evidence/sol-atlas/C23-ATLAS-NOACK-GAP/` (source-frozen.json, dynamic.json,
-saved-audit.json and saved-gaps.json). Historical assembly hypotheses are
+saved-audit.json and saved-gaps.json), a team directory that is not part of
+this repository. Historical assembly hypotheses are
 not measured artifact identities.
 
 ## RTL simulation

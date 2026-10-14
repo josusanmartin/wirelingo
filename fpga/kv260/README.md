@@ -1,7 +1,9 @@
 # Wirelingo (protoemu) on the Kria KV260
 
-Hardware validation of the chip RTL (tapeout configuration: 2 cores,
-256-word bank each, 8-deep FIFOs) on a Kria KV260, before silicon. Since
+The chip RTL (tapeout configuration: 2 cores, 256-word bank each, 8-deep
+FIFOs) running on a Kria KV260 FPGA, before silicon. This validates the RTL
+in FPGA fabric (inferred RAM, FPGA timing and pads), not the IHP netlist,
+its pads or the TT mux ([FPGA vs ASIC differences](#fpga-vs-asic-differences)). Since
 branch `kv260-v2` the design is built from the v2 RTL (NRZI half-cycle
 sample point, SYNC_BYPASS, WAIT kind 7, CALL/RET), and every bitstream says
 which RTL revision it is (below).
@@ -1221,7 +1223,8 @@ two wires, the chip's pins swapped by the PMOD map (D- = uio0, D+ = uio1),
 4 clocks per bit. The 48 MHz clock is the PS's 100 MHz (99.999 MHz from its
 IOPLL) x 12 / 25, about -10 ppm, inside full speed's 0.25 %. Not simulated
 on this design (the chip RTL test `test_usb_autonomous_fs` covers the
-firmware at full speed); an FPGA pin with 27 ohm is probably also
+firmware at full speed; on the board, full speed has run only against the
+replayed host (above), not a real one); an FPGA pin with 27 ohm is probably also
 outside full speed's driver-impedance window (28-44 ohm); keep the wires short.
 
 ### Build and staging (2026-10-07, branch `kv260-usb`)

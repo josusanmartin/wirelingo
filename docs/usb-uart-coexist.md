@@ -91,7 +91,8 @@ Execution reference was disposable Git tree
 f8772208d86e21ca1cec573bd33b353b8dbb5b72, with only these four new files
 added, while the worker branch stayed on82ba9b2. Source/dependency hashes,
 fixed offered-waveform plan, commands/exits and original candidate are in
-`evidence/sol-kepler/C15-KEPLER-USB-UART-PEER/` under the team root.
+`evidence/sol-kepler/C15-KEPLER-USB-UART-PEER/` under the team root (not part
+of this repository).
 For the frozen C15 version, the test command above failed and was not
 merge-ready as a passing qualification; the C16 outcome below is separate.
 
@@ -205,9 +206,10 @@ without extra SRAM/cores/flags. F7 spare does not imply a spare engine.
 
 C15's failed STATUS0/saver packet and missing raw evidence remain history,
 not a passed experiment. C16's fresh complete evidence is in
-`evidence/sol-kepler/C16-KEPLER-START-SAVE/` under the team root, including
+`evidence/sol-kepler/C16-KEPLER-START-SAVE/` under the team root (not part of
+this repository), including
 preflight/dynamic exact commands/exits, dependency/source hashes, raw cases,
 per-test counters, final four-file patch and two-file delta from C15. Worker
-baseline remains82ba9b2. Current-main alignment/regression on34de7a0 is a
-separate lead-coordinated integration step; this pinned experiment performs
-no worker rebase or broader replay.
+baseline remains82ba9b2. The test has since been integrated: on main
+(`0c459b9`, 2026-10-14) `test/model/test_usb_uart_coexist.py` passes, 3 tests
+including both cases, in the model suite.

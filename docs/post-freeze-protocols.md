@@ -6,9 +6,15 @@ RTL frozen at **tag `rc-93c2137-t48ba`** (the release candidate, run t48ba),
 implement protocols the chip was never designed for, in firmware only, and
 judge each one with oracles that do not share our assumptions.
 
-Rules kept: no change under `src/` (`git diff rc-93c2137-t48ba -- src/` is
-empty on this branch), and none to the golden model, assembler or timing
-checker (`tools/pe/{sim,isa,asm,line,timing}.py` are as on `main`). Added:
+Rules kept: no change under `src/` (`git diff rc-93c2137-t48ba -- src/` was
+empty on this branch; since then `main` has changed only the harden
+configuration `src/config.json`, for run fo6's antenna repair: the chip
+Verilog `src/*.v` is still the tag's), and none to the golden model,
+assembler or timing checker (`tools/pe/{sim,isa,asm,line,timing}.py` were as
+on `main`). One tool fix came out of the first round's FPGA run afterwards:
+the assembler's `/` became integer division (bidirectional DShot was a clock
+short at 50 MHz, [below](#results)); `timing.py`'s command line also changed
+to exit 0 on a declared conditional PASS. Added:
 firmware, host-side helpers and pins-only models (`tools/pe/postfreeze.py`),
 sigrok wrappers (`tools/pe/sigrok.py`), tests and this document. None of
 these protocols appears in the RTL, the ISA spec or any earlier firmware;
@@ -44,8 +50,9 @@ The first round: ten programs, 697 instruction words; the largest,
 `lin_responder`, uses 191 of a bank's 256. Every one has an RTL test through
 the real SPI host port (`test/test_post_freeze.py`: 8 tests, all passing, 148
 s of icarus) and model tests (`test/model/test_{dmx512,lin,nec,i2s,wiegand,dshot,dshot_bidir}.py`,
-`test_post_freeze_timing.py`: 78 tests; the whole model suite, 517 tests,
-passed on that branch).
+`test_post_freeze_timing.py`: 78 tests, 79 since the assembler fix made
+`test_bidir_no_reply_and_timing` run at 48 and 50 MHz; the whole model
+suite, 517 tests, passed on that branch).
 
 The second round ([below](#second-round-dali-modbus-rtu-midi-quadrature)):
 five more programs, 398 words (the largest, `midi_rx`, 132 of 256), each in

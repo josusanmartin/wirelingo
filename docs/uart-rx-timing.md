@@ -118,14 +118,18 @@ Optional `UART_TRACE_DIR` saves external boundaries, samples, STOP/rearm,
 FIFO/error observations and per-test clock totals before assertions; normal
 runs create no trace artifacts. `UART_MODEL_CLOCK_LIMIT` can impose a lower
 aggregate invocation cap (default 2500000). There are no native, board,
-metastability, RTL/pad, arbitrary-jitter or FIFO-full claims.
+metastability, RTL/pad, arbitrary-jitter or FIFO-full claims from these
+tests. (`uart_rx_packed` and `uart_rx_capture` later ran on the KV260 FPGA
+build of the RTL with generator-played lines: fpga/kv260/README.md, "SPI and
+UART firmware on hardware".)
 
 The R13 final full-file run passed **23 tests**, receiving 377 bytes in
 1637941 counted model clocks (54.12 seconds pytest time). The prior focused
 19-case run used 674266 clocks; total ticket model clocks are
 2312207 / 2500000. The final run was performed once at the unchanged test
 source; the 13-word receiver firmware is byte-identical to the ticket
-baseline. These are local model results pending host commit/integration.
+baseline. These were local model results; the tests are now on main, in the
+model suite.
 
 ## Optional packed UART mode: 32-byte finite capture
 
@@ -259,8 +263,8 @@ The new file's ten tests passed in two focused invocations: 3 tests in 13.12s
 and 7 in 37.47s. Total **1303266 / 3000000** actual model clocks includes the
 single baseline comparison, setup and post-deadline reads; zero native/EDA/
 runner jobs. One candidate/implementation iteration sufficed. The unchanged
-23-test byte-UART suite was not rerun. These source/model results are pending
-host commit and Claude integration; the new tests/docs require R13 first.
+23-test byte-UART suite was not rerun. These source/model results have since
+been integrated on main, with the byte-UART tests.
 
 ## Declared-length capture: complete 1..32-byte results
 
@@ -332,7 +336,7 @@ setup is used to manufacture preservation.
 
 ### Independent pin cases and measured boundaries
 
-Run only the new maintained tests (prerequisite: C11 `80a28e5`, after R13):
+Run only the new maintained tests (on main; originally built on C11 `80a28e5`, after R13):
 
 ```sh
 PYTHONPATH=tools python3 -m pytest -q test/model/test_uart_capture.py
@@ -412,4 +416,4 @@ was needed. The unchanged byte/packed UART suites were not replayed.
 Declared lengths/start arrangement, empty target FIFOs, F0 ownership and
 these finite wire cases are the supported contract. Full-FIFO losslessness,
 spontaneous packet acquisition, serialized host throughput and physical/pad
-qualification remain outside it. Host commit/Claude integration are separate.
+qualification remain outside it. The tests have since been integrated on main.

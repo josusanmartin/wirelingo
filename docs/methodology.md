@@ -74,8 +74,8 @@ assumptions:
   does are worthless, and agents write those too.
 * **Third-party oracles.** sigrok's protocol decoders, written by other
   people for logic analyzers, decode the waveforms of the UART, SPI, I2C,
-  USB (low and full speed) and CAN tests and must agree with what each test
-  expected. They share no code or assumptions with our device models, so a
+  USB (low and full speed) and CAN tests, and of the post-freeze protocols
+  where a decoder exists, and must agree with what each test expected. They share no code or assumptions with our device models, so a
   bug common to the firmware and its model still shows up.
 * **Device models that see only pins.** Firmware is tested against
   independent models of a UART, an I2C EEPROM, a USB host and so on, not
@@ -86,6 +86,10 @@ assumptions:
 * **Hardware.** The RTL runs on a Kria KV260 FPGA at the chip's 50 MHz:
   firmware loads, UART crosses real pins, and the quad host port moves
   193.6 Mbit/s, the figure simulation predicted ([fpga/kv260](../fpga/kv260/README.md)).
+  Most firmware, the post-freeze protocols among it, and USB enumeration
+  against a replayed host waveform also ran there, against the other core or
+  the FPGA's pattern generator. This is the RTL in FPGA fabric, not the IHP
+  netlist or its pads.
 * **A second agent as adversary.** Codex reviewed the work cold, and Claude
   reviewed Codex's fixes. Neither was trusted to grade its own work.
 
@@ -137,5 +141,6 @@ flow) and [review.md](review.md) (the independent review).
 * Nothing formally proves that synthesis preserved the RTL's behaviour;
   the gate-level tests cover the exercised cases.
 * The FPGA validates the logic at speed, not the IHP silicon: pads, real
-  timing and the latch FIFOs are only covered by static timing analysis and,
+  timing and the latch FIFOs are only covered by static timing analysis,
+  timing-annotated gate-level simulation of the exercised paths and,
   eventually, the chip itself.

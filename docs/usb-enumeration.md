@@ -165,7 +165,8 @@ as DATA1 with the old address in force, the commit still happens on the
 host's ACK or on the first token to the new address, and that token is
 served exactly as before, only sooner: a SETUP as a SETUP, an IN with a
 zero-length DATA1 (what the device answers any IN with no transfer under
-way). Net cost: one word (241).
+way). Net cost: one word (241; 246 since the ACK tail guards of
+[usb-full-speed.md](usb-full-speed.md#partial-ack-data-and-immediate-retry)).
 
 | Path (full speed, pads) | Before | After |
 |---|---|---|
@@ -231,7 +232,8 @@ free for a second job (a data endpoint's data source, or another protocol).
 
 ## Tests
 
-`test/model/test_usb_autonomous.py` (model, both speeds; 65 tests):
+`test/model/test_usb_autonomous.py` (model, both speeds; 65 tests in the
+results below, 71 now):
 enumeration with clock offsets and jitter (every transaction through first
 time), the Linux flow with a 10 ms reset, wLength 0-255 on both descriptors,
 each fault kind sprinkled randomly over the flow (3 seeds × 3 kinds × 2
@@ -286,8 +288,11 @@ make COCOTB_TEST_MODULES=test_sigrok COCOTB_TEST_FILTER=sigrok_usb_autonomous
   TESTS=2 PASS=2 FAIL=0
 ```
 
-Not run: gate level (the netlist is v2c's, unchanged by firmware; the existing
-GL flow would run these tests as-is).
+Gate level was not run on this branch. It has run since: run fo6's release
+receipts include `test_usb_autonomous` and `test_usb_autonomous_fs` on the
+netlist with SDF at typ, slow and fast at 20.834 ns (48 MHz), validation root
+`f1cb7c9`, whose `usb_enum.pasm` is the current one
+([release-evidence.md](release-evidence.md)).
 
 ## On the KV260, with a replayed host (2026-10-14)
 
@@ -305,7 +310,9 @@ status ACK with an IN first) plus `usb_ls_dev` / `usb_fs_dev` with their
 device software: **every device edge at the clock the model gives** (0 clocks
 difference on all 32,880 device edges, 16,440 per speed), every device packet byte for byte,
 the end states equal, and sigrok's decode of the board's edges equal to the
-host model's packet record. Turnaround on the pads: 2.16 bit times (low
+host model's packet record. (The model runs here with its falling-edge pad
+sample equal to the clock-edge-launched pads, as on the FPGA; with its default
+asynchronous edge the full-speed answers come one clock later.) Turnaround on the pads: 2.16 bit times (low
 speed), 3.25-4.00 (full speed; 4.75 for the IN that commits a new address).
 This is the RTL on FPGA fabric with digital pad levels: no transceiver, no
 analogue receiver, no real host controller.

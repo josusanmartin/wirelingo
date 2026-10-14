@@ -110,7 +110,8 @@ reach the RTL's internals through `connect -set` after `flatten`. They are
 assertions like the properties, so they are proved too; they are not part of
 the specification.
 
-The RTL under proof is `src/pe_hostport.sv` as taped out (sha256
+The RTL under proof is `src/pe_hostport.sv` as in the release candidate, run
+fo6 (not yet taped out; sha256
 `05d2313596c411aecee3a733b63b0de02c9994a2aa947811edb1794868b28c38`),
 unchanged by this work.
 

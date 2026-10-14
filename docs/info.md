@@ -40,8 +40,12 @@ The firmware verified in simulation covers UART TX/RX, SPI master, I2C master
 one that enumerates on its own with no host traffic after the load, a
 10BASE-T transmitter (at 40 MHz, with link pulses) and receiver, CAN 2.0A
 TX/RX, an SWD debug probe, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
-DMX512, LIN, NEC infrared, I2S, Wiegand and DShot600 (also bidirectional).
-None of it has run on silicon yet.
+an 8-channel logic analyzer and an I2C target for reverse engineering,
+DMX512, LIN, NEC infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI,
+Modbus RTU, MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0,
+SMBus with PEC and RC-5 infrared. Most of it (not SWD or the two-core USB
+device) has also run on an FPGA build of the RTL (Kria KV260) against
+pins-only device models. None of it has run on silicon yet.
 
 The full specification is in `docs/isa.md` in the repository.
 
@@ -121,9 +125,10 @@ derived from the specifications, not yet validated on silicon):
   answers the PC's enumeration by itself (vendor ID 0x1209, product 0x5634,
   one configuration, no data endpoint), and `bringup.usb_enum_state(pe)` reads
   the address and Configured state afterwards. Tested in RTL and
-  timing-annotated gate-level simulation and in simulation of the KV260 FPGA
-  build; it has not yet enumerated on a real PC, and full-speed signalling
-  through the chip's pads is unmeasured.
+  timing-annotated gate-level simulation, and on the KV260 FPGA build of the
+  RTL against a host model's waveform replayed on its pins (no PHY); it has
+  not yet enumerated on a real PC, and full-speed signalling through the
+  chip's pads is unmeasured.
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
   nominal pins swing ±3.3 V differentially. The proposed 15–20 Ω series

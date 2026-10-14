@@ -20,7 +20,7 @@ bug, and the lower levels make the higher ones cheap.
    └─────────────────────┘
 ```
 
-## 1. A single normative spec, two independent implementations
+## 1. A single normative spec, two implementations
 
 `docs/isa.md` defines every instruction and every cycle-level interaction:
 
@@ -29,7 +29,9 @@ bug, and the lower levels make the higher ones cheap.
 * how WAIT edge trackers behave between ticks;
 * ...and similar edge cases.
 
-The Python model (`sim.py`) and the RTL were written separately from it. A
+The Python model (`sim.py`) and the RTL were written separately from it
+(by the same agents, so a shared misreading of the spec passes both; the
+device models and sigrok decoders below are the check on that). A
 disagreement is resolved by the spec, never by making one implementation copy
 the other.
 
@@ -173,15 +175,15 @@ the RTL through the **real SPI host port** (`test/test.py`).
   deliberate overflow and explicit queue/firmware recovery.
 * USB: both variants enumerate through concurrent SPI service at a quantized
   48 MHz, reject an invalid PID, retry lost ACKs, abort a transfer on SETUP,
-  and restore address zero after bus reset. Functional GL can run these same
-  tests, but requires a new candidate netlist.
+  and restore address zero after bus reset. These are in the main suite,
+  which passes on run fo6's netlist at gate level (25/25).
 
 **Additional model coverage (beyond the RTL cases above):**
 
 The separate `test_eth_service` suite executes the MicroPython finite RX
 capture through real quad SPI, with independent 64/1518-byte input waveforms,
-jitter, bad FCS and overflow. Its two tests also pass on the retained global-
-routing checkpoint netlist without SDF. `test_eth10_board.py` checks bounded
+jitter, bad FCS and overflow. Its two tests also pass at gate level on run
+fo6's final netlist (functional, no SDF). `test_eth10_board.py` checks bounded
 records, independent FCS, preamble/padding and failure cleanup; its board API
 tests use fakes. The proposed [receiver circuit](eth10-receiver.md) is unbuilt.
 The final GL runner requires the main, compiled-PIO and receive-service suites;
@@ -208,7 +210,8 @@ checkpoint tests do not satisfy final physical release.
 * 10BASE-T RX (`eth10_rx`, line unit): `eth10_tx` on core 1 to `eth10_rx` on
   core 0 at 40 MHz; an external sender at 50 MHz with random phase, 100 ppm
   offset and 802.3's ±13.5 ns of jitter, uniform and with every edge at
-  ±13.5 ns (±200 ppm); the pad is sampled at both clock edges. A sweep: 30/30
+  ±13.5 ns (±200 ppm); the pad is sampled at both clock edges. A one-off model sweep
+when the loop was added (commit 19707ef, not a regression test): 30/30
   frames at ±15 ns, 9/30 at ±18 ns. `test_line_rx_jitter` (lockstep) runs a
   jittered frame through the RTL and the model, compared every cycle, through
   the receiver's lock.
@@ -246,7 +249,8 @@ checkpoint tests do not satisfy final physical release.
 **Independent protocol oracle (sigrok).** The firmware and the device models
 above come from the same hands, so a shared misreading of a protocol would
 pass both. `test/test_sigrok.py` re-runs test.py's UART TX and RX, SPI master,
-I2C master and both USB device tests unchanged (their own assertions included)
+I2C master, both USB device tests and autonomous USB enumeration at low and
+full speed unchanged (their own assertions included)
 while recording the pads, then decodes the recording with sigrok-cli's
 protocol decoders (libsigrokdecode: third-party code sharing nothing with our
 models, `tools/pe/sigrok.py`). The decode must equal the data the test meant
@@ -257,7 +261,7 @@ same for the CAN firmware on the cycle model (`ModelRecorder` records the
 model's pins) with sigrok's CAN decoder.
 
 ```
-make -C test COCOTB_TEST_MODULES=test_sigrok                         # 6 tests, ~1 min
+make -C test COCOTB_TEST_MODULES=test_sigrok                         # 8 tests
 PYTHONPATH=tools python -m pytest test/model/test_sigrok_can.py      # 2 tests, ~5 s
 ```
 
@@ -308,9 +312,11 @@ one-period bound and the clock-gating, pulse-width and recovery/removal checks
 
 **With delays** (`flow/gl_sdf_test.sh <run>`): the same netlist back-annotated
 with the run's extracted SDF (Icarus; `flow/sdf_prep.py` works around its SDF
-reader), five top-level tests at typ/50 MHz and slow/43.5 MHz must pass, and
-`test_fetch_to_pin` at slow/80 MHz must fail, which shows the delays are in
-effect. g4 and v2c pass all three cases. This checks that the exercised
+reader), five top-level tests at typ, slow and fast at 50 MHz must pass, and
+`test_fetch_to_pin` at slow/100 MHz must fail, which shows the delays are in
+effect. Run fo6 passes all of it (release receipts,
+[release-evidence.md](release-evidence.md)). Historically g4 and v2c passed
+the older set (typ/50 MHz, slow/43.5 MHz, control at slow/80 MHz). This checks that the exercised
 transitions meet the clock with real cell, wire, clock-tree and SRAM delays.
 It does not check setup/hold windows (Icarus has no timing checks), and it
 covers only the paths the tests sensitize. g4's slow corner also passes the
@@ -322,11 +328,13 @@ The v2 features have their own set (`flow/gl_sdf_test.sh <run> v2`): the
 fast SPI master with MISO in `SYNC_BYPASS` (test_spi_master_fast), WAIT kind 7
 at 1-tick resolution (test_la_capture_ticks, new: decoded edges and pulses
 must equal the cycle model's), CALL/RET (test_call_ret, new: side-set edges,
-pushed links and registers must equal the model's) at typ 20 ns and slow
-23 ns, and the full-speed USB device with the half-cycle NRZI sample point
-(test_usb_fs_device) at typ 48 MHz and, with its bus scaled to the clock,
-slow 23 ns; slow at 48 MHz, which STA doesn't meet (21.57 ns), is reported.
-v2c passes all of it, slow/48 MHz included. `v2long` runs the full-length
+pushed links and registers must equal the model's) at 20 ns, and the
+full-speed USB device with the half-cycle NRZI sample point
+(test_usb_fs_device) at 48 MHz (20.834 ns), each at typ, slow and fast. Run
+fo6 passes all of it, and the release adds the autonomous USB enumeration
+tests (low and full speed) with SDF at all three corners. Historically v2c
+passed the older version of this set (typ 20 ns, slow 23 ns, and full-speed
+USB at slow/48 MHz, which its STA didn't meet). `v2long` runs the full-length
 test_la_capture_rate and test_reverse_engineering (v2c: pass at typ and slow, ~50 minutes each). Under SDF the
 external uio devices drive 4 ns after the clock edge, STA's input delay:
 driven at the edge, a pad synchronizer whose clock arrives 0.85 ns late
@@ -352,7 +360,8 @@ On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
 * mutation runner: 34 of 34 mutants killed (17 of them new for the v2 features).
 
 Gate level and STA: run v2c's netlist passes all 24 top-level tests (functional
-GL) and signoff STA at every corner ([physical.md](physical.md)).
+GL) and signoff STA at every corner ([physical.md](physical.md)). The current
+candidate, run fo6, passes 29/29 and meets 50 MHz at every corner (§5).
 
 ## Bugs found by this flow (selection)
 
@@ -374,3 +383,6 @@ GL) and signoff STA at every corner ([physical.md](physical.md)).
 | golden model (v2) | the line unit's falling-edge RX sample was chosen with a `SYNC_BYPASS` value written in the same cycle (the RTL uses it from the next cycle) | lockstep, a seed window outside the regression's (`LOCKSTEP_SEED0=5000`): Manchester phase off by one sample after a mid-frame bypass write |
 | golden model | the stuffing run bit was "none" at a frame start where the RTL keeps the last bit and clears a valid flag; switching STUFF_ONES off mid-frame crashed the model | lockstep, seed window 9000 (TypeError); run bits and flags are now compared every cycle |
 | MicroPython driver (v2) | its image check ignored CALL (opcode 13), so a CALL out of the core's bank loaded and faulted at run time | review; `test_board_load_validates_before_any_bus_write` has a CALL case and a mutant |
+| WS2812 firmware | a 0 bit was 2 ticks high, not the header's 3: 240-260 ns at 50 MHz, outside WS2812B's T0H window | the KV260 run script's model pass at 50 MHz, before the board; `test_ws2812_bit_timing_is_the_documented_one` |
+| CAN RX firmware | a stuff bit after a CRC ending in five equal bits was not skipped, so the ACK came a bit early (about one random frame in 31; the model tests' frames avoided it) | the KV260 run script's model pass on a generator frame, before the board; three tests in `test_can.py` |
+| assembler | `/` truncated each half of a split delay, so bidirectional DShot ran a clock short per level at 50 MHz | the KV260 board (pins captured by `la_capture`), then the cycle model; `/` is now integer division |

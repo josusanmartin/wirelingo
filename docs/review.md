@@ -36,8 +36,10 @@ The ACK corpus has 125 passing cases using the two-core, two-bank,
 256-word, depth-eight model profile. The two maintained MicroPython USB
 driver tests separately check the corresponding generated images in that
 profile. See [ACK behavior and remaining limits](usb-full-speed.md) and
-[enumeration](usb-enumeration.md). These results do not qualify the updated
-ACK paths on native RTL, a board or silicon.
+[enumeration](usb-enumeration.md). On the RTL, only the KV260 FPGA build
+has run the malformed ACKs (the `ack` scenario at low and full speed, against
+a replayed host waveform: [fpga/kv260](../fpga/kv260/README.md)); no RTL or
+gate-level simulation, real host or silicon covers them.
 
 The UART follow-up added baud/phase, framing, rearm and packed-capture tests;
 it did not require rewriting the standalone receiver. Its later
@@ -100,9 +102,10 @@ result extends them to later firmware or grants release approval.
 
 * More on hardware. The RTL runs on a Kria KV260 at 50 MHz (bring-up, the v2
   features, quad SPI at 193.6 Mbit/s, UART across real PMOD pins:
-  [fpga/kv260](../fpga/kv260/README.md)); still open are the RP2350 transport,
-  USB enumeration against a real host (prepared on the KV260, not yet
-  wired), and the 10BASE-T analog front end.
+  [fpga/kv260](../fpga/kv260/README.md); since then also USB enumeration
+  against a replayed host waveform and the post-freeze protocols); still
+  open are the RP2350 transport, USB enumeration against a real host
+  (prepared on the KV260, not yet wired), and the 10BASE-T analog front end.
 * A formal equivalence check of the RTL against the synthesized netlist. LVS
   compares layout with netlist; gate-level simulation covers only the cases
   the tests exercise.
