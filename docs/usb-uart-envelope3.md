@@ -2,8 +2,10 @@
 
 This optional firmware pair delivers one to three UART bytes in each four-byte
 USB control response. It uses both existing engines and adds no RTL. A finite
-model scenario passed on the two-core tapeout profile; this pair has no RTL,
-FPGA or silicon qualification.
+model scenario passed on the two-core tapeout profile. A second, pins-only
+scenario passed on the RTL top level and matched the model clock for clock
+([RTL simulation](#rtl-simulation)). This pair has no FPGA or silicon
+qualification.
 
 Use the [fixed four-byte example](usb-uart-overlap4.md) when partial groups are
 unnecessary. This version spends one wire byte on a payload count and adds an
@@ -115,3 +117,53 @@ core gating, global reset, preemption, faults, active loader service, aborted
 internal supplier traversals, sustained rate and physical I/O timing remain
 outside this result. The baud and rate envelope measured for the fixed
 four-byte pair does not transfer: this producer polls START every 26 clocks.
+
+## RTL simulation
+
+[`test_envelope3_rtl`](../test/test_usb_uart_rtl.py) runs the harness
+described in the [fixed four-byte guide](usb-uart-overlap4.md#rtl-simulation)
+on the RTL top level: the helper's 393 writes through the SPI port (15
+transactions, 25,880 clocks at SCK = clk/2), then a host port checked idle
+on the pads. A READY-gated ideal 115,200-baud sender and the `ControlHost`
+low-speed model run the [scenario](../test/model/usb_uart_pairs.py) at
+address 0 with request 2. The time origin is the first clock READY is high,
+30 clocks after the load.
+
+In 172,739 clocks (3.60 ms) the scenario does the following:
+
+* An empty request is STALLed.
+* Two full three-byte groups arrive while the host is idle. The retained
+  first group and the pending second one hold the sender's next frame for
+  13,033 clocks.
+* Greedy reads fetch both groups. The second is fetched with an
+  in-transfer IN retry that returns the identical DATA packet.
+* A group of `12`, a bad-STOP `99` and `34` is sealed as two bytes by the
+  idle timer. The host's repeated requests are STALLed until then.
+* One byte `00` is sealed the same way.
+* A final request is STALLed.
+
+10 frames carry 9 good bytes. The host makes 18 requests (14 STALLed) in 108
+USB packets. The test checks the following against expectations computed
+from the sender's byte list:
+
+* The reports are exactly `a55aff03`, `7e810103`, `12340002` and `00000001`,
+  in order, with zero padding and the right counts.
+* No request is STALLed once a report is due: 100 clocks after a full
+  group's last STOP ends, or 48,500 clocks after a partial group's (the
+  timer is 1,846 polls of 26 clocks).
+* Every frame starts while READY is high, on a fresh rise. READY falls 7–29
+  clocks after each START.
+* ERROR rises once, at clock 47,170, inside the bad frame's STOP.
+* READY ends the hold 608 clocks after the releasing ACK begins.
+* F7 is clear at the end.
+
+The same scenario on the cycle model gives identical records: request
+outcomes, reports, every packet with its first and last clock, each frame's
+START and grant clock, and every edge of RX, READY, ERROR, D+ and D-.
+sigrok's decoders on the saved RTL pins agree: 10 bytes with one framing
+error, and 108 packets without errors. This is RTL simulation with ideal
+edges at one-clock resolution. It does not cover detector reset,
+malformed ACKs, START phases near READY closure, baud error, gate-level
+timing or electrical USB. Reproduce with
+`make COCOTB_TEST_MODULES=test_usb_uart_rtl COCOTB_TEST_FILTER=test_envelope3_rtl`
+in `test/`.

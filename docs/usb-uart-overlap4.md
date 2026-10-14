@@ -5,8 +5,11 @@ while the second core receives the next four UART bytes. It uses the existing
 instruction set and two cores. READY throttles the UART sender when both the
 retained report and pending group are full.
 
-Everything below is model evidence on the two-core tapeout profile. Native RTL,
-FPGA and board behavior of this pair are unmeasured.
+The envelope and regressions below are model evidence on the two-core tapeout
+profile. One pins-only scenario also runs on the RTL top level, where every
+report, USB packet and pin edge matches the model clock for clock
+([RTL simulation](#rtl-simulation)). FPGA and board behavior of this pair
+are unmeasured.
 
 ## Load and communicate
 
@@ -164,11 +167,65 @@ scheduled read is 1,192 clocks. At most seven good bytes were queued. Three
 saved-trace mutations must be rejected: a changed report with valid CRC, a
 missing READY grant and a missing retry.
 
+## RTL simulation
+
+[`test_overlap4_rtl`](../test/test_usb_uart_rtl.py) runs one scenario on
+`tt_um_josusanmartin_protoemu` in tb.v (Icarus Verilog, the tapeout profile
+with the behavioral SRAM model, 48 MHz). The host loads the pair through the
+SPI port: the helper's 374 writes in 15 transactions at SCK = clk/2, 24,664
+clocks. It then leaves CS_n high and SCK and MOSI still, which the test
+checks on the pads. Two pins-only peers run the
+[scenario](../test/model/usb_uart_pairs.py): an ideal 115,200-baud 8N1
+sender that starts one frame per fresh READY rise, and the `ControlHost`
+low-speed host model on D+/D- with keep-alives. The time origin is the first
+clock READY is high, 30 clocks after the load.
+
+In 164,192 clocks (3.42 ms) the scenario does the following:
+
+* An empty request is STALLed.
+* While the first groups arrive, the host reads the device descriptor and
+  sets address 5 and configuration 1. That takes long enough for READY to
+  hold the sender for 19,450 clocks.
+* Two reports are read at once. The second is fetched with an in-transfer
+  retry: the host withholds its ACK, and the repeated IN returns the
+  identical DATA packet.
+* The host pauses until clock 100,000, and READY holds the sender for 17,799
+  clocks.
+* Greedy reads fetch the rest. A bad-STOP `a6` arrives in the third group.
+* A final request after all bytes is STALLed.
+
+25 frames carry 24 good bytes. The host makes 9 requests (3 STALLed) in 98
+USB packets, and all device turnarounds are 2.16 bit times. The test checks
+the following against expectations computed from the sender's byte list:
+
+* The reports are exactly `00ff55aa`, `7e810180`, `12345678`, `fedcba98`,
+  `39d3815e` and `ffff7f00`, in order: no byte lost, duplicated or reordered.
+* No request is STALLed while a complete group is due.
+* Every frame starts while READY is high, on a fresh READY rise. READY falls
+  12–26 clocks after each START.
+* ERROR rises once, at clock 66,106, inside the bad frame's STOP. The
+  frame's byte is missing from the reports.
+* After each hold, READY rises 592 and 590 clocks after the releasing ACK
+  packet begins (608 clocks long).
+* F7 is clear at the end, read through the SPI port after the scenario.
+
+The same scenario on the cycle model gives identical records: request
+outcomes, reports, every packet with its first and last clock, each frame's
+START and grant clock, and every edge of RX, READY, ERROR, D+ and D-.
+sigrok's uart and usb decoders, run locally on the saved RTL pin record,
+agree: 25 bytes with one framing error, and 98 packets with no CRC or
+signalling error. On runner1 the test takes about 30 s.
+
+This is RTL simulation with ideal edges at one-clock resolution. Gate-level
+timing, baud error, jitter, the malformed-ACK and bus-reset paths, real host
+scheduling and electrical USB are not covered by it.
+
 ## Remaining validation
 
-Native RTL, board and electrical USB behavior, real host scheduling, UART
+Gate-level, board and electrical USB behavior, real host scheduling, UART
 jitter, host blackouts, power and general reset recovery remain unqualified.
-The rate results above are finite runs of 12 to 26 reports.
+The rate results above are finite model runs of 12 to 26 reports; the RTL
+scenario is one finite run of six reports.
 
 ## Reproduce
 
@@ -180,3 +237,15 @@ PYTHONPATH=tools python3 -m pytest -q test/model/test_usb_uart_overlap4.py \
 
 The two finite regressions write their raw trace to pytest's `tmp_path`, or to
 a fresh `WIRELINGO_EVIDENCE` directory, and refuse to overwrite one.
+
+The RTL scenario and its model run (`test_usb_uart_pairs.py` runs the model
+half alone, with sigrok when installed):
+
+```sh
+cd test && make COCOTB_TEST_MODULES=test_usb_uart_rtl COCOTB_TEST_FILTER=test_overlap4_rtl \
+  SIM_BUILD=sim_build/usb_uart_rtl
+PYTHONPATH=tools python3 -m pytest -q test/model/test_usb_uart_pairs.py
+```
+
+The RTL test saves both records and their comparison to
+`test/sim_build/usb_uart_rtl/overlap4.json`.
