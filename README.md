@@ -142,6 +142,26 @@ edges and tracks the sender's phase with a digital loop (docs/isa.md §4.7).
 The first version measured each edge against the previous one at one sample
 per clock and managed ±5 ns.
 
+## Additional firmware and host workflows
+
+These optional workloads use the existing RTL. Each guide supplies its loading
+contract, pin/flag allocation and reproduction commands. Choose a complete
+workload before loading; the resource allocations are not interchangeable.
+Evidence below applies to the named cases and configurations.
+
+| Workload | Use | Evidence and limits |
+|---|---|---|
+| [Packed SPI and one-shot preload](docs/spi-packed-host.md) | Pack FIFO words; preload a 1–32-byte mode-0 transfer, then drain and rearm through the host | Model tests and documented serialized-host RTL cases; one-shot mode is core 0 only |
+| [Declared UART capture](docs/uart-capture-host.md) | Capture 1–32 bytes with framing status and a partial final word | Model tests and a serialized-host RTL regression with paid drain/rearm; length must be known before arming |
+| [USB plus UART peer capture](docs/usb-uart-coexist.md) | Enumerate on core 0 while core 1 captures UART to its host FIFO | Two finite model cases; this mode does not forward the captured bytes through USB |
+| [One-byte USB/UART mailbox](docs/usb-uart-byte.md) | Return one retained UART byte through a vendor USB EP0 request | Finite low-speed model test; READY admits each frame and the USB host supplies polling/ACK service |
+| [Four-byte USB/UART mailbox](docs/usb-uart-batch4.md) | Retain four UART bytes through USB retries before admitting the next group | Finite low-speed model test with a measured publication deadline; UART pauses until ACK, sustained forwarding unmeasured |
+
+The [current Lean guide](docs/lean-verification.md) documents manual proofs and
+finite comparisons against actual RTL, including normally fetched pin ownership,
+RX autopush and UART IN1/partial PUSH. Each check names its assumptions and scope;
+these results do not establish universal equivalence of the whole chip.
+
 ## Verification in one paragraph
 
 A cycle-accurate Python model and the RTL run constrained-random programs,
