@@ -119,7 +119,8 @@ six descriptor replies drop 46 bits each. The test asserts that every dropped
 bit belongs to a device-started receiver frame and that every peer packet
 starts on an empty, idle receiver. External USB-host work remains a
 service cost. Capacity is one byte, core0's256-word bank is full, and sender
-admission still requires physical READY. There is no RTL, board, physical
+admission still requires physical READY. Beyond the
+[RTL scenario](#rtl-simulation) below, there is no RTL, board, physical
 or continuous-stream qualification.
 
 C23's saved offline oracle also rejected three mutations: retained retry
@@ -128,6 +129,42 @@ nominal error hidden by later success. Its evidence is in
 `evidence/sol-atlas/C23-ATLAS-NOACK-GAP/` (source-frozen.json, dynamic.json,
 saved-audit.json and saved-gaps.json). Historical assembly hypotheses are
 not measured artifact identities.
+
+## RTL simulation
+
+[`test_byte_rtl`](../test/test_usb_uart_rtl.py) runs the harness described in
+the [overlap4 guide](usb-uart-overlap4.md#rtl-simulation) on the RTL top
+level. The helper's 300 writes go through the SPI port (14 transactions,
+19,872 clocks at SCK = clk/2), and the host port is then checked idle on
+the pads. The [scenario](../test/model/usb_uart_pairs.py) uses address 0
+and `vendor_request()`. The time origin is the first clock READY is high,
+155 clocks after the load.
+
+In 70,519 clocks (1.47 ms) the sender offers `00`, `ff`, a bad-STOP `5a`,
+`a5` and `81`. The host first makes an empty request, which is STALLed. It
+then reads greedily, and the third byte is fetched with an in-transfer IN
+retry that returns the identical DATA packet. A final empty request is
+STALLed. There are 7 requests (3 STALLed) in 53 USB packets.
+
+The test checks the following against the sender's byte list:
+
+* The reports are exactly `00`, `ff`, `a5` and `81`, in order. The bad-STOP
+  byte is absent.
+* Every frame starts on a fresh READY rise while READY is high. READY falls
+  93–103 clocks after START, about two ticks of the 52+21/256-clock divider.
+* READY holds three frames until the previous byte's read: for 10,146, 7,135
+  and 12,082 clocks. It rises 651–689 clocks after the releasing ACK begins.
+* The frame after the bad STOP waited 260 clocks for READY.
+* The ERROR pin (not used by this mode) stays low.
+* F6 is set and F7 is clear at the end, read through the SPI port after the
+  scenario.
+
+The model run of the same scenario is identical in reports, packets with
+their clocks, frame and grant clocks, and every pin edge. sigrok decodes the
+saved RTL pins as the same 5 bytes (one framing error) and 53 packets without
+errors. This is RTL simulation with ideal edges. It does not cover the C23
+fault cases (malformed ACK, reset, deconfigure), gate-level timing or
+electrical USB.
 
 ## Running the maintained test
 
@@ -152,3 +189,6 @@ protocol evidence and do not imply a C24 result before that check completes.
 The optional override selection is reviewed in source, without another live
 scenario. Team runs require explicit ticket/resource acceptance and caps;
 ordinary invocation does not grant release approval or a full-suite claim.
+
+The RTL scenario: `make COCOTB_TEST_MODULES=test_usb_uart_rtl
+COCOTB_TEST_FILTER=test_byte_rtl` in `test/`.
