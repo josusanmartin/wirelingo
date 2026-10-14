@@ -1233,7 +1233,12 @@ On `main` since 2026-10-13, with the USB bus-reset fix (usb_enum waits for
 D- low as a level; 241 words, one more than the transcripts recorded on
 2026-10-07; 246 since the ACK tail guard of 2026-10-13). The bitstream is unchanged (no `src/` change); the Kria's
 `~/protoemu48/{tools,firmware,fpga/kv260/host}` were refreshed from `main`
-the same day (nothing loaded), and `make -C fpga/kv260/sim` passes 5/5 with it.
+the same day (nothing loaded), and `make -C fpga/kv260/sim` passed 5/5 with
+the 241-word build. Rerun 2026-10-14 on runner1 with `main` a1561d6's
+firmware (246-word `usb_enum`; checkout `beddbe2`, which adds only release
+tooling): 5/5 (test_bringup_steps, test_spim, test_lab, test_usb_demo,
+test_usb_demo_wiring), 321 s of Icarus, `test_usb_demo` again 27
+transactions in 168540 cycles with the device at address 7, configured.
 
 Branch `kv260-usb` = `v2` (this FPGA flow) + the `usb-enum` commit
 (firmware/usb_enum.pasm, pe.usbenum, pe.usbhost, docs/usb-enumeration.md;
@@ -1319,7 +1324,7 @@ to the end of enumeration:
     pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
     pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
     holding D- (pmod[1]) low: detached
-    loaded usb_enum (241 words, low speed) into core 0, CRCCTRL, line unit
+    loaded usb_enum (246 words, low speed) into core 0, CRCCTRL, line unit
     attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
     usb_demo on the KV260 RTL at 48 MHz: device descriptor 120110010000000809123456010000000001; 27 transactions,
       168540 cycles (3.51 ms), turnaround 2.16-2.16 bit times, host port idle after the start;
@@ -1334,7 +1339,8 @@ columns swapped): `no pulled-up pin`, refused; (c) the pull-up on D+ for a
 low-speed run: refused. In (b) and (c) both PMOD map registers end at 0, the
 core is not started, and no PMOD pin is ever driven high. Both tests pass
 (77 s of Icarus); the whole `make -C fpga/kv260/sim` is 5/5 (test_bringup_steps,
-test_spim, test_lab unchanged by the new pad model).
+test_spim, test_lab unchanged by the new pad model). The excerpt above is
+from the 2026-10-14 rerun with the 246-word `usb_enum` (5/5, [above](#build-and-staging-2026-10-07-branch-kv260-usb)).
 
 What simulation can't show: the pads' analogue behaviour (edge rates,
 ringing, the hub's receivers), the hub and the Linux host stack themselves.
