@@ -74,6 +74,62 @@ locally with sigrok as well) and 72 more model tests
 `test_post_freeze_timing.py`). None of these six has run on silicon; on the
 FPGA, see below.
 
+**Gate level** (run fo6's signed-off netlist, 2026-10-14; supplementary
+evidence, not part of the release gate). All 16 tests of
+`test_post_freeze`, unchanged, on runner1 with `flow/gl_module_test.py`,
+validation commit `beddbe2` (`main` a1561d6 plus that runner; its `test/`,
+`tools/`, `firmware/` and `src/` are identical to `7685aba`, the
+[release receipt](release-evidence.md)'s validation root), with sigrok-cli
+0.7.2 so the decoder checks ran too:
+
+* **Functional** (no SDF, `flow/gl_test.sh`'s settings, one simulator per
+  test): **16/16 pass**, 4 min 45 s wall with 6 at once; hash-bound receipt
+  (netlist `a94a948b…`, validation inputs, every XML and log).
+* **SDF, typical corner** (each test through `flow/gl_sdf_test.sh`'s
+  single-case mode at 20 ns; tests that start a slower clock keep it):
+  **14/16 pass**, each with that runner's own SDF receipt, 38.5 min wall.
+  **`pf_dmx512` and `pf_wiegand` fail**, on exact-equality timing
+  assertions written for zero-delay simulation: the pads' rise and fall
+  delays differ by tens of picoseconds. DMX512's BREAK measures
+  175999.83 ns, not 176000.00 (uo_out[0] falls 2.615 ns and rises 2.445 ns
+  after its clock edge). The slots and the 1204.000 us break-to-break are
+  correct. Wiegand's pulses measure 49999.92 and 49999.95 ns, not 50000.00
+  (uio_oe[0] rises 2.366 ns and falls 2.286 ns after the edge; uio_oe[1]
+  2.416 and 2.366 ns). The receiver still decodes both frames, valid. The
+  margins are 84 us against DMX512's 92 us minimum BREAK, and 30 us inside
+  Wiegand's 20 to 100 us. A diagnostic run of a scratch copy that relaxes
+  only those assertions to 1 ns (not committed) passes both, sigrok's
+  Wiegand decoder included. The committed tests still fail with SDF; this
+  needs a test change (a tolerance under SDF) to become a pass.
+* Not run: SDF at the slow and fast corners.
+
+Per test, wall time in seconds (each with its own Icarus compile):
+
+| Test | RTL | GL functional | GL SDF typ |
+|---|---|---|---|
+| `pf_iso7816` | 44 | 255 pass | 1590 pass |
+| `pf_nec` | 15 | 185 pass | 1555 pass |
+| `pf_lin` | 11 | 165 pass | 1370 pass |
+| `pf_dmx512_universe` | 8 | 125 pass | 980 pass |
+| `pf_cec` | 9 | 115 pass | 820 pass |
+| `pf_modbus` | 9 | 105 pass | 790 pass |
+| `pf_midi` | 8 | 105 pass | 725 pass |
+| `pf_dmx512` | 6 | 105 pass | 705 **fail** (BREAK 175999.83 ns) |
+| `pf_dali` | 6 | 90 pass | 660 pass |
+| `pf_rc5` | 8 | 75 pass | 885 pass |
+| `pf_wiegand` | 4 | 65 pass | 460 **fail** (pulses 49999.92/.95 ns) |
+| `pf_quad_enc` | 4 | 60 pass | 750 pass |
+| `pf_smbus` | 4 | 55 pass | 510 pass |
+| `pf_i2s` | 3 | 35 pass | 540 pass |
+| `pf_dshot_bidir` | 3 | 35 pass | 505 pass |
+| `pf_dshot600` | 1.5 | 20 pass | 320 pass |
+
+(RTL: each test's Icarus run time within one RTL simulation of the module
+at `a1561d6` on runner1, 144 s in all.) Archive `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz`
+(sha256 `7466b8f8…0485`; runner1 `~/protoemu-flow/` and `[home directory redacted]/`) has
+both runs' receipts, summaries, XMLs and logs, the diagnostic, and the
+source bundle.
+
 On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs passed at 50 MHz; bidirectional DShot's bit timing was a clock short at 50 MHz (odd T0: the assembler divided exactly and truncated each half of a split delay). With `/` now integer division it measures exactly 62 / 31 / 83 clocks at 50 MHz on the same bitstream, and exact at 48 MHz.
 
 Second round on hardware (the RTL on the KV260 FPGA, 2026-10-14): see fpga/kv260/README.md, "Post-freeze protocols, second round, on hardware" (`fpga/kv260/host/postfreeze2_demo.py`): 25 of 25 runs passed at 50 MHz (DALI, Modbus RTU, MIDI in/out and both at once, quadrature), every far end a pins-only model played by pe_lab's pattern generator or the other core; results equal to the cycle model's.
@@ -142,6 +198,7 @@ PYTHONPATH=tools .venv/bin/python -m pytest test/model/test_dmx512.py test/model
     test/model/test_dali.py test/model/test_modbus.py test/model/test_midi.py test/model/test_quad_enc.py \
     test/model/test_cec.py test/model/test_iso7816.py test/model/test_smbus.py test/model/test_rc5.py
 cd test && make COCOTB_TEST_MODULES=test_post_freeze          # RTL, about 6 minutes
+flow/gl_module_test.py run RUN --validation-root . [--sdf-corner typ]   # gate level, per test
 PYTHONPATH=tools python -m pe.timing firmware/dmx512_tx.pasm -D TX=8 -D MTBS=0   # each header has its command
 ```
 

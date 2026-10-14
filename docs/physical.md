@@ -26,9 +26,11 @@ hold everywhere, no slew, capacitance or fanout violation. Everything up to
 detailed routing is t48ba's, bit for bit. With software `d916d40` (`main`,
 2026-10-13) as the validation root, `flow/release_check.py` passes with no
 waiver: `RELEASE PASSED (SDF profile v2, slow target 50 MHz)`; it passes again
-with `f1cb7c9` (2026-10-14, tag `rc-f1cb7c9-fo6`;
-[release-evidence.md](release-evidence.md)). Later firmware on `main` is not
-covered by either. A capped
+with `f1cb7c9` (2026-10-14, tag `rc-f1cb7c9-fo6`), and with `7685aba`
+(2026-10-14, the certified software: `main` `a1561d6`'s firmware, tools
+and tests, the third post-freeze round and the `ws2812`/`can_rx` fixes
+included; [release-evidence.md](release-evidence.md)). Firmware, tools or
+tests changed after `7685aba` are not covered. A capped
 clean checkout of `d916d40` reproduces it (run ci7). A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
@@ -480,8 +482,8 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 `e67697034da6cd34acb16c7ab6c0f85dc6d752fdc755439e6bdd21d872ac0707`;
 runner1:~/protoemu-flow/protoemu-exp-fo6). t48ba plus one buffer that keeps
 net3483 within the fanout limit. `flow/release_check.py --validation-root`
-`d916d40` passes with no waiver (2026-10-13; again with `f1cb7c9` on
-2026-10-14): every timing and electrical
+`d916d40` passes with no waiver (2026-10-13; again with `f1cb7c9` and with
+`7685aba` on 2026-10-14): every timing and electrical
 item at every corner, and receipts for this netlist: functional GL 29/29
 (main suite 25, compiled PIO 2, Ethernet capture 2), the SDF standard set
 and v2 set at typ/slow/fast with the overclocked control failing as
@@ -593,6 +595,15 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
   the current hardware or satisfy the fresh-result checks now required.
 * Run g4's final netlist passes all 20 top-level tests (main 16, compiled
   PIO 2, Ethernet capture 2), functional, no SDF.
+* `flow/gl_module_test.py run <run dir> --validation-root <checkout>` runs
+  one more module (default `test_post_freeze`) the same way, one simulator
+  per test, outputs outside the run, with a hash-bound receipt;
+  `--sdf-corner` sends each test through `flow/gl_sdf_test.sh`'s single-case
+  mode. On fo6 (2026-10-14, validation `beddbe2`): functional 16/16; SDF
+  typ 14/16, with `pf_dmx512` and `pf_wiegand` failing on exact-picosecond
+  assertions (pad rise/fall delays differ by 50–170 ps;
+  [post-freeze-protocols.md](post-freeze-protocols.md)). Supplementary:
+  `flow/release_check.py` does not read these receipts.
 
 ### Timing-annotated gate level (SDF)
 

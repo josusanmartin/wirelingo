@@ -291,7 +291,7 @@ make COCOTB_TEST_MODULES=test_sigrok COCOTB_TEST_FILTER=sigrok_usb_autonomous
 Gate level was not run on this branch. It has run since: run fo6's release
 receipts include `test_usb_autonomous` and `test_usb_autonomous_fs` on the
 netlist with SDF at typ, slow and fast at 20.834 ns (48 MHz), validation root
-`f1cb7c9`, whose `usb_enum.pasm` is the current one
+`f1cb7c9` and again `7685aba`, whose `usb_enum.pasm` is the current one
 ([release-evidence.md](release-evidence.md)).
 
 ## On the KV260, with a replayed host (2026-10-14)

@@ -25,11 +25,14 @@ describes how, and what it caught.
 **Where it stands:**
 
 * **Release candidate: run fo6**, passing the strict release gate with no
-  waiver, with validation roots `d916d40` and `f1cb7c9` (tags
-  `rc-d916d40-fo6`, `rc-f1cb7c9-fo6`). `main` has moved on since in
-  firmware, tests and docs (the third post-freeze round, fixes to `ws2812`
-  and `can_rx` timing); the chip's Verilog is unchanged, but the receipts
-  cover the firmware and tests of their own validation root, not `main`.
+  waiver. The certified software is **`7685aba`** (2026-10-14): `main`
+  `a1561d6`'s firmware, tools and tests, so the third post-freeze round and
+  the `ws2812` and `can_rx` timing fixes are covered. It adds one new,
+  supplementary runner (`flow/gl_module_test.py`) and its model test.
+  Earlier validation roots `d916d40` and `f1cb7c9` (tags `rc-d916d40-fo6`,
+  `rc-f1cb7c9-fo6`) passed too. Receipts cover the firmware and tests of
+  their own validation root; a later change to `firmware/`, `tools/`,
+  `test/` or `src/` needs a new run.
   50 MHz is met at all three corners, slow included; hold is met everywhere
   (fast corner +0.095 ns); DRC, LVS and antenna are clean, with no slew,
   capacitance or fanout violation at any corner. A clean checkout rebuilt on
@@ -72,7 +75,9 @@ describes how, and what it caught.
   HDMI-CEC (multi-master arbitration), ISO 7816-3 T=0 smart card, SMBus with
   PEC, RC-5 infrared. Each is checked by the static timing checker, pins-only
   models, sigrok's decoders where one exists and an RTL test through the SPI
-  port. All three rounds also ran on the KV260 FPGA build of the RTL,
+  port, which also passes on fo6's gate-level netlist (functional; with SDF
+  at the typical corner 14 of 16, two failing only on exact-picosecond
+  assertions). All three rounds also ran on the KV260 FPGA build of the RTL,
   against the other core or the FPGA's pattern generator playing our own
   (mostly pre-timed) device models, with results equal to the cycle model's
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the
@@ -127,10 +132,14 @@ and the assembler implement it, and are checked against each other
 
 Each program talks to an independent device model that sees only the pins.
 "RTL" = loaded and exercised through the real SPI host port on the RTL; the
-main suite (`test/test.py`) also passes on the signed-off gate-level netlist,
-the post-freeze and host-workflow modules (`test_post_freeze`,
-`test_usb_uart_rtl`, ...) ran on the RTL only. "Model" = on the
-cycle-accurate model, which is lockstep-checked against the RTL. "KV260" =
+main suite (`test/test.py`) also passes on the signed-off gate-level netlist.
+"GL" = the post-freeze module (`test_post_freeze`, 16 tests) passes on that
+netlist too (fo6, functional, 2026-10-14). With SDF delays at the typical
+corner, 14 of its 16 tests pass. `pf_dmx512` and `pf_wiegand` fail there
+on exact-picosecond timing assertions (pad rise and fall delays differ by
+50–170 ps): [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md).
+The host-workflow modules (`test_usb_uart_rtl`, ...) ran on the RTL only.
+"Model" = on the cycle-accurate model, which is lockstep-checked against the RTL. "KV260" =
 the RTL built for the Kria KV260 FPGA, against the other core or the FPGA's
 pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 
@@ -154,20 +163,20 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 | `ws2812` | NeoPixel driver, datasheet timing windows | | model; KV260 |
 | `i2c_sniff` | passive I2C monitor (START/STOP/bytes), beside the master on the other core | | model; KV260 (generator bus at 0.1-1 MHz; beside i2c_master) |
 | `la_capture` + `i2c_device` (2 cores) | **reverse engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): an 8-channel logic analyzer (timestamped change records; `pe.la` makes a VCD, an I2C transcript and the device's register image), then an I2C target at the decoded address whose registers are host software: a clone of the captured EEPROM, or a man in the middle | capture (v2, WAIT kind 7): timestamps to the tick, a record per ≥ 7 ticks, sustained rate bounded by the host's draining (1-bit SPI at 25 MHz: 625 k edges/s; quad, 32-word bursts: 5.6 M); device: every read byte is a host round trip under clock stretching | RTL: capture → decode → clone → man in the middle through the SPI port, rate sweep; capture timing and device response on the model; KV260 (capture and `i2c_device`) |
-| `dmx512_tx` (post-freeze) | **DMX512** (E1.11) lighting: BREAK 176 us, MAB 12 us, up to 513 slots at 250 kbit/s streamed from the FIFO, short packets padded to the 1204 us minimum | transmit only; the host refreshes within 1 s | RTL (timing at 50 MHz: every edge on the 4 us grid; full universes); sigrok `dmx512`; KV260 |
-| `lin_commander` + `lin_responder` (post-freeze, 2 cores) | **LIN** 2.x: break/sync/PID (parity computed in firmware), publish or subscribe, classic/enhanced checksums; the responder measures the bit rate on every sync field | no schedule table, sleep or bit-error check | RTL (both on one bus); model: commander +-10 %, responder clock +-14 %, response within 0.44 % of the commander; sigrok `lin`; KV260 |
-| `nec_tx` + `nec_rx` (post-freeze) | **NEC infrared**: 38 kHz carrier generated in firmware, frames/extended/repeat codes 108 ms apart; receiver decodes a receiver module's output | NEC only | RTL (TX -> receiver-module model -> RX); model: +-10 % senders, +-200 us burst distortion; sigrok `ir_nec` on the carrier and the module output; KV260 |
-| `i2s_tx` (post-freeze) | **I2S** 16-bit stereo; on underrun the clocks keep running and the frame is silence | transmit only, no MCLK | RTL; sigrok `i2s`; KV260 |
-| `wiegand_tx` + `wiegand_rx` (post-freeze) | **Wiegand** card-reader interface: parity computed (TX) and checked (RX, 26/34-bit) with the CRC tap; RX catches both lines with one WAIT | TX <= 32 data bits | RTL (TX -> RX); model: 20-100 us pulses, 0.2-5 ms intervals, glitches; sigrok `wiegand`; KV260 |
-| `dshot600`, `dshot_bidir` (post-freeze) | **DShot600** ESC protocol, checksum in firmware, last value repeated; **bidirectional**: the ESC's GCR telemetry received on the same wire at 750 kbit/s, every edge timed | telemetry GCR decoded by the host | RTL; model: edges exact at 48 MHz, +-1 clock at 50 MHz; telemetry with ESC clock +-15 %; sigrok `pwm` (no DShot decoder exists); KV260 |
-| `dali_ctrl` (post-freeze, round 2) | **DALI** (IEC 62386) controller: Manchester forward frames, backward frames decoded against the standard's timing tables, collisions flagged | controller only | RTL; sigrok `dali`; KV260 |
-| `modbus_rtu` (post-freeze, round 2) | **Modbus RTU** client: CRC-16 through the CRC tap, even/odd parity, 3.5-character framing, RS-485 driver enable | client only | RTL; sigrok `modbus`; KV260 |
-| `midi_rx`, `midi_tx` (post-freeze, round 2) | **MIDI**: parser with running status and real-time bytes anywhere; transmitter with running status | a full port uses both cores | RTL; sigrok `midi`; KV260 |
-| `quad_enc` (post-freeze, round 2) | **quadrature encoder** counter, 20 words | exact to a step every 14 (forward) / 15 (back) clocks; faster steps flagged | RTL; sigrok `graycode`; KV260 |
-| `cec` (post-freeze, round 3) | **HDMI-CEC**: open-drain multi-master, arbitration loss turns the sender into a listener within the bit, ACKs | one logical address; host resubmits | RTL; sigrok `cec`; KV260 |
-| `iso7816` + `iso7816_clk` (post-freeze, round 3, 2 cores) | **ISO 7816-3 T=0** reader: ATR conventions, parity, error signalling and repetition both ways; card clock on the second core | no PPS/T=1; WT fixed by define | RTL; sigrok `uart`; KV260 |
-| `smbus_host` (post-freeze, round 3) | **SMBus** host, all protocols, PEC (CRC-8) over sent and received bytes, 25 ms clock-low timeout | host side only | RTL; sigrok `i2c` + PEC; KV260 |
-| `rc5_tx`, `rc5_rx` (post-freeze, round 3) | **RC-5** infrared: 36 kHz carrier under bi-phase, toggle bit; receiver tolerates a remote ±10 % | no RC-6 | RTL; sigrok `ir_rc5`; KV260 |
+| `dmx512_tx` (post-freeze) | **DMX512** (E1.11) lighting: BREAK 176 us, MAB 12 us, up to 513 slots at 250 kbit/s streamed from the FIFO, short packets padded to the 1204 us minimum | transmit only; the host refreshes within 1 s | RTL (timing at 50 MHz: every edge on the 4 us grid; full universes); GL (with SDF typ: BREAK 0.17 ns short of the exact 176 us asserted); sigrok `dmx512`; KV260 |
+| `lin_commander` + `lin_responder` (post-freeze, 2 cores) | **LIN** 2.x: break/sync/PID (parity computed in firmware), publish or subscribe, classic/enhanced checksums; the responder measures the bit rate on every sync field | no schedule table, sleep or bit-error check | RTL (both on one bus), GL; model: commander +-10 %, responder clock +-14 %, response within 0.44 % of the commander; sigrok `lin`; KV260 |
+| `nec_tx` + `nec_rx` (post-freeze) | **NEC infrared**: 38 kHz carrier generated in firmware, frames/extended/repeat codes 108 ms apart; receiver decodes a receiver module's output | NEC only | RTL (TX -> receiver-module model -> RX), GL; model: +-10 % senders, +-200 us burst distortion; sigrok `ir_nec` on the carrier and the module output; KV260 |
+| `i2s_tx` (post-freeze) | **I2S** 16-bit stereo; on underrun the clocks keep running and the frame is silence | transmit only, no MCLK | RTL, GL; sigrok `i2s`; KV260 |
+| `wiegand_tx` + `wiegand_rx` (post-freeze) | **Wiegand** card-reader interface: parity computed (TX) and checked (RX, 26/34-bit) with the CRC tap; RX catches both lines with one WAIT | TX <= 32 data bits | RTL (TX -> RX), GL (with SDF typ: pulses 0.05-0.08 ns short of the exact 50 us asserted); model: 20-100 us pulses, 0.2-5 ms intervals, glitches; sigrok `wiegand`; KV260 |
+| `dshot600`, `dshot_bidir` (post-freeze) | **DShot600** ESC protocol, checksum in firmware, last value repeated; **bidirectional**: the ESC's GCR telemetry received on the same wire at 750 kbit/s, every edge timed | telemetry GCR decoded by the host | RTL, GL; model: edges exact at 48 MHz, +-1 clock at 50 MHz; telemetry with ESC clock +-15 %; sigrok `pwm` (no DShot decoder exists); KV260 |
+| `dali_ctrl` (post-freeze, round 2) | **DALI** (IEC 62386) controller: Manchester forward frames, backward frames decoded against the standard's timing tables, collisions flagged | controller only | RTL, GL; sigrok `dali`; KV260 |
+| `modbus_rtu` (post-freeze, round 2) | **Modbus RTU** client: CRC-16 through the CRC tap, even/odd parity, 3.5-character framing, RS-485 driver enable | client only | RTL, GL; sigrok `modbus`; KV260 |
+| `midi_rx`, `midi_tx` (post-freeze, round 2) | **MIDI**: parser with running status and real-time bytes anywhere; transmitter with running status | a full port uses both cores | RTL, GL; sigrok `midi`; KV260 |
+| `quad_enc` (post-freeze, round 2) | **quadrature encoder** counter, 20 words | exact to a step every 14 (forward) / 15 (back) clocks; faster steps flagged | RTL, GL; sigrok `graycode`; KV260 |
+| `cec` (post-freeze, round 3) | **HDMI-CEC**: open-drain multi-master, arbitration loss turns the sender into a listener within the bit, ACKs | one logical address; host resubmits | RTL, GL; sigrok `cec`; KV260 |
+| `iso7816` + `iso7816_clk` (post-freeze, round 3, 2 cores) | **ISO 7816-3 T=0** reader: ATR conventions, parity, error signalling and repetition both ways; card clock on the second core | no PPS/T=1; WT fixed by define | RTL, GL; sigrok `uart`; KV260 |
+| `smbus_host` (post-freeze, round 3) | **SMBus** host, all protocols, PEC (CRC-8) over sent and received bytes, 25 ms clock-low timeout | host side only | RTL, GL; sigrok `i2c` + PEC; KV260 |
+| `rc5_tx`, `rc5_rx` (post-freeze, round 3) | **RC-5** infrared: 36 kHz carrier under bi-phase, toggle bit; receiver tolerates a remote ±10 % | no RC-6 | RTL, GL; sigrok `ir_rc5`; KV260 |
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
 sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
@@ -249,7 +258,11 @@ make -C formal                                                   # proofs
   compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
-  delays. The GDS passes Tiny Tapeout's precheck.
+  delays. The GDS passes Tiny Tapeout's precheck. Outside the release gate,
+  the 16 post-freeze protocol tests pass on the netlist too (functional,
+  hash-bound receipt). With SDF at the typical corner 14 of them pass; two
+  fail on exact-picosecond timing assertions
+  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)).
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 64 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
   the current RTL routable ([docs/physical.md](docs/physical.md)).
