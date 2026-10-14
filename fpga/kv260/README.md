@@ -337,6 +337,100 @@ FPGA package pins. Every "other end" is either this chip's other core or one
 of our pins-only models played by the generator; sigrok's third-party
 decoders checked the captured transmitter waveforms off the board.
 
+## SPI and UART firmware on hardware (2026-10-14, `host/spi_uart_demo.py`)
+
+The SPI masters (`spi_master_modes`, `spi_master_packed`,
+`spi_master_preloaded_once`) and the UART receivers (`uart_rx_capture`,
+`uart_rx_packed`, `uart_rx_capture_peer`, `uart_rx_mailbox`), which had only
+run in simulation, on the same FPGA build of the chip RTL. What ran is the RTL
+on an FPGA (fabric timing, inferred RAM, no IHP pads), not silicon. Every line
+is a uio pad driven by a core or by pe_lab; no PMOD pin was enabled.
+
+    ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu/fpga/kv260/host/spi_uart_demo.py --save su50.json
+    python3 fpga/kv260/host/spi_uart_demo.py --model --save m.json      # the same runs on the cycle model (about 4 min)
+    scp ubuntu@kria.[tailnet domain redacted]:su50.json /tmp/ && python3 fpga/kv260/host/spi_uart_demo.py compare /tmp/su50.json m.json
+
+**Board state and build.** Run 2026-10-14 03:14-03:15 UTC (the three groups
+had also run separately at 03:10-03:12 with the same results). `protoemu`
+(50 MHz) was already loaded: `bringup_kria.py --only build clock id` PASS,
+RTL revision `d1aa46f` (digest `3adc796c`, clk_div 24), clock 49.9988 MHz.
+The script measured 49.9979 MHz over 2 s and, within 200 ppm of
+1200 MHz / 24, derived every CLKDIV for 50.000 MHz. `src/*.v` is identical in
+d1aa46f and this branch's base `main` (2d08f14). Host software (`tools/`,
+`firmware/`, `fpga/kv260/host/`) was refreshed in `~/protoemu` by rsync as
+`install.sh` does, keeping `expected_build.json`.
+
+**Method.** Pins (uio): SCK 2, MOSI 3, MISO 4, CS 5, trigger 7; UART RX
+uio0 (core 0) and uio1 (core 1).
+* *SPI against pe_lab's SPI device* (MODE 2): a reactive peer in the fabric.
+  It samples MOSI on each SCK rise and drives the next MISO bit
+  (DELAY + 2) x 2.5 ns after the clock edge that dropped SCK, and it counts
+  SCK rises and logs the last 16 MOSI bytes. That is a mode-0 peer and, with
+  its 128-bit response register rotated by one bit, a mode-3 one (mode 3 also
+  samples on the rise and launches on the fall; its first fall must present
+  bit 7). Modes 1 and 2 have no peer in the fabric.
+* *SPI with la_capture* (all four modes): core 0 runs the master at CLKDIV 8
+  behind the trigger preamble (with the program's side-set holding SCK at
+  CPOL), core 1 runs `la_capture` on SCK, MOSI, CS and the trigger (1 tick =
+  1 clock; every edge is >= 8 clocks from the previous one, so every edge is
+  timestamped exactly), and the pattern generator plays MISO: each bit 4
+  clocks after the peer's launch edge (CPHA0: CS fall, then each trailing
+  edge; CPHA1: each leading edge) as the cycle model predicts for the same
+  set-up. MISO is therefore pre-timed, not a reactive peer: the master's tick
+  phase against the trigger differs from the model's by a start offset
+  (measured from the capture: -1..+6 clocks), so the bits landed 2 clocks
+  before to 5 clocks after the launch edge; the master reads MISO 14 or more
+  clocks after that edge. The captured wire is checked with
+  `test_spi_packed.FramedPeer`'s rules (CS changes only with SCK idle, no SCK
+  edge outside CS, MOSI never changes at a sample edge, exact sample count)
+  and compared edge for edge with the model's capture.
+* *UART*: the generator plays precomputed 8N1 lines at exact clocks, built
+  like `test_uart._PinTimeline` (true baud offset, start phase, alternating
+  jitter, low STOP bits, breaks); arming, completion checks and decoding use
+  `pe.uartcapture` / `pe.uartcapture_peer` as docs/uart-capture-host.md
+  describes (STATUS/CTRL preconditions, the 5-write plan, HALT/no fault/exact
+  count/flag, then exactly ceil(N/4) words).
+
+**Results at 50 MHz** (11 of 11 runs PASS; one clock = 20 ns; `compare`
+against the `--model` run: every run's DELAY tables, waveforms in clocks
+after the start offset, flags and data are equal):
+
+| Firmware | How | Result |
+|---|---|---|
+| spi_master_modes | SPI device, modes 0 and 3, compact and unrolled, CLKDIV 3 and 4, DELAY 0..31, 2 x 8 random bytes per DELAY | PASS. Every round: 64 SCK rises, MOSI right (device log), SCK idle at CPOL after. Mode 0: right at every DELAY (MISO up to 82.5 ns after the edge, the device's maximum). Mode 3 at CLKDIV 3: right up to DELAY 29 (77.5 ns), 1 bit late at 30-31: the master reads MISO 2 ticks after the launching fall, from a pad 2 clocks old, so 4 clocks = 80 ns; at CLKDIV 4 right throughout. SCK rise to rise 12 clocks (CLKDIV 3) / 16 (CLKDIV 4) within a byte; compact 18 / 24 across bytes, unrolled 12 / 16 (no byte gap) |
+| spi_master_modes | la_capture, all four modes, compact and unrolled, CLKDIV 8, 8 bytes | PASS. MOSI at the sample edges = TX, master RX = the generator's MISO, 128 SCK edges alternating leading/trailing, idle at CPOL. CPHA0: SCK active 2, idle 2 ticks (4 across bytes); CPHA1: active 1, idle 3 (5); bytes every 34 ticks compact, 32 unrolled, as the firmware header and test_spi_modes state. MOSI changes 8 clocks (1 tick) before the sample edge and 24 after it |
+| spi_master_packed | SPI device, modes 0 and 3, CLKDIV 3 | PASS. 10 queued messages of 1, 2, 3, 4, 5, 7, 8, 15, 16, 28 bytes (header + payload preloaded, core started once): exactly 8 N SCK rises, MOSI and RX right (`spipacked.decode`), CS high and SCK idle after each. 8-byte message right up to DELAY 29 (77.5 ns), 1 bit late at 30-31, both modes. A 200-byte message fed and drained by the host while it ran (the master paused with TX empty / RX full): 1600 rises, all 200 RX bytes right |
+| spi_master_packed | la_capture, all four modes, CLKDIV 8, a 5- and a 3-byte message queued | PASS. Two CS frames with exactly 40 and 24 sample edges, wire = TX, RX right. CPHA0: CS low to first edge 3 ticks, last edge to CS high 1 tick, 4 ticks per bit (32 per byte); CPHA1: 2 and 5 ticks, 5 ticks per bit (40 per byte); CS high 8 ticks between the messages |
+| spi_master_preloaded_once | SPI device, mode 0, CLKDIV 3 | PASS. 1, 3, 4, 5, 31, 32 and 32 bytes, each armed by `spipacked.preload_plan` (disable, R0/R1, FIFO burst, start) without reset or reload, completion polled: HALT, no fault, exact RX count, decode right, STATUS empty after the drain, CS high and SCK low; exactly 8 N rises and MOSI right |
+| spi_master_preloaded_once | la_capture, CLKDIV 8, 32 and 5 bytes | PASS. One CS frame each, 256 / 40 sample edges, wire = TX, RX right, HALT; CS low to first edge 3 ticks, final CS hold 1 tick (the header's "1 tick, not 4 clocks") |
+| uart_rx_capture | generator -> uio0, core 0, 115200 | PASS. The native test's pair on one load: 32 bytes with a low final STOP -> HALT, all 32 bytes kept, F0 = 1, the extra frame not taken; FCLR/rearm, `39 d3 81` -> `0x81d33900`, F0 = 0. Lengths 1, 4, 5, 31 right; 32 bytes at the model test's corners (-3 % / +3 % baud, 51-clock phase, 2-clock jitter) right; 3 and 4 bytes with a low final STOP and a break -> HALT, F0 = 1; under-supply (5 declared, 4 sent): no HALT, 1 word, R1 = 1. Outside the qualified +-3 %: -4 % and -5 % right; -6 %, -7 % HALT with wrong data and F0; +4 % to +7 % no HALT (6-7 words) and F0, identical to the model |
+| uart_rx_packed | generator -> uio0, 115200 | PASS. 32 bytes unattended: 8 words = the bytes; 30 bytes: 7 words (the last 2 stay in ISR, no flush, as documented); a low STOP on byte 5 of 16: F0 = 1, all 4 words kept; 160 random bytes back to back (14.9 ms) drained by the host while arriving: all right, F0 = 0 |
+| uart_rx_capture_peer | generator -> uio1, core 1 (F6), alongside uart_rx_capture on core 0 | PASS. Overlapping: core 0 32 bytes at 115200 (F0 = 0) and core 1 7 bytes at 57600 with a low final STOP (F6 = 1, data kept). Then core 0 capturing 32 bytes at 19200 (17.7 ms) while core 1 took a 4-byte message at 115200, was drained and rearmed by `uartcapture_peer.capture_plan` (core 0's enable kept, CTRL read 0x3) and took a second: all right, F0 = F6 = 0. Live two-core operation, which docs/uart-capture-host.md lists as not qualified by its native test |
+| uart_rx_mailbox | generator -> uio1, core 1, READY uo0, byte on V24..V31; the host clears F7 as usb_uart_byte's core 0 does after a valid DATA ACK | PASS. 6 frames 4 ms apart, frame 3 with a low STOP: the 5 good bytes published with F7, READY low whenever F7 was seen and high again after FCLR F7; the bad frame discarded with F6 = 1 |
+
+**Not run.** `usb_uart_byte`, `usb_uart_batch4`, `usb_uart_overlap4` and
+the USB side of `uart_rx_capture_peer` / `uart_rx_mailbox` /
+`uart_rx_batch4` / `uart_rx_overlap4`: they need a USB host on wired PMOD
+pins. `uart_rx_batch4` and `uart_rx_overlap4` were not run standalone either
+(their consumer is the USB core). SPI modes 1 and 2 against a reactive peer
+(only the pre-timed generator MISO). Nothing went over package pins, so the
+SPI DELAY windows are fabric numbers: on silicon the same clock budget must
+also cover the output pad, board flight both ways and the input pad. The
+UART sources are our models played by the generator, not an external UART.
+
+**Bring-up at the end, and a logging artefact.** Nine runs of the full
+`bringup_kria.py` (03:16-03:18 UTC) through `~/wlrun.sh`, which syncs the disk
+after every output line while the script runs, gave five ALL PASS and four
+with a failure in the Python-timed 9600-baud steps (`uart_rx_pin`: a byte
+with a flipped bit or a truncated message, e.g. `KV260 \xefk`, `KV\xff`;
+`uart_tx_pin`: `prot\x7femu`); one of the four was at real-time priority
+(`chrt -f 50`). Six further runs (03:18-03:20) with the output written to a
+file and synced after the run all passed: clock 49.9951-49.9982 MHz (0.5 s, Python-timed), worst
+`uart_tx_pin` edge 3-32 % of a bit off the grid. Those two steps bit-bang and
+poll the GPIO from Python; every other step, including the core-to-core
+`loopback`, passed in all fifteen runs. Left loaded: `protoemu`, PMOD0/PMOD1
+= 0, pe_lab MODE 0, host port on the GPIO path.
+
 ## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
 
 ### Fabric master + PMOD build

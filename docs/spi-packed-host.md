@@ -161,3 +161,11 @@ The native final CS hold is3system clocks, which does **not** meet Atlas's
 distinct4-clock peer requirement. Peers must tolerate finite intra-frame
 pauses; other host speeds/divisors need their own startup, sample, hold and
 wait qualification. CPU overhead, physical rates, Fmax and PPA are unknown.
+
+## On the FPGA build (2026-10-14)
+
+The packed (modes 0-3), preloaded (mode 0) and all-mode byte firmware also
+ran on the KV260 FPGA build of the chip RTL against the fabric's SPI device
+and under `la_capture`: see fpga/kv260/README.md, "SPI and UART firmware on
+hardware" (`fpga/kv260/host/spi_uart_demo.py`). All runs passed; the results
+equal the cycle model's. That is fabric timing, not the IHP pads or silicon.

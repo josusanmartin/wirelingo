@@ -131,3 +131,13 @@ and fixed service schedule on core0 with core1 disabled and behavioral
 SRAM. Source timing never follows host or DUT readiness. It does not extend
 the baud envelope, prove indefinite-stream capture, live-core1 concurrency,
 CPU cost, pad/Fmax/PPA, silicon or board operation.
+
+## On the FPGA build (2026-10-14)
+
+`uart_rx_capture`, `uart_rx_packed`, `uart_rx_capture_peer` (live beside a
+capturing core 0, rearmed while it ran) and `uart_rx_mailbox` (host standing
+in for the USB core's F7 release) also ran on the KV260 FPGA build of the chip
+RTL with generator-played 8N1 lines: see fpga/kv260/README.md, "SPI and UART
+firmware on hardware" (`fpga/kv260/host/spi_uart_demo.py`). All runs passed;
+the results equal the cycle model's. That is fabric timing, not the IHP pads
+or silicon, and the sources are our models, not an external UART.
