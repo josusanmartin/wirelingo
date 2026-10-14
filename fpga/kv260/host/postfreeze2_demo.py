@@ -227,7 +227,9 @@ def predict(name, f_model, prog, cfg_fn, *, far_factory, far_key, bit, pg_idle, 
     core's RX FIFO is drained as it fills. Returns {far: the far end's edges
     [(ns after the trigger, level)], pins: [(ns after the trigger, uio | V0..V7 << 8)]
     (the model's pads), words, info, t_last}."""
-    key = plan_key(name, f_model, prog.words, cfg_fn(f_model), far_key, bit, pg_idle, dur_s, tail_s, TRIG_S,
+    # durations rounded: float sums differ in the last bit between Python versions (3.12's sum() compensates)
+    key = plan_key(name, f_model, prog.words, cfg_fn(f_model), far_key, bit, pg_idle, round(dur_s, 9),
+                   round(tail_s, 9), TRIG_S,
                    sorted((k, v if not isinstance(v, dict) else sorted(v.items())) for k, v in kw.items()))
     hit = PLANS["data"].get(name)
     if hit and hit.get("key") == key:
@@ -298,10 +300,13 @@ def run_capture(rig, prog, cfg, *, sched, pg_init, la_mask, dur_s, **kw):
     """prep, both cores started, one burst draining la_capture (core 1) for dur_s.
     Returns (Capture, core 0's RX words)."""
     burst = pfd.burst_plan(rig, dur_s)
+    if rig.model:              # SCK divider 1 at the model's slow clock: as long as the board's, not 4096 words
+        burst = (min(4096, math.ceil(dur_s * rig.f_clk / 32) + 8), 1, False)
     prep(rig, prog, cfg, sched=sched, pg_init=pg_init, la_mask=la_mask, **kw)
     ctrl(rig, 0b11)
     rig.pg_start()
     words = rig.burst(1, *burst)
+    rig.wait(1.5 * 65536 / rig.f_clk)    # one idle record after the burst: the lines' end state, timed
     words += rd(rig, FIFO(1), rxn(rig.read(STATUS(1))))
     st0 = rig.read(STATUS(0))
     recs = rd(rig, FIFO(0), rxn(st0))
@@ -402,8 +407,10 @@ def dali_case(rig, store, name, cmds, far_factory, far_key, *, capture, extra_s=
     sched = far_sched(rig, plan["far"], bit=BUS, pg_idle=DALI_IDLE)
     if capture:
         check(n_reply <= 4, "at most 4 answers per captured run (8 RX FIFO words)")
+        # after the last edge: up to WIN (10.5 ms) until a 'no answer' record, or 2.4 ms of stop condition
         c, recs = run_capture(rig, prog, dali_cfg(rig.f_clk), sched=sched, pg_init=DALI_IDLE, la_mask=DALI_MASK,
-                              dur_s=TRIG_S + plan["t_last"] / 1e9 + 4e-3, prefill=words, **DALI_PINS)
+                              dur_s=TRIG_S + plan["t_last"] / 1e9 + 14e-3, prefill=words, **DALI_PINS)
+        check(len(recs) == 2 * n_reply, f"{len(recs)} record words for {n_reply} answers")
         e, t_end = trig_rel(c, {"bus": BUS})
         keep(store, name, bus=e["bus"], t_end=t_end)
         return plan, p2.dali_records(recs), c, e["bus"], t_end
