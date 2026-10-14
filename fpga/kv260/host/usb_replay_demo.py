@@ -103,11 +103,12 @@ def sources_key():
     judge), the host models and the cycle model."""
     import inspect
     objs = [sync_mid, FsClockHost, Recorder, segment_cost, make_segments, make_plan, owner_at, ack_states,
-            poll_in, enumerate_flow, ctl_write] + list(SCENARIOS.values())
+            poll_in, enumerate_flow, ctl_write, dev_prog, dev_load_writes, dev_state, sc_dev,
+            make_dev_plan] + list(SCENARIOS.values())
     text = "".join(inspect.getsource(o) for o in objs).encode()
     text += b"".join((HERE.parents[2] / f).read_bytes() for f in (
         "tools/pe/usbhost.py", "tools/pe/usb.py", "tools/pe/sim.py", "tools/pe/line.py", "tools/pe/usbenum.py",
-        "firmware/usb_enum.pasm"))
+        "tools/pe/usbdev.py", "firmware/usb_enum.pasm", "firmware/usb_ls_dev.pasm", "firmware/usb_fs_dev.pasm"))
     return hashlib.sha1(text).hexdigest()[:12]
 QUAD_RD_FIXED = 0x03 | 0x08 | 0x40
 
@@ -336,23 +337,25 @@ def sc_ack(h, mark, speed):
     malformed (rejected: the same packet again, then a nominal ACK advances it)."""
     h.keepalive = False
     verdicts = []
+    def ack(name="nominal", **kw):
+        # the wire record (for sigrok): the ACK's bytes, or a placeholder for a malformed one
+        h.wire.append(usb.handshake(usb.PID_ACK) if not kw else ["raw", name])
+        h._drive(ack_states(**kw))
+        h.gap()
     for name, kw, accepted in ACK_CASES:
         h.setup(0, DESCRIPTOR_REQUEST)
         check(poll_in(h) == FIRST, f"{name}: first packet")
         h._steps(4)
-        h._drive(ack_states(**kw))
-        h.gap()
+        ack(name, **kw)
         r = poll_in(h)
         verdicts.append((name, "accepted" if r == SECOND else "rejected" if r == FIRST else r.hex()))
         check(r == (SECOND if accepted else FIRST), f"{name}: next reply {r.hex()}")
         if not accepted:
             h._steps(4)
-            h._drive(ack_states())
-            h.gap()
+            ack()
             check(poll_in(h) == SECOND, f"{name}: a nominal ACK after the retry")
         h._steps(4)
-        h._drive(ack_states())
-        h.gap()
+        ack()
         mark()
     h.verdicts = verdicts
     return dict(address=0, configured=False, pending_address=False, stalled=False)
@@ -450,7 +453,7 @@ def sc_addr(h, mark, speed):
 
 SCENARIOS = {"enum": sc_enum, "linux": sc_linux, "faults": sc_faults, "reset": sc_reset,
              "ack": sc_ack, "stall": sc_stall, "addr": sc_addr}
-NAMES = [f"{s}-{n}" for s in ("ls", "fs") for n in SCENARIOS]
+NAMES = [f"{s}-{n}" for s in ("ls", "fs") for n in list(SCENARIOS) + ["dev"]]
 SPEED = {"ls": "low", "fs": "full"}
 
 
@@ -477,9 +480,11 @@ def segment_cost(plan, s0, s1):
     if speed == "full":
         # the sampler sees FS_WINDOW clocks after the trigger: every device edge must be
         # inside; host edges after it (the end of a bus reset) go unobserved
-        dev = [c - s0 for c in pads if owner_at(plan, c) == "dev"]
-        info["unobserved"] = sum(1 for c in pads if c - s0 > FS_WINDOW)
-        return (not dev or max(dev) <= FS_WINDOW), info
+        # the sampler sees FS_WINDOW clocks after the trigger: every edge must be inside but
+        # the end of a long SE0 (a bus reset), the segment's last
+        late = [c for c in pads if c - s0 > FS_WINDOW]
+        info["unobserved"] = len(late)
+        return len(late) == 0 or (len(late) == 1 and late[0] == pads[-1]), info
     # low speed: la_capture records (one per pad change, the trigger too) drained by a quad
     # burst at SCK = clk / div: long enough, and draining at least as fast as they come
     need = T_TRIG + LEAD + last + 20000
@@ -506,7 +511,7 @@ def make_segments(plan, speed):
         j = i + 1
         ok, info = segment_cost(plan, marks[i], marks[j])
         check(ok, f"{plan['name']}: the segment {marks[i]}..{marks[j]} does not fit: {info}")
-        while j + 1 < len(marks):
+        while j + 1 < len(marks) and plan.get("merge", True):
             ok2, info2 = segment_cost(plan, marks[i], marks[j + 1])
             if not ok2:
                 break
@@ -549,16 +554,158 @@ def decode_packets(edges, bit, t_end):
     return ev
 
 
+DEV_FW = {"low": "usb_ls_dev", "full": "usb_fs_dev"}
+
+
+def dev_prog(speed):
+    """usb_ls_dev / usb_fs_dev: one core and the line unit, the device software on the host side."""
+    return asm.assemble((pfd.FW / f"{DEV_FW[speed]}.pasm").read_text(), usbdev.defines())
+
+
+def dev_load_writes(prog, speed):
+    """test_usb_enum / test_usb_fs's device(): core 0 at 0, CRC16 IN tap, the line unit; started."""
+    n = BIT[speed]
+    w = host.load_program(0, prog, 0, clkdiv=1 << 8)
+    w += [(sim.core_reg(0, sim.C_CRCCTRL), usbdev.CRCCTRL), (sim.A_LINEDIV, (n << 16) | (n << 8)),
+          (sim.A_LINEPINS, 0), (sim.A_LINECFG, usbenum.LINECFG)]
+    return w + host.start_writes(1)
+
+
+def dev_state(sw):
+    return dict(address=sw.address, requests=list(sw.requests), restaged=sw.restaged)
+
+
+class RigPort:
+    """pe.usbdev.DeviceSoftware's transport on a rig (the board's host port or
+    the model's); now_us() is the plan's clock at the service being replayed,
+    so the software's retry timer decides as it did in the plan."""
+
+    def __init__(self, rig):
+        self.rig, self.now = rig, 0.0
+
+    def read(self, addr, pop=False):
+        return self.rig.read(addr)
+
+    def write(self, addr, v):
+        self.rig.write(addr, v)
+
+    def push(self, core, w):
+        self.rig.write(FIFO(core), w)
+
+    def pop_all(self, core):
+        out = []
+        while True:
+            w = rd_fifo(self.rig, core)
+            if not w:
+                return out
+            out += w
+
+    def now_us(self):
+        return self.now
+
+
+def sc_dev(h, sw, idle, speed):
+    """test_usb_enum's enumeration (64-byte device descriptor read at address 0,
+    SET_ADDRESS 5, device and configuration descriptors, SET_CONFIGURATION),
+    then test_lost_ack_restages_the_same_packet: the host takes DATA1 without
+    an ACK, the software re-stages it after 100 us, the next IN gets it again."""
+    mh, bit = h.mh, h.bit
+    d = h.control_read(0, bytes([0x80, 6, 0, 1, 0, 0, 64, 0]), 64)
+    check(d == DEV, f"device descriptor {d.hex()}")
+    h.control_write_nodata(0, ctl_write(0, 5, 5))
+    check(h.control_read(5, bytes([0x80, 6, 0, 1, 0, 0, 18, 0]), 18) == DEV, "device descriptor at 5")
+    check(h.control_read(5, bytes([0x80, 6, 0, 2, 0, 0, CFG[2], 0]), CFG[2]) == CFG, "configuration")
+    h.control_write_nodata(5, ctl_write(0, 9, 1))
+    check(sw.address == 5, f"software address {sw.address}")
+    h.setup(5, bytes([0x80, 6, 0, 1, 0, 0, 18, 0]))
+    got = None
+    for _ in range(20):                                # IN until data, not acknowledged
+        h._send(usb.token(usb.PID_IN, 5, 0))
+        got = h._listen(120 * bit)
+        if got and got[0] == usb.pid_byte(usb.PID_DATA1):
+            break
+        h.idle(mh)
+    check(got == usb.data_packet(usb.PID_DATA1, DEV[:8]), f"first packet {got!r}")
+    h._gap(16)
+    idle(mh)                                           # the software sees it sent, no ACK yet
+    mh.step(round(120 * 48))
+    idle(mh)                                           # 120 us later: re-staged
+    pid, payload = h.data_in(5, 0)
+    check((pid, payload) == (usb.pid_byte(usb.PID_DATA1), DEV[:8]) and sw.restaged == 1, "re-staged packet")
+    pid, payload = h.data_in(5, 0)
+    check((pid, payload) == (usb.pid_byte(usb.PID_DATA0), DEV[8:16]), "next packet")
+    pid, payload = h.data_in(5, 0)
+    check(payload == DEV[16:18], "last packet")
+    h.data_out(5, 0, usb.PID_DATA1, b"")
+
+
+def make_dev_plan(name, speed, prog, key):
+    """usb_ls_dev / usb_fs_dev with pe.usbdev.DeviceSoftware serviced at every
+    host idle point (a segment boundary on the board: the software runs there,
+    between two generator plays)."""
+    from pe.usbhost import UsbHost
+    t = time.monotonic()
+    bit = BIT[speed]
+    mh = ModelHost()
+    sync_mid(mh.chip)
+    mh.apply(dev_load_writes(prog, speed))
+    mh.pull_up = 0b10
+    mh.step(100)
+    rec = Recorder(mh)
+    mh.step(200)
+    sw = usbdev.DeviceSoftware(mh, prog, usbdev.DESCRIPTORS, 0, 0)
+    marks, svc = [], []
+
+    def idle(m):
+        m.step(8 * bit)
+        marks.append(m.chip.cycle - 1)
+        svc.append((m.chip.cycle - 1, m.now_us()))
+        sw.service(m)
+    h = UsbHost(mh, bit=bit, idle=idle)
+    h.wire = []
+    send0 = h._send
+
+    def send(packet):
+        h.wire.append(bytes(packet))
+        send0(packet)
+    h._send = send
+    listen0 = h._listen
+
+    def listen(cycles):
+        r = listen0(cycles)
+        if r is not None:
+            h.wire.append(r)
+        return r
+    h._listen = listen
+    start = mh.chip.cycle - 1
+    sc_dev(h, sw, idle, speed)
+    mh.step(2000)
+    end = mh.chip.cycle
+    plan = {"key": key, "name": name, "kind": "dev", "merge": False, "speed": speed, "start": start, "end": end,
+            "marks": [m for m in marks if start < m < end], "svc": svc,
+            "gen": rec.gen, "dev": rec.dev, "pads": rec.pads,
+            "wire": [("?" if p == b"?" else p.hex()) for p in h.wire],
+            "log": [repr(e) for e in h.log], "state": dev_state(sw),
+            "turnarounds": [], "injected": {}, "verdicts": None, "ta_in_first": None,
+            "secs": round(time.monotonic() - t, 1)}
+    plan["segments"] = make_segments(plan, speed)
+    PLANS["data"][name] = plan
+    PLANS["made"] += 1
+    return plan
+
+
 def make_plan(name):
     """The scenario on the cycle model with the host model in the loop."""
     sp, sc = name.split("-", 1)
     speed = SPEED[sp]
-    prog = prog_for(speed)
+    prog = dev_prog(speed) if sc == "dev" else prog_for(speed)
     key = plan_key(VERSION, name, prog.words, T_TRIG, LEAD, PG_MAX, FS_WINDOW, SAMPLES, sources_key())
     hit = PLANS["data"].get(name)
     if hit and hit.get("key") == key:
         PLANS["used"] += 1
         return hit
+    if sc == "dev":
+        return make_dev_plan(name, speed, prog, key)
     t = time.monotonic()
     mh = ModelHost()
     sync_mid(mh.chip)
@@ -582,7 +729,7 @@ def make_plan(name):
     plan = {"key": key, "name": name, "speed": speed, "start": start, "end": end,
             "marks": [m for m in marks if start < m < end],
             "gen": rec.gen, "dev": rec.dev, "pads": rec.pads,
-            "wire": [p.hex() if isinstance(p, (bytes, bytearray)) else p for p in h.wire],
+            "wire": [("?" if p == b"?" else p.hex()) if isinstance(p, (bytes, bytearray)) else p for p in h.wire],
             "log": [repr(e) for e in h.log], "state": state,
             "turnarounds": h.turnarounds, "injected": h.injected,
             "verdicts": getattr(h, "verdicts", None), "ta_in_first": getattr(h, "ta_in_first", None),
@@ -696,7 +843,13 @@ def replay(rig, plan, store):
         rig.write(a, 0)
     for addr, words in host.coalesce(host.pin_owner_writes({})):
         rig.write(addr, words)
-    for addr, words in host.coalesce(usbenum.load_writes(prog, speed, start=False)):
+    dev = plan.get("kind") == "dev"
+    if dev:
+        prog = dev_prog(speed)
+        port = RigPort(rig)
+        sw = usbdev.DeviceSoftware(port, prog, usbdev.DESCRIPTORS, 0, 0)
+    for addr, words in host.coalesce(dev_load_writes(prog, speed) if dev else
+                                     usbenum.load_writes(prog, speed, start=False)):
         rig.write(addr, words)
     if speed == "low":
         obs = fw("la_capture", MASK=LA_MASK)
@@ -707,8 +860,13 @@ def replay(rig, plan, store):
     if rig.model:
         rig.wait(200 / F_USB)
     out_segs = []
+    services = {int(c): us for c, us in plan.get("svc", [])}
     for k, seg in enumerate(plan["segments"]):
         s0, s1 = seg["s0"], seg["s1"]
+        if dev and s0 in services:
+            # the device software, as the plan ran it here (its clock: the plan's)
+            port.now = services[s0]
+            sw.service()
         sched = [(T_TRIG, J | (1 << TRIG))]
         for c, v in plan["gen"]:
             if s0 < c < s1:
@@ -751,6 +909,8 @@ def replay(rig, plan, store):
         if not rig.model:
             pass
     st = finish_state(rig)
+    if dev:
+        st = dev_state(sw)
     store_run(store, plan, out_segs, st)
     return out_segs, st
 
@@ -838,8 +998,9 @@ def judge(plan, segs, state, store):
            f"bytes equal to the model's; {len(d_dev)} device edges board - model {span(d_dev)} clocks, "
            f"{len(d_host)} host edges {span(d_host)}")
     if tas:
-        yield (f"device turnaround on the pads {min(tas):.2f}..{max(tas):.2f} bit times "
-               f"(model host saw {min(plan['turnarounds']):.2f}..{max(plan['turnarounds']):.2f})")
+        ta = plan["turnarounds"]
+        yield (f"device turnaround on the pads {min(tas):.2f}..{max(tas):.2f} bit times"
+               + (f" (model host saw {min(ta):.2f}..{max(ta):.2f})" if ta else ""))
     yield f"end state {state} = the model's"
 
 
@@ -912,6 +1073,33 @@ def compare_main(a, b):
     print("ALL EQUAL" if not nd else f"{nd} DIFFERENT")
 
 
+def sigrok_vs_wire(sigrok, got, wire):
+    """sigrok's packets against the plan's wire record, whose ["raw", name]
+    entries (malformed host packets) match whatever sigrok makes of them up to
+    the next well-formed packet. Returns (equal, n, [(raw name, sigrok's
+    packets)], where it differs)."""
+    want = []
+    for p in wire:
+        if isinstance(p, list):
+            want.append(("raw", p[1]))
+        elif p not in (None, "?"):
+            want += sigrok.usb_expect([bytes.fromhex(p)])
+    raws, i = [], 0
+    for j, w in enumerate(want):
+        if w[0] == "raw":
+            nxt = next((x for x in want[j + 1:] if x[0] != "raw"), None)
+            k = i
+            while k < len(got) and got[k] != nxt:
+                k += 1
+            raws.append((w[1], got[i:k]))
+            i = k
+            continue
+        if i >= len(got) or got[i] != w:
+            return False, len(want), raws, f"{i}: {got[i:i + 2]} / {want[j:j + 2]}"
+        i += 1
+    return i == len(got), len(want), raws, f"{i} (extra: {got[i:i + 2]})"
+
+
 def sigrok_main(path, plans_path):
     from pe import sigrok
     if sigrok.cli() is None:
@@ -932,16 +1120,20 @@ def sigrok_main(path, plans_path):
                 tr.set(round((t + off) * tns * 1000), "uio0", p & 1)
                 tr.set(round((t + off) * tns * 1000), "uio1", (p >> 1) & 1)
             tr.end(round((seg["t_obs"] + 2 * off) * tns * 1000))
-            pk, err = sigrok.usb(tr, dp, dm, f"{speed}-speed", res_ps=round(tns * 1000 / 4) // 10 * 10 or 1000)
+            pk, err = sigrok.usb(tr, dp, dm, f"{speed}-speed", res_ps=10_000 if speed == "low" else 1000)
             allp += sigrok.usb_summary(pk)
             errs += [(k, t, e) for t, e in err]
         line = f"[{name}] sigrok usb_signalling + usb_packet: {len(allp)} packets, {len(errs)} errors"
         if name in plans:
-            want = sigrok.usb_expect([bytes.fromhex(p) for p in plans[name]["wire"] if p not in (None, "?")])
-            line += f"; the plan's wire ({len(want)}): {'identical' if allp == want else 'DIFFERENT'}"
-            if allp != want:
-                i = next((i for i, (x, y) in enumerate(zip(allp, want)) if x != y), min(len(allp), len(want)))
-                line += f" at {i}: {allp[i:i + 2]} / {want[i:i + 2]}"
+            ok, n_want, raws, where = sigrok_vs_wire(sigrok, allp, plans[name]["wire"])
+            line += f"; the plan's wire ({n_want} packets): {'identical' if ok else 'DIFFERENT'}"
+            if not ok:
+                line += f" at {where}"
+            if raws:
+                kinds = {}
+                for rn, got in raws:
+                    kinds.setdefault(rn, " ".join(g[0] + (f"[{g[3]}]" if g[3] else "") for g in got) or "nothing")
+                line += "; malformed ACKs as sigrok reads them: " + ", ".join(f"{k}: {v}" for k, v in kinds.items())
         print(line + (f" {errs[:3]}" if errs else ""))
 
 
