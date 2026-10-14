@@ -33,6 +33,7 @@ DEFS = {
     "modbus_rtu": p2.modbus_defines(19200, 104, 8, 9, 16),
     "midi_rx": {"RX": 16, "TB": 128, "FOV": 0},
     "midi_tx": {"TX": 8, "TB": 32, "RS": 1},
+    "quad_enc": {"A": 16, "FERR": 6},
 }
 
 
@@ -267,3 +268,31 @@ def test_midi_sound():
         mh.pop_all(1)
     sound("midi_tx", ttx, 4 << 8)
     sound("midi_rx", trx, 1 << 8)
+
+
+def test_quad_enc_sound():
+    """quad_enc: a random walk at 15..60 clocks per step, glitches, a double
+    step."""
+    import test_quad_enc as TQ
+    mh = ModelHost()
+    mh.apply(host.load_program(0, asm.assemble((FW / "quad_enc.pasm").read_text(), DEFS["quad_enc"]),
+                               clkdiv=1 << 8))
+    tr = timing.Tracer(mh.chip, 0, 0)
+    mh.start(1)
+    enc = TQ.Encoder(mh)
+    rng = random.Random(8)
+    d = 1
+    for i in range(800):
+        if rng.random() < 0.1:
+            d = -d
+        enc.step(d)
+        enc.hold(rng.choice([15, 16, 30, 60]))
+        if i % 100 == 50:
+            enc.set(TQ.SEQ[enc.phase] ^ 1)
+            enc.hold(1)
+            enc.set(TQ.SEQ[enc.phase])
+            enc.hold(30)
+    enc.phase = (enc.phase + 2) % 4
+    enc.set(TQ.SEQ[enc.phase])
+    enc.hold(40)
+    sound("quad_enc", tr, 1 << 8)

@@ -1,7 +1,8 @@
 """Host side of the second round of post-freeze protocols
-(docs/post-freeze-protocols.md): DALI, Modbus RTU and MIDI. As in
-pe.postfreeze: the words each firmware expects in its TX FIFO, the decoding
-of what it pushes back, and pins-only models of the other end of each line.
+(docs/post-freeze-protocols.md): DALI, Modbus RTU, MIDI and a quadrature
+decoder. As in pe.postfreeze: the words each firmware expects in its TX
+FIFO, the decoding of what it pushes back, and pins-only models of the
+other end of each line.
 
 Everything here was written after the RTL freeze (tag rc-93c2137-t48ba). The
 models see nothing but pin levels and times. Times are in ns; waveforms are
@@ -513,6 +514,24 @@ def midi_random_events(rng, n=60):
         else:
             ev.append(("msg", rng.choice([0xF8, 0xFA, 0xFB, 0xFC, 0xFE, 0xFF]), ()))
     return ev
+
+
+QUAD_SEQ = [0, 1, 3, 2]     # A | B << 1, forward (A leads B)
+
+
+def quad_count(log, a=0, b=1):
+    """Pins-only X4 quadrature decoder over a log [(t, value)] (bit a = A,
+    bit b = B): (position, double steps). A change of both lines at once is
+    a double step: counted as neither direction."""
+    pos, bad, prev = 0, 0, None
+    for _, v in log:
+        s = ((v >> a) & 1) | (((v >> b) & 1) << 1)
+        if prev is not None and s != prev:
+            d = (QUAD_SEQ.index(s) - QUAD_SEQ.index(prev)) % 4
+            pos += {1: 1, 3: -1}.get(d, 0)
+            bad += d == 2
+        prev = s
+    return pos, bad
 
 
 def insert_realtime(stream, rng, count, choices=(0xF8, 0xFE)):

@@ -118,7 +118,8 @@ def _vcd_id(i):
 _LINE = re.compile(r"^(\d+)-(\d+) (\S+): (.*)$")
 
 
-def decode(trace, decoders, annotations, res_ps=1000, channels=None, keep=None, time_scale=1.0):
+def decode(trace, decoders, annotations, res_ps=1000, channels=None, keep=None, time_scale=1.0,
+           abort_at_exit_ok=False):
     """Run sigrok-cli on the trace. decoders: the -P stack, e.g.
     "uart:rx=uo0:baudrate=115200" or "usb_signalling:dp=uio1:dm=uio0,usb_packet";
     annotations: the -A filter, e.g. "uart=rx-data:rx-warnings" (decoders
@@ -126,7 +127,9 @@ def decode(trace, decoders, annotations, res_ps=1000, channels=None, keep=None, 
     [Ann(start_ns, end_ns, pd, text)] sorted by start. keep: a directory to
     leave the VCD in (for debugging); otherwise a temporary file is used.
     time_scale: see Trace.write_vcd (returned times stay in the trace's own
-    time base)."""
+    time base). abort_at_exit_ok: accept sigrok-cli aborting with "free():
+    invalid pointer" after it printed its annotations (sigrok-cli 0.7.2 /
+    libsigrokdecode 0.5.3 do that at teardown after the graycode decoder)."""
     exe = cli()
     if exe is None:
         raise RuntimeError(INSTALL_HINT)
@@ -141,7 +144,9 @@ def decode(trace, decoders, annotations, res_ps=1000, channels=None, keep=None, 
         # PYTHONHOME/PYTHONPATH (cocotb under oss-cad-suite) would break it
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "PYTHONPATH")}
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
-        if r.returncode:
+        torn_down = (abort_at_exit_ok and r.returncode in (-6, 134) and r.stdout
+                     and r.stderr.strip() == "free(): invalid pointer")
+        if r.returncode and not torn_down:
             raise RuntimeError(f"{' '.join(cmd)} failed:\n{r.stderr}")
         if keep:
             with open(os.path.join(keep, "sigrok.txt"), "w") as f:
@@ -523,6 +528,16 @@ def uart_parity(trace, pin, baud, parity="even", **kw):
         else:
             warn.append((a.start, a.text))
     return data, warn
+
+
+def graycode(trace, pins, **kw):
+    """sigrok's graycode decoder (pins: d0, d1, ...): the count before each
+    change of it, in order (the decoder annotates a value when it changes,
+    so the last count only appears after one more step). sigrok-cli 0.7.2
+    aborts at exit after this decoder, its output complete: tolerated."""
+    chans = ":".join(f"d{i}={p}" for i, p in enumerate(pins))
+    anns = decode(trace, f"graycode:{chans}", "graycode=count", abort_at_exit_ok=True, **kw)
+    return [int(a.text) for a in anns]
 
 
 def midi(trace, pin, baud=31250, **kw):

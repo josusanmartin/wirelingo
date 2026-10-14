@@ -6,7 +6,7 @@ afterwards. Each test loads one (or two) of them over the bit-banged SPI port
 of test.py, feeds the FIFOs through it, records the pads and judges them with
 the pins-only models of pe.postfreeze and with sigrok's decoders (skipped
 without sigrok-cli). Short, directed runs; the sweeps are on the model
-(test/model/test_{dmx512,lin,nec,i2s,wiegand,dshot}.py).
+(test/model/test_{dmx512,lin,nec,i2s,wiegand,dshot,dali,modbus,midi,quad_enc}.py).
 
     make COCOTB_TEST_MODULES=test_post_freeze
     make COCOTB_TEST_MODULES=test_post_freeze COCOTB_TEST_FILTER=pf_lin
@@ -14,8 +14,9 @@ without sigrok-cli). Short, directed runs; the sweeps are on the model
 Protocols whose frames last milliseconds run with a slower chip clock (the
 firmware counts ticks of its divider, so the waveform in ticks is the same as
 at 50 MHz; the model tests compare the two): DMX512's full universe at 1 MHz,
-LIN at 5 MHz, Wiegand at 1 MHz, NEC at 456 kHz. DMX512's timing run, I2S and
-DShot600 run at 50 MHz.
+LIN at 5 MHz, Wiegand at 1 MHz, NEC at 456 kHz, DALI at 307.2 kHz, Modbus RTU
+at 1.9968 MHz, MIDI at 4 MHz. DMX512's timing run, I2S, DShot600 and the
+quadrature counter run at 50 MHz.
 """
 import importlib.util
 import pathlib
@@ -608,4 +609,59 @@ async def pf_midi(dut):
         assert len(sg) == len(ev) and sg[0] == "Channel 1: note on (note = 60 'C4', velocity = 100)"
         assert sg[2] == "System Realtime: timing clock" and sg[3].startswith("Channel 1: note on (note = 67")
         assert sg[6] == "System Common: song position pointer 0x10 0x02 (272)"
+        assert sg[8] == "System Realtime: start"
         assert sg[7] == "system exclusive: for 'Universal Non-Realtime' with payload 0x7f 0x09 0x01 "
+
+
+# ------------------------------------------------------------------ quadrature encoder
+
+def pf2_quad(pads):
+    return p2.quad_count([(t, v & 3) for t, v in pads.log["ui"]])
+
+
+@cocotb.test()
+async def pf_quad_enc(dut):
+    """quad_enc (core 0, A = ui0, B = ui1) at 50 MHz, CLKDIV 1: a random walk
+    of 1500 steps 15 to 60 clocks apart; the position read through the core's
+    R3 register over SPI equals the encoder's; then a jump of two states sets
+    flag FERR and leaves the position. sigrok's graycode counts the same."""
+    A, FERR = T.UI(0), 6
+    spi = await T.setup(dut)
+    spi.set_low_inputs(0)
+    await spi.write(sim.core_reg(0, sim.C_R0 + 3), [0])
+    await T.run_program(spi, 0, load("quad_enc", A=A, FERR=FERR), clkdiv=1 << 8)
+    pads = Pads(dut)
+    await ClockCycles(dut.clk, 20)              # (the capture starts at the idle state)
+    seq, phase, pos, d = [0, 1, 3, 2], 0, 0, 1
+    rng = random.Random(6)
+    for _ in range(1500):
+        if rng.random() < 0.05:
+            d = -d
+        phase, pos = (phase + d) % 4, pos + d
+        spi.set_low_inputs(seq[phase])
+        await ClockCycles(dut.clk, rng.choice([15, 16, 20, 30, 60]))
+    await ClockCycles(dut.clk, 50)
+    got = (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0]
+    flags = (await spi.read(sim.A_FSET))[0]
+    got = got - 0x10000 if got & 0x8000 else got
+    dut._log.info(f"quad_enc: position {got}, the encoder's {pos}, FERR {(flags >> FERR) & 1}")
+    assert got == pos and not (flags >> FERR) & 1
+    phase = (phase + 2) % 4                     # both lines at once: a missed step
+    spi.set_low_inputs(seq[phase])
+    await ClockCycles(dut.clk, 50)
+    after = (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0]
+    flags = (await spi.read(sim.A_FSET))[0]
+    assert (after - 0x10000 if after & 0x8000 else after) == pos and (flags >> FERR) & 1
+    phase = (phase + 1) % 4                     # one more step: counted again
+    spi.set_low_inputs(seq[phase])
+    await ClockCycles(dut.clk, 50)
+    last = (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0]
+    assert (last - 0x10000 if last & 0x8000 else last) == pos + 1
+    pads.stop()
+    assert pf2_quad(pads) == (pos + 1, 1)          # the pins-only decoder on the pads
+    if HAVE_SIGROK:
+        # graycode annotates a count when it changes: the last one shown is
+        # the position before the final step (the double step counts 0 there too)
+        counts = sigrok.graycode(pads.trace({"a": ("ui", 0), "b": ("ui", 1)}), ["a", "b"], res_ps=10_000)
+        dut._log.info(f"sigrok graycode: {len(counts)} count changes, the last shown {counts[-1]}")
+        assert counts[-1] == pos
