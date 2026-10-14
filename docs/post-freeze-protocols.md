@@ -64,12 +64,14 @@ tests through the SPI host port (`pf_cec`, `pf_iso7816`, `pf_smbus`,
 `pf_rc5`: test_post_freeze has 16, all passing on runner1, 168 s of icarus;
 locally with sigrok as well) and 72 more model tests
 (`test/model/test_{cec,iso7816,smbus,rc5}.py`: 56, and 16 in
-`test_post_freeze_timing.py`). Simulation only: none of these six has run on
-the FPGA or silicon.
+`test_post_freeze_timing.py`). None of these six has run on silicon; on the
+FPGA, see below.
 
 On hardware (the RTL on the KV260 FPGA, 2026-10-13): see fpga/kv260/README.md, "Post-freeze protocols on hardware" (`fpga/kv260/host/postfreeze_demo.py`): 15 of 16 runs passed at 50 MHz; bidirectional DShot's bit timing was a clock short at 50 MHz (odd T0: the assembler divided exactly and truncated each half of a split delay). With `/` now integer division it measures exactly 62 / 31 / 83 clocks at 50 MHz on the same bitstream, and exact at 48 MHz.
 
 Second round on hardware (the RTL on the KV260 FPGA, 2026-10-14): see fpga/kv260/README.md, "Post-freeze protocols, second round, on hardware" (`fpga/kv260/host/postfreeze2_demo.py`): 25 of 25 runs passed at 50 MHz (DALI, Modbus RTU, MIDI in/out and both at once, quadrature), every far end a pins-only model played by pe_lab's pattern generator or the other core; results equal to the cycle model's.
+
+Third round on hardware (the RTL on the KV260 FPGA, 2026-10-14): see fpga/kv260/README.md, "Post-freeze protocols, third round, on hardware" (`fpga/kv260/host/postfreeze3_demo.py`): 31 of 31 runs passed at 50 MHz (HDMI-CEC, ISO 7816-3 T=0 with its clock core, SMBus with PEC, RC-5 TX and RX), every far end a pins-only model pre-timed and played by pe_lab's pattern generator; the firmware's records equal to the cycle model's.
 
 ## How they are judged
 
