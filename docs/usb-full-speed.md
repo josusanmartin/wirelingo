@@ -392,11 +392,15 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   RP2350 delivers 48 MHz to the TT clock pin (e.g. from its 48 MHz USB PLL via a
   GPOUT clock, not a PIO/PWM divider with fractional jitter) and the jitter
   through the TT clock path. None of this is measured.
-* **Real hosts.** Only the pins-only model host is tested here (on the KV260,
-  2026-10-14, `usb_fs_dev` and `usb_enum` at 48 MHz answered that host's replayed
-  waveform with every pad edge at the model's clock: [fpga/kv260/README.md](../fpga/kv260/README.md);
-  digital levels on FPGA fabric, no PHY, so the analogue items above stay open). Not covered:
-  xHCI/EHCI-companion timing, hubs (FS traffic for other devices; PRE plus
+* **Real hosts.** On the KV260, 2026-10-14, `usb_fs_dev` and `usb_enum` at 48 MHz
+  answered the pins-only model host's replayed waveform with every pad edge at
+  the model's clock. On 2026-10-30 `usb_enum` also enumerated at full speed against
+  Linux xHCI through the board's USB5744 hub: 14 of 14 attaches, 56,000 of 56,000
+  control transfers, 130 of 130 bus resets ([fpga/kv260/README.md](../fpga/kv260/README.md)).
+  That is the RTL in FPGA fabric with 3.3 V LVCMOS pins and no scope, so the
+  analogue items above stay open, and it doesn't measure the jitter margin.
+  `usb_fs_dev` has not met a real host. Not covered: EHCI-companion timing,
+  other hubs (FS traffic for other devices; PRE plus
   low-speed traffic, which the receiver should reject as stuffing errors but
   which isn't tested), suspend/resume (3 ms idle, firmware does nothing),
   remote wakeup, and more than one endpoint (the token filter matches one

@@ -104,9 +104,9 @@ result extends them to later firmware or grants release approval.
   features, quad SPI at 193.6 Mbit/s, UART across real PMOD pins:
   [fpga/kv260](../fpga/kv260/README.md); since then also USB enumeration
   against a replayed host waveform and the post-freeze protocols); still
-  open are the RP2350 transport, full-speed USB against a real host (low
-  speed passed on the KV260 against Linux on 2026-10-30), and the 10BASE-T
-  analog front end.
+  open are the RP2350 transport and the 10BASE-T analog front end. USB
+  enumeration against a real host passed on the KV260 against Linux at low
+  and full speed on 2026-10-30.
 * A formal equivalence check of the RTL against the synthesized netlist. LVS
   compares layout with netlist; gate-level simulation covers only the cases
   the tests exercise.

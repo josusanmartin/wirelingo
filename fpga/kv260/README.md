@@ -827,7 +827,7 @@ not observed. `usb_ls_rx` + `usb_ls_tx` (the two-core device) and the
 USB-UART pairs (`usb_uart_*` with `uart_rx_batch4` / `overlap4` /
 `envelope3` / `capture_peer` / `mailbox`) use both cores, leaving none to
 observe the pads: not run. The real-host demo (`host/usb_demo.py`, below) ran
-at low speed on 2026-10-30.
+at low and full speed on 2026-10-30.
 
 ## Firmwares that had never run on the FPGA (2026-10-14, `host/legacy_demo.py`)
 
@@ -1260,18 +1260,43 @@ and not silicon. One host and one hub: no Windows, no macOS, no USB-IF
 compliance test. Nothing was measured with a scope, so edge rates and eye
 diagrams are unknown (the pads' edges are faster than low speed's 75-300 ns).
 The device has no data endpoint, so this covers enumeration and control
-transfers only. Full speed against a real host is a separate test, below.
+transfers only.
 
-**Full speed later**: move the 1.5 kohm from D- to D+ (the cable side of D+'s
-27 ohm, to the same 3.3 V pin) and run `usb_demo.py --speed full`: the same
+### Result against Linux (full speed, 2026-10-30)
+
+**Wiring.** Move the 1.5 kohm from D- to D+ (the cable side of D+'s series
+resistance, to the same 3.3 V pin) and run `usb_demo.py --speed full`: the same
 two wires, the chip's pins swapped by the PMOD map (D- = uio0, D+ = uio1),
 4 clocks per bit. The 48 MHz clock is the PS's 100 MHz (99.999 MHz from its
-IOPLL) x 12 / 25, about -10 ppm, inside full speed's 0.25 %. Not simulated
-on this design (the chip RTL test `test_usb_autonomous_fs` covers the
-firmware at full speed; on the board, full speed has run only against the
-replayed host (above), not a real one); an FPGA pin with 27 ohm is probably also
-outside full speed's driver-impedance window (28-44 ohm), and 30 ohm of
-resistors sits just inside it before the pin's own impedance; keep the wires short.
+IOPLL) x 12 / 25, about -10 ppm, inside full speed's 0.25 %. Full speed's
+driver-impedance window is 28-44 ohm: 30 ohm of resistors sits inside it
+before the pin's own impedance (27 ohm alone would not); keep the wires short.
+
+Same board, same day, same RTL and firmware files, with 30 ohm per line, also
+on the first attempt:
+
+      pins pulsed low then read (of 5): pmod[0] 5, pmod[1] 0, pmod[2] 0, pmod[3] 0
+      pull-up found on pmod[0] = silkscreen 1: columns normal, it is D+ (full-speed wiring)
+      loaded usb_enum (246 words, full speed) into core 0, CRCCTRL, line unit
+      [  104.807580] usb 1-1.4: new full-speed USB device number 8 using xhci-hcd
+      [  104.896056] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+    PASS: Linux enumerated 1209:5634 at full speed and configured it (1-1.4: devnum 8, speed 12 Mbit/s, bConfigurationValue 1, bMaxPacketSize0 8, bcdDevice 0001)
+    [chip] after the verdict, over the host port: address 8, configured True, pending address False, stalled False
+
+| Test | Result |
+|---|---|
+| Attach and enumerate, each after a fresh firmware load | 14 of 14 to configured, each on the first attempt after the core started |
+| Live `GET_DESCRIPTOR` (device, configuration) through usbfs, `host/usb_stress.py` | 56,000 of 56,000 right bytes, 0.17 ms each |
+| Bus resets from the kernel, each re-enumerated | 130 of 130 |
+
+The same `dmesg` bursts appear after each app reload, and for the same reason:
+four `error -32` lines and a port power cycle, the pattern of a boot with no
+firmware, ended at least 1.1 s before each good attach.
+
+All the limits under "Not shown" above apply. In particular this says nothing
+about the receive jitter margin (docs/usb-full-speed.md) or about the chip's
+own pads. `usb_enum` is the firmware tested; `usb_fs_dev` has not met a real
+host.
 
 ### Build and staging (2026-10-07, branch `kv260-usb`)
 

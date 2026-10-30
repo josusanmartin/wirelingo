@@ -128,8 +128,8 @@ derived from the specifications, not yet validated on silicon):
   timing-annotated gate-level simulation, and on the KV260 FPGA build of the
   RTL against a host model's waveform replayed on its pins (no PHY). On that
   FPGA build, wired to the board's own USB port, Linux enumerated and
-  configured it at low speed (2026-10-30). Full speed has not met a real host,
-  and signalling through the chip's pads is unmeasured.
+  configured it at low and full speed (2026-10-30). Signalling through the
+  chip's pads is unmeasured.
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
   nominal pins swing ±3.3 V differentially. The proposed 15–20 Ω series
