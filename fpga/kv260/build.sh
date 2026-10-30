@@ -5,7 +5,7 @@
 #
 # The RTL inputs must be committed (ALLOW_DIRTY=1 overrides): the bitstream
 # records their revision (build_id.py, read back by host/bringup_kria.py).
-# Env: VIVADO_THREADS (default 4), VIVADO_HOST (default runner1), REMOTE_DIR (default protoemu-flow/fpga,
+# Env: PMOD_DRIVE (4, 8, 12, 16 mA; default the .xdc's), VIVADO_THREADS (default 4), VIVADO_HOST (default runner1), REMOTE_DIR (default protoemu-flow/fpga,
 # relative to the remote home), VIVADO_SETTINGS (default
 # ~/Xilinx/2026.1/Vivado/settings64.sh on the remote). Output: fpga/kv260/out/
 # (protoemu.bit.bin, reports; install.sh adds the overlay), not tracked by git.
@@ -30,6 +30,12 @@ fi
 # tapeout configuration: 2 cores, 8-deep FIFOs
 python3 "$root/flow/fpga_profile.py" --output "$stage/rtl" --cores 2 --fifo-log2 3
 cp "$here/build.tcl" "$here/kv260_top.v" "$here/pe_spim.v" "$here/pe_lab.v" "$here/kv260.xdc" "$stage/"
+# PMOD_DRIVE=12: stronger PMOD pins for 10BASE-T TX (build_info.json records it)
+pmod_drive=${PMOD_DRIVE:-}
+if [ -n "$pmod_drive" ]; then
+  case "$pmod_drive" in 4|8|12|16) ;; *) echo "PMOD_DRIVE must be 4, 8, 12 or 16" >&2; exit 1;; esac
+  echo "set_property DRIVE $pmod_drive [get_ports {pmod[*]}]" >> "$stage/kv260.xdc"
+fi
 mkdir -p "$out"
 python3 "$here/build_id.py" vh "$stage" "$stage/build_id.vh" "$stage/build_info.json"
 ssh "$host" "rm -rf $rdir/build && mkdir -p $rdir/build"
