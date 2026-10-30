@@ -66,7 +66,8 @@ describes how, and what it caught.
   simulation (model, RTL, gate level), static timing and physical checks, or
   the RTL in an FPGA. One protocol has run against a real external host: USB,
   the chip's RTL on a KV260 FPGA wired to the board's own USB port, enumerated
-  and configured by Linux at low and full speed (2026-10-30,
+  and configured by Linux at low and full speed, then carrying data to and from
+  a Linux process at full speed (2026-10-30,
   [fpga/kv260/README.md](fpga/kv260/README.md)). Every other far end was our
   own pins-only model or a replayed waveform.
 * **Post-freeze protocol challenge:** with the RTL frozen (tag

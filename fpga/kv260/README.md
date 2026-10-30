@@ -1295,8 +1295,41 @@ firmware, ended at least 1.1 s before each good attach.
 
 All the limits under "Not shown" above apply. In particular this says nothing
 about the receive jitter margin (docs/usb-full-speed.md) or about the chip's
-own pads. `usb_enum` is the firmware tested; `usb_fs_dev` has not met a real
-host.
+own pads.
+
+### Data at full speed (`host/usb_fs_data_demo.py`, 2026-10-30)
+
+The same wiring with `firmware/usb_fs_dev.pasm`: the core handles the wire,
+tokens, CRC and handshakes, and `pe.usbfsdata` on the SPI port answers every
+request, so the chip is not autonomous here. A separate Linux process writes
+random bytes with vendor control transfers through the kernel, reads them back
+and compares.
+
+    sudo python3 protoemu48/fpga/kv260/host/usb_fs_data_demo.py
+
+      8 B x 20: 20 of 20 equal, 6.9 kB/s both ways together
+     64 B x 20: 20 of 20 equal, 14.9 kB/s both ways together
+    256 B x 20: 20 of 20 equal, 17.0 kB/s both ways together
+   1024 B x 20: 20 of 20 equal, 17.5 kB/s both ways together
+   4096 B x 20: 20 of 20 equal, 17.6 kB/s both ways together
+
+A further 250 round trips of 4096 bytes (2 MB through the device, two minutes)
+were all equal, with no packet re-staged. 17.6 kB/s measures this Python loop,
+with every 8-byte packet crossing the SPI port, not the chip or the bus; the
+simulated figures in docs/usb-full-speed.md (1 MB/s) assume a far faster SPI
+host and have not been measured here. Data stays on endpoint 0, because the
+firmware's token filter matches one address and endpoint.
+
+**Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
+`SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,
+so the demo tries up to three times and prints each retry. In the two stalls
+sampled, the device had staged its status reply (`F_STAGED`, the packet in the
+TX FIFO) and the core sat idle in `wait 0 pin DM`; 6000 samples of its PC
+matched SOF traffic only, so no IN token seems to reach it. A misread token
+would give Linux `-71`, not a timeout. The stall was not seen in any data
+transfer, nor with `usb_enum`, which answers without the software's delay. The
+cause is not proved: nothing here sees the bus between the xHCI controller, the
+hub's transaction translator and the device.
 
 ### Build and staging (2026-10-07, branch `kv260-usb`)
 

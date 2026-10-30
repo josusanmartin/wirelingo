@@ -399,7 +399,10 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   control transfers, 130 of 130 bus resets ([fpga/kv260/README.md](../fpga/kv260/README.md)).
   That is the RTL in FPGA fabric with 3.3 V LVCMOS pins and no scope, so the
   analogue items above stay open, and it doesn't measure the jitter margin.
-  `usb_fs_dev` has not met a real host. Not covered: EHCI-companion timing,
+  `usb_fs_dev` carried data to and from Linux the same day, 350 round trips over
+  endpoint 0 at 17.6 kB/s with Python on the SPI port; 5 of 116 attaches stalled at
+  `SET_CONFIGURATION`, cause not proved ([fpga/kv260/README.md](../fpga/kv260/README.md)).
+  Not covered: EHCI-companion timing,
   other hubs (FS traffic for other devices; PRE plus
   low-speed traffic, which the receiver should reject as stuffing errors but
   which isn't tested), suspend/resume (3 ms idle, firmware does nothing),
