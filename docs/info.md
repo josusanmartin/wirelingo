@@ -46,6 +46,9 @@ Modbus RTU, MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0,
 SMBus with PEC and RC-5 infrared. Most of it (not SWD or the two-core USB
 device) has also run on an FPGA build of the RTL (Kria KV260) against
 pins-only device models. None of it has run on silicon yet.
+The hardened netlist is formally proved equivalent to the RTL: functionally,
+for every input and state, under the assumptions listed in
+`docs/equivalence.md`. Timing is checked separately, by STA.
 
 The full specification is in `docs/isa.md` in the repository.
 
