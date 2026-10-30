@@ -1286,6 +1286,71 @@ def eth10_loop(rig, store):
     return lines
 
 
+def match_frame(field):
+    """A 64-byte frame with the 16-bit field eth10_match compares."""
+    body = bytes(6 * [0xFF]) + bytes.fromhex("020000c0ffee") + struct.pack(">H", 0x88B5)
+    body += struct.pack("<H", field) + bytes((i * 11) & 255 for i in range(44))
+    return body + struct.pack("<I", binascii.crc32(body))
+
+
+@model_clock(50e6)
+def eth10_cut(rig, store):
+    """eth10_match (core 0, line unit) raising a pin on a field while the frame arrives: uio0 (generator) and uio1 (HIT) sampled every clock by usb_sampler on core 1."""
+    text = (HERE.parents[2] / "firmware" / "eth10_match.pasm").read_text().replace(".define HIT 8", ".define HIT 1")
+    prog = asm.assemble(text)
+    samp = asm.assemble((HERE / "usb_sampler.pasm").read_text(), {"TRIG": 2})
+    last_bit = 64 + 8 * 16 - 1
+    lines = []
+    for field, threshold, alt in ((2000, 1000, False), (1000, 1000, False), (999, 1000, False),
+                                  (2000, 1000, True), (2100, 1000, True), (2200, 1000, True)):
+        fr = match_frame(field)
+        sched, _ = manchester_sched(rig, fr, t0_ns=5e3, alt=alt)
+        sched = [(t, v | 1 << 2) for t, v in sched]
+        setup(rig, mode=PG, owners={1: 0}, poe=0b10, pg_init=0)
+        load(rig, 0, prog, clkdiv=1 << 8)
+        load(rig, 1, samp, in_pins=0, clkdiv=1 << 8)
+        rig.write(sim.A_LINEDIV, 5 << 16)
+        rig.write(sim.A_LINEPINS, 0)
+        rig.write(sim.A_LINECFG, 1 | (2 << 1) | (1 << 14))
+        rig.write(FIFO(0), threshold, fixed=True)
+        if alt and not rig.model:
+            rig.lab.pg_load(sched, init=0, alt=True)
+        elif alt:
+            r = rig.f_clk / (1200e6 / 26.125)
+            rig.pg_load([(math.ceil(t * r), v) for t, v in sched], init=0)
+        else:
+            rig.pg_load(sched, init=0)
+        ctrl(rig, 0b11)
+        words = go_burst(rig, 1, 4096, 1, True)
+        if alt and not rig.model:
+            rig.lab.pg_wait()
+            rig.lab.pg_set(0, alt=False)
+        rec = rd(rig, FIFO(0), rxn(rig.read(STATUS(0))))
+        finish(rig)
+        rig.write(sim.A_LINECFG, 0)
+        samples = [(x >> (3 * (9 - i))) & 7 for x in words if x for i in range(10)]
+        rxp = [v & 1 for v in samples]
+        hit = [v >> 1 & 1 for v in samples]
+        edges = [i for i in range(1, len(rxp)) if rxp[i] != rxp[i - 1]]
+        check(edges, "no edges on uio0")
+        rise = next((i for i in range(1, len(hit)) if hit[i] and not hit[i - 1]), None)
+        check((rise is not None) == (field >= threshold), f"field {field}, threshold {threshold}: HIT rise {rise}")
+        name = f"field {field}, threshold {threshold}, {'alternate' if alt else 'protoemu'} clock"
+        if rise is None:
+            check(rec == [], f"records {rec}")
+            lines.append(f"{name}: no HIT")
+            continue
+        check(rec == [field], f"records {rec}")
+        want = edges[0] + 5 * last_bit
+        mid = min(edges, key=lambda e: abs(e - want))
+        check(abs(mid - want) <= 3, f"no edge near the field's last bit ({mid} against {want})")
+        check(mid < rise < edges[-1], f"HIT at {rise}, last bit {mid}, frame end {edges[-1]}")
+        lines.append(f"{name}: HIT {rise - mid} clocks ({(rise - mid) * 20} ns) after the field's last mid-bit edge, "
+                     f"{(edges[-1] - rise) * 20 / 1000:.1f} us before the frame's last edge")
+        det(store, f"eth10_cut_{field}_{int(alt)}", reaction=rise - mid)
+    return lines
+
+
 @model_clock(50e6)
 def eth10_tx_wave(rig, store):
     """eth10_tx (core 0) on uio3/uio4 (TD+/TD-), sampled every clock by usb_sampler on core 1: Manchester cells, preamble/SFD, frame and FCS, TP_IDL."""
@@ -1371,7 +1436,7 @@ GROUPS = {
     "onewire": [onewire],
     "jtag": [jtag],
     "can": [can_pair, can_rx_gen, can_tx_gen],
-    "eth10": [eth10_rx_gen, eth10_loop, eth10_tx_wave],
+    "eth10": [eth10_rx_gen, eth10_loop, eth10_tx_wave, eth10_cut],
 }
 FUNCS = {fn.__name__: fn for fns in GROUPS.values() for fn in fns}
 
