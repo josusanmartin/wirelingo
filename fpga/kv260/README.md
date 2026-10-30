@@ -1220,8 +1220,9 @@ and the clock; `device not accepting address`; `can't set config`).
 ### Result against Linux (low speed, 2026-10-30)
 
 The first real host for this firmware, on the first attempt: the wiring above
-on a breadboard, port 1-1.4 of the board's USB5744 hub, and the Kria's Linux
-6.8 xHCI as host. RTL revision 60b0692 (no Verilog change in `src/` since);
+on a breadboard with the parts at hand (each data line 3 x 10 ohm = 30 ohm
+instead of 27, the pull-up 1 kohm + 1 kohm || 1 kohm = 1.5 kohm), port 1-1.4 of
+the board's USB5744 hub, and the Kria's Linux 6.8 xHCI as host. RTL revision 60b0692 (no Verilog change in `src/` since);
 `firmware/usb_enum.pasm`, `tools/pe/usbenum.py` and `usb_demo.py` on the board
 byte-identical to `main`.
 
@@ -1269,7 +1270,8 @@ IOPLL) x 12 / 25, about -10 ppm, inside full speed's 0.25 %. Not simulated
 on this design (the chip RTL test `test_usb_autonomous_fs` covers the
 firmware at full speed; on the board, full speed has run only against the
 replayed host (above), not a real one); an FPGA pin with 27 ohm is probably also
-outside full speed's driver-impedance window (28-44 ohm); keep the wires short.
+outside full speed's driver-impedance window (28-44 ohm), and 30 ohm of
+resistors sits just inside it before the pin's own impedance; keep the wires short.
 
 ### Build and staging (2026-10-07, branch `kv260-usb`)
 
