@@ -826,8 +826,8 @@ window per segment: the last 9.5 ms of a 10 ms bus reset (no edges) are
 not observed. `usb_ls_rx` + `usb_ls_tx` (the two-core device) and the
 USB-UART pairs (`usb_uart_*` with `uart_rx_batch4` / `overlap4` /
 `envelope3` / `capture_peer` / `mailbox`) use both cores, leaving none to
-observe the pads: not run. The real-PC demo (`host/usb_demo.py`, below) still
-waits for the wiring.
+observe the pads: not run. The real-host demo (`host/usb_demo.py`, below) ran
+at low speed on 2026-10-30.
 
 ## Firmwares that had never run on the FPGA (2026-10-14, `host/legacy_demo.py`)
 
@@ -1217,6 +1217,50 @@ device" line: the hub never saw the attach, so check the pull-up; `device
 descriptor read/64, error -71`: answers missing or garbled, so check D+/D-
 and the clock; `device not accepting address`; `can't set config`).
 
+### Result against Linux (low speed, 2026-10-30)
+
+The first real host for this firmware, on the first attempt: the wiring above
+on a breadboard, port 1-1.4 of the board's USB5744 hub, and the Kria's Linux
+6.8 xHCI as host. RTL revision 60b0692 (no Verilog change in `src/` since);
+`firmware/usb_enum.pasm`, `tools/pe/usbenum.py` and `usb_demo.py` on the board
+byte-identical to `main`.
+
+    [clock] protoemu clk measured 47.9990 MHz
+      pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
+      pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
+      loaded usb_enum (246 words, low speed) into core 0, CRCCTRL, line unit
+      [  111.964734] usb 1-1.4: new low-speed USB device number 8 using xhci-hcd
+      [  112.054482] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+    PASS: Linux enumerated 1209:5634 at low speed and configured it (1-1.4: devnum 8, speed 1.5 Mbit/s, bConfigurationValue 1, bMaxPacketSize0 8, bcdDevice 0001)
+    [chip] after the verdict, over the host port: address 8, configured True, pending address False, stalled False
+
+| Test | Result |
+|---|---|
+| Attach and enumerate, each after a fresh firmware load | 18 of 18 to configured, each on the first attempt after the core started |
+| Live `GET_DESCRIPTOR` (device, configuration) through usbfs, `host/usb_stress.py` | 10,000 of 10,000 right bytes, 0.66 ms each |
+| Bus resets from the kernel, each re-enumerated | 58 of 58 |
+| `GET_STATUS` / `GET_CONFIGURATION` | `0000` / `01` |
+| String 0, device qualifier | STALL, as designed: no strings, not high speed |
+
+The 18 attaches include the ones `--stop` makes. The bus resets are the first
+real-host test of the reset fix of 2026-10-13. The chip's address differs from
+Linux's `devnum` because the xHCI controller picks the address, a new one for
+each reset.
+
+Reloading the app with the wiring in place logs a burst in `dmesg`, and these
+are not device failures: `device descriptor read/64, error -32`, then `device
+not accepting address N, error -71`. The pull-up attaches the line while no
+firmware runs, so the hub tries a silent device, as it does at every boot. In
+the runs above each burst ended before the core could have started
+(`usb_demo.py` holds the line for 0.5 s first).
+
+**Not shown.** This is the RTL on FPGA fabric, 3.3 V LVCMOS pins, not the chip
+and not silicon. One host and one hub: no Windows, no macOS, no USB-IF
+compliance test. Nothing was measured with a scope, so edge rates and eye
+diagrams are unknown (the pads' edges are faster than low speed's 75-300 ns).
+The device has no data endpoint, so this covers enumeration and control
+transfers only. Full speed against a real host is a separate test, below.
+
 **Full speed later**: move the 1.5 kohm from D- to D+ (the cable side of D+'s
 27 ohm, to the same 3.3 V pin) and run `usb_demo.py --speed full`: the same
 two wires, the chip's pins swapped by the PMOD map (D- = uio0, D+ = uio1),
@@ -1289,8 +1333,8 @@ The clock is 48 MHz within 10 ppm against Linux's clock (the 0.5 s figure of
 `bringup_kria.py` carries Python's timing noise). Then the 50 MHz app was
 loaded again (`xmutil loadapp protoemu`; `bringup_kria.py --only build clock
 id`: RTL revision d1aa46f, 49.9981 MHz, PASS) and left loaded, PMOD pins
-disabled. The USB wiring itself and `usb_demo.py` without `--dry-run` have
-not run on hardware.
+disabled. The USB wiring and `usb_demo.py` without `--dry-run` first ran on
+2026-10-30: see "Result against Linux" above.
 
 ### Validation (no hardware)
 

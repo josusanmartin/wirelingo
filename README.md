@@ -62,8 +62,11 @@ describes how, and what it caught.
   including where PIO is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
 * Not yet on the Tiny Tapeout demo board or silicon: everything above is
   simulation (model, RTL, gate level), static timing and physical checks, or
-  the RTL in an FPGA. No protocol has run against a real external device or
-  host (the far ends were our own pins-only models or replayed waveforms).
+  the RTL in an FPGA. One protocol has run against a real external host: low
+  speed USB, the chip's RTL on a KV260 FPGA wired to the board's own USB port,
+  enumerated and configured by Linux (2026-10-30,
+  [fpga/kv260/README.md](fpga/kv260/README.md)). Every other far end, full
+  speed USB included, was our own pins-only model or a replayed waveform.
 * **Post-freeze protocol challenge:** with the RTL frozen (tag
   `rc-93c2137-t48ba`; the chip's Verilog `src/*.v` unchanged since, only the
   hardening config `src/config.json` changed for fo6), three rounds of
