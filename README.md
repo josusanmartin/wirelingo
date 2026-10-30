@@ -11,8 +11,8 @@ Protocols are programs, not peripherals. The chip has **two small cores built
 for bit-banging**, each with its own SRAM bank of 256 32-bit instructions,
 FIFOs to the host and a clock divider. A host (the TT demo board's RP2350)
 loads firmware over SPI and exchanges data through the FIFOs. UART, SPI, I2C,
-low-speed USB, 10BASE-T, CAN, SWD, JTAG, 1-Wire, PS/2 and WS2812 are all
-firmware ([below](#what-runs-on-it)).
+USB at low and full speed, 10BASE-T, CAN, SWD, JTAG, 1-Wire, PS/2 and WS2812
+are all firmware ([below](#what-runs-on-it)).
 
 **It was designed by one person with no prior chip-design experience, with AI
 agents writing the spec, RTL, firmware and tests,** and claims checked against
@@ -22,8 +22,25 @@ mutation testing, gate-level simulation, scripted physical signoff, an adversari
 and the RTL running on an FPGA. [docs/methodology.md](docs/methodology.md)
 describes how, and what it caught.
 
+**What is proven, and at what level:**
+
+| Level | What has been shown | Limit |
+|---|---|---|
+| **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
+| **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved |
+| **FPGA against our own far ends** | Every firmware except SWD and the two-core USB pairs: UART across real pins, quad host port at 193.6 Mbit/s, all three post-freeze protocol rounds, with results equal to the cycle model | The far end is a model or a replayed waveform, not a real device |
+| **Signed-off layout (run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
+| **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
+
 **Where it stands:**
 
+* **Real USB host (2026-10-30):** on the KV260, Linux enumerated and configured
+  the autonomous USB firmware at both speeds with no host software on the chip's
+  side after loading: 32 of 32 attaches, 66,000 of 66,000 control transfers and
+  188 of 188 bus resets. With `usb_fs_dev` and Python on the SPI port, a Linux
+  process then wrote random data through USB and read it back, 350 of 350 round
+  trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. Details and
+  limits: [fpga/kv260/README.md](fpga/kv260/README.md).
 * **Release candidate: run fo6**, passing the strict release gate with no
   waiver. The certified software is **`7685aba`** (2026-10-14): `main`
   `a1561d6`'s firmware, tools and tests, so the third post-freeze round and
@@ -32,7 +49,8 @@ describes how, and what it caught.
   Earlier validation roots `d916d40` and `f1cb7c9` (tags `rc-d916d40-fo6`,
   `rc-f1cb7c9-fo6`) passed too. Receipts cover the firmware and tests of
   their own validation root; a later change to `firmware/`, `tools/`,
-  `test/` or `src/` needs a new run.
+  `test/` or `src/` needs a new run, and `main` has moved since (test and
+  tool changes, FPGA demos), so the final freeze reruns it.
   50 MHz is met at all three corners, slow included; hold is met everywhere
   (fast corner +0.095 ns); DRC, LVS and antenna are clean, with no slew,
   capacitance or fanout violation at any corner. A clean checkout rebuilt on
@@ -51,8 +69,7 @@ describes how, and what it caught.
   At 48 MHz the autonomous USB device enumerates, at low and full speed,
   against a host model's waveform replayed on its pads by the FPGA's pattern
   generator, with every device edge at the clock the cycle model gives when
-  the model samples the pads the way the FPGA drives them (no PC and no USB
-  PHY in the loop).
+  the model samples the pads the way the FPGA drives them.
 * A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
   handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
   gate-level simulation of the signed-off netlist
@@ -62,14 +79,6 @@ describes how, and what it caught.
   ([docs/usb-enumeration.md](docs/usb-enumeration.md)).
 * Measured in simulation against the RP2040 PIO's reference programs,
   including where PIO is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
-* Not yet on the Tiny Tapeout demo board or silicon: everything above is
-  simulation (model, RTL, gate level), static timing and physical checks, or
-  the RTL in an FPGA. One protocol has run against a real external host: USB,
-  the chip's RTL on a KV260 FPGA wired to the board's own USB port, enumerated
-  and configured by Linux at low and full speed, then carrying data to and from
-  a Linux process at full speed (2026-10-30,
-  [fpga/kv260/README.md](fpga/kv260/README.md)). Every other far end was our
-  own pins-only model or a replayed waveform.
 * **Post-freeze protocol challenge:** with the RTL frozen (tag
   `rc-93c2137-t48ba`; the chip's Verilog `src/*.v` unchanged since, only the
   hardening config `src/config.json` changed for fo6), three rounds of

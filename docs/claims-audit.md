@@ -117,7 +117,8 @@ Severities:
 
 ## Recommendations (need a decision)
 
-* **A. The first screen.** The README's first screen says what the chip is
+* **A. The first screen.** (Done 2026-10-30: the evidence table above "Where
+  it stands".) The README's first screen says what the chip is
   and how it was made, then a long release bullet. A judge's main question
   is what is proven at which level, and that is the fifth bullet. Two
   options:
