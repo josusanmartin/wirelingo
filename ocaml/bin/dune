@@ -2,3 +2,8 @@
  (name gen_rtl)
  (modules gen_rtl)
  (libraries base stdio hardcaml wirelingo_rtl))
+
+(executable
+ (name wl_asm)
+ (modules wl_asm)
+ (libraries wirelingo_asm))
