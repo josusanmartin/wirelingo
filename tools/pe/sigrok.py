@@ -596,3 +596,18 @@ def ir_rc5(trace, pin, polarity="active-low", protocol="standard", **kw):
             out.append(tuple(cur))
             cur = None
     return out
+
+
+def mdio(trace, mdc, data, **kw):
+    """(frames, frame errors) from sigrok's mdio decoder. A frame is (t_ns,
+    "READ" or "WRITE", phy, reg, value, error): error when the decoder saw a
+    bad turnaround or opcode."""
+    anns = decode(trace, f"mdio:mdc={mdc}:mdio={data}", "mdio=decode:frame-error", **kw)
+    frames, errors = [], []
+    for a in anns:
+        m = re.match(r"(READ|WRITE):\s+([0-9A-F]{4}) PHYAD: (\d+) REGAD: (\d+)( ERROR)?$", a.text)
+        if m:
+            frames.append((a.start, m[1], int(m[3]), int(m[4]), int(m[2], 16), bool(m[5])))
+        else:
+            errors.append((a.start, a.text))
+    return frames, errors
