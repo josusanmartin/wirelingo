@@ -27,12 +27,25 @@ The MAC is `02:57:4c:00:00:02`, locally administered.
 |---|---|---|
 | ARP, ping and UDP echo at the pads, 50 and 40 MHz | cycle model, pin level | `test_arp_then_ping_at_the_pads`, `test_udp_echo_at_the_pads` |
 | The same, through the real host-port pins: quad SPI, jitter, 1518-byte ping, no reply to a bad FCS or another MAC | RTL simulation | `test_ping_rtl_50mhz`, `test_ping_rtl_40mhz` (ARP and ping, no jitter) |
+| The same 50 MHz session, the 40 MHz ping and carrier sense, on run fo6's netlist (a94a948b): 3 of 3 | gate level, functional, no SDF | `flow/gl_module_test.py`, command below |
 | Linux's own stack ARPs and pings the chip | real kernel in a namespace, against the cycle model | `eth_tap.py --model --selftest` |
 | tcpdump and scapy accept the frames; each flags a broken checksum | cycle model | `test_tcpdump_reads_the_session`, `test_scapy_validates_the_session` |
 | No reply to a bad FCS, another MAC, another IP, a bit flipped on the line | cycle model at the pads; bad FCS and another MAC on RTL; all but the flipped bit from real Linux | `test_no_reply_at_the_pads`, `test_bit_flipped_on_the_line_gets_no_reply` |
 | 20 kinds of bad frame dropped, each for the stated reason; 6000 random or damaged frames raise nothing | Python, the Station alone | `test_station_rejects`, `test_station_never_raises_and_never_answers_garbage` |
-| The chip doesn't transmit into an arriving frame | cycle model; one case RTL | below |
+| The chip doesn't transmit into an arriving frame | cycle model; one case RTL and gate level | below |
 | Rate limits of the host port | cycle model; four RX edges repeated on RTL | below |
+
+Gate level, on runner1, from a clean checkout with the oss-cad-suite and test venv on
+PATH (it only reads the run, and writes a hash-bound receipt):
+
+    flow/gl_module_test.py run ~/protoemu-flow/protoemu-exp-fo6 --validation-root . \
+        --module test_eth_stack_rtl --jobs 3 \
+        --tests test_ping_rtl_50mhz test_ping_rtl_40mhz test_carrier_sense_rtl
+
+With no delays in that netlist, TD+ and TD- don't change in the same delta, so an
+H to L flip passes through both-high inside one timestep. The first monitor tripped on
+that. TD is now read at mid-clock, where it was never both high. What the two
+pads do in the nanoseconds around a flip is a question for SDF or a scope.
 
 The far end in the tests shares no code with `pe.eth`. The bits are read off TD+
 and TD- by two decoders that work differently, and the FCS is checked with zlib.
@@ -176,7 +189,8 @@ records and do no harm (`test_autonegotiation_bursts_from_the_far_end_do_no_harm
   802.3's +-13.5 ns: a ping passes at +-12 ns, 100 ppm (`test_ping_with_edge_jitter`,
   one seed), and at 50 MHz at +-13.5 ns. Neither clock gets both ends right.
 * The firmware has no spare core: this takes both, and core 0's line unit.
-* `eth10_tx_cs` has run on the model and RTL only. `eth10_tx` has run on the KV260.
+* `eth10_tx_cs` has run on the model, on RTL and on the netlist without delays, not on
+  an FPGA. `eth10_tx` has run on the KV260.
 
 ## The TAP bridge
 
@@ -199,14 +213,16 @@ Run on runner1 from a clean clone, inside `unshare --net`, once per clock:
 | UDP echo from a socket | answered | answered |
 | No reply: unknown IP; chip's MAC with another IP; chip's IP with another MAC; bad FCS | all four | all four |
 | Then a ping is answered again | yes | yes |
-| Wall-clock round trip, short ping | 798 ms | 670 ms |
-| Simulated round trip, short ping | 276-668 us | 214-668 us |
-| Simulated round trip, 1472 bytes | 3.8-4.8 ms | 3.8-4.8 ms |
+| Wall-clock round trip, short ping, average | 1957 ms | 863 ms |
+| Simulated round trip, short ping | 208-1115 us | 215-780 us |
+| Simulated round trip, 1472 bytes | 3.8-4.8 ms | 3.8-4.9 ms |
 
-The wall-clock figure is the speed of the Python model, not of anything else. The
-simulated one starts at the request's first edge and ends at the reply's last, at
-quad SCK 25 MHz, and includes frames that Linux queued behind each other because
-the model is slower than ping's interval. Simulated time stops when nothing is in
+The wall-clock figure is the speed of the Python model on a shared machine, not of
+anything else; the two clocks ran side by side, and an earlier run of the same code
+gave 798 ms at 50 MHz. The simulated one starts at the request's first edge and ends
+at the reply's last, at quad SCK 25 MHz, and includes frames that Linux queued behind
+each other because the model is slower than ping's interval, so it changes from run
+to run too. Neither is a latency of the chip. Simulated time stops when nothing is in
 flight, so the chip's link pulses barely run in this bridge. Linux's IPv6 chatter
 goes through too and is dropped by the Station's address check.
 
