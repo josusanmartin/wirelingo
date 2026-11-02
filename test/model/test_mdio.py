@@ -38,18 +38,6 @@ def phy_prog(regs=REGS, phyad=PHY, text=None):
     return asm.assemble(text if text is not None else (FW / "mdio_phy.pasm").read_text(), d)
 
 
-RIGS = []
-
-
-@pytest.fixture(autouse=True)
-def no_contention():
-    """Every test on the wire, unless it fights on purpose: no two drivers,
-    ever."""
-    RIGS.clear()
-    yield
-    assert [r.wire.contention for r in RIGS if not r.may_fight] == [0] * sum(not r.may_fight for r in RIGS)
-
-
 class Rig:
     """Any of: master firmware or `sta` (a pins-only STA); PHY firmware or
     `phy` (a pins-only PHY); the wire between them. Logs edges at the pads."""
@@ -64,7 +52,6 @@ class Rig:
             mh.apply(host.pin_owner_writes({P_MDIO: 1}))
             mh.apply(mdio.phy_setup(1, phy_fw, regs))
         self.wire, self.may_fight = mdio.Wire(), False
-        RIGS.append(self)
         self.mdc_log, self.mdio_log, self.who_log = [(0.0, 0)], [(0.0, 1)], [(0.0, ())]
         self.d_model = None
         self.tracer = timing.Tracer(mh.chip, tracer_core, 256 * tracer_core) if tracer_core is not None else None
@@ -105,15 +92,20 @@ class Rig:
             self.who_log.append((t, who))
 
     def run(self, cycles, until=None):
+        """Every run on the wire ends here: no two drivers, ever, unless a test
+        fights on purpose (may_fight)."""
         mh = self.mh
+        done = False
         for _ in range(int(cycles)):
             mh.step()
             for c in (0, 1):
                 if mh.chip.cores[c].rxf:
                     self.rx[c] += mh.pop_all(c)
             if until and until():
-                return True
-        return False
+                done = True
+                break
+        assert self.may_fight or self.wire.contention == 0
+        return done
 
     def frames(self, *words):
         """Push master words one at a time; their records."""
@@ -423,10 +415,11 @@ def test_phy_write_control_and_advertising():
 def test_phy_read_only_writes_ignored_but_reported():
     """Writes to status, ID and any constant register change nothing and are
     reported to the host."""
-    ops = [("w", PHY, 1, 0x0000), ("r", PHY, 1), ("w", PHY, 2, 0x1234), ("r", PHY, 2), ("w", PHY, 31, 0), ("r", PHY, 31)]
+    ops = [("w", PHY, 1, 0x0000), ("r", PHY, 1), ("w", PHY, 2, 0x1234), ("r", PHY, 2), ("w", PHY, 31, 0), ("r", PHY, 31),
+           ("r", PHY, 0), ("r", PHY, 4)]
     rig, sta = sta_rig(ops, setup_ns=200.0, hold_ns=200.0)
     res = rig.sta_run()
-    assert [r["data"] for r in res if r] == [REGS[1], REGS[2], REGS[31]]
+    assert [r["data"] for r in res if r] == [REGS[1], REGS[2], REGS[31], REGS[0], REGS[4]]    # and they land nowhere else
     assert [mdio.parse_write(w)["reg"] for w in rig.rx[1]] == [1, 2, 31]
 
 
@@ -450,13 +443,15 @@ def test_phy_preamble_needs_32_ones(pre, answers):
     assert (("phyfw",) in [w for _, w in rig.who_log]) == answers
 
 
-def test_phy_zero_in_preamble_restarts_count():
-    """Contiguous means contiguous: 20 ones, a 0, 20 ones (after a frame that
-    ends low) is no preamble; a real one after it is."""
-    ops = [("w", PHY + 1, 4, 0, {"idle": 0}), ("r", PHY, 2, {"prefix": [1] * 20 + [0], "pre": 20}), ("r", PHY, 2)]
+@pytest.mark.parametrize("k", [1, 10, 20, 31])
+def test_phy_zero_in_preamble_restarts_count(k):
+    """Contiguous means contiguous: k ones, a 0, 31 ones, then a frame's ST is
+    no preamble, whatever k. 32 edges alone are not enough: a real preamble
+    afterwards is answered."""
+    ops = [("r", PHY, 2, {"prefix": [1] * k + [0], "pre": 31}), ("r", PHY, 2)]
     rig, sta = sta_rig(ops, setup_ns=200.0, hold_ns=200.0)
     res = rig.sta_run()
-    assert [r["data"] for r in res[1:]] == [0xFFFF, ID1]
+    assert [r["data"] for r in res] == [0xFFFF, ID1]
 
 
 @pytest.mark.parametrize("kw", [{"st": 0b00}, {"op": 0b00}, {"op": 0b11}, {"st": 0b11}])
@@ -536,7 +531,7 @@ def test_phy_record_fifo_full_drops_records_not_writes():
     while not sta.done(rig.t()):
         mh.step(100)
     mh.step(200)
-    assert sta.results[-1]["data"] == 10
+    assert sta.results[-1]["data"] == 10 and rig.wire.contention == 0
     assert [mdio.parse_write(w)["data"] for w in mh.pop_all(1)] == list(range(1, 9))
 
 

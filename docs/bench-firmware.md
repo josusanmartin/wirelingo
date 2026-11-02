@@ -55,8 +55,8 @@ addressed to it through the RX FIFO.
 
 **The turnaround.** Both directions are checked on a wire model that counts
 every instant two drivers overlap. Every model test on that wire, 200 random
-frames between the two firmwares included, must end with the count at 0 (a
-fixture in `test_mdio.py` asserts it); so must the RTL tests.
+frames between the two firmwares included, must keep the count at 0 (`Rig.run`
+in `test_mdio.py` asserts it after every run); so must the RTL tests.
 `test_broken_master_keeps_driving_through_turnaround` shows the count rising
 when the release is removed.
 
@@ -126,7 +126,8 @@ measures no timing. It also runs in `test_sigrok_mdio_master`,
 
 **Negative tests.** Master: no PHY (TA2 reads 1, data 0xFFFF), the release
 removed, a 31-bit preamble refused by the PHY model. Stand-in: 31 ones (no
-answer, MDIO never driven), a 0 in a run of ones, ST 00, ST 11, OP 00, OP 11,
+answer, MDIO never driven), 31 ones after a 0 with 1, 10, 20 or 31 ones before
+it, ST 00, ST 11, OP 00, OP 11,
 every other PHYAD (31 addresses), writes with TA 00, 01 and 11 (not applied,
 reported), writes to read-only registers (ignored, reported), STA hold and
 setup past the limits, MDC too fast, 10 unread write records.
@@ -293,7 +294,7 @@ read in 256, an estimate).
 
 | What | Where | Count |
 |---|---|---|
-| MDIO, model | `test/model/test_mdio.py` | 70 |
+| MDIO, model | `test/model/test_mdio.py` | 73 |
 | QSFP-style stand-in, model | `test/model/test_qsfpdev.py` | 40 |
 | PMBus, model | `test/model/test_pmbus.py` | 63 |
 | RTL through the SPI port | `test/test_bench_fw.py` | 5 tests |
