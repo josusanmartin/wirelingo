@@ -29,7 +29,7 @@ with delays (SDF), RTL in FPGA fabric, silicon.
 | Firmware runs on hardware | Most firmware ran with results equal to the cycle model | RTL in FPGA fabric | Far ends are our own models or replayed waveforms. Two-core USB did not run there. SWD is parked |
 | Quad host port moves 193 Mbit/s | 193 Mbit/s simulated; 193.6 Mbit/s measured on the FPGA | RTL simulation, RTL in FPGA fabric | No board or pad measurement |
 | Protocols work on the wire | Pins-only device models; sigrok decoders where one exists | Model, RTL simulation | Digital only. No electrical compliance |
-| 14 protocols added with the RTL frozen | Timing checker, pins-only models, sigrok, 16 RTL tests ([post-freeze-protocols.md](post-freeze-protocols.md)) | RTL simulation, GL, SDF at typical, FPGA | SDF at typical only. Two exact assertions got a 1 ns tolerance (`8dd249a`) |
+| 14 protocols added with the RTL frozen | Timing checker, pins-only models, sigrok, 16 RTL tests ([post-freeze-protocols.md](post-freeze-protocols.md)) | RTL simulation, GL, SDF at typical, FPGA | On `main`, SDF at typical only. `5d34fc6` on `improve-2026-11` records slow and fast, 16/16 each, with no verifier report yet. Two exact assertions got a 1 ns tolerance (`8dd249a`) |
 | 10BASE-T receive meets 802.3's ±13.5 ns edge jitter | `test_eth10`, three seeds each; RTL frames with jitter | Model, RTL simulation | No real network. The receive circuit is unbuilt ([eth10-receiver.md](eth10-receiver.md)) |
 | `eth10_match` raises a pin 10 to 11 clocks after a field | Model tests; 5 frames on the FPGA | Model, RTL in FPGA fabric | No RTL simulation. Pad and comparator delays unmeasured. Under re-verification, see below |
 | Compared with RP2040 PIO | Reference programs on a PIO model and the cycle model ([pio-comparison.md](pio-comparison.md)) | Model | Simulation only. PIO is faster and smaller |
@@ -45,7 +45,10 @@ Each item was written or approved by an agent, then caught by something else.
 |---|---|---|
 | **`eth10_match` had a timing number with no test behind it.** See below | Independent verifier agent, by mutation | Report 000; commit `61af9b2` |
 | **The fix then stated a new false number.** See below | The same verifier, on re-attack | Report 001 |
+| **The next fix added an "exact" check that could not fail.** See below | The same verifier, by mutation | Report 004 |
 | A study's 71-clock host stall budget held for one host and phase only. The verdict's own host survives 59 | The same verifier | Report 002; branch `rmii-study` at `d811228` |
+| A network stack's 16 us and 24 us software budgets were measured on 300-byte frames and do not hold on long ones | The same verifier | Report 003; commit `e71ab1c` |
+| A Hardcaml port's doc said all planted bugs were caught, while its `self_check.sh` exited 1. Its equality proof to `src/` held | The same verifier | Report 006; commit `03edc75` |
 | An agent described the FPGA as running "exactly" and "at full speed" before measuring | A second review; then measured | [methodology.md](methodology.md) line 110 |
 | Codex's signoff gate demanded timing Tiny Tapeout does not require, so no run could pass | Claude reviewing the review | [methodology.md](methodology.md) line 107 |
 | Codex's reset fix was correct but congested routing | About a dozen place-and-route runs | [review.md](review.md) R3 |
@@ -87,20 +90,20 @@ On 2026-11-02 an independent verifier agent failed the `eth10_match` work.
   and no jitter margin at 40 MHz.
 * The match decisions themselves were right in every case at 50 MHz.
 
-Report: `[home directory redacted]/dev/protoemu-verify-reports/inbox/000-eth10-match.report.md`.
-The reports are kept outside this repository.
+Reports are numbered by inbox item. They are the project's local verifier records
+and are not published with this repository.
 
-**Status of the fixes.** The fixes are commits `7d9377c` and `aedf991` on the local
-branch `improve-2026-11`, not on `main`. They are still being re-verified.
+**Status of the fixes: fixed in new commits, not yet passed.** All of them are on
+the local branch `improve-2026-11`, not on `main`.
 
-The 001 report in that folder does not say PASS. It says FAIL. All nine findings
-were addressed, and delay mutations of N ≥ 1 now fail at both clocks. But the new
-range of 38.2-38.6 us was false for frames ending in a 0 bit: 38.184-38.204 us at
-50 MHz. That is the same fault again: a sample's range stated as a bound.
+| Commits | Review | Result |
+|---|---|---|
+| `7d9377c`, `aedf991` | Report 001 | FAIL. All nine findings were addressed, and delay mutations of N ≥ 1 fail at both clocks. But the new range of 38.2-38.6 us was false for frames ending in a 0 bit: 38.184-38.204 us at 50 MHz. The same fault again: a sample's range stated as a bound |
+| `1fddeef` | Report 004 | FAIL. The new "exact" assertion cancelled the rise time out of its own equation, so it passed with the pin 2 us late (N = 100). The doc's ranges held, because the reaction tests guard them |
+| `0bdcbe5` | Item 009 | No report when this page was written |
 
-Commit `1fddeef` responds to that report. Its review is inbox item 004, with no
-report yet when this page was written. Until a PASS, treat the `eth10_match`
-numbers as unverified. `main` still carries the failed commit's doc and test.
+Until a PASS, treat the `eth10_match` numbers as unverified. `main` still carries
+the failed commit's doc and test.
 
 ## How an agent's claim gets checked
 

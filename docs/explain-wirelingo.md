@@ -26,7 +26,7 @@ Every result in this repository sits at one level. Say the level out loud.
 | Silicon | Nothing yet | The chip has not been fabricated |
 
 RTL means register-transfer level. It is the source code that describes the
-chip, in `src/`. A netlist is the list of logic cells that the tools build from
+chip, in `src/`, written in the Verilog language. A netlist is the list of logic cells that the tools build from
 the RTL. SDF is a file of calculated delays for that netlist. An FPGA is a
 chip whose logic can be reprogrammed. The board here is a Kria KV260.
 
@@ -43,11 +43,13 @@ A flip-flop, or flop, stores one bit and updates on a clock edge. A register is
 a group of flops. Logic between flops settles during the clock period.
 
 The chip has two cores. A core is a tiny processor that runs one instruction
-per tick. Each core has an SRAM bank. SRAM is on-chip memory, here 256 words
+per tick. A tick is one step of a core. A divider sets how many clocks make a
+tick, and after reset it is one. Each core has an SRAM bank. SRAM is on-chip memory, here 256 words
 of 32 bits each. A word is one 32-bit value.
 
-Firmware is the program in that memory. A protocol such as UART is firmware, not
-a fixed circuit. A host is the outside computer that loads firmware. Tiny Tapeout
+Firmware is the program in that memory. A protocol is an agreed way to send data
+over wires. UART is a simple serial one (section 2). Here a protocol is firmware,
+not a fixed circuit. A host is the outside computer that loads firmware. Tiny Tapeout
 is a shared chip-fabrication service. On its demo board the host is an RP2350
 microcontroller.
 
@@ -56,11 +58,14 @@ idea, seen from the firmware.
 
 ## 1. One instruction, from the host to the pad
 
-We follow `pin HIT, hi`, at `firmware/eth10_match.pasm:53`. It raises one output
-pin. `HIT` is defined as 8 at `firmware/eth10_match.pasm:18`. Pin 8 is the pad
+We follow `pin HIT, hi`, at `firmware/eth10_match.pasm:53`. That firmware watches
+Ethernet frames, and Ethernet is the standard wired computer network. The
+instruction raises one output pin. `HIT` is defined as 8 at `firmware/eth10_match.pasm:18`. Pin 8 is the pad
 `uo[0]` (`docs/isa.md:55`).
 
-**Evidence level: RTL simulation** (no delays, a behavioural SRAM model). The
+**Evidence level: RTL simulation** (no delays, a behavioural SRAM model).
+Behavioural means a stand-in that acts like the real part but has no real circuit
+inside. The
 clock counts come from a trace you can rerun (Appendix A). They agree with the
 spec at `docs/isa.md:88-89` and `docs/isa.md:616-620`.
 
@@ -101,6 +106,8 @@ one is at `src/pe_hostport.sv:70-115`.
 | Address | 16 bits shift in and go to a hold register | `src/pe_hostport.sv:93-99`, `:126-130` |
 | Data | 32 bits shift in and go to a hold register | `src/pe_hostport.sv:105-111`, `:134` |
 
+A hold register keeps a value steady until the other side has taken it.
+
 ### 1.3 The word crosses into the chip's clock
 
 SCK and the chip's clock are unrelated. A signal crossing between them can
@@ -112,7 +119,8 @@ The data itself does not cross bit by bit. It waits in `w_hold`. Only one bit
 crosses, `w_tog`, which flips when a word is ready (`src/pe_hostport.sv:134-135`).
 
 In the table, edge S is the last clock edge before the word's final SCK rise. In
-the trace, S is edge 467 (Appendix A).
+the trace, S is edge 467 (Appendix A). The bus is the set of internal wires that
+carries an address and data to registers and memory.
 
 | Clock edge | What changed | Where |
 |---|---|---|
@@ -161,7 +169,9 @@ During T + 2 these steps happen as settling logic, with no clock between them:
 3. `exec` needs `tick`, an enabled core, no delay pending, and a PC in the
    core's own bank (`src/pe_core.sv:210-213`).
 4. The `OP_PIN` case picks one pin and its value (`src/pe_core.sv:607-613`).
-5. A mask and value are built by rotation (`src/pe_core.sv:631-633`).
+5. A mask and value are built by rotation (`src/pe_core.sv:631-633`). A mask is a
+   32-bit value with a 1 at each bit to change. Rotation moves bits around to the
+   chosen pin's position.
 6. They leave the core as write requests (`src/pe_core.sv:637-642`).
 7. The chip keeps a request only if that core owns the pin
    (`src/pe_chip.sv:196`). After reset core 0 owns every pin (`docs/isa.md:90-92`).
@@ -286,7 +296,8 @@ clocks.
 | The same run decoded by sigrok | RTL simulation | `test/test_sigrok.py:121` |
 | Loopback and real PMOD pins | RTL in FPGA fabric | `README.md:164` |
 
-Sigrok is open-source logic-analyzer software, written by other people. A PMOD
+A logic analyzer records digital signals over time. Sigrok is open-source
+logic-analyzer software, written by other people. A PMOD
 is a small connector on the FPGA board. The far end in these tests is a model or
 the other core, not a third-party UART device.
 
@@ -308,7 +319,7 @@ one instruction times it, in `firmware/dmx512_tx.pasm` (20 words).
 | BREAK | none | `pin TX, lo [175]`, 1 + 175 = 176 us (`:48`) |
 | Mark after BREAK | none | `pin TX, hi [10]`, 1 + 10 + the next `pull`, 12 us (`:49`, `:51`) |
 | Frame count | none | A header word carries the slot count (`:44`) |
-| Late host | Line stays high | Line stays high, and DMX512 allows that up to 1 s (`:51`) |
+| Late host | Line stays high | Line stays high (`:51`), and DMX512 allows that up to 1 s (`:14`, `:21`) |
 
 The bit loop is the same idea. Only the delay changes, from 6 to 2. The new
 behaviour is a few more instructions, with no change to the chip. This firmware
@@ -370,7 +381,7 @@ showed the same numbers.
 | RTL test `pf_dshot_bidir` | It ran at 48 MHz (`test/test_post_freeze.py:395`, `:403`) |
 | Static timing checker | It ran with `T0` 30 (`test/model/test_post_freeze_timing.py:25`, `firmware/dshot_bidir.pasm:34-38`) |
 | Model against RTL | Both ran the same wrong words. They agreed perfectly |
-| Sigrok | There is no DShot decoder, only `pwm` (`README.md:188`) |
+| Sigrok | There is no DShot decoder, only `pwm`, which reports pulse widths (`README.md:188`) |
 
 The ESC model tolerated one clock of error.
 
@@ -434,6 +445,9 @@ audit removed the word from the README (`docs/claims-audit.md`, findings 6 and 7
 
 ### What lockstep cannot catch
 
+A pins-only device model is Python code that plays the far-end device. It sees
+only the chip's pins, not its insides.
+
 | Limit | Example | What covers it |
 |---|---|---|
 | A misreading of the spec, shared by both | Both follow the same wrong idea | Sigrok decoders, pins-only device models, a real USB host |
@@ -482,12 +496,15 @@ is stale (Appendix B).
 
 **5. Why two cores?**
 Three did not route on this tile: Metal3 reached 99.8 % with 24.1K overflow
-(`docs/physical.md:364-376`). Metal3 is the one horizontal routing layer here.
+(`docs/physical.md:364-376`). A tile is Tiny Tapeout's unit of chip area, and this
+design uses 6 by 4. Metal3 is the one horizontal routing layer here. Overflow
+counts where routing asks for more wires than exist.
 RTL builds of up to 4 cores exist, for simulation.
 
 **6. If protocols are firmware, why is there a line unit?**
 With it, a USB low-speed device fits on one core, and 10BASE-T receive becomes
-possible (`docs/isa.md:265-267`). Without it, USB low speed took two cores
+possible (`docs/isa.md:265-267`). USB low speed is USB's 1.5 Mbit/s mode. 10BASE-T
+is Ethernet at 10 Mbit/s over twisted-pair cable. Without it, USB low speed took two cores
 (`README.md:168-169`). It does NRZI, bit stuffing, Manchester decoding and clock
 recovery. NRZI and Manchester send bits as transitions, not levels. Stuffing
 adds bits to keep transitions coming. So "protocols are firmware" is not fully
@@ -543,11 +560,14 @@ it (`docs/verification-story.md`).
   (`docs/guide.md:81`).
 * The RP2350 transport on a board (`docs/guide.md:80`).
 * The two-core USB firmware on the FPGA (`README.md:31`). SWD is parked.
-* Post-freeze tests with SDF at slow and fast corners
-  (`docs/post-freeze-protocols.md:104`).
-* Host-workflow tests at gate level (`README.md:157`).
-* Firmware changed after `7685aba`, including `eth10_match`, under release
-  receipts (`README.md:50-53`).
+* On `main`, post-freeze tests with SDF at slow and fast corners
+  (`docs/post-freeze-protocols.md:104`). Commit `5d34fc6` on `improve-2026-11`
+  records 16/16 at each corner, with no verifier report yet.
+* On `main`, host-workflow tests at gate level (`README.md:157`). Commit `c0176e6`
+  on `improve-2026-11` records 6/6, functional with no SDF, and no verifier report
+  yet.
+* Firmware changed after `7685aba`, the certified software (`README.md:45`),
+  including `eth10_match`, under release receipts (`README.md:50-53`).
 * Host-port behaviour outside its timing contract, and metastability
   (`docs/review.md:124-127`).
 
@@ -555,18 +575,22 @@ it (`docs/verification-story.md`).
 Facts to choose from:
 
 * Fast-corner hold passes by 0.095 ns, the thinnest margin (`docs/guide.md:90-92`).
-* The host port's half-period read margin is not established on a board
-  (`docs/isa.md:712-717`).
-* The latch FIFOs did not run on the FPGA, which uses flops (`fpga/kv260/README.md:1454-1455`).
+  Hold time is a timing rule at a flop: data must stay stable just after the edge.
+* At full SCK speed the host gets half a clock period to read the chip's data.
+  That margin is not established on a board (`docs/isa.md:712-717`).
+* The latch FIFOs did not run on the FPGA, which uses flops
+  (`fpga/kv260/README.md:1454-1455`). A latch stores a bit like a flop, but it
+  follows its input while open, rather than updating on an edge.
 * The same agents wrote the spec, the model and the RTL.
 * The USB stall in 5 of 116 attaches has no proven cause (`fpga/kv260/README.md:1323-1332`).
 
 `AUTHOR TO ANSWER`: Which of these do you rank as the weakest, and why?
-Hold time is a timing rule at a flop: data must stay stable just after the edge.
 
 **15. Is the FPGA evidence silicon evidence?**
 No. The FPGA uses inferred RAM, flop FIFOs and clock enables. It has no IHP
-pads (`fpga/kv260/README.md:1452-1469`). It shows the logic works at speed
+pads (`fpga/kv260/README.md:1452-1469`). Inferred RAM means the FPGA tools build
+the memory from their own blocks. A clock enable makes a flop skip clock edges.
+The chip instead uses clock gates, which switch off the clock to a group of flops. It shows the logic works at speed
 against a real USB host and on the bench.
 
 **16. Does the netlist match the RTL?**
@@ -581,7 +605,8 @@ the layout to the netlist. LVS means layout versus schematic.
 Real examples:
 
 * It stated a timing number with no test behind it (`eth10_match`, 2026-11-02).
-* Its fix for that stated another false number.
+* Its fix for that stated another false number, and the next fix added an exact
+  check that could not fail.
 * It wrote "exactly" and "at full speed" before measuring
   (`docs/methodology.md:110`).
 * A signoff gate demanded something Tiny Tapeout does not, so no run could pass
@@ -618,7 +643,8 @@ It runs at 50 MHz on 130 nm. The Ethernet here is 10 Mbit/s. There is no CRC-32
 check in the match firmware, so a corrupted frame can raise the pin
 (`docs/eth10-cut-through.md:36-37`). The receive circuit is unbuilt. The match
 reaction is 10 to 11 clocks on the model, and pad and comparator delays are
-unmeasured. The doc itself says it shows repeatable timing, not bandwidth
+unmeasured. A comparator turns the cable's analog signal into a clean digital
+level. The doc itself says it shows repeatable timing, not bandwidth
 (`docs/eth10-cut-through.md:8-9`).
 
 `AUTHOR TO ANSWER`: Why did you add a network match at all, and what do you want
@@ -628,9 +654,10 @@ a judge to take from it?
 On the FPGA, yes. Enumeration is the USB start-up exchange. Linux enumerated and
 configured the chip's RTL at both speeds:
 32 of 32 attaches, 66,000 of 66,000 control transfers, 188 of 188 resets
-(`README.md:37-43`). Limits: one host and hub, no scope, 3.3 V FPGA pins. With
-`usb_fs_dev`, 5 of 116 attaches stalled at `SET_CONFIGURATION`. The cause is not
-proved (`fpga/kv260/README.md:1323-1332`). The 17.6 kB/s is the Python loop's
+(`README.md:37-43`). A control transfer is a short USB request and reply. Limits:
+one host and hub, no oscilloscope to view the real signals, 3.3 V FPGA pins. With
+`usb_fs_dev`, 5 of 116 attaches stalled at `SET_CONFIGURATION`, the request that
+activates a device. The cause is not proved (`fpga/kv260/README.md:1323-1332`). The 17.6 kB/s is the Python loop's
 rate, not the chip's.
 
 **24. What happens if the silicon fails?**
@@ -651,7 +678,8 @@ how you think about verification?
 
 ## Appendix A: reproducing the clock counts
 
-This is a reading aid, not a regression test. It ran on Icarus Verilog at
+This is a reading aid, not a regression test. Icarus Verilog is a free Verilog
+simulator (`iverilog`, `vvp`). This ran on it at
 `61af9b2`, in the tapeout configuration, with `test/sram_model.v`. It takes
 seconds. Save the text below as `/tmp/trace/tb.v`, then run from the repo root:
 
