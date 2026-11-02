@@ -189,13 +189,13 @@ async def bench_mdio_master_and_phy(dut):
 
 @cocotb.test()
 async def bench_mdio_master_phy_model(dut):
-    """mdio_master against the pins-only PHY at 802.3's two clock-to-output
-    limits, 0 and 300 ns from the rising edge (the board's extra clock
-    included): the data comes back, a write lands; the released turnaround
-    leaves the line to the model; no contention."""
+    """mdio_master against the pins-only PHY with the model's delay at 0 and
+    280 ns: 20 and 300 ns from MDC's rise at the pad, since the testbench sees
+    MDC one clock late. The data comes back, a write lands, the released
+    turnaround leaves the line to the model, no contention."""
     spi = await T.setup(dut)
     await start_master(spi)
-    for delay in (0.0, 280.0):                     # + the testbench's wire = 20 and 300 ns
+    for delay in (0.0, 280.0):
         phy = mdio.PhyModel(PHY, dict(REGS), delay_ns=delay)
         bus = MdioBus(dut, spi, phy=phy)
         recs = await frames(dut, spi, [mdio.frame_word(True, PHY, 2), mdio.frame_word(False, PHY, 4, 0x5AA5),
@@ -204,6 +204,10 @@ async def bench_mdio_master_phy_model(dut):
         await ClockCycles(dut.clk, 20)
         assert [x["data"] for x in recs] == [0x0143, None, 0x5AA5] and recs[0]["ack"], recs
         assert phy.writes == [(4, 0b10, 0x5AA5)] and bus.wire.contention == 0
+        rises = [t for t, v in bus.mdc_log if v]
+        ta1 = rises[32 + 14]
+        drv = next(t for t, wh in bus.who_log if t >= ta1 and wh == ("model",))
+        assert drv - ta1 == delay
         dut._log.info(f"PHY model delay {delay} ns: {recs}")
 
 

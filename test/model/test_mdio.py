@@ -281,6 +281,26 @@ def test_master_slower_clocks(t, div, per):
     assert len(rises) == 65
 
 
+def test_master_mdc_on_a_uio_pin():
+    """MDC may be a uio pin: the first instruction makes it an output, low."""
+    mdc = 2
+    prog = asm.assemble((FW / "mdio_master.pasm").read_text(), mdio.master_defines(M_MDIO, mdc))
+    mh = ModelHost()
+    mh.apply(mdio.master_load(0, prog, M_MDIO, mdc))
+    mh.pull_up = 1
+    mh.start(1)
+    mh.step(5)
+    assert mh.chip.outputs()[2] >> mdc & 1
+    mh.push(0, R)
+    prev, rises = 0, 0
+    for _ in range(1400):
+        v = mh.bus_uio() >> mdc & 1
+        rises += v and not prev
+        prev = v
+        mh.step()
+    assert rises == 65 and mdio.parse_record(mh.pop_all(0)[0]) == {"read": True, "ack": False, "data": 0xFFFF}
+
+
 def test_master_short_preamble_define():
     """PRE is a define; 31 is non-compliant, and the 32-one PHY model refuses
     it (no answer, TA2 = 1): the model does hold the master to 32."""
