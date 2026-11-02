@@ -257,15 +257,24 @@ async def test_rx_overflows_1bit_clk_3(dut):
     assert not ok and stats.get("rx_overflows"), stats
 
 
+# ns, the far end's last edge to our first: the model's 9800 from the pad, and this
+# monitor reads a level at the mid-clock after it
+RTL_GAP_NS = 9810
+
+
 @cocotb.test()
 async def test_carrier_sense_rtl(dut):
-    """A frame queued while one arrives: TD stays silent until 96 bit times after its end."""
+    """The core's own deferral. F_GO is set first, then the far end starts inside the
+    96-bit window, so nothing but the firmware holds the frame back. It waits for the
+    whole arrival and starts the stated time after the far end's last edge."""
     spi, h, td = await rig(dut, 20, True, 2)
     s = Service(h, reply=False)
     task = cocotb.start_soon(bridge(s.loop)())
     try:
-        await ClockCycles(dut.clk, 200)
+        await ClockCycles(dut.clk, 500)
         rx, tx = model.test_frame(200), model.test_frame(200, seed=2)
+        h.send(tx)
+        assert await wait_for(lambda: h.go, 50), "F_GO never set"
         ended = []
 
         async def send():
@@ -273,15 +282,12 @@ async def test_carrier_sense_rtl(dut):
             ended.append(get_sim_time(unit="ns") - ethsim.IFG_NS)   # eth_send ends with the 96-bit gap
 
         sender = cocotb.start_soon(send())
-        await Timer(50, unit="us")
-        h.send(tx)
         assert await wait_for(sender.done, 400)
-        t_end = ended[0]
-        assert not td.frames()
+        assert not [b for b in td.bursts if not b.pulse and b.t0 < ended[0]], "transmitted into the frame"
         assert await wait_for(td.frames, 600), "no frame on TD"
         b = td.frames()[0]
-        dut._log.info("far end's last edge to our first: %s ns", b.t0 - t_end)
-        assert b.t0 - t_end >= ethsim.IFG_NS, f"started {b.t0 - t_end} ns after the frame's end"
+        dut._log.info("far end's last edge to our first: %s ns", b.t0 - ended[0])
+        assert b.t0 - ended[0] == RTL_GAP_NS
         assert ethsim.frame_from_bits(ethsim.manchester_decode(b.edges)[0]) == tx
         assert rx in s.received
         td.check_flips()

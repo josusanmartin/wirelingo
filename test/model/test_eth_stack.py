@@ -644,9 +644,10 @@ def test_overflow_loses_one_frame_and_recovers():
     tx = test_frame(64, seed=4)
     rig.wire.send(a, force=True)
     rig.port.idle(100 * 50)
-    rig.run_until(lambda: rig.host.stats.get("rx_overflows"), 300)
+    assert rig.run_until(lambda: rig.host.stats.get("rx_overflows"), 300)
     rig.run_until(rig.quiet, 300)
     assert a not in rig.received
+    assert rig.host.stats["rx_overflows"] == 1 and rig.host.stats["rx_dropped"] == 1
     rig.host.send(tx)
     rig.run_until(rig.quiet, 300)
     rig.wire.send(b)
@@ -700,9 +701,9 @@ IFG_MEASURED = {50e6: (9800, 9800), 40e6: (9825, 9825)}        # ns, last far-en
 
 @pytest.mark.parametrize("clock", CLOCKS)
 def test_carrier_sense_defers_to_an_arriving_frame(clock):
-    """F_GO is set, and the far end starts anywhere from at once to the end of
-    the window. The chip never talks over it, and starts 96 bit times after
-    the far end's last edge."""
+    """F_GO is already set, so only the firmware can hold the frame back, and the far
+    end starts anywhere in the window. The chip never talks over it, and starts the
+    same exact time after the far end's last edge, with a 96-bit window."""
     gaps = []
     for off in range(1000, 9001, 1000):
         over, t_tx, t_rx, rig = arrival_run(True, off, clock)
@@ -758,9 +759,10 @@ def test_blind_window_without_carrier_sense():
     assert (blind, heard) == (3930, 3950)
 
 
-def test_chip_waits_while_a_long_frame_arrives():
-    """A reply queued while 1518 bytes come in: no edge on TD until they end,
-    with the RX side streaming through the wait."""
+def test_reply_queued_during_an_arrival_waits():
+    """A reply queued while 1518 bytes come in: the glue holds it back, so no edge on
+    TD until they end, with RX streaming through the wait. Here the host does the
+    waiting; test_carrier_sense_defers_to_an_arriving_frame is the core doing it."""
     rig = Rig(reply=False)
     rx = test_frame(1518)
     rig.wire.send(rx, force=True)
