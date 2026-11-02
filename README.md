@@ -154,7 +154,7 @@ corner all 16 pass: 14 in the first run; `pf_dmx512` and `pf_wiegand`
 failed only on exact-equality timing assertions (pad rise and fall delays
 differ by 50–170 ps) and pass after a 1 ns tolerance (commit 8dd249a):
 [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md).
-The host-workflow modules (`test_usb_uart_rtl`, ...) ran on the RTL only.
+The host-workflow modules (`test_usb_uart_rtl`, `test_spi_packed_host`, `test_spi_preloaded_host`, `test_uart_capture_host`) pass on the RTL and, functionally, on fo6's gate-level netlist ([release evidence](docs/release-evidence.md)).
 "Model" = on the cycle-accurate model, which is lockstep-checked against the RTL. "KV260" =
 the RTL built for the Kria KV260 FPGA, against the other core or the FPGA's
 pattern generator ([fpga/kv260](fpga/kv260/README.md)).

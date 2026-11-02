@@ -235,6 +235,14 @@ slow `gl_sdf.I0i5IJ/receipt.json`, sha256 `2d16097a…90b1`; fast
 runs, with no negative control of their own; the release set's 10 ns control
 shows the annotation in effect on the same netlist.
 
+Host-workflow modules at gate level (2026-11-02), also supplementary and functional
+(no SDF): 6/6 tests on fo6's netlist with `flow/gl_module_test.py`, validation
+`61af9b2`: `test_usb_uart_rtl` 3/3 (`glm.o49y18cw`, sha256 `a13b2398…6a65`),
+`test_spi_packed_host` 1/1 (`glm.ldn0okrb`, `b4c09537…d8dd`),
+`test_spi_preloaded_host` 1/1 (`glm.1uhplvjn`, `7b4e62aa…ba44`),
+`test_uart_capture_host` 1/1 (`glm.cuwsqxi6`, `f27a1435…7e19`). Receipts are under
+`pfsdf-61af9b2/test/sim_build/` on runner1.
+
 ## Recorded release: fo6 with software f1cb7c9 (2026-10-14)
 
 Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`; `5e0e3c6e…` with
