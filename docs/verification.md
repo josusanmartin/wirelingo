@@ -246,6 +246,13 @@ when the loop was added (commit 19707ef, not a regression test): 30/30
 * Host software: the demo-board MicroPython driver runs unmodified against the
   model through a Python model of the SPI port (UART output, a 10BASE-T frame).
 
+* Wire faults on existing firmware ([fault-testing.md](fault-testing.md)):
+  seeded glitches, stuck lines, truncated frames, bit flips, clock stretch and
+  edge jitter against `uart_rx`, `i2c_master`, `can_rx`, `usb_enum`, `eth10_rx`
+  and `eth10_match` (`test_faults.py`); the firmware unchanged, six findings.
+* Pulse timestamps ([pps-capture.md](pps-capture.md)): `test_pps.py` on the
+  model, `test/test_pps.py` on the RTL.
+
 **Independent protocol oracle (sigrok).** The firmware and the device models
 above come from the same hands, so a shared misreading of a protocol would
 pass both. `test/test_sigrok.py` re-runs test.py's UART TX and RX, SPI master,

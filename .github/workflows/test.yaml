@@ -50,6 +50,12 @@ jobs:
           make COCOTB_TEST_MODULES=test_post_freeze SIM_BUILD=sim_build/post_freeze COCOTB_RESULTS_FILE=post_freeze.xml
           python3 check_results.py post_freeze.xml $(grep -c '^@cocotb.test()' test_post_freeze.py)
 
+      - name: Pulse timestamps through the SPI port
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_pps SIM_BUILD=sim_build/pps COCOTB_RESULTS_FILE=pps.xml
+          python3 check_results.py pps.xml 4 pps_record_paths pps_rollover_phases pps_train pps_fifo_full   # pps_one_second: PPS_LONG only
+
       - name: Packed SPI framing through a serialized host
         run: |
           cd test
@@ -102,6 +108,7 @@ jobs:
             test/pio.xml
             test/eth_service.xml
             test/post_freeze.xml
+            test/pps.xml
             test/spi_packed_host.xml
             test/spi_preloaded_host.xml
             test/uart_capture_host.xml
