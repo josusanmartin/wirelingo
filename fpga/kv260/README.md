@@ -922,6 +922,24 @@ the last legacy run, `bringup_kria.py` (all steps) ALL PASS again at
 09:07:15 UTC (49.9980 MHz). Left loaded: `protoemu`, PMOD0/PMOD1 = 0, pe_lab
 MODE 0, host port on the GPIO path (pe_spim SEL 0).
 
+## Cut-through match on hardware (2026-10-30, `host/legacy_demo.py eth10_cut`)
+
+`eth10_match` on core 0 with the line unit, pe_lab's generator on uio0 as the wire,
+usb_sampler on core 1 reading uio0 and HIT (uio1) every clock. Generator frames at
+digital levels: no real network, magnetics or comparator. Run 20:14:02-20:14:05 UTC.
+Bitstream RTL `d1aa46f`, digest `3adc796c`, clk_div 24, clock measured 49.99914 MHz.
+Log on the Kria, `/var/log/wl_steps.log`:
+
+```
+field 2000, threshold 1000, protoemu clock: HIT 10 clocks (200 ns) after the field's last mid-bit edge, 38.2 us before the frame's last edge
+field 1000, threshold 1000, protoemu clock: HIT 10 clocks (200 ns) after the field's last mid-bit edge, 38.4 us before the frame's last edge
+field 999, threshold 1000, protoemu clock: no HIT
+field 2000, threshold 1000, alternate clock: HIT 10 clocks (200 ns) after the field's last mid-bit edge, 38.2 us before the frame's last edge
+field 2100, threshold 1000, alternate clock: HIT 10 clocks (200 ns) after the field's last mid-bit edge, 38.2 us before the frame's last edge
+field 2200, threshold 1000, alternate clock: HIT 10 clocks (200 ns) after the field's last mid-bit edge, 38.5 us before the frame's last edge
+summary: eth10_cut PASS
+```
+
 ## Status (2026-10-05, g4 RTL, Vivado 2026.1 BASIC, clk_div 24)
 
 ### Fabric master + PMOD build
