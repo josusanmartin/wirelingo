@@ -7,3 +7,8 @@
  (name wl_asm)
  (modules wl_asm)
  (libraries wirelingo_asm))
+
+(executable
+ (name wl_simcheck)
+ (modules wl_simcheck)
+ (libraries wirelingo_sim))

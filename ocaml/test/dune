@@ -1,0 +1,9 @@
+(executable
+ (name line_cyclesim)
+ (modules line_cyclesim)
+ (libraries hardcaml wirelingo_rtl wirelingo_sim))
+
+(rule
+ (alias runtest)
+ (action
+  (run ./line_cyclesim.exe 200000 1)))

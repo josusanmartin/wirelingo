@@ -1,0 +1,5 @@
+(library
+ (name wirelingo_sim)
+ (libraries wirelingo_asm)
+ (flags
+  (:standard -open Wirelingo_asm -w -32-37-69)))
