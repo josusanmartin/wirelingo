@@ -13,7 +13,6 @@ firmware's logic:
                     length; outside its valid window it drives the inverse of
                     the bit, so it fails a sampler that looks at the wrong time
     decode_frames   frames from the MDC and MDIO edges alone
-    bus_timing      the 802.3 numbers measured on those edges
 
 Clause 22 numbers, as public secondary sources give them (the standard itself
 was not available when this was written): MDC high and low >= 160 ns, period
@@ -25,7 +24,6 @@ rising edge. Frame: 32 ones, ST 01, OP 10 read / 01 write, PHYAD, REGAD, TA,
 from . import host, sim
 
 ST, OP_READ, OP_WRITE = 0b01, 0b10, 0b01
-MDC_MIN_NS, MDC_PERIOD_NS, STA_SETUP_NS, STA_HOLD_NS, PHY_C2O_MAX_NS = 160.0, 400.0, 10.0, 10.0, 300.0
 BMCR, BMSR, PHYID1, PHYID2, ANAR = 0, 1, 2, 3, 4
 CONSTANT_REGS = tuple(r for r in range(32) if r not in (BMCR, BMSR, ANAR))
 BMCR_READ_MASK = 0x7DFF          # reset (15) and restart auto-negotiation (9) read back 0
