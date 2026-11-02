@@ -242,8 +242,8 @@ async def bench_qsfp(dut):
     """pe.qsfpdev on i2c_device (core 1), every byte a round trip through the
     SPI port (SCK = clk/8) under clock stretching; the pins-only master at
     396.8 kHz: identifier, temperature, vendor name, page 03h threshold, an
-    unsupported page reverting, roll-over at 127. The longest SCL hold is
-    under SFF-8636's 500 us."""
+    unsupported page reverting, roll-over at 127. The longest SCL hold with
+    this polling loop is exactly 36.18 us (SFF-8636: at most 500 us)."""
     SDA, SCL = T.UIO(0), T.UIO(1)
     spi = await T.setup(dut)
     dut.pull_up.value = 3
@@ -299,7 +299,7 @@ async def bench_qsfp(dut):
     dut._log.info(f"QSFP: {res}; longest SCL hold {max(holds) / 1000:.2f} us over {len(holds)} holds")
     assert res[0] == [0x11] and res[1] == [47, 0x40] and bytes(res[2]) == b"WIRELINGO       "
     assert res[4] == [3] and res[5] == [75, 0] and res[7] == [0, 0x11]
-    assert max(holds) < qsfpdev.T_CLOCK_HOLD_US * 1000
+    assert max(holds) == 36180.0 < qsfpdev.T_CLOCK_HOLD_US * 1000
     if HAVE_SIGROK:
         tr = sigrok.Trace()
         pf.to_trace(tr, pf.bit_edges(log, SCL), "scl")

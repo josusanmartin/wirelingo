@@ -212,9 +212,9 @@ host's latency + 23 clocks (`test_clock_hold_follows_the_host`: 100, 1000, 10000
 and 24900 clocks, the last 24923 clocks = 498.46 us at 50 MHz); with a
 same-clock host exactly 26 clocks. The firmware cannot enforce the limit:
 `test_slow_host_breaks_the_clock_hold_limit` holds SCL 600.46 us. On the RTL test
-through the SPI port at SCK = clk/8, with one polling loop, the longest
-hold was under 500 us (`bench_qsfp` asserts it and logs the figure). A real
-host's latency is unmeasured.
+through the SPI port at SCK = clk/8, with that test's polling loop, the longest
+of 24 holds is exactly 36.18 us (`bench_qsfp`). That figure belongs to that
+loop; a real host's latency is unmeasured.
 
 **Reader.** The tests read with the pins-only `pe.i2cbus.Master` at 396.8 kHz
 (half period 63 clocks), with offsets typed as literals from the
