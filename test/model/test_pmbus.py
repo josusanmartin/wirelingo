@@ -91,8 +91,8 @@ def test_linear11_rejects():
 
 
 def test_linear16():
-    """VOUT_MODE 0x17: linear, exponent -9 (a common value): 0x3333 = 6.3995...
-    0x0200 = 1 V exactly; exponent 0x10 = -16 and 0x0F = +15 at the ends of the
+    """VOUT_MODE 0x17: linear, exponent -9: 0x3333 / 512 = 25.599..., 0x0200 = 1
+    exactly; exponent 0x10 = -16 and 0x0F = +15 at the ends of the
     5-bit field; non-linear modes refused."""
     assert pmbus.linear16(0x0200, 0x17) == 1
     assert pmbus.linear16(0x3333, 0x17) == Fraction(0x3333, 512)

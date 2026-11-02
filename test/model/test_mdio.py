@@ -38,6 +38,18 @@ def phy_prog(regs=REGS, phyad=PHY, text=None):
     return asm.assemble(text if text is not None else (FW / "mdio_phy.pasm").read_text(), d)
 
 
+RIGS = []
+
+
+@pytest.fixture(autouse=True)
+def no_contention():
+    """Every test on the wire, unless it fights on purpose: no two drivers,
+    ever."""
+    RIGS.clear()
+    yield
+    assert [r.wire.contention for r in RIGS if not r.may_fight] == [0] * sum(not r.may_fight for r in RIGS)
+
+
 class Rig:
     """Any of: master firmware or `sta` (a pins-only STA); PHY firmware or
     `phy` (a pins-only PHY); the wire between them. Logs edges at the pads."""
@@ -51,7 +63,8 @@ class Rig:
         if phy_fw is not None:
             mh.apply(host.pin_owner_writes({P_MDIO: 1}))
             mh.apply(mdio.phy_setup(1, phy_fw, regs))
-        self.wire = mdio.Wire()
+        self.wire, self.may_fight = mdio.Wire(), False
+        RIGS.append(self)
         self.mdc_log, self.mdio_log, self.who_log = [(0.0, 0)], [(0.0, 1)], [(0.0, ())]
         self.d_model = None
         self.tracer = timing.Tracer(mh.chip, tracer_core, 256 * tracer_core) if tracer_core is not None else None
@@ -335,6 +348,7 @@ def test_broken_master_keeps_driving_through_turnaround():
     assert bad != text
     phy = mdio.PhyModel(PHY, dict(REGS))
     rig = Rig(master_prog(bad), phy=phy)
+    rig.may_fight = True
     rig.run(200)
     r = rig.frames(R)                             # REGAD 2 ends in 0: the master holds the line low
     assert rig.wire.contention > 0 and r[0]["data"] == 0

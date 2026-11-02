@@ -228,6 +228,14 @@ def test_write_takes_effect_at_stop():
     assert read(r, 86, 1) == [0x0A]
 
 
+def test_write_longer_than_four_bytes_is_accepted():
+    """A limit, not the specification: it requires 4, and does not say what a
+    longer one does. Here every byte lands."""
+    r = Rig()
+    r.run([("w", A, [82, 1, 2, 3, 4, 0x05])])
+    assert read(r, 86, 1) == [0x05] and r.dev.ignored == [(82, 1), (83, 2), (84, 3), (85, 4)]
+
+
 def test_repeated_start_aborts_a_write():
     """5.3.2: a repeated START in place of the STOP: the data is discarded."""
     r = Rig()

@@ -54,8 +54,9 @@ advertising (register 4, read/write). The host is told of every write frame
 addressed to it through the RX FIFO.
 
 **The turnaround.** Both directions are checked on a wire model that counts
-every instant two drivers overlap, and all the tests below end with that count
-at 0, over 200 random frames between the two firmwares too.
+every instant two drivers overlap. Every model test on that wire, 200 random
+frames between the two firmwares included, must end with the count at 0 (a
+fixture in `test_mdio.py` asserts it); so must the RTL tests.
 `test_broken_master_keeps_driving_through_turnaround` shows the count rising
 when the release is removed.
 
@@ -142,8 +143,7 @@ setup past the limits, MDC too fast, 10 unread write records.
 * A write has no acknowledgement on the wire; only a read shows a PHY exists.
 * MDIO is driven push-pull, not open drain, and needs a pull-up on the board.
   Pad levels, drive and speed are not examined here.
-* Stand-in, one PHY address, not address 0's broadcast role; no preamble
-  suppression.
+* Stand-in: one PHY address, the define; no preamble suppression.
 * Stand-in registers: no latching status bits, no reset behaviour beyond bits
   15 and 9 of control reading back 0, no auto-negotiation, no link. It has no
   line side. Status changes are host writes to R3, tested between frames.
@@ -233,7 +233,8 @@ are accepted. Writes to upper pages are ignored, including page 03h's
 read/write bytes. tBUF (20 us) is the master's to keep; the stand-in does not
 check it. Pages 01h and 02h are unsupported, which SFF-8636 allows. `i2c_device`
 ACKs every byte, and pushes STOP without blocking: with its RX FIFO full a
-STOP is dropped, and the write it would have completed is lost. Page select
+STOP is dropped, and the write it would have completed is lost (from the
+firmware; not tested). Page select
 and Tx disable are the only writable bytes. fSCL was tested at 396.8 kHz only.
 
 ## PMBus reads with PEC
@@ -256,7 +257,7 @@ more search result. *From memory:* linear mode being VOUT_MODE's top 3 bits
 post-freeze `SmbusDevice`: it sees SCL and SDA and computes its own PEC):
 
 * READ_TEMPERATURE_1 0xE32A = 50.625, READ_VIN 0xDB12 = 24.5625, VOUT_MODE
-  0x17 and READ_VOUT 0x3333 = 6.3994... V (exactly 0x3333 / 512), each with PEC,
+  0x17 and READ_VOUT 0x3333 = 25.599... (exactly 0x3333 / 512), each with PEC,
   on the model. Temperature and VIN also on the RTL.
 * Bad PEC: each of the 24 bits of the two data bytes and the PEC flipped on the
   wire in turn: the firmware reports `pec_bad`, the library raises `BadPec`,
@@ -285,16 +286,16 @@ manufacturer commands, and no ALERT# or CONTROL pin. No DIRECT format, and
 LINEAR16 only in VOUT_MODE's linear mode. The value is decoded as sent;
 calibration and units are the device's. PEC is a CRC-8: a corruption can still
 pass it. Only single-bit flips were tried, and a device with no PEC gets
-through whenever 0xFF happens to be the right PEC, about 1 read in 256 for
-random data.
+through whenever 0xFF happens to be the right PEC (for random data about 1
+read in 256, an estimate).
 
 ## Tests
 
 | What | Where | Count |
 |---|---|---|
-| MDIO, model | `test/model/test_mdio.py` | TEST_MDIO tests |
-| QSFP-style stand-in, model | `test/model/test_qsfpdev.py` | TEST_QSFP tests |
-| PMBus, model | `test/model/test_pmbus.py` | TEST_PMBUS tests |
+| MDIO, model | `test/model/test_mdio.py` | 70 |
+| QSFP-style stand-in, model | `test/model/test_qsfpdev.py` | 40 |
+| PMBus, model | `test/model/test_pmbus.py` | 63 |
 | RTL through the SPI port | `test/test_bench_fw.py` | 5 tests |
 | Mutants, one bug each | `test/mutants.py`, names `fw-mdio-*`, `qsfp-*`, `pmbus-*`, `fw-smbus-pec-not-checked` | 28, all killed |
 
