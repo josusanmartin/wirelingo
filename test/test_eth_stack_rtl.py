@@ -13,7 +13,7 @@ import threading
 
 import cocotb
 from cocotb.task import bridge, resume
-from cocotb.triggers import ClockCycles, Edge, Timer
+from cocotb.triggers import ClockCycles, Edge, FallingEdge, Timer
 from cocotb.utils import get_sim_time
 
 from pe import eth, ethhost, ethsim, host, sim
@@ -51,7 +51,11 @@ class Port:
 
 
 class TdLog:
-    """Bursts of (ns, level) off the pads. A burst is over a microsecond after idle."""
+    """Bursts of (ns, level) off the pads. A burst is over a microsecond after idle.
+    Sampled at the falling clock edge after a change: on a netlist with no delays
+    the two TD flops' outputs don't change in the same delta, so an H to L flip
+    passes through both-high inside one timestep. A level that lasts to mid-clock
+    is what the pads hold, and that is what must never be both high."""
 
     def __init__(self, dut):
         self.dut = dut
@@ -62,6 +66,7 @@ class TdLog:
         td = 0
         while True:
             await Edge(self.dut.uo_out)
+            await FallingEdge(self.dut.clk)
             v = int(self.dut.uo_out.value) & 3
             assert v != 3, "TD+ and TD- both high"
             lv = (0, 1, -1, 0)[v]
