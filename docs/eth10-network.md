@@ -31,7 +31,7 @@ The MAC is `02:57:4c:00:00:02`, locally administered.
 | Linux's own stack ARPs and pings the chip | real kernel in a namespace, against the cycle model | `eth_tap.py --model --selftest` |
 | tcpdump and scapy accept the frames; each flags a broken checksum | cycle model | `test_tcpdump_reads_the_session`, `test_scapy_validates_the_session` |
 | No reply to a bad FCS, another MAC, another IP, a bit flipped on the line | cycle model at the pads; bad FCS and another MAC on RTL; all but the flipped bit from real Linux | `test_no_reply_at_the_pads`, `test_bit_flipped_on_the_line_gets_no_reply` |
-| 20 kinds of bad frame dropped, each for the stated reason; 6000 random or damaged frames raise nothing | Python, the Station alone | `test_station_rejects`, `test_station_never_raises_and_never_answers_garbage` |
+| 23 kinds of bad frame dropped, each for the stated reason; 6000 random or damaged frames raise nothing | Python, the Station alone | `test_station_rejects`, `test_station_never_raises_and_never_answers_garbage` |
 | The chip doesn't transmit into an arriving frame | cycle model; one case RTL and gate level | below |
 | Rate limits of the host port | cycle model; four RX edges repeated on RTL | below |
 
@@ -43,9 +43,20 @@ PATH (it only reads the run, and writes a hash-bound receipt):
         --tests test_ping_rtl_50mhz test_ping_rtl_40mhz test_carrier_sense_rtl
 
 With no delays in that netlist, TD+ and TD- don't change in the same delta, so an
-H to L flip passes through both-high inside one timestep. The first monitor tripped on
-that. TD is now read at mid-clock, where it was never both high. What the two
-pads do in the nanoseconds around a flip is a question for SDF or a scope.
+L to H flip passes through both-high inside one timestep: 15,497 of them in those three tests, all settling on H
+(`gl/*/sim.log` in the logs below; the test fails otherwise). The first monitor tripped on
+that. TD is now read at mid-clock, where it was never both high, and the
+test requires every transient to settle on H. A verifier's STA on fo6 has `uo_out[0]`
+arriving before `uo_out[1]` at both corners it read (finding 3 of
+`protoemu-verify-reports/inbox/003-eth-stack.report.md`; arrivals at the macro's edge,
+not a measured overlap), which suggests TD+ rises first on silicon too, and so a short
+both-high on each L to H flip there. How long it lasts at the pads is a question for SDF
+or a scope. One tick of both-high injected into the firmware does trip the monitor, at this
+level and on RTL (the same report, claim 6).
+
+The stack has 18 mutants in `test/mutants.py`, each paired with the test that must
+catch it, including a 95-bit window and the IP source and length checks:
+`python3 test/mutants.py 'eth-*'`, 18 of 18 killed (`mutants.log` in the logs below).
 
 The far end in the tests shares no code with `pe.eth`. The bits are read off TD+
 and TD- by two decoders that work differently, and the FCS is checked with zlib.
@@ -69,19 +80,23 @@ restarts the wait.
 | | A far-end frame that starts this long before our first edge goes unheard |
 |---|---|
 | `eth10_tx_cs`, 50 MHz | 130 ns (150 ns is heard) |
-| `eth10_tx` with the host checking LINESTAT, quad SPI at 25 MHz | 3910 ns (a 500 ns sweep; 4410 ns is heard) |
+| `eth10_tx` with the host checking LINESTAT, quad SPI at 25 MHz | 3930 ns (3950 ns is heard) |
 
-(`test_blind_window_with_carrier_sense`, `test_blind_window_without_carrier_sense`.)
+(`test_blind_window_with_carrier_sense`, `test_blind_window_without_carrier_sense`,
+both swept in 10 ns steps and asserted exactly.)
 The 130 ns is the synchronizer and the jump to the preamble. Any CSMA station has
 such a window: inside it neither side can know.
 
 The frame path is the same as `eth10_tx`: same levels in the same order, times
 within a clock (`test_cs_firmware_sends_the_same_waveform_as_eth10_tx`).
 
-* A frame queued during a 1518-byte arrival starts at least 96 bit times after the
-  arrival's last edge (`test_chip_waits_while_a_long_frame_arrives`, offsets across
-  the window in `test_carrier_sense_defers_to_an_arriving_frame`, a 200-byte case in
-  `test_carrier_sense_rtl`).
+* With F_GO already set, so that only the firmware can hold the frame back, the far
+  end's last edge to our first edge measures 9800 ns at 50 MHz and 9825 ns at 40 MHz
+  across the window; 96 bit times are 9600 ns (`test_carrier_sense_defers_to_an_arriving_frame`,
+  asserted exactly). A 200-byte case on RTL and at gate level measures 9810 ns: the
+  same 9800, read at the next mid-clock (`test_carrier_sense_rtl`).
+* A reply queued during an arrival doesn't reach the core until the line is quiet: the
+  glue holds it (`test_reply_queued_during_an_arrival_waits`).
 * Traffic with gaps under 96 bit times holds the chip off for as long as it lasts,
   and no link pulses go out meanwhile. The glue gives up after 20 ms and restarts
   core 1, which starts with a pulse (`test_line_never_quiet_gives_up_and_link_pulses_resume`
@@ -116,13 +131,26 @@ bits makes a data word that is also 0. ARP padding does that. An all-zero 1000-b
 ping is 333 such words in 352 (`test_smallest_frames_and_zero_runs`), so a blind
 burst loses data.
 
-The budget a slower host has is the FIFOs, not the wire. With quad SPI at SCK = clk,
-software time allowed between passes (`test_rx_service_latency`, `test_tx_service_latency`):
+The budget a slower host has is the FIFOs, not the wire. This is the software time
+allowed per pass with quad SPI at SCK = clk, the longest that passes in 0.5 us steps.
+A slower SCK leaves less. `test_service_budget` asserts each figure and that 0.5 us
+more fails:
 
-| Clock | RX | TX |
+| Case, 1518-byte frames | 50 MHz | 40 MHz |
 |---|---|---|
-| 50 MHz | 16 us; 18 fails | 24 us; 28 is given up on |
-| 40 MHz | 16 us; 18 fails | 24 us; 28 is given up on |
+| RX, alone or with a reply deferring | 16.5 us | 15.5 us |
+| TX | 22.5 us | 21.5 us |
+
+1518 bytes is the worst size tried. The sweep ran 64, 300, 600, 800, 1000, 1200 and
+1518 bytes at 4 phases of the host's passes against the frame (`runner1:~/protoemu-flow/eth-logs/aed4c8f/eth-budget.out`);
+shorter frames allow more, and only TX at 1000 bytes and 50 MHz moved with phase, by one
+step. Sizes between those were not tried. Plan on **15.5 us for RX and 21.5 us for TX**.
+
+A core that is behind when a frame ends takes the bit from TP_IDL's falling edge into
+that frame's record, because the line unit's queue has no frame boundaries. The host
+drops bits past the last whole byte, as a MAC does, and the FCS decides
+(`test_core_behind_at_a_frames_end_adds_a_bit_and_the_frame_survives`). `eth10_rx.py`'s
+finite capture, which is separate code, still rejects such a record.
 
 RX has no flow control. A 64-byte frame is 24 FIFO words and the FIFO holds 8, so
 even the shortest frame needs service while it arrives
@@ -149,8 +177,14 @@ can run on the board:
 
     sudo python3 fpga/kv260/host/eth_tap.py --measure-spim
 
-It needs about 16 us or less plus SPI time, per pass, sustained. If Python can't do it, C
-can. The demo board's bit-banged port is far below the table's lowest SCK (an
+A pass may take at most 15.5 us of software plus its SPI time, sustained, on frames up to
+1518 bytes (the worst case above, quad at SCK = clk). The command prints software and SPI
+together, and a pass here reads 4 words where a late host reads 8, so compare with care:
+about 2.8 us of SPI for 8 words at 50 MHz (an estimate from the clock counts) gives
+about 18 us per pass as the go/no-go, and it is an estimate built on that tested 15.5 us. It borrows the host port: it moves the pins to
+the fabric master and sets QUAD_EN, then restores the select and clears QUAD_EN, its reset
+value, since that register can't be read back. Core 0 should be idle, because a FIFO read
+pops. If Python can't do it, C might: unmeasured. The demo board's bit-banged port is far below the table's lowest SCK (an
 estimate); its PIO quad transport may reach the table but MicroPython then has to
 make the budget above. `tools/micropython/eth_stack.py` and `eth10_host.py` are the
 same code in the board bundle, and they run on MicroPython 1.22's Unix port against
@@ -204,7 +238,9 @@ any interface but lo (`test_bridge_refuses_the_hosts_namespace`). It never sees 
 adds no route outside the namespace, and sets neighbour timers there only. `-B`
 keeps root from leaving `__pycache__` in the checkout.
 
-Run on runner1 from a clean clone, inside `unshare --net`, once per clock:
+Run on runner1 from a clean clone of `7503c14`, whose code is the same as this commit's,
+inside `unshare --net`, once per clock (logs: `eth-tap-50.log`, `eth-tap-40.log` in
+`runner1:~/protoemu-flow/eth-logs/aed4c8f`):
 
 | | 50 MHz | 40 MHz |
 |---|---|---|
@@ -213,13 +249,13 @@ Run on runner1 from a clean clone, inside `unshare --net`, once per clock:
 | UDP echo from a socket | answered | answered |
 | No reply: unknown IP; chip's MAC with another IP; chip's IP with another MAC; bad FCS | all four | all four |
 | Then a ping is answered again | yes | yes |
-| Wall-clock round trip, short ping, average | 1957 ms | 863 ms |
-| Simulated round trip, short ping | 208-1115 us | 215-780 us |
-| Simulated round trip, 1472 bytes | 3.8-4.8 ms | 3.8-4.9 ms |
+| Wall-clock round trip, short ping, average | 1845 ms | 2702 ms |
+| Simulated round trip, short ping | 209-983 us | 214-1213 us |
+| Simulated round trip, 1472 bytes | 3.8-4.9 ms | 3.8-4.8 ms |
 
 The wall-clock figure is the speed of the Python model on a shared machine, not of
-anything else; the two clocks ran side by side, and an earlier run of the same code
-gave 798 ms at 50 MHz. The simulated one starts at the request's first edge and ends
+anything else: the two clocks ran side by side, and the figure moves from run to run.
+The simulated one starts at the request's first edge and ends
 at the reply's last, at quad SCK 25 MHz, and includes frames that Linux queued behind
 each other because the model is slower than ping's interval, so it changes from run
 to run too. Neither is a latency of the chip. Simulated time stops when nothing is in
