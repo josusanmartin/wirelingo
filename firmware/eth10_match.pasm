@@ -6,13 +6,17 @@
 ; The host pushes one word, the threshold, then the core watches frames: EtherType
 ; ETHERTYPE, then a 16-bit field (first byte low) in the first two payload bytes.
 ; If the field >= the threshold, pin HIT goes high right after the field's last
-; bit, then the field goes to the RX FIFO. HIT stays high until the next frame.
+; bit, then the field goes to the RX FIFO. HIT falls when the frame ends, so it is a
+; pulse, about 38 us on a 64-byte frame. The threshold is 16 bits (a wider word wraps,
+; R registers are 16 bits), and `push noblock` drops the record if the FIFO is full:
+; HIT still rises, so count on the records only while the host keeps popping.
 ;
 ; The decision comes before the FCS, which this firmware can't check (no CRC-32):
 ; a corrupted frame can raise HIT. The host checks what it needs from the records.
 ; The queue in the line unit absorbs the hunt for the SFD (six instructions per
-; bit for at most 24 bits); `in line, n` stalls until the n bits are there, so the
-; compare starts as soon as the last bit is recovered.
+; bit for at most 32 bits); `in line, n` stalls until the n bits are there, so the
+; compare starts as soon as the last bit is recovered. `in line, 32` takes the first
+; 32 bits unseen, so a preamble shorter than 31 bits loses its SFD and the frame.
 .program eth10_match
 .define ETHERTYPE 0xB588          ; 0x88B5 on the wire, first byte low
 .define HIT 8                     ; uo0
