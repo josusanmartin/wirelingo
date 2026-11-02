@@ -91,8 +91,8 @@ describes how, and what it caught.
   PEC, RC-5 infrared. Each is checked by the static timing checker, pins-only
   models, sigrok's decoders where one exists and an RTL test through the SPI
   port, which also passes on fo6's gate-level netlist (functional 16/16;
-  with SDF at the typical corner 16/16, two of them after their timing
-  assertions got a 1 ns tolerance for sub-ns pad skew). All three rounds also ran on the KV260 FPGA build of the RTL,
+  with SDF at 20 ns 16/16 at the typical, slow and fast corners, two of them
+  after their timing assertions got a 1 ns tolerance for sub-ns pad skew). All three rounds also ran on the KV260 FPGA build of the RTL,
   against the other core or the FPGA's pattern generator playing our own
   (mostly pre-timed) device models, with results equal to the cycle model's
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the

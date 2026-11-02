@@ -227,6 +227,14 @@ decoded correctly. After a 1 ns tolerance in those two assertions (commit
 [post-freeze-protocols.md](post-freeze-protocols.md#results). Archive
 `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz` (sha256 `7466b8f8…0485`).
 
+SDF at the slow and fast corners, 20 ns (2026-11-02), also supplementary:
+`test_post_freeze` 16/16 at each corner on fo6's netlist, validation `61af9b2`,
+each with its own `gl_sdf_test.sh` receipt (`pfsdf-61af9b2/test/sim_build/`:
+slow `gl_sdf.I0i5IJ/receipt.json`, sha256 `2d16097a…90b1`; fast
+`gl_sdf.QWI1Yc/receipt.json`, sha256 `fdae9400…3f2a`). These are single-case
+runs, with no negative control of their own; the release set's 10 ns control
+shows the annotation in effect on the same netlist.
+
 ## Recorded release: fo6 with software f1cb7c9 (2026-10-14)
 
 Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`; `5e0e3c6e…` with
