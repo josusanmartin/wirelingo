@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Toolchain for ocaml/ on a host without opam: opam 2.6.1 in ~/.local/bin, a
-# switch "wl" (OCaml 5.3.0, dune, hardcaml v0.17.1, ppx_hardcaml), all in the
+# switch "wl" (OCaml 5.3.0, dune, hardcaml v0.17.1, ppx_hardcaml, hardcaml_waveterm), all in the
 # home directory, no sudo.
 #
 #   ocaml/scripts/setup_runner.sh SYSROOT     SYSROOT: a directory for the gmp headers
@@ -30,5 +30,5 @@ ln -sf /usr/lib/x86_64-linux-gnu/libgmp.so.10 "$lib/libgmp.so"
 rm -f "$lib"/libgmp.a "$lib"/libgmpxx*
 export C_INCLUDE_PATH=$sys/usr/include:$sys/usr/include/x86_64-linux-gnu CPATH=$sys/usr/include:$sys/usr/include/x86_64-linux-gnu LIBRARY_PATH=$lib
 opam switch list --short | grep -qx wl || opam switch create wl ocaml-base-compiler.5.3.0 --no-install -y
-opam install --switch=wl -y --assume-depexts dune hardcaml ppx_hardcaml
+opam install --switch=wl -y --assume-depexts dune hardcaml ppx_hardcaml hardcaml_waveterm
 opam clean -a -c -s --logs
