@@ -147,22 +147,83 @@ def _stalled(start, clocks):
     return pause
 
 
-def test_rx_pause_budget():
-    """The longest stall of an otherwise running read, by search over the phase of
-    the stall against the word clock. One clock more must flag."""
-    worst = None
-    for start in (40, 41, 42, 43, 44, 45, 46, 47):
-        lo, hi = 10, 200                  # lo sustains, hi fails
-        while hi - lo > 1:
-            mid = (lo + hi) // 2
-            if _burst_ok(4096, pause=_stalled(start, mid), one=True)[0]:
-                lo = mid
-            else:
-                hi = mid
-        assert _burst_ok(4096, pause=_stalled(start, hi), one=True)[1].flags() & rmii.OVF_FLAG_BIT
-        worst = lo if worst is None else min(worst, lo)
-    print(f"longest host stall inside a burst, worst phase: {worst} clocks ({worst * 20} ns)")
-    assert 60 <= worst <= 96
+def _reader(period=8, burst=4096, stalls=(), late=False, offset=0, size=400):
+    """One frame, a reader at `period` clocks per read in bursts of `burst`, SCK held
+    for each (word index, clocks) of `stalls`. Returns (delivered whole, bench)."""
+    stalls = dict(stalls)
+    n = [0]
+
+    def pause():
+        n[0] += 1
+        return period - 8 + stalls.get(n[0], 0)
+    f = make_frame(size, 5)
+    b = Bench(late=late)
+    b.load_rx()
+    b.start(1)
+    b.phy_rx.idle(40 + offset)
+    b.phy_rx.frame(f)
+    b.port.script = rmii.drain(b.port, burst=burst, pause=pause)
+    b.run_all(300)
+    recs, _ = parse_rx(b.words())
+    return len(recs) == 1 and recs[0].data == f and recs[0].good and recs[0].flags == 0, b
+
+
+def _phases(period, burst):
+    """Every phase of a stall that repeats: the frame's start against the reader
+    over the 12-clock word, and the stall's place in the reader's own cycle."""
+    if burst < 4096:
+        n = burst
+    else:
+        n = {8: 3, 9: 4, 10: 6, 11: 12, 12: 1}[period]
+    first = 60 - 60 % n                # well inside the frame, steady state
+    return [(o, first + i) for o in range(12) for i in range(n)]
+
+
+# Longest stall, clocks, worst phase, for (clocks per read, burst, late SCK phase).
+# A host's budget is what its FIFO has left, not what the FIFO holds: 8 words of 12
+# clocks less the backlog it already runs with.
+STALL_BUDGET = {}
+for _period, _clocks in ((8, 69), (9, 66), (10, 63), (11, 60), (12, 57)):
+    STALL_BUDGET[_period, 4096, False] = STALL_BUDGET[_period, 4096, True] = _clocks
+for _burst in (7, 8, 12):
+    STALL_BUDGET[8, _burst, False] = STALL_BUDGET[8, _burst, True] = 43
+
+
+@pytest.mark.parametrize("period,burst,late", sorted(STALL_BUDGET))
+def test_rx_stall_budget_per_host(period, burst, late):
+    """Search down from 110 over every phase: the budget must hold at all of them,
+    and one clock more must fail at one of them, with the flag up."""
+    budget, failed = 110, None
+    for o, at in _phases(period, burst):
+        while True:
+            ok, b = _reader(period, burst, [(at, budget)], late, o)
+            if ok:
+                break
+            assert b.flags() & rmii.OVF_FLAG_BIT, "a stall lost data with no flag"
+            failed = (o, at)
+            budget -= 1
+    assert failed is not None
+    assert all(_reader(period, burst, [(at, budget)], late, o)[0] for o, at in _phases(period, burst))
+    print(f"period {period} burst {burst} late {late}: longest stall {budget} clocks, worst phase {failed}")
+    assert budget == STALL_BUDGET[period, burst, late]
+
+
+# Two stalls of `each` clocks, `apart` reads apart, worst phase over the reader's cycle.
+TWO_STALLS = {(12, 150): 28, (8, 150): 69, (8, 10): 50}
+
+
+@pytest.mark.parametrize("period,apart", sorted(TWO_STALLS))
+@pytest.mark.parametrize("late", [False, True])
+def test_rx_a_second_stall_needs_catch_up(period, apart, late):
+    """A stall's backlog stays until the host reads faster than 12 clocks per word.
+    At exactly 12 it never goes, and two stalls share one budget."""
+    each = 110
+    n = _phases(period, 4096)
+    for o, at in n:
+        while not _reader(period, 4096, [(at, each), (at + apart, each)], late, o, size=1000)[0]:
+            each -= 1
+    print(f"period {period}, {apart} reads apart, late {late}: {each} clocks each")
+    assert each == TWO_STALLS[period, apart]
 
 
 def test_rx_stall_mid_frame_is_flagged_and_recovers():
@@ -439,6 +500,9 @@ def test_checker_bounds_hold_on_the_model():
         seen[r.deadline.name] = (len(ms), min(m.ticks for m in ms), max(m.ticks for m in ms))
     print(seen)
     assert seen["word"][1:] == (12, 12) and seen["word"][0] > 400
+    assert seen["turnaround0"][1:] == (12, 12)
+    assert seen["turnaround2"][1:] == (11, 11)
+    assert seen["turnaround4"][1:] == (10, 10)
 
 
 # ---------------------------------------------------------------- TX
@@ -526,14 +590,15 @@ def test_tx_host_rate_limits():
     assert not run(11)
 
 
-def test_tx_longest_frame_from_a_plain_burst():
+@pytest.mark.parametrize("late", [False, True])
+def test_tx_longest_frame_from_a_plain_burst(late):
     """No pacing at all: one WRITE_FIXED at SCK = clk, words every 8 clocks, a host
     that can't hold SCK. The FIFOs absorb the difference up to a size, found here."""
     fifo = rmii.fifo_addr(1)
 
     def ok(size):
         f = make_frame(size, 1)
-        b = Bench()
+        b = Bench(late=late)
         b.load_tx()
         b.start(2)
         w = rmii.tx_words(rmii.tx_samples([f], tail=1))
@@ -544,18 +609,24 @@ def test_tx_longest_frame_from_a_plain_burst():
     size = 64
     while ok(size + 1):
         size += 1
-    print(f"longest frame from an unpaced burst: {size} bytes")
-    assert 100 < size < 400 and not ok(size + 1) and not ok(1518)
+    print(f"longest frame from an unpaced burst, late {late}: {size} bytes")
+    assert size == 189 and not ok(1518)
 
 
-def test_tx_cushion():
-    """The longest host stall mid-frame after a ramp, by search."""
+TX_CUSHION = {(0, False): 0, (24, False): 46, (48, False): 94, (72, False): 142,
+              (0, True): 0, (24, True): 46, (48, True): 94, (72, True): 142}
+
+
+@pytest.mark.parametrize("ramp,late", sorted(TX_CUSHION))
+def test_tx_cushion(ramp, late):
+    """The longest host stall mid-frame after `ramp` words at full speed, by search
+    to the clock. Once paced at 10 clocks a word the level never recovers."""
     f = make_frame(FULL, 1)
     w = rmii.tx_words(rmii.tx_samples([f]))
     fifo = rmii.fifo_addr(1)
 
-    def ok(ramp, stall):
-        b = Bench()
+    def ok(stall):
+        b = Bench(late=late)
         b.load_tx()
         b.start(2)
         n = [0]
@@ -567,14 +638,15 @@ def test_tx_cushion():
         b.run(len(w) * 10 + 600 + stall)
         fr = b.phy_tx.frames()
         return len(fr) == 1 and fr[0][1] == f and fr[0][3] == 4 * (8 + FULL)
-    best = {}
-    for ramp in (0, 24, 48, 72):
-        s = 0
-        while ok(ramp, s + 10):
-            s += 10
-        best[ramp] = s
-    print(f"ramp words -> longest stall mid-frame, to 10 clocks: {best}")
-    assert best[72] >= 100 and best[0] < best[72]
+    lo, hi = -1, 400                   # lo works, hi does not
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if ok(mid):
+            lo = mid
+        else:
+            hi = mid
+    print(f"ramp {ramp} words, late {late}: longest stall mid-frame {lo} clocks")
+    assert lo == TX_CUSHION[ramp, late]
 
 
 def test_tx_underrun_breaks_the_frame_visibly_at_the_far_end():
@@ -591,6 +663,17 @@ def test_tx_underrun_breaks_the_frame_visibly_at_the_far_end():
     fr = b.phy_tx.frames()
     assert len(fr) == 1 and not rmii.fcs_ok(fr[0][1][:FULL])
     assert fr[0][3] > 4 * (8 + FULL)
+
+
+def test_tx_status_stalled_cannot_tell_underrun_from_idle():
+    """STATUS.stalled is 1 in an underrun and 1 idling after a good frame: same
+    register value, so it can't be the missing underrun flag."""
+    f = make_frame(MIN, 1)
+    status = sim.core_reg(1, sim.C_STATUS)
+    under = tx_run([f], stop_after=10, tail=100)
+    idle = tx_run([f], tail=100)
+    assert (under.chip.outputs()[0] >> 2) & 1 == 1 and (idle.chip.outputs()[0] >> 2) & 1 == 0
+    assert under.chip.read(status) == idle.chip.read(status) == 0x1000
 
 
 def test_corrupted_tx_dibit_fails_the_check():
@@ -754,6 +837,44 @@ def test_reaction_on_a_corrupted_field_changes():
     b.run_all(100)
     words = [w for _, w in b.port.rx if w]
     assert words != [2000]
+
+
+def test_match_threshold_wraps_at_16_bits():
+    """The threshold word is kept as its low 16 bits: 0x10005 behaves as 5."""
+    r, got, _ = match_run([field_frame(5), field_frame(4)], threshold=0x10005)
+    assert [x is not None for x in r] == [True, False] and got == [5]
+
+
+def test_match_fifo_loses_records_while_the_pin_still_rises():
+    """Nobody reads: every hit raises HIT, RXF keeps 8 records and the rest go, with
+    no flag. The pin is the result; the FIFO is a best-effort log."""
+    frames = [field_frame(2000 + i) for i in range(12)]
+    b = Bench()
+    b.apply(host.load_program(0, rmii.firmware("rmii_match.pasm")))
+    b.write(rmii.fifo_addr(0), 1000)
+    b.start(1)
+    b.phy_rx.idle(70)
+    for f in frames:
+        b.phy_rx.frame(f)
+        b.phy_rx.idle(MIN_GAP)
+    b.trace = []
+    b.run_all(100)
+    hit = rmii.HIT_PIN - 8
+    rises = sum(1 for (_, u), (_, v) in zip(b.trace[1:], b.trace) if (u >> hit) & 1 and not (v >> hit) & 1)
+    b.port.script = b.port.read_fixed(rmii.fifo_addr(0), 12)
+    b.run(200)
+    got = [w for w in b.words() if w]
+    assert rises == 12 and got == [2000 + i for i in range(8)] and b.flags() == 0
+
+
+def test_match_pin_is_a_latch():
+    """HIT stays up past the frame's end and through idle, until the next carrier."""
+    b = None
+    r, _, b = match_run([field_frame(2000)])
+    hit = rmii.HIT_PIN - 8
+    assert (b.chip.outputs()[0] >> hit) & 1 == 1      # 100 clocks after the frame
+    r, _, b = match_run([field_frame(2000), field_frame(5)], gap=2000)
+    assert (b.chip.outputs()[0] >> hit) & 1 == 0      # the next frame's carrier cleared it
 
 
 def test_reaction_precedes_the_end_of_a_min_frame():

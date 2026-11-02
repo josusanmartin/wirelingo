@@ -5,7 +5,9 @@
 ;
 ; The host pushes one word, the threshold. Frames: EtherType ETHERTYPE, then a 16-bit
 ; field, first byte low. If the field >= the threshold, pin HIT goes high, then the
-; field goes to the RX FIFO. HIT stays high until the next frame.
+; field goes to the RX FIFO. HIT is a latch: it stays high through the frame's end
+; and idle, until the next frame's carrier. The threshold is its low 16 bits. The
+; push is noblock: with RXF full the record goes, with no flag, and HIT still rises.
 ;
 ; The offsets are fixed: a VLAN tag moves the field and this firmware misses it. Like
 ; eth10_match the decision comes before the FCS, so a corrupted frame can raise HIT.

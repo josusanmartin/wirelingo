@@ -8,7 +8,7 @@ chip and the PHY. Native 100BASE-TX is not in scope.
 
 | Direction | Verdict | Evidence | Conditions |
 |---|---|---|---|
-| RX | **Go** | Cycle model and RTL simulation, through the SPI port | Two extra pads; a host that reads a word per 12 clocks with no stall over 71 clocks |
+| RX | **Go** | Cycle model and RTL simulation, through the SPI port | Two extra pads; a host that reads a word per 12 clocks or faster, with stalls inside the budget for its rate (57 clocks at 12 clocks per read, 43 for bursts) and time to catch up |
 | TX | **Go** | Cycle model and RTL simulation, through the SPI port | A host that writes a word per 10 clocks, and always finishes the frame |
 | RX and TX at once, at wire rate | **No-go** | Model | One port, one direction at a time: 147 % of it before headers. Half duplex only |
 | Hardware | **Unproved** | Paper budget only | Nothing has run on a PHY, a fabric pad or silicon. The clock path outside the macro is open |
@@ -69,7 +69,31 @@ against clk.
 | Port rate used | 133 Mbit/s of the port's 200 wire rate (32 bits per 240 ns) | derived from the two above |
 | SCK | at least 33.3 MHz with no pauses (derived). SCK = clk/2 fails, with the flag | `test_rx_sck_half_clock_fails_with_a_flag` |
 | Burst length | READ_FIXED bursts with 26 clocks of header and gap: 7 words sustain, 6 fail. Model and **RTL** agree | `test_rx_shortest_read_burst_that_sustains`, `test_rmii_rx_seven_word_bursts_rtl`, `test_rmii_rx_six_word_bursts_rtl` |
-| Longest host stall | 71 clocks, 1.42 us, worst phase | `test_rx_pause_budget` |
+
+**Stall budget.** A stall spends what the FIFO has left, so the budget depends on the
+host. Longest stall on a 400-byte frame, searched over every phase of the frame against
+the reader and of the stall in the reader's cycle, in both SCK phases: the figures are
+the same in both (`test_rx_stall_budget_per_host`, model).
+
+| Host | Longest stall |
+|---|---|
+| 8 clocks per read | 69 clocks, 1.38 us |
+| 9 | 66 |
+| 10 | 63 |
+| 11 | 60 |
+| 12, the slowest that sustains | 57 clocks, 1.14 us |
+| Bursts of 7, 8 or 12 words at SCK = clk | 43 clocks, on top of the burst's own 26 |
+
+**Catch-up.** One stall per budget, then the backlog has to go. A host at p clocks per
+read clears it at 1/p - 1/12 words per clock, so a stall of S clocks takes S p / (12 - p)
+clocks to clear (derived): twice S at 8 clocks per read, and never at exactly 12. Measured
+two-stall budgets, each stall, worst phase, both SCK phases
+(`test_rx_a_second_stall_needs_catch_up`): 28 clocks at 12 clocks per read, 150 reads
+apart, because the two share one budget; 69 at 8 clocks per read, 150 reads apart, fully
+recovered; 50 at 8 clocks per read, 10 reads apart.
+
+Going over a budget is loud: the flag is asserted at the first failing stall in each
+search. The frame is lost, nothing else.
 
 The FPGA figure for the port (193.6 Mbit/s for a 64-word quad write, 199.9 for 4096-word
 bursts, fpga/kv260/README.md) is above the 133 needed, but it is another workload.
@@ -101,10 +125,12 @@ FCS, gap and TX_EN. `pe.rmii.tx_words` packs them.
 | Host pacing that works | 8 SCK at clk + 2 held clocks per word; or WRITE_FIXED bursts of 9 words, 90 clocks each with 18 of overhead (after a 24-word first burst, 40 on RTL) | same tests |
 | Host rates that fail | 8 clocks per word overruns on a full frame, 11 runs dry | `test_tx_host_rate_limits` |
 | Unpaced burst | one WRITE_FIXED at SCK = clk works up to 189 bytes | `test_tx_longest_frame_from_a_plain_burst` |
-| Stall mid-frame | 40, 90, 140 clocks after a ramp of 24, 48, 72 words at full speed, to 10 clocks | `test_tx_cushion` |
+| Stall mid-frame | 0, 46, 94, 142 clocks after a ramp of 0, 24, 48, 72 words at full speed, both SCK phases. Once paced at 10 clocks a word the level stays where the ramp left it | `test_tx_cushion` |
 
 **Limits of this firmware, on purpose.** An underrun holds the pins: mid-frame, TX_EN
-stays up and a dibit repeats until data returns. Nothing on the chip records it, and if
+stays up and a dibit repeats until data returns. Nothing on the chip records it.
+`STATUS.stalled` is not the answer: it reads 1 in an underrun and 1 idling after a good
+frame, the same 0x1000 (`test_tx_status_stalled_cannot_tell_underrun_from_idle`). If
 the host dies TX_EN stays high. The far end's FCS fails
 (`test_tx_underrun_breaks_the_frame_visibly_at_the_far_end`). By isa.md a host write to
 `PIN_OUT` overrides the pin; no test runs that here. A frame must be followed by an idle sample, or TX_EN stays up
@@ -172,7 +198,10 @@ describes an RP2040-generated clock, 1 Hz to 66.5 MHz.
 **Board host.** docs/board-transport.md's default SCK is half the project clock: 16
 clocks per word, too slow for both directions. RX needs 33.3 MHz and TX 40 MHz. With its
 four PIO instructions per SCK that means a 133 and 160 MHz RP2350 system clock: an
-estimate, not run. Its sampling margin is unmeasured.
+estimate, not run. **The 160 MHz is an overclock**: the
+[RP2350 datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf) rates
+the part at 150 MHz, where the same arithmetic gives SCK 37.5 MHz: enough for RX, not for
+TX at this rate, unless SCK can run on fewer PIO instructions. Its sampling margin is unmeasured.
 
 **KV260: what it needs.** From this repo:
 
@@ -216,11 +245,19 @@ add 1 clock. Add also the pad and output delays, unmeasured in silicon.
 does not occur in its text, and the RMII timing section has none). Wire-to-RXD time is not in any number here.
 
 **Speculative**, as `eth10_match`: the decision precedes the FCS. Offsets are fixed, so a
-VLAN tag moves the field and it is missed. No reply frame.
+VLAN tag moves the field and it is missed. No reply frame. Also:
+
+* The threshold is 16 bits: a pushed 0x10005 behaves as 5
+  (`test_match_threshold_wraps_at_16_bits`).
+* The FIFO is a log and the pin is the result. The push is `noblock`: with nobody
+  reading, 12 hits gave 12 rises and 8 records, with no flag
+  (`test_match_fifo_loses_records_while_the_pin_still_rises`).
+* HIT is a latch: it stays high past the frame's end and through idle, until the next
+  frame's carrier (`test_match_pin_is_a_latch`).
 
 ## Tests and how to reproduce
 
-`test/model/test_rmii.py`, 105 tests: pins-only far end; full-size, minimum-size,
+`test/model/test_rmii.py`, 138 tests: pins-only far end; full-size, minimum-size,
 back-to-back; drain failure; and negatives. `test_corrupted_dibit_fails_the_check` wrongs
 every one of a 64-byte frame's 256 dibits in turn, with `test_clean_control_for_the_corruption_test`
 as the control. `test_corrupted_sfd_gets_no_good_record`, `test_corrupted_tx_dibit_fails_the_check`,
@@ -256,6 +293,8 @@ runner1 `~/protoemu-flow/agent-runs/rmii-sta/`.
 * QuadPort is a model. Its burst limit is confirmed on RTL at 6 and 7 words, one frame,
   and at SCK = clk only. FPGA pad timing at SCK = clk with a real reader is not this test.
 * The model's host stops at the port: nothing here stores or processes a frame.
+* The stall budgets are model figures from one stall on one frame. The RTL confirms the
+  burst limit, not the budgets.
 * The eye sweep has no setup time and no metastability; its random values stand in for X.
 * Not built: a second core copying RXD to virtual pins might replace the two extra pads
   at the cost of the TX core. An idea only.
@@ -268,5 +307,6 @@ runner1 `~/protoemu-flow/agent-runs/rmii-sta/`.
 3. A host with SCK of at least 33.3 MHz for RX, or 40 MHz for TX with word pacing, on a
    clock tied to the chip's, with a frame's worth of real-time storage. The ability to
    sample quad reads at that SCK is itself unmeasured.
-4. Keep stalls under 71 clocks on RX, and never starve TX mid-frame.
+4. Keep RX stalls inside the budget for the host's rate, 43 to 69 clocks, with time to
+   catch up between them, and never starve TX mid-frame.
 5. Run half duplex, or accept flagged RX loss while transmitting.

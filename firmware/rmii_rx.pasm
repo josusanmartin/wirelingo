@@ -49,9 +49,9 @@
 ; @deadline s34 from=s3 to=s4 min=2 max=2 unit=tick avoid=end0,end2,end4,overflow,toolong reach=conditional
 ; @deadline s45 from=s4 to=s5 min=2 max=2 unit=tick avoid=end0,end2,end4,overflow,toolong reach=conditional
 ; @deadline s50 from=s5 to=s0 min=2 max=2 unit=tick avoid=end0,end2,end4,overflow,toolong reach=conditional
-; @deadline turnaround0 from=end0 to=armed max=20 unit=tick avoid=busy1,busy2,idle "end of frame seen to hunting again, RXF not full"
-; @deadline turnaround2 from=end2 to=armed max=20 unit=tick avoid=busy1,busy2,idle
-; @deadline turnaround4 from=end4 to=armed max=20 unit=tick avoid=busy1,busy2,idle
+; @deadline turnaround0 from=end0 to=armed min=12 max=12 unit=tick avoid=busy1,busy2,idle "end of frame seen to hunting again, RXF not full"
+; @deadline turnaround2 from=end2 to=armed min=11 max=11 unit=tick avoid=busy1,busy2,idle
+; @deadline turnaround4 from=end4 to=armed min=10 max=10 unit=tick avoid=busy1,busy2,idle
     pin TAG, hi
     ldi r3, 1
 idle:                             ; out of step with the wire: wait for 4 quiet clocks
