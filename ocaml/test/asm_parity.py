@@ -135,7 +135,8 @@ KNOWN = {"RX": 16, "TX": 8, "SDA": 0, "SCL": 1, "CLK": 2, "DAT": 3, "DQ": 0, "CE
 def define_sets(text):
     """Define sets under which the file assembles or fails only on values."""
     from pe import postfreeze, postfreeze2
-    sets = [postfreeze.dshot_bidir_defines(48e6), postfreeze2.modbus_defines()]
+    sets = [postfreeze.dshot_bidir_defines(48e6), postfreeze2.modbus_defines(),
+            {"D0": 0, "D1": 1, "PW": 50, "IV": 2000, "FG": 20000}]   # the tests' wiegand_tx
     for fill in (None, 1, 2, 3, 5, 8, 16, 40, 100, 1000):
         d = {}
         for _ in range(64):

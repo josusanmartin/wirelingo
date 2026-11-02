@@ -96,6 +96,9 @@ class Link:
             return
         self.dead = True
         LIVE.remove(self)
+        if EVERY == 1 and stats and chip is not None and not self.poked and state_line(chip) != self.last:
+            self.poked = True                # a write after the last step
+            TOTALS["poked_chips"] += 1
         try:
             if stats and not self.poked and chip is not None:
                 self.send(f"= {state_line(chip)}\n")
