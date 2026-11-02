@@ -3,6 +3,8 @@
 * `test.py`: top-level cocotb tests through the real SPI host port (UART, SPI,
   I2C, USB low-speed device, 10BASE-T TX, FIFO read race, the reverse-engineering
   demo: capture, I2C clone and the capture rate), on the SRAM build.
+* `test_post_freeze.py`, `test_bench_fw.py`: firmware written after the freeze,
+  through the SPI port (docs/post-freeze-protocols.md, docs/bench-firmware.md).
 * `test_lockstep.py`: RTL vs the golden model (`tools/pe/sim.py`) on random
   programs, pins and host traffic, compared every cycle (`TB=chip`).
 * `model/`: firmware on the cycle-accurate model, assembler and driver tests (pytest).
