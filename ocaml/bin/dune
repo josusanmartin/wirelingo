@@ -1,0 +1,4 @@
+(executable
+ (name gen_rtl)
+ (modules gen_rtl)
+ (libraries base stdio hardcaml wirelingo_rtl))

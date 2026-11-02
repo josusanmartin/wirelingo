@@ -1,0 +1,7 @@
+(library
+ (name wirelingo_rtl)
+ (libraries base stdio hardcaml)
+ (flags
+  (:standard -w -9-40-41-42-44-45-66-70))
+ (preprocess
+  (pps ppx_hardcaml ppx_jane)))
