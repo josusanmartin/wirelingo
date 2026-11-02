@@ -144,14 +144,15 @@ def test_reaction_with_8023_jitter():
 @pytest.mark.parametrize("clock_mhz", [40, 50])
 def test_rise_to_last_edge_and_hit_is_a_pulse(clock_mhz):
     """44 payload bytes and the FCS follow the field: 384 bits at 100 ns (+100 ppm).
-    A frame ending in 1 then has TP_IDL's edge, 250 ns after that bit's mid-bit."""
+    A frame ending in 1 then has this test sender's TP_IDL edge, 250 ns after that
+    bit's mid-bit. The rise is 10-11 clocks after the field, so that much earlier."""
     frames = [wire_frame(2000 + i) for i in range(8)]
     assert {f[-1] for f in frames} == {0, 1}
     r, _, lead, tail = run(frames, 1000, clock_mhz)
-    bit = 100e-9 * (1 + 100e-6)
-    for f, x, t in zip(frames, lead, r):
-        last = 384 * bit + (2.5 * bit if f[-1] else 0) - t * 1e-6 / clock_mhz
-        assert x == pytest.approx(last, abs=1e-12)
+    bit, clk = 100e-9 * (1 + 100e-6), 1e-6 / clock_mhz
+    for f, x in zip(frames, lead):
+        after = 384 * bit + (2.5 * bit if f[-1] else 0)      # last field mid-bit to last edge
+        assert after - 11 * clk - 1e-12 <= x <= after - 10 * clk + 1e-12
     print(f"{clock_mhz} MHz: rise to last edge {min(lead) * 1e6:.2f}-{max(lead) * 1e6:.2f} us")
     assert all(x is not None and 0 < x < 1e-6 for x in tail), tail
 

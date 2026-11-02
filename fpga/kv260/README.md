@@ -927,8 +927,8 @@ MODE 0, host port on the GPIO path (pe_spim SEL 0).
 `host/legacy_demo.py eth10_cut`: `eth10_match` on core 0 with the line unit, pe_lab's generator on uio0 as the wire,
 usb_sampler on core 1 reading uio0 and HIT (uio1) every clock. Generator frames at
 digital levels: no real network, magnetics or comparator. Run 20:14:02-20:14:05 UTC,
-through `~/wlrun.sh`, which writes `/var/log/wl_steps.log` on the Kria (lines 1690-1702,
-timestamps removed):
+through `~/wlrun.sh`, which writes `/var/log/wl_steps.log` on the Kria. Lines 1691-1702
+below, timestamps removed, leaving out the demo's banner and the `pre-timing runs` line:
 
 ```
 bitstream RTL revision d1aa46f7ed7e, built 2026-10-06 22:07:40 UTC, digest 3adc796c, clk_div 24

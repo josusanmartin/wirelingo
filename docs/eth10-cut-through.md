@@ -31,9 +31,9 @@ below the threshold, which raised nothing. The sampler is a second core reading 
 pads every clock.
 
 `test/model/test_eth10_match.py` also checks a field equal to the threshold, a
-field below it and another EtherType. It checks the rise against the frame's end
-exactly: 384 bits (44 payload bytes and the FCS) minus the reaction, plus 250 ns of
-TP_IDL if the frame ends in 1. On a 64-byte frame from a sender 100 ppm fast, that
+field below it and another EtherType. It bounds the rise against the frame's end:
+384 bits (44 payload bytes and the FCS) minus 10-11 clocks, plus 250 ns of the test
+sender's TP_IDL if the frame ends in 1. On a 64-byte frame from a sender 100 ppm fast, that
 is 38.18-38.21 us (ends in 0) or 38.43-38.46 us (ends in 1) at 50 MHz, and 38.13-38.16
 us or 38.38-38.41 us at 40 MHz. HIT is a pulse: it falls within 1 us of the frame's
 last edge.
