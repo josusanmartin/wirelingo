@@ -4,7 +4,8 @@
 #   ocaml/scripts/evidence.sh OUT
 #
 # OUT: a new directory. Each step's log lands there, summary.txt collects the
-# result lines. About an hour on runner1. Exit status 0 only if all passed.
+# result lines. Exit status 0 only if all passed; the parity and model scripts
+# also fail below their coverage floors.
 # SPDX-License-Identifier: Apache-2.0
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -19,10 +20,12 @@ cd "$ocaml" || exit 2
   "$yosys_bin" -V
   ocamlfind ocamlopt -version 2>/dev/null
   rm -rf _build
-  dune build 2>&1 | tail -5
-  dune test 2>&1 | tail -2
 } > "$out/build.txt" 2>&1
+start=$(date +%s)
 fail=0
+if ! dune build >> "$out/build.txt" 2>&1; then echo "dune build failed"; exit 1; fi
+dune test >> "$out/build.txt" 2>&1
+echo "dune_test rc=$?" >> "$out/rc.txt"
 step() {                      # step NAME COMMAND...: in the background, log to OUT/NAME.log
   local name=$1; shift
   ( "$@" > "$out/$name.log" 2>&1; echo "$name rc=$?" >> "$out/rc.txt" ) &
@@ -39,7 +42,9 @@ step asm python3 test/asm_parity.py --fuzz 5000 --corpus "$out"/model/asm.*.json
 step host python3 test/host_parity.py
 step run python3 test/run_parity.py
 step cyclesim _build/default/test/line_cyclesim.exe 2000000 7
+step self test/self_check.sh "$out/self"
 wait
+echo "wall time $(($(date +%s) - start)) s" >> "$out/build.txt"
 cat "$out/rc.txt"
 grep -v ' rc=0$' "$out/rc.txt" && fail=1
 {
@@ -52,5 +57,6 @@ grep -v ' rc=0$' "$out/rc.txt" && fail=1
   tail -3 "$out/host.log"
   tail -1 "$out/run.log"
   tail -1 "$out/cyclesim.log"
+  tail -1 "$out/self.log"
 } > "$out/summary.txt"
 exit $fail

@@ -7,7 +7,7 @@ For every firmware/*.pasm (swd_probe excluded, never opened) that assembles:
 the listing, the load_program writes, and the text of `python -m pe.export` on
 both cores with a few pin and clock options; and isa.disasm on 200000 words (all
 opcodes and random operands). Errors compare by the last stderr line. Prints
-counts; exit status 0 only if all agree.
+counts; exit status 0 only if all agree and every count reaches its floor.
 
 SPDX-License-Identifier: Apache-2.0
 """
@@ -26,21 +26,39 @@ WL = str(REPO / "ocaml/_build/default/bin/wl_export.exe")
 ENV = {"PYTHONPATH": str(REPO / "tools"), "PYTHONDONTWRITEBYTECODE": "1", "PATH": "/usr/bin:/bin"}
 
 
+# A drop below these means coverage was lost, even with nothing disagreeing.
+FLOORS = {"files": 57, "export": 600, "export_err": 300, "writes": 130, "listing": 130}
+
+
+def assembles(text, d):
+    try:
+        asm.assemble_all(text, d)
+        return True
+    except asm.AsmError:
+        return False
+
+
 def last_err(s):
     t = s.strip().split("\n")
     return t[-1] if t else ""
 
 
 def main():
-    n = {"export": 0, "export_err": 0, "writes": 0, "listing": 0, "bad": 0}
+    n = {"files": 0, "export": 0, "export_err": 0, "writes": 0, "listing": 0, "bad": 0}
     bad = []
     for f in firmware_files():
         text = f.read_text()
-        for d in define_sets(text)[:3]:
+        sets = define_sets(text)
+        # sets[:3] are fixed sets for three firmwares, the rest discovered for this file;
+        # up to three that assemble, the discovered ones first
+        use = [d for d in sets[3:] if assembles(text, d)][:3] or [d for d in sets[:3] if assembles(text, d)]
+        covered = False
+        for d in use:
             try:
                 progs = asm.assemble_all(text, d)
             except asm.AsmError:
                 continue
+            covered = True
             if len(progs) != 1:
                 sel = [["--program", p.name] for p in progs if p.name]
             else:
@@ -81,6 +99,7 @@ def main():
                 if want != ml.stdout:
                     n["bad"] += 1
                     bad.append(("writes", f.name, want[:300], ml.stdout[:300], ml.stderr[-200:]))
+        n["files"] += covered
     rng = random.Random(1)
     words = [(op << 27) | rng.getrandbits(27) for op in range(32) for _ in range(1000)] + \
         [rng.getrandbits(32) for _ in range(168000)]
@@ -97,7 +116,10 @@ def main():
     print(n)
     for b in bad[:6]:
         print("DISAGREE", str(b)[:900])
-    sys.exit(1 if n["bad"] else 0)
+    low = {k: (n[k], v) for k, v in FLOORS.items() if n[k] < v}
+    if low:
+        print("BELOW FLOOR (got, floor):", low)
+    sys.exit(1 if n["bad"] or low else 0)
 
 
 if __name__ == "__main__":

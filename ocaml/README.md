@@ -51,7 +51,7 @@ formal/equiv_port.sh -j 6 --mutants OUT      # proof against src/
 scripts/run_cocotb.sh WORK test lockstep     # the repo's cocotb suites on the generated Verilog
 scripts/stage3_model_suite.sh OUT            # model suite, every Chip in lockstep with OCaml
 python3 test/asm_parity.py                   # assembler against asm.py
-scripts/evidence.sh OUT                      # everything, about an hour
+scripts/evidence.sh OUT                      # everything, with floors on the counts
 ```
 
 `firmware/swd_probe.pasm` and SWD tools are excluded everywhere.

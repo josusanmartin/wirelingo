@@ -185,3 +185,45 @@ let%expect_test "line RX: Manchester, 8 clocks per bit, frame end by silence" =
     └──────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────┘
     |}]
 ;;
+
+let%expect_test "line RX: Manchester, where the edge fell in the clock moves the frame end" =
+  (* A frame of one edge, then silence, 9 clocks per bit. The first edge sets
+     q = age - 128 P, q gains 128 a clock, and the frame ends at q >= 64 P, so after
+     (192 P - age) / 128 clocks rounded up. age is 96 (1.5 half-clocks) if the falling-edge
+     sample already saw the edge, 32 (0.5) if not: 12.75 and 13.25, so 13 and 14. *)
+  let run ~seen_at_mid =
+    let waves, sim, i, o = create () in
+    write sim i i.div_we (9 lsl 16);
+    write sim i i.pins_we (1 lsl 8);
+    write sim i i.cfg_we (cfg ~code:2 ~rx_en:1 ());
+    let clock ~rx ~mid =
+      set i.pins_in ~width:32 (rx lsl 1);
+      set i.rx_mid ~width:1 mid;
+      Cyclesim.cycle sim
+    in
+    clock ~rx:0 ~mid:0;
+    clock ~rx:0 ~mid:0;
+    clock ~rx:1 ~mid:(Bool.to_int seen_at_mid);
+    let on =
+      collect 20 (fun () ->
+        clock ~rx:1 ~mid:1;
+        (int o.r_stat lsr 17) land 1)
+    in
+    [%test_result: int] ((int o.r_stat lsr 18) land 1) ~expect:1;
+    waves, List.count on ~f:(Int.equal 1)
+  in
+  let _, late = run ~seen_at_mid:false in
+  let waves, early = run ~seen_at_mid:true in
+  [%test_result: int] early ~expect:13;
+  [%test_result: int] late ~expect:14;
+  print ~wave_width:0 ~display_width:80 waves [ "rx_mid#b"; "r_stat" ];
+  [%expect {|
+    ┌Signals───────────┐┌Waves─────────────────────────────────────────────────────┐
+    │rx_mid            ││          ┌─────────────────────────────────────────      │
+    │                  ││──────────┘                                               │
+    │                  ││────────────┬─────────────────────────┬─────────────      │
+    │r_stat            ││ 00000000   │00020100                 │00040100           │
+    │                  ││────────────┴─────────────────────────┴─────────────      │
+    └──────────────────┘└──────────────────────────────────────────────────────────┘
+    |}]
+;;

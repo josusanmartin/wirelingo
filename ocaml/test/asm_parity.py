@@ -454,6 +454,10 @@ def run_corpus(p, files):
     print(f"corpus: {total} recorded calls, {len(seen)} distinct")
 
 
+# A drop below these means coverage was lost, even with nothing disagreeing.
+FLOORS = {"firmware": {"ok": 300}, "directed": {"ok": 130, "error": 110, "crash": 8}, "corpus": {"ok": 250, "error": 20}}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--corpus", nargs="*", default=[])
@@ -467,8 +471,13 @@ def main():
     if a.corpus:
         run_corpus(p, a.corpus)
     ok = p.report()
-    print("PARITY" if ok else "DISAGREE")
-    sys.exit(0 if ok else 1)
+    low = [(g, k, p.n[g][k], v) for g, floors in FLOORS.items() if g in p.n for k, v in floors.items() if p.n[g][k] < v]
+    if a.fuzz >= 5000 and a.corpus and (p.bin_bytes < 270000 or len(p.n) < 4):
+        low.append(("bytes", p.bin_bytes))
+    if low:
+        print("BELOW FLOOR:", low)
+    print("PARITY" if ok and not low else "DISAGREE")
+    sys.exit(0 if ok and not low else 1)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,8 @@
 #
 #   ocaml/test/self_check.sh WORK
 #
-# Assembler bugs go to asm_parity.py, model bugs to the lockstep plugin on two model
-# test files. Needs the same environment as dune build and stage3_model_suite.sh.
+# Assembler bugs go to asm_parity.py, model bugs to the lockstep plugin on four
+# model test files, RTL bugs to the waveform tests. Needs the same environment as dune build and stage3_model_suite.sh.
 # Exit status 0 only if every planted bug is caught.
 # SPDX-License-Identifier: Apache-2.0
 set -uo pipefail
@@ -30,12 +30,15 @@ open(f, "w").write(s.replace(pat, rep, 1))
 EOF
   dune build bin/wl_asm.exe bin/wl_simcheck.exe 2>"$work/build.err" || { echo "does not build: $pat"; cat "$work/build.err"; missed=$((missed + 1)); }
   rm -f "$work"/lock.*
-  if [ "$kind" = asm ]; then
+  if [ "$kind" = wave ]; then
+    dune build @wave_test/runtest > "$work/check.log" 2>&1 && caught=no || caught=yes
+  elif [ "$kind" = asm ]; then
     python3 test/asm_parity.py --fuzz 300 > "$work/check.log" 2>&1 && caught=no || caught=yes
   else
     (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_OUT="$work/lock" \
       "$py" -m pytest -q -p no:cacheprovider -p capture_plugin -n 4 \
-      test/model/test_eth10.py test/model/test_call.py test/model/test_uart.py > "$work/check.log" 2>&1)
+      test/model/test_eth10.py test/model/test_call.py test/model/test_uart.py test/model/test_i2c_timeout.py \
+      > "$work/check.log" 2>&1)
     ls "$work"/lock.fail.* >/dev/null 2>&1 && caught=yes || caught=no
   fi
   echo "$kind [$pat] -> [$rep]: caught=$caught"
@@ -55,5 +58,10 @@ try asm/pyre.ml "if greedy
         else k pos || more ()" "if greedy
         then k pos || more ()
         else k pos || more ()" asm
+try rtl/pe_fifo.ml 'let do_push = i.push &: ~:(bit cnt_w log2) in' 'let do_push = i.push in' wave
+try rtl/pe_fifos.ml 'let xfer = i.fjoin &: ~:txf_empty &: ~:rxf_full in' 'let xfer = i.fjoin &: ~:txf_empty in' wave
+try rtl/pe_line.ml 'let spb = mux2 manch (of_int_trunc ~width:4 2) (of_int_trunc ~width:4 1) in' 'let spb = of_int_trunc ~width:4 1 in' wave
+try rtl/pe_line.ml 'n_trunbit <-- ~:(trunbit.value)' 'n_trunbit <-- trunbit.value' wave
+try rtl/pe_line.ml 'let m_age = mux2 edge1 (of_int_trunc ~width:21 96) (of_int_trunc ~width:21 32) in' 'let m_age = mux2 edge1 (of_int_trunc ~width:21 32) (of_int_trunc ~width:21 96) in' wave
 echo "missed: $missed"
 exit $((missed > 0))

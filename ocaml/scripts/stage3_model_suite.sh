@@ -11,6 +11,12 @@
 # reach is detected before the step and the chip is counted as poked: there, any
 # mismatch is real. Exit status 0 only if the second pass has no mismatch.
 #
+# --dist loadfile keeps a test file in one process. test_usb_uart_pairs.py caches
+# runs in a per-process lru_cache, so with plain -n 8 the cycle count depends on
+# how xdist happens to spread that file over workers.
+#
+# Below 1200 chips or 60M cycles the script fails: coverage was lost.
+#
 # Needs pytest and pytest-xdist in $WL_PYTHON (default
 # ~/protoemu-flow/test-venv/bin/python). pytest's own result is reported, not
 # used: see docs/hardcaml-port.md for tests that need a tool runner1 lacks.
@@ -25,7 +31,7 @@ cd "$repo" || exit 2
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test
 WL_LOCK_EVERY=$stride WL_ASM_CORPUS=$out/asm WL_LOCK_OUT=$out/lock \
   timeout 7200 "$py" -m pytest -q -p no:cacheprovider -p capture_plugin \
-  --ignore=test/model/test_swd.py -n 8 test/model > "$out/pytest.log" 2>&1
+  --ignore=test/model/test_swd.py -n 8 --dist loadfile test/model > "$out/pytest.log" 2>&1
 tail -8 "$out/pytest.log"
 summary() {
   python3 - "$@" <<'EOF'
@@ -40,11 +46,15 @@ print("lockstep totals:", tot)
 names = sorted({l.strip() for f in glob.glob(prefix + ".fail.*") for l in open(f) if l.startswith("test/")})
 print("tests with a mismatch:", len(names))
 open(prefix + ".failed", "w").write("".join(n + "\n" for n in names))
+if prefix.endswith("/lock") and (tot.get("chips", 0) < 1200 or tot.get("cycles", 0) < 60_000_000):
+    open(prefix + ".low", "w").write(str(tot))
+    print("BELOW FLOOR: 1200 chips, 60M cycles")
 EOF
 }
 summary "$out/lock"
 mapfile -t again < "$out/lock.failed"
 rc=0
+[ -e "$out/lock.low" ] && rc=1
 if [ ${#again[@]} -gt 0 ]; then
   printf '  %s\n' "${again[@]}"
   WL_LOCK_EVERY=1 WL_LOCK_OUT=$out/one timeout 3600 "$py" -m pytest -q -p no:cacheprovider \

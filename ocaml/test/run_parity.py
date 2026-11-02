@@ -87,7 +87,10 @@ def main():
             else:
                 print(f"  lengths {len(py)} {len(ml)}; ml tail {ml[-200:]!r}")
     print(f"{len(CASES)} firmware runs, {changes} lines compared, {bad} disagree")
-    sys.exit(1 if bad else 0)
+    low = changes < 3700
+    if low:
+        print(f"BELOW FLOOR: {changes} lines, floor 3700")
+    sys.exit(1 if bad or low else 0)
 
 
 if __name__ == "__main__":

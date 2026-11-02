@@ -34,7 +34,7 @@ from pe import sim
 SIMCHECK = pathlib.Path(__file__).resolve().parents[1] / "_build/default/bin/wl_simcheck.exe"
 EVERY = int(os.environ.get("WL_LOCK_EVERY", "1"))
 TOTALS = {"chips": 0, "cycles": 0, "state_compares": 0, "poked_chips": 0, "mismatches": 0, "coverage_events": 0,
-          "copies_not_compared": 0}
+          "copies_not_compared": 0, "cycles_after_mismatch_ignored": 0}
 FAILS = []
 LIVE = []
 
@@ -111,10 +111,14 @@ class Link:
         self.p.wait()
         self.log.seek(0)
         text = self.log.read()
-        TOTALS["cycles"] += self.cycles
         if not text.startswith("OK ") or self.p.returncode:
+            # the stream outran wl_simcheck's exit by however much the pipe held,
+            # so these cycles depend on timing and are not counted as compared
+            TOTALS["cycles_after_mismatch_ignored"] += self.cycles
             TOTALS["mismatches"] += 1
             FAILS.append(text[:4000])
+        else:
+            TOTALS["cycles"] += self.cycles
 
 
 _init = sim.Chip.__init__
