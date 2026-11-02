@@ -1,0 +1,9 @@
+; Timing annotations for firmware/i2c_device.pasm, kept apart so that the
+; program stays as it was (docs/bench-firmware.md).
+;   python -m pe.timing firmware/i2c_device.pasm -D SDA=0 -D SCL=1 --timing firmware/i2c_device.timing
+@assume clkdiv=1
+@point rd_hold_start at=rbyte
+@point rd_msb at=rbyte+6
+@point rd_release at=rbyte+7
+@deadline rd_setup from=rd_msb to=rd_release min=16 max=16 unit=tick "a read byte's MSB is on SDA 16 ticks before SCL is released"
+@deadline rd_hold from=rd_hold_start to=rd_release min=22 unit=tick "SCL held low at least 22 ticks at the start of a read byte"

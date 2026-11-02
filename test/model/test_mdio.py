@@ -620,7 +620,8 @@ def test_master_sound():
 
 def test_phy_sound():
     """The bounds against the model; and the whole REGAD-to-TA1 budget, which
-    crosses the table jump, measured: 17 ticks on every table entry."""
+    crosses the table jump, measured: 17 ticks on every table entry but
+    register 0's (14)."""
     ops = [("r", PHY, r) for r in range(32)] + [("w", PHY, r, 0x5A5A) for r in (0, 1, 4)] + [("r", PHY + 1, 2)]
     sta = mdio.Sta(ops, setup_ns=200.0, hold_ns=200.0)
     rig = Rig(phy_fw=phy_prog(), sta=sta, tracer_core=1)
@@ -629,6 +630,16 @@ def test_phy_sound():
     s = TC.soundness(chk, results, rig.tracer, label="mdio_phy")
     TC.show(s, results)
     assert all(s[r.deadline.name][0] > 0 for r in results), s
+    prog = phy_prog()
+    hb, ta1 = prog.labels["hb"], prog.labels["send"] + 2         # the last header WAIT; the WAIT on TA1
+    budget, last = [], None
+    for pc, tick, cycle, done in rig.tracer.attempts:
+        if pc == hb and done:
+            last = tick
+        elif pc == ta1 and last is not None:
+            budget.append(tick - last)
+            last = None
+    assert budget == [14] + [17] * 31                            # register 0 takes the checker's short path
 
 
 # ---------------------------------------------------------------- sigrok
