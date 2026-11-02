@@ -96,14 +96,17 @@ the pads, whose delays no test here includes.
 | Parameter | 802.3 | `mdio_phy`, CLKDIV 1, 50 MHz | Test |
 |---|---|---|---|
 | Clock to output | 0..300 ns | 80 ns on the synchronous model, every driven edge; at most 100 ns with an asynchronous MDC (checker's `adjust`, an assumption, not a measurement) | `test_phy_clock_to_output_exact` |
-| STA hold | >= 10 ns | **needs 40 ns**: 40 ns works, 20 ns does not | `test_phy_sta_hold_limit` |
+| STA hold | >= 10 ns | **needs more than 40 ns**: on the clock grid 40 ns works and 20 ns does not; 40 ns has no margin | `test_phy_sta_hold_limit` |
 | STA setup | >= 10 ns | none needed; the bit may appear up to 20 ns after MDC rises | `test_phy_sta_setup_limit` |
 | MDC period, read | >= 400 ns | 400, 380 and 360 ns work, 340 and 320 ns do not: REGAD to the wait on TA1 is 17 ticks | `test_phy_fastest_mdc`; 17 measured on 31 registers, 14 on register 0, `test_phy_sound` |
 
 The hold is the limit that matters. The stand-in reads MDIO in the instruction
 after the WAIT on MDC, 1 to 2 clocks after MDC's edge at the pad, so an STA
 that really holds MDIO for only the standard's 10 ns after the rising edge is
-**not** served at 50 MHz. An STA that changes MDIO on the falling edge, as
+**not** served at 50 MHz. The tests run MDC on the chip's clock grid, so 40 ns
+passing there is the best case: with an asynchronous MDC the sample can fall
+up to 40 ns after the edge (arithmetic from the figures above, not measured),
+so a real STA should hold for more than 40 ns. An STA that changes MDIO on the falling edge, as
 `mdio_master` does, is. 802.3's 20 ns window around the edge is as wide as one
 clock at 50 MHz, so a sampler behind a synchroniser cannot be certain of
 hitting it whichever instruction it uses.
@@ -150,9 +153,21 @@ setup past the limits, MDC too fast, 10 unread write records.
   line side. Status changes are host writes to R3, tested between frames.
 * Stand-in, constants: changing one means reassembling and reloading, with the
   core stopped.
-* The stand-in has no timeout: if an STA stops in the middle of a read, MDIO
-  stays driven until the frame's remaining MDC edges arrive (from the code;
-  not tested).
+* The stand-in has no timeout, so an abandoned frame costs the next one. Tested
+  on the model by restarting `mdio_master` mid-frame and reading PHYID1 three
+  times; not on the RTL. A read abandoned once the stand-in is driving
+  (`test_abandoned_read`) leaves it driving against the next preamble, up to
+  340 clocks of two drivers (6.8 us at 50 MHz, over every abort point, 1 us
+  apart). A read abandoned in its header loses the next read too, without
+  contention. Either way that next read is lost (no ack, 0xFFFF) and the read
+  after it is right, at every abort point
+  (`test_abandoned_read_every_microsecond`). What two drivers do to real pads
+  is not examined.
+* Worse, a write abandoned in its data phase is **applied with wrong data**:
+  the rest of its bits are taken from the next preamble's ones, so 0x1234
+  abandoned 20 us after the push leaves 0x3FFF in register 4
+  (`test_abandoned_write_applies_partial_data`). The host's record shows the
+  value, but nothing marks it as abandoned.
 * Its write records are pushed without blocking: more than 8 unread are lost,
   and the writes still apply (`test_phy_record_fifo_full_drops_records_not_writes`).
 * `BASE` must equal the load address: tested on core 1 at 256 only. The two
@@ -176,7 +191,7 @@ text was read for this; section numbers below are its). The identifier codes
 | Page | Bytes | Field | Behaviour |
 |---|---|---|---|
 | lower | 0 | Identifier | 11h QSFP28 by default, or as given |
-| lower | 1 | Revision compliance | 08h |
+| lower | 1 | Revision compliance | 08h: "Rev 2.8 or later" in Rev 2.9; Rev 2.12 narrows the code to 2.8, 2.9 and 2.10 (as the verifier read it) |
 | lower | 2 | Status | IntL bit 1, Flat_mem 0, Data_Not_Ready as the host sets it |
 | lower | 22-23 | Temperature | signed 1/256 C, MSB first, set by the host |
 | lower | 26-27 | Supply voltage | unsigned 100 uV, MSB first, set by the host |
@@ -294,10 +309,10 @@ read in 256, an estimate).
 
 | What | Where | Count |
 |---|---|---|
-| MDIO, model | `test/model/test_mdio.py` | 73 |
+| MDIO, model | `test/model/test_mdio.py` | 87 |
 | QSFP-style stand-in, model | `test/model/test_qsfpdev.py` | 40 |
 | PMBus, model | `test/model/test_pmbus.py` | 63 |
-| RTL through the SPI port | `test/test_bench_fw.py` | 5 tests |
+| RTL through the SPI port | `test/test_bench_fw.py` | 5 tests, and `bench_sigrok_available`, which runs only with sigrok |
 | Mutants, one bug each | `test/mutants.py`, names `fw-mdio-*`, `qsfp-*`, `pmbus-*`, `fw-smbus-pec-not-checked` | 28, all killed |
 
 ```
@@ -309,4 +324,16 @@ cd test && make COCOTB_TEST_MODULES=test_bench_fw
 python3 test/mutants.py fw-mdio-phy-31-ones qsfp-tears-a-read pmbus-byte-order   # any names; none = all
 ```
 
-The sigrok tests need `sigrok-cli` and skip without it.
+**CI does not run sigrok.** `.github/workflows/test.yaml` does not install
+`sigrok-cli`, and neither does the runner behind `remote_test.sh` unless
+`SIGROK_CLI` is set. The sigrok claims above come from runs with it set; a CI
+pass says nothing about them. The RTL tests' decoder checks sit inside tests
+that otherwise pass, so they used to vanish silently. Without `sigrok-cli` now:
+
+* each RTL test that drops a check logs `SIGROK SKIPPED: <test>: <check>`;
+* `bench_sigrok_available` is skipped, so the summary reads `TESTS=6 PASS=5
+  SKIP=1` where a run with sigrok reads `TESTS=6 PASS=6 SKIP=0`;
+* the model suite ends with a `SIGROK CHECKS SKIPPED: N tests` line
+  (`test/model/conftest.py`).
+
+CI's `check_results.py` call names the 5 tests, so the skip does not fail it.

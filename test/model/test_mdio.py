@@ -486,7 +486,9 @@ def test_phy_bad_turnaround_on_a_write(ta):
 def test_phy_sta_hold_limit(hold, ok):
     """The STA drives the inverse of each bit except from 10 ns before to
     `hold` after the rising edge. 40 ns is enough, 20 ns is not: the
-    stand-in needs more than 802.3's 10 ns minimum at 50 MHz (a limit)."""
+    stand-in needs more than 802.3's 10 ns minimum at 50 MHz (a limit). MDC
+    is on the clock grid here, so 40 ns is the best case: with an asynchronous
+    MDC the sample can fall up to 40 ns after the edge, leaving no margin."""
     rig, sta = sta_rig([("w", PHY, 4, 0xA55A), ("r", PHY, 4)], setup_ns=10.0, hold_ns=hold)
     res = rig.sta_run()
     assert (res[1]["data"] == 0xA55A) == ok
@@ -533,6 +535,72 @@ def test_phy_record_fifo_full_drops_records_not_writes():
     mh.step(200)
     assert sta.results[-1]["data"] == 10 and rig.wire.contention == 0
     assert [mdio.parse_write(w)["data"] for w in mh.pop_all(1)] == list(range(1, 9))
+
+
+# ---------------------------------------------------------------- abandoned frames
+
+def abort(word, us):
+    """mdio_master starts `word`, and the host restarts core 0 `us` after pushing
+    it, as a host that gives up would. Then three reads of PHYID1. Returns (the
+    rig, the three records)."""
+    rig = Rig(master_prog(), phy_fw=phy_prog())
+    rig.may_fight = True
+    rig.run(50)
+    rig.mh.push(0, word)
+    rig.run(us * 50)
+    rig.mh.write(sim.A_CTRL, 3 | 1 << 8)
+    rig.run(2)
+    assert not rig.rx[0]
+    return rig, rig.frames(R, R, R)
+
+
+GOOD = {"read": True, "ack": True, "data": ID1}
+LOST = {"read": True, "ack": False, "data": 0xFFFF}
+
+
+@pytest.mark.parametrize("us,fight,first", [
+    (13, 0, GOOD),                     # in the preamble: nothing has started
+    (14, 0, LOST),                     # in the header: the stand-in is mid-frame, driving nothing
+    (15, 0, LOST),
+    (16, 340, LOST),                   # the stand-in is driving: it fights the new preamble
+    (19, 334, LOST), (20, 274, LOST), (25, 34, LOST),
+    (26, 0, GOOD)])                    # the frame was over
+def test_abandoned_read(us, fight, first):
+    """The stand-in has no timeout. A read abandoned once it is driving keeps
+    MDIO driven against the next preamble, up to 340 clocks (6.8 us at 50 MHz)
+    of two drivers; that read is lost, and the read after it is right."""
+    rig, r = abort(R, us)
+    assert rig.wire.contention == fight
+    assert r == [first, GOOD, GOOD]
+
+
+def test_abandoned_read_every_microsecond():
+    """Every abort point of a read: at most 340 clocks of contention, at most one
+    read lost, the read after it right."""
+    worst = 0
+    for us in range(1, 27):
+        rig, r = abort(R, us)
+        worst = max(worst, rig.wire.contention)
+        assert r[0] in (GOOD, LOST) and r[1:] == [GOOD, GOOD], us
+    assert worst == 340
+
+
+@pytest.mark.parametrize("us,anar,reported", [
+    (13, 0x01E1, None),                # in the preamble: nothing written
+    (19, 0x01E1, 0x93FFFF),            # still in TA: TA 11, not applied, reported
+    (20, 0x3FFF, 0x923FFF),            # in the data: applied, the missing bits ones
+    (25, 0x1237, 0x921237),
+    (26, 0x1234, 0x921234)])           # the frame was over
+def test_abandoned_write_applies_partial_data(us, anar, reported):
+    """The worse case: a write abandoned in its data takes the rest of its bits
+    from the next preamble's ones, and that value is applied. No contention,
+    since the stand-in only listens. The next read is lost, the one after it
+    right."""
+    rig, r = abort(mdio.frame_word(False, PHY, mdio.ANAR, 0x1234), us)
+    assert rig.wire.contention == 0
+    assert r[1:] == [GOOD, GOOD]
+    assert rig.mh.read(sim.core_reg(1, sim.C_CRC)) == anar
+    assert rig.rx[1] == ([] if reported is None else [reported])
 
 
 # ---------------------------------------------------------------- both firmwares

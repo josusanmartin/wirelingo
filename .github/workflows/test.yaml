@@ -54,7 +54,10 @@ jobs:
         run: |
           cd test
           make COCOTB_TEST_MODULES=test_bench_fw SIM_BUILD=sim_build/bench_fw COCOTB_RESULTS_FILE=bench_fw.xml
-          python3 check_results.py bench_fw.xml $(grep -c '^@cocotb.test()' test_bench_fw.py)
+          # sigrok-cli is not installed here: the decoder checks do not run, and
+          # bench_sigrok_available is skipped (SKIP=1) to say so. These 5 must pass.
+          python3 check_results.py bench_fw.xml 5 bench_mdio_master_and_phy bench_mdio_master_phy_model \
+            bench_mdio_phy_sta_model bench_qsfp bench_pmbus
 
       - name: Packed SPI framing through a serialized host
         run: |
