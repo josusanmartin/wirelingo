@@ -12,3 +12,13 @@
  (name wl_simcheck)
  (modules wl_simcheck)
  (libraries wirelingo_sim))
+
+(executable
+ (name wl_export)
+ (modules wl_export)
+ (libraries wirelingo_asm))
+
+(executable
+ (name wl_run)
+ (modules wl_run)
+ (libraries wirelingo_asm wirelingo_sim))
