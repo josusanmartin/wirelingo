@@ -181,6 +181,11 @@ not yet valid, and at its rise this decoder would need the sample before the edg
 17. The far end drove DD on an invalid address. Found by that new test. Fixed from
     Table 6.
 18. t0 was exactly 600 ns on block writes, zero margin. One delay tick added.
+19. The sigrok run at the final code failed in `sigrok.decode`, not in a check:
+    the `sg-bench-fw` copy named in the brief was deleted from runner1 during the
+    run, by something other than this work. Rerun with `bench-fw/sigrok`, version
+    0.7.2 as well. The plain `remote_test.sh` run had skipped those branches
+    silently, so 13/13 there did not show them.
 
 ## What the docs did not say
 
@@ -229,7 +234,13 @@ shared, so the two do not add up.
 | ATA PIO subset | 86 min 32 s (22:42:52) |
 
 Mutants and review continued after those points and changed firmware (longer
-tADD wait, one more recovery tick). The final state is what the commit tests.
+tADD wait, one more recovery tick). Hardening and final verification ended at
+about 23:50:52 UTC.
+
+Final results, at commit 3218e99 (a later commit touches only this file):
+whole model suite 1450 passed, 23 skipped, including this work's 56; `test_blind`
+13/13 without sigrok and 13/13 with it, the `parallel` checks running on both
+protocols; mutants 29/29 killed after a passing baseline.
 
 ## Open
 
@@ -256,7 +267,7 @@ tADD wait, one more recovery tick). The final state is what the commit tests.
 remote_test.sh model test_blind       # [home directory redacted]/dev/protoemu-agent-tools/
 # with sigrok, in the runner1 checkout it prints:
 cd test && PATH=$HOME/tools/oss-cad-suite/bin:$PATH \
-  SIGROK_CLI=$HOME/protoemu-flow/agent-runs/sg-bench-fw/sigrok-cli \
+  SIGROK_CLI=$HOME/protoemu-flow/agent-runs/bench-fw/sigrok/sigrok-cli \
   make COCOTB_TEST_MODULES=test_blind
 # mutants, from the checkout root:
 PYTHONPATH=tools ~/protoemu-flow/test-venv/bin/python test/blind_mutants.py
