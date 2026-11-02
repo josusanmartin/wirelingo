@@ -53,23 +53,28 @@ class Port:
 class TdLog:
     """Bursts of (ns, level) off the pads. A burst is over a microsecond after idle.
     Sampled at the falling clock edge after a change: on a netlist with no delays
-    the two TD flops' outputs don't change in the same delta, so an H to L flip
+    the two TD flops' outputs don't change in the same delta, so an L to H flip
     passes through both-high inside one timestep. A level that lasts to mid-clock
-    is what the pads hold, and that is what must never be both high."""
+    is what the pads hold, and that is what must never be both high. `flips`
+    counts those transients by the level they settle on: RTL has none."""
 
     def __init__(self, dut):
         self.dut = dut
         self.bursts = []
+        self.flips = {}
         cocotb.start_soon(self.watch())
 
     async def watch(self):
         td = 0
         while True:
             await Edge(self.dut.uo_out)
+            first = int(self.dut.uo_out.value) & 3
             await FallingEdge(self.dut.clk)
             v = int(self.dut.uo_out.value) & 3
             assert v != 3, "TD+ and TD- both high"
             lv = (0, 1, -1, 0)[v]
+            if first == 3:
+                self.flips[lv] = self.flips.get(lv, 0) + 1
             if lv == td:
                 continue
             td = lv
@@ -78,6 +83,11 @@ class TdLog:
                 self.bursts[-1].edges.append((t, lv))
             else:
                 self.bursts.append(ethsim.Burst(t, lv))
+
+    def check_flips(self):
+        """Log the transients; every one of them must end at H (+1)."""
+        self.dut._log.info("TD both-high transients by settled level: %s", self.flips)
+        assert set(self.flips) <= {1}, self.flips
 
     def frames(self):
         now = get_sim_time(unit="ns")
@@ -181,6 +191,7 @@ async def test_ping_rtl_50mhz(dut):
         assert len(td.frames()) == n, "answered a frame it should have dropped"
         assert s.station.stats.get("bad_fcs") == 1 and s.station.stats.get("other_dst") == 1
         dut._log.info("host %s station %s", h.stats, s.station.stats)
+        td.check_flips()
     finally:
         s.stop_flag.set()
         await task
@@ -200,6 +211,7 @@ async def test_ping_rtl_40mhz(dut):
         data = model.ping_payload(seq=1)
         r = await run_exchange(spi, td, model.peer_ping(1, data), jitter=False)
         model.check_ping_reply(r[0], 1, data)
+        td.check_flips()
     finally:
         s.stop_flag.set()
         await task
@@ -254,17 +266,25 @@ async def test_carrier_sense_rtl(dut):
     try:
         await ClockCycles(dut.clk, 200)
         rx, tx = model.test_frame(200), model.test_frame(200, seed=2)
-        sender = cocotb.start_soon(base.eth_send(spi, rx, random.Random(5), jitter=False))
+        ended = []
+
+        async def send():
+            await base.eth_send(spi, rx, random.Random(5), jitter=False)
+            ended.append(get_sim_time(unit="ns") - ethsim.IFG_NS)   # eth_send ends with the 96-bit gap
+
+        sender = cocotb.start_soon(send())
         await Timer(50, unit="us")
         h.send(tx)
         assert await wait_for(sender.done, 400)
-        t_end = get_sim_time(unit="ns") - 96 * 100          # eth_send ends with the 96-bit gap
+        t_end = ended[0]
         assert not td.frames()
         assert await wait_for(td.frames, 600), "no frame on TD"
         b = td.frames()[0]
-        assert b.t0 - t_end >= 9000, f"started {b.t0 - t_end} ns after the frame's end"
+        dut._log.info("far end's last edge to our first: %s ns", b.t0 - t_end)
+        assert b.t0 - t_end >= ethsim.IFG_NS, f"started {b.t0 - t_end} ns after the frame's end"
         assert ethsim.frame_from_bits(ethsim.manchester_decode(b.edges)[0]) == tx
         assert rx in s.received
+        td.check_flips()
     finally:
         s.stop_flag.set()
         await task

@@ -36,6 +36,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import pe_spim                                 # noqa: E402
 from pe import eth, ethsim                     # noqa: E402
 
 TUNSETIFF = 0x400454CA
@@ -225,13 +226,29 @@ class Bridge:
 
 def measure_spim(spim, passes=2000):
     """us per RX service pass from this Python on pe_spim: a STATUS read and a
-    4-word FIFO read, as Eth10Host does. Reads an idle core; touches no pin."""
+    4-word FIFO read, as Eth10Host does. Core 0 should be idle: a FIFO read pops."""
     status, fifo = 0x400 + 9, 0x400 + 0x10
     t = time.monotonic()
     for _ in range(passes):
         spim.read(status)
         spim.read(fifo, 4, fixed=True)
     return (time.monotonic() - t) / passes * 1e6
+
+
+def measure_spim_session(spim, passes=2000):
+    """measure_spim with the host port borrowed and given back. It moves the host
+    pins to the fabric master and sets QUAD_EN, as the measurement needs. The
+    select goes back to what it was; QUAD_EN goes to 0, its reset value, because
+    the register is write-only and can't be read first."""
+    sel = spim.mem.rd(pe_spim.SEL)
+    spim.select(fabric=True)
+    try:
+        spim.enable_quad()
+        return measure_spim(spim, passes)
+    finally:
+        spim.enable_quad(False)
+        spim.wait_idle()
+        spim.mem.wr(pe_spim.SEL, sel)
 
 
 def sysctl(path, value):
@@ -334,14 +351,11 @@ def main(argv=None):
     ap.add_argument("--wait", type=int, default=60, help="seconds ping waits for each reply")
     ap.add_argument("--pcap", help="tcpdump the TAP to this file")
     ap.add_argument("--measure-spim", action="store_true",
-                    help="on the Kria, as root, no network involved: how fast can this Python serve RX?")
+                    help="on the Kria, as root, no network involved: how fast can this Python serve RX? "
+                         "Borrows the host port and gives it back; core 0 should be idle")
     a = ap.parse_args(argv)
     if a.measure_spim:
-        from pe_spim import Spim
-        spim = Spim(div=1)
-        spim.select(fabric=True)
-        spim.enable_quad()
-        print(f"{measure_spim(spim):.1f} us per pass; docs/eth10-network.md has the budget")
+        print(f"{measure_spim_session(pe_spim.Spim(div=1)):.1f} us per pass; docs/eth10-network.md has the budget")
         return 0
     if a.backend is None:
         ap.error("say which chip: --model")

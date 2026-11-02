@@ -195,8 +195,11 @@ def parse_udp(src, dst, p):
 def decode_record(count, words):
     """Destination..FCS bytes from one eth10_rx record: `count` line bits in
     `words`, 24 per word in [31:8], first bit lowest, then the last k bits at
-    the top of the last word. None if there is no preamble and SFD, or the
-    frame is not a whole number of bytes. The FCS is not checked here."""
+    the top of the last word. None if there is no preamble and SFD. Bits past
+    the last whole byte are dropped, as a MAC drops dribble bits, and the FCS
+    decides: the line unit's queue has no frame boundaries, so a core that is
+    behind when a frame ends takes the bit from TP_IDL's falling edge into that
+    frame's record. The FCS is not checked here."""
     full, rem = count // 24, count % 24
     if len(words) != full + 1:
         return None
@@ -217,7 +220,7 @@ def decode_record(count, words):
                     start = i + 1
             break
         prev = x
-    if start is None or (count - start) & 7:
+    if start is None:
         return None
     n, s = (count - start) >> 3, start & 7
     o = start >> 3

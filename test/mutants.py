@@ -5,7 +5,9 @@ Each runs in a scratch copy of the tracked files; the working tree is never
 touched. Exit status 1 if any mutant survives.
 
     python3 test/mutants.py [name ...]      # from the repo root (needs the test env)
+    python3 test/mutants.py 'eth-*'         # names may be shell-style patterns
 """
+import fnmatch
 import os
 import pathlib
 import shutil
@@ -28,6 +30,10 @@ def top(test):
 
 def pytest(spec):
     return f"PYTHONPATH=tools python -m pytest -q -x -p no:cacheprovider --junitxml=m.xml {spec} > m.log 2>&1"
+
+
+def ETH(selection):
+    return pytest(f'test/model/test_eth_stack.py -k "{selection}"')
 
 
 # name: (file, original text, mutated text, test command)
@@ -100,6 +106,44 @@ MUTANTS = {
     "fw-usb-record-no-marker": ("firmware/usb_ls_rx.pasm", "    ldi r1, 0x81                   ; trailer status: good",
                                 "    ldi r1, 0x01                   ; trailer status: good",
                                 pytest("test/model/test_usb_model.py -k rx_packets")),
+    # the 10BASE-T stack (`python3 test/mutants.py 'eth-*'`)
+    "eth-fw-no-window": ("firmware/eth10_tx_cs.pasm", "    jmp t, frame              side 0       ; quiet all the way",
+                         "    jmp frame                 side 0       ; quiet all the way", ETH("carrier_sense_defers")),
+    "eth-fw-95-bit-window": ("firmware/eth10_tx_cs.pasm", ".define IFG_TICKS 96 * 4", ".define IFG_TICKS 95 * 4",
+                             ETH("carrier_sense_defers")),
+    "eth-fw-no-timer-restart": ("firmware/eth10_tx_cs.pasm",
+                                "    ldi r1, 9999              side 0       ; the next link pulse is 16 ms away",
+                                "    nop                       side 0       ; the next link pulse is 16 ms away",
+                                ETH("restarts_the_pulse_timer")),
+    "eth-no-fcs-check": ("tools/pe/eth.py", "if not MIN_FRAME <= len(raw) <= MAX_FRAME or not fcs_ok(raw):",
+                         "if not MIN_FRAME <= len(raw) <= MAX_FRAME:", ETH("no_reply_at_the_pads")),
+    "eth-no-size-check": ("tools/pe/eth.py", "if not MIN_FRAME <= len(raw) <= MAX_FRAME or not fcs_ok(raw):",
+                          "if not fcs_ok(raw):", ETH("illegal_sizes_at_the_pads")),
+    "eth-no-mac-check": ("tools/pe/eth.py", "if dst != self.mac and dst != BROADCAST:", "if False:",
+                         ETH("no_reply_at_the_pads")),
+    "eth-no-ip-check": ("tools/pe/eth.py", 'if dst != self.ip or src == b"\\xff\\xff\\xff\\xff" or src == bytes(4):',
+                        'if src == b"\\xff\\xff\\xff\\xff" or src == bytes(4):', ETH("no_reply_at_the_pads")),
+    "eth-no-ip-source-check": ("tools/pe/eth.py", 'if dst != self.ip or src == b"\\xff\\xff\\xff\\xff" or src == bytes(4):',
+                               "if dst != self.ip:", ETH("station_rejects")),
+    "eth-no-ip-length-check": ("tools/pe/eth.py", "if ihl < 20 or total < ihl or total > len(p) or checksum(p[:ihl]):",
+                               "if ihl < 20 or total < ihl or checksum(p[:ihl]):", ETH("station_rejects")),
+    "eth-rejects-dribble-bits": ("tools/pe/eth.py", "    if start is None:\n", "    if start is None or (count - start) & 7:\n",
+                                 ETH("core_behind_at_a_frames_end")),
+    "eth-echoes-padding": ("tools/pe/eth.py", "return p[12:16], p[16:20], p[9], p[ihl:total], p[8]",
+                           "return p[12:16], p[16:20], p[9], p[ihl:], p[8]", ETH("station_answers")),
+    "eth-blind-fifo-read": ("tools/pe/ethhost.py", "        n = (st >> 4) & 15\n", "        n = 8\n", ETH("arp_then_ping")),
+    "eth-no-rx-recovery": ("tools/pe/ethhost.py", "            self._rx_recover()\n", "",
+                           ETH("overflow_loses_one_frame")),
+    "eth-no-overflow-check": ("tools/pe/ethhost.py", "if self.port.read(A_LINESTAT) & LS_RX_OVERFLOW:", "if False:",
+                              ETH("overflow_loses_one_frame")),
+    "eth-no-underrun-rule": ("tools/pe/ethhost.py", "if self.go and left and self.since_us(t0) > (txf + rxf) * WORD_US:",
+                             "if False:", ETH("tx_underrun_abandons")),
+    "eth-tx-load-during-rx": ("tools/pe/ethhost.py", "if not self.go or self.skipped & 7:", "if False:",
+                              ETH("rate_table and 50000000.0-True-7")),
+    "eth-no-deferral-limit": ("tools/pe/ethhost.py", "late = self.since_us(self.t_go) > self.tx_timeout_us", "late = False",
+                              ETH("line_never_quiet")),
+    "eth-wrong-rx-period": ("tools/pe/ethhost.py", "return (1 << 8) | 0x40, 5 ", "return (1 << 8) | 0x40, 4 ",
+                            ETH("arp_then_ping")),
 }
 
 
@@ -186,4 +230,4 @@ def main(names):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main([n for pattern in sys.argv[1:] for n in fnmatch.filter(MUTANTS, pattern)])

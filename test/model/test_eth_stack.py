@@ -30,13 +30,14 @@ from pe.modelhost import ModelHost
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/micropython"))
+sys.path.insert(0, str(ROOT / "fpga/kv260/host"))
 import eth10_rx  # noqa: E402
+import pe_spim  # noqa: E402
 
 CHIP_MAC, CHIP_IP = bytes.fromhex("02574c000002"), bytes([10, 77, 0, 2])
 PEER_MAC, PEER_IP = bytes.fromhex("0200deadbe01"), bytes([10, 77, 0, 1])
 BCAST = b"\xff" * 6
 CLOCKS = [50e6, 40e6]
-SHORT = 300        # a frame long enough for a rate to show, cheap enough to run many of
 
 
 # ---------------------------------------------------------------- the far end
@@ -266,6 +267,12 @@ def test_station_answers():
     check_ping_reply(r[0], 2, b"abc", ident=1)
 
 
+def ip_length(total, payload):
+    """A good header claiming `total` bytes, however many follow it."""
+    h = struct.pack(">BBHHHBBH4s4s", 0x45, 0, total, 1, 0, 64, 1, 0, PEER_IP, CHIP_IP)
+    return h[:10] + struct.pack(">H", cksum(h)) + h[12:] + payload
+
+
 BAD = {
     "bad_fcs": (lambda: peer_ping()[:-1] + bytes([peer_ping()[-1] ^ 1]), "bad_fcs"),
     "bit_in_payload": (lambda: (lambda f: f[:40] + bytes([f[40] ^ 4]) + f[41:])(peer_ping()), "bad_fcs"),
@@ -283,6 +290,9 @@ BAD = {
     "udp_wrong_port": (lambda: peer_udp(b"a", dport=9), "udp_ignored"),
     "udp_bad_checksum": (lambda: (lambda u: l2(CHIP_MAC, PEER_MAC, 0x0800, ip_packet(17, u[:6] + bytes([u[6] ^ 1]) + u[7:])))(udp_datagram(1, 7, b"abcd")), "udp_ignored"),
     "other_ethertype": (lambda: l2(CHIP_MAC, PEER_MAC, 0x86DD, bytes(46)), "other_type"),
+    "ip_source_zero": (lambda: l2(CHIP_MAC, PEER_MAC, 0x0800, ip_packet(1, icmp_echo(1, 1, b"a"), src=bytes(4))), "other_ip"),
+    "ip_source_broadcast": (lambda: l2(CHIP_MAC, PEER_MAC, 0x0800, ip_packet(1, icmp_echo(1, 1, b"a"), src=b"\xff" * 4)), "other_ip"),
+    "ip_length_past_the_frame": (lambda: l2(CHIP_MAC, PEER_MAC, 0x0800, ip_length(100, icmp_echo(1, 1, b"a"))), "bad_ip"),
     "group_source": (lambda: l2(CHIP_MAC, bytes.fromhex("010000000001"), 0x0800, ip_packet(1, icmp_echo(1, 1, b"a"))), "bad_src"),
     "other_protocol": (lambda: l2(CHIP_MAC, PEER_MAC, 0x0800, ip_packet(6, bytes(20))), "other_proto"),
     "runt": (lambda: test_frame(63), "bad_size"),
@@ -343,7 +353,10 @@ def test_decode_record_rejects():
     raw = test_frame(64)
     assert eth.decode_record(*records(raw, 17)) is None         # 39 preamble bits survive: 40 are required
     assert eth.decode_record(*records(raw, 16)) == raw
-    assert eth.decode_record(*bits_record(wire_bits(raw) + [1])) is None   # not a whole number of bytes
+    for extra in ([0], [1], [1, 0, 1, 1, 0, 0, 1]):              # dribble bits go, the FCS decides
+        assert eth.decode_record(*bits_record(wire_bits(raw) + extra)) == raw
+    bad = wire_bits(raw[:-1] + bytes([raw[-1] ^ 1])) + [1]
+    assert not eth.fcs_ok(eth.decode_record(*bits_record(bad)))
     assert eth.decode_record(2, [1 << 31]) is None              # a link pulse
     count, words = records(raw)
     assert eth.decode_record(count, words[:-1]) is None         # a word short of its count
@@ -484,11 +497,12 @@ def test_send_rejects_illegal_sizes():
 
 
 # ---------------------------------------------------------------- the host port's real rate
-def rate_run(clock, quad, div, what, n=1518, gap=0):
+def rate_run(clock, quad, div, what, n=1518, gap=0, phase=0):
     """Frames at a stated SCK; `what` is one of test_rate_table's cases. Returns
     (rx ok, tx ok, stats, Rig)."""
     rig = Rig(clock_hz=clock, quad=quad, sck_div=div, reply=False, gap=gap)
     rig.run_us(5)
+    rig.port.idle(phase)
     rx, tx = test_frame(n), test_frame(n, seed=2)
     if what in ("tx", "both"):
         rig.host.send(tx)
@@ -500,8 +514,8 @@ def rate_run(clock, quad, div, what, n=1518, gap=0):
         rig.wire.send(rx, force=True)
         rig.run_us(30)
         rig.host.send(tx)
-    rig.run_until(rig.quiet, 2 * (n * 0.8) + 200)
-    rig.run_us(20)
+    rig.run_until(rig.quiet, 2 * (n * 0.8) + 400)
+    rig.run_us(30)
     return rx in rig.received, tx in rig.wire.frames(), rig.host.stats, rig
 
 
@@ -544,22 +558,43 @@ def test_rate_table(clock, quad, div, rx, tx, both, defer):
         assert (r, t) == want[what], (what, r, t, stats)
 
 
-@pytest.mark.parametrize("clock,gap,ok", [(50e6, 800, True), (50e6, 900, False), (40e6, 640, True), (40e6, 720, False)])
-def test_rx_service_latency(clock, gap, ok):
-    """Software time allowed between passes, RX, quad at SCK = clk: the FIFOs and
-    the line queue are all there is."""
-    r, _, stats, _ = rate_run(clock, True, 1, "rx", SHORT, gap=gap)
-    print(f"\n{clock / 1e6:.0f} MHz, {gap / clock * 1e6:.1f} us of software per pass: {r} {stats}")
-    assert r is ok
-    assert bool(stats.get("rx_overflows")) is not ok
+# Longest software time per pass, quad at SCK = clk: case, clock, frame bytes, us that
+# pass, the next 0.5 us that fails. 1518 bytes is the worst of the sizes in the sweep that
+# docs/eth10-network.md cites.
+BUDGETS = [
+    ("rx", 50e6, 1518, 16.5, 17.0), ("rx", 40e6, 1518, 15.5, 16.0),
+    ("defer", 50e6, 1518, 16.5, 17.0), ("defer", 40e6, 1518, 15.5, 16.0),
+    ("tx", 50e6, 1518, 22.5, 23.0), ("tx", 40e6, 1518, 21.5, 22.0),
+]
 
 
-@pytest.mark.parametrize("clock,gap,ok", [(50e6, 1200, True), (50e6, 1400, False), (40e6, 960, True), (40e6, 1120, False)])
-def test_tx_service_latency(clock, gap, ok):
-    _, t, stats, _ = rate_run(clock, True, 1, "tx", SHORT, gap=gap)
-    print(f"\n{clock / 1e6:.0f} MHz, {gap / clock * 1e6:.1f} us of software per pass: {t} {stats}")
-    assert t is ok
-    assert bool(stats.get("tx_underruns")) is not ok
+@pytest.mark.parametrize("what,clock,n,good,bad", BUDGETS)
+def test_service_budget(what, clock, n, good, bad):
+    """Not a word more than the FIFOs hold, at the exact figure, either side of
+    it. RX and defer lose the arriving frame; TX gives its frame up. Passing is at
+    two phases of the host's passes against the frame."""
+    for phase in (0, 7):
+        r, t, stats, _ = rate_run(clock, True, 1, what, n, gap=int(good * clock / 1e6), phase=phase)
+        assert (r, t) == dict(rx=(True, False), tx=(False, True), defer=(True, True))[what], (phase, stats)
+    r, t, stats, _ = rate_run(clock, True, 1, what, n, gap=int(bad * clock / 1e6))
+    assert stats.get("tx_underruns" if what == "tx" else "rx_overflows"), stats
+    assert not (t if what == "tx" else r)
+
+
+def test_core_behind_at_a_frames_end_adds_a_bit_and_the_frame_survives(monkeypatch):
+    """The FIFO is full when a 1000-byte frame ends, so core 0 is behind, and the bit
+    from TP_IDL's falling edge lands in the frame's record: 8065 bits for an 8064-bit
+    frame, nothing lost, no overflow. Dropping bits past the last byte keeps it."""
+    seen = []
+    decode = eth.decode_record
+
+    def spy(count, words):
+        seen.append(count)
+        return decode(count, words)
+    monkeypatch.setattr(eth, "decode_record", spy)
+    r, _, stats, _ = rate_run(50e6, True, 1, "rx", 1000, gap=int(16.5 * 50))
+    assert seen == [64 + 8 * 1000 + 1]
+    assert r and "rx_overflows" not in stats and "rx_malformed" not in stats
 
 
 def test_min_frame_still_needs_service():
@@ -660,18 +695,22 @@ def arrival_run(carrier_sense, offset_ns, clock=50e6, tx_size=64, rx_size=64):
     return bool(on_air_overlap(rig)), b.t0 - t_go, rig.wire.sent[0][0] - t_go, rig
 
 
+IFG_MEASURED = {50e6: (9800, 9800), 40e6: (9825, 9825)}        # ns, last far-end edge to our first edge: 96 bit times are 9600
+
+
 @pytest.mark.parametrize("clock", CLOCKS)
 def test_carrier_sense_defers_to_an_arriving_frame(clock):
     """F_GO is set, and the far end starts anywhere from at once to the end of
     the window. The chip never talks over it, and starts 96 bit times after
     the far end's last edge."""
+    gaps = []
     for off in range(1000, 9001, 1000):
         over, t_tx, t_rx, rig = arrival_run(True, off, clock)
         assert not over, off
-        end = rig.wire.sent[0][1]
         b = [x for x in rig.wire.bursts if not x.pulse][0]
-        assert b.t0 - end >= ethsim.IFG_NS - 100, (off, b.t0, end)
-        assert b.t0 - end < ethsim.IFG_NS + 300
+        gaps.append(b.t0 - rig.wire.sent[0][1])
+    print(f"\n{clock / 1e6:.0f} MHz: far end's last edge to our first, {min(gaps):.0f}-{max(gaps):.0f} ns")
+    assert (round(min(gaps)), round(max(gaps))) == IFG_MEASURED[clock]
 
 
 def blind_run(carrier_sense, lead_ns, tx_start=None):
@@ -701,12 +740,12 @@ def blind_ns(carrier_sense, leads):
 
 def test_blind_window_with_carrier_sense():
     """How late can the far end's first edge be and still hold the chip back? 10 ns
-    steps. What's left is the synchronizer and the jump to the preamble: a frame
+    steps, and the edge is exact. What's left is the synchronizer and the jump to the preamble: a frame
     starting inside it collides, as on any CSMA station, since the two can't yet
     know of each other. docs/eth10-network.md quotes this."""
     blind, heard = blind_ns(True, range(50, 400, 10))
     print(f"\neth10_tx_cs: a far-end edge up to {blind:.0f} ns before our first edge goes unheard; {heard:.0f} ns is heard")
-    assert 0 < blind <= 150 and blind < heard <= blind + 40
+    assert (blind, heard) == (130, 150)
 
 
 def test_blind_window_without_carrier_sense():
@@ -714,9 +753,9 @@ def test_blind_window_without_carrier_sense():
     stale by an SPI read, an SPI write and the idle loop, microseconds, in a
     frame that arrives over a preamble's time. This is why the stack does not
     load it. Quad SPI at 25 MHz; a slower host is worse."""
-    blind, heard = blind_ns(False, range(0, 14000, 500))
+    blind, heard = blind_ns(False, range(3500, 4300, 10))
     print(f"\nplain eth10_tx: a far-end edge up to {blind:.0f} ns before our first edge goes unheard; {heard} is heard")
-    assert blind >= 2000
+    assert (blind, heard) == (3930, 3950)
 
 
 def test_chip_waits_while_a_long_frame_arrives():
@@ -732,7 +771,7 @@ def test_chip_waits_while_a_long_frame_arrives():
     rig.run_us(20)
     assert rx in rig.received and tx in rig.wire.frames()
     assert not on_air_overlap(rig)
-    assert [b for b in rig.wire.bursts if not b.pulse][0].t0 - rig.wire.sent[0][1] >= ethsim.IFG_NS - 100
+    assert [b for b in rig.wire.bursts if not b.pulse][0].t0 - rig.wire.sent[0][1] >= ethsim.IFG_NS
 
 
 def test_two_chip_frames_keep_the_gap():
@@ -953,6 +992,53 @@ def load_bridge():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+class FakeSpimMem:
+    """pe_spim's registers and buffer, for what the Spim class does to them."""
+
+    def __init__(self, sel):
+        self.regs = {pe_spim.VERSION: pe_spim.VERSION_VALUE, pe_spim.SEL: sel}
+        self.log = []
+
+    def rd(self, off):
+        return self.regs.get(off, 0)
+
+    def wr(self, off, v):
+        self.regs[off] = v
+        if off == pe_spim.SEL:
+            self.log.append(("sel", v))
+        elif off == pe_spim.GO:
+            self.regs[off] = 0
+            self.log.append(("go", self.regs[pe_spim.CMD]))
+
+    def buf_write(self, words):
+        self.log.append(("data", list(words)))
+
+    def buf_read(self, n):
+        return [0] * n
+
+
+HOSTCFG = 0x80B
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_measure_spim_gives_the_port_back(fail, monkeypatch):
+    """--measure-spim borrows the host port: fabric master, quad on. Afterwards the
+    pin select is what it was and QUAD_EN is off, also when the loop raises."""
+    tap = load_bridge()
+    mem = FakeSpimMem(sel=0)
+    if fail:
+        def boom(*_):
+            raise OSError("mid-measurement")
+        monkeypatch.setattr(tap, "measure_spim", boom)
+        with pytest.raises(OSError):
+            tap.measure_spim_session(pe_spim.Spim(mem=mem))
+    else:
+        assert tap.measure_spim_session(pe_spim.Spim(mem=mem), 2) >= 0
+    assert mem.log[0] == ("sel", 1) and mem.log[-1] == ("sel", 0)
+    assert mem.log[-3:-1] == [("data", [0]), ("go", 0x02 | (HOSTCFG << 8))]       # 1-bit write of 0
+    assert ("data", [1]) in mem.log
 
 
 def test_bridge_refuses_the_hosts_namespace(tmp_path):
