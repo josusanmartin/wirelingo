@@ -141,11 +141,18 @@ def test_reaction_with_8023_jitter():
     assert all(10 - 0.675 <= x <= 11 + 0.675 for x in r), (min(r), max(r))
 
 
-def test_rise_comes_38_us_before_the_frame_ends_and_hit_is_a_pulse():
-    """44 payload bytes and the FCS follow the field: 384 bits at 100 ns."""
-    r, _, lead, tail = run([wire_frame(2000)] * 8, 1000)
-    print(f"rise to last edge: {min(lead) * 1e6:.2f}-{max(lead) * 1e6:.2f} us")
-    assert all(38.2e-6 <= x <= 38.6e-6 for x in lead), lead
+@pytest.mark.parametrize("clock_mhz", [40, 50])
+def test_rise_to_last_edge_and_hit_is_a_pulse(clock_mhz):
+    """44 payload bytes and the FCS follow the field: 384 bits at 100 ns (+100 ppm).
+    A frame ending in 1 then has TP_IDL's edge, 250 ns after that bit's mid-bit."""
+    frames = [wire_frame(2000 + i) for i in range(8)]
+    assert {f[-1] for f in frames} == {0, 1}
+    r, _, lead, tail = run(frames, 1000, clock_mhz)
+    bit = 100e-9 * (1 + 100e-6)
+    for f, x, t in zip(frames, lead, r):
+        last = 384 * bit + (2.5 * bit if f[-1] else 0) - t * 1e-6 / clock_mhz
+        assert x == pytest.approx(last, abs=1e-12)
+    print(f"{clock_mhz} MHz: rise to last edge {min(lead) * 1e6:.2f}-{max(lead) * 1e6:.2f} us")
     assert all(x is not None and 0 < x < 1e-6 for x in tail), tail
 
 

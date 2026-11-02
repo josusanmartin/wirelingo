@@ -20,16 +20,22 @@ Manchester bit is known at that transition, 50 ns before its cell ends.
 | Cycle model, 802.3's +-13.5 ns edge jitter, 24 frames | 50 MHz | 200-219 ns |
 | KV260, the chip's RTL in fabric, 5 frames | 50 MHz | 10 clocks (200 ns) every time, 38.2-38.5 us before the frame's last edge |
 
-The spread of one clock is the sampling phase, and the test asserts it at both
-clocks. On the 5 FPGA frames the phase happened to give 10 clocks each time. The
-KV260 run and its log are in
-[fpga/kv260/README.md](../fpga/kv260/README.md#cut-through-match-on-hardware-2026-10-30);
-the run had 3 generator frames on the chip's clock and 3 on an unrelated clock, one of them below the threshold, which raised nothing. The sampler is a
-second core reading both pads every clock.
+The spread of one clock is the sampling phase: an edge lands up to a clock before
+the chip's next sampling edge. The test asserts it at both clocks. The FPGA row
+can't show that spread, because its sampler sees the edge on a clock too: the model
+gives exactly 10 clocks measured that way. So the row confirms the path's length,
+not the 10-11 range. The run and its log are in
+[fpga/kv260/README.md](../fpga/kv260/README.md#cut-through-match-on-hardware-2026-10-30):
+3 generator frames on the chip's clock and 3 on an unrelated clock, one of them
+below the threshold, which raised nothing. The sampler is a second core reading both
+pads every clock.
 
 `test/model/test_eth10_match.py` also checks a field equal to the threshold, a
-field below it, another EtherType, and the rise 38.2-38.6 us before the last edge of
-a 64-byte frame on the model. HIT is a pulse: it falls within 1 us of the frame's
+field below it and another EtherType. It checks the rise against the frame's end
+exactly: 384 bits (44 payload bytes and the FCS) minus the reaction, plus 250 ns of
+TP_IDL if the frame ends in 1. On a 64-byte frame from a sender 100 ppm fast, that
+is 38.18-38.21 us (ends in 0) or 38.43-38.46 us (ends in 1) at 50 MHz, and 38.13-38.16
+us or 38.38-38.41 us at 40 MHz. HIT is a pulse: it falls within 1 us of the frame's
 last edge.
 
 ## Limits
