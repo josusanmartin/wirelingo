@@ -297,6 +297,9 @@ make -C formal                                                   # proofs
   SPI; board throughput and sampling margin remain unmeasured.
 * [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service
   and a proposed comparator/squelch circuit, not yet built.
+* [RMII study](docs/rmii-study.md): 100 Mbit/s through an external PHY. RX and TX
+  work in the model and RTL simulation, one direction at a time; no PHY, pad or
+  board has been tried, and the clock path outside the macro is open.
 
 ## Layout
 
