@@ -33,11 +33,22 @@ EOF
   if [ "$kind" = wave ]; then
     dune build @wave_test/runtest > "$work/check.log" 2>&1 && caught=no || caught=yes
   elif [ "$kind" = promote ]; then
-    # accepting the failure with --auto-promote must not make the test pass
-    mkdir -p "$work/keep" && cp wave_test/test_*.ml "$work/keep/"
+    # accepting the failure with --auto-promote must not make the test pass. The bug is
+    # one whose promoted records alone would pass: so the build must fail with the
+    # wave_test rule and pass with the rule cut out, or the case shows nothing.
+    mkdir -p "$work/keep" && cp wave_test/test_*.ml wave_test/dune "$work/keep/"
     dune build @wave_test/runtest --auto-promote > "$work/check.log" 2>&1 || true
-    dune build @wave_test/runtest > "$work/check.log" 2>&1 && caught=no || caught=yes
-    cp "$work"/keep/test_*.ml wave_test/
+    dune build @wave_test/runtest > "$work/check.log" 2>&1 && with=pass || with=fail
+    python3 - wave_test/dune <<'EOF'
+import sys
+f = sys.argv[1]
+s = open(f).read()
+open(f, "w").write(s[:s.index("(rule")])
+EOF
+    dune build @wave_test/runtest > "$work/check2.log" 2>&1 && without=pass || without=fail
+    cp "$work"/keep/test_*.ml "$work"/keep/dune wave_test/
+    echo "  with the rule: $with; rule removed: $without"
+    [ $with = fail ] && [ $without = pass ] && caught=yes || caught=no
   elif [ "$kind" = asm ]; then
     python3 test/asm_parity.py --fuzz 300 > "$work/check.log" 2>&1 && caught=no || caught=yes
   else
@@ -69,6 +80,6 @@ try rtl/pe_fifos.ml 'let xfer = i.fjoin &: ~:txf_empty &: ~:rxf_full in' 'let xf
 try rtl/pe_line.ml 'let spb = mux2 manch (of_int_trunc ~width:4 2) (of_int_trunc ~width:4 1) in' 'let spb = of_int_trunc ~width:4 1 in' wave
 try rtl/pe_line.ml 'n_trunbit <-- ~:(trunbit.value)' 'n_trunbit <-- trunbit.value' wave
 try rtl/pe_line.ml 'let m_age = mux2 edge1 (of_int_trunc ~width:21 96) (of_int_trunc ~width:21 32) in' 'let m_age = mux2 edge1 (of_int_trunc ~width:21 32) (of_int_trunc ~width:21 96) in' wave
-try rtl/pe_fifo.ml 'let do_push = i.push &: ~:(bit cnt_w log2) in' 'let do_push = i.push in' promote
+try rtl/pe_fifos.ml 'let xfer = i.fjoin &: ~:txf_empty &: ~:rxf_full in' 'let xfer = i.fjoin &: ~:txf_empty in' promote
 echo "missed: $missed"
 exit $((missed > 0))
