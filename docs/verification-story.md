@@ -32,7 +32,7 @@ with delays (SDF), RTL in FPGA fabric, silicon.
 | Firmware survives wire faults | Seeded glitches, stuck lines, truncation, flips, stretch and jitter on six firmware: 576 cases, 0 needs-reset, 1 not `ok` (a second-frame) since `fault-fixes`; a bus reset at every clock of a full-speed control read ([fault-testing.md](fault-testing.md)) | Model; two of the fixes also as RTL tests (`test_uart_rx_glitch`, `test_i2c_master_bus_fault`) | A sample, one fault per case. Not at gate level or on the FPGA |
 | 14 protocols added with the RTL frozen | Timing checker, pins-only models, sigrok, 16 RTL tests ([post-freeze-protocols.md](post-freeze-protocols.md)) | RTL simulation, GL, SDF at typical, FPGA | On `main`, SDF at typical only. `5d34fc6` on `improve-2026-11` records slow and fast, 16/16 each, with no verifier report yet. Two exact assertions got a 1 ns tolerance (`8dd249a`) |
 | 10BASE-T receive meets 802.3's ±13.5 ns edge jitter | `test_eth10`, three seeds each; RTL frames with jitter | Model, RTL simulation | No real network. The receive circuit is unbuilt ([eth10-receiver.md](eth10-receiver.md)) |
-| `eth10_match` raises a pin 10 to 11 clocks after a field | Model tests; 5 frames on the FPGA | Model, RTL in FPGA fabric | No RTL simulation. Pad and comparator delays unmeasured. Under re-verification, see below |
+| `eth10_match` raises a pin 10 to 11 clocks after a field | Model tests; 5 frames on the FPGA | Model, RTL in FPGA fabric | No RTL simulation. Pad and comparator delays unmeasured. Passed on the third fix (report 009), see below |
 | Compared with RP2040 PIO | Reference programs on a PIO model and the cycle model ([pio-comparison.md](pio-comparison.md)) | Model | Simulation only. PIO is faster and smaller |
 | The chip works | Nothing yet | None | Not fabricated |
 
@@ -95,17 +95,17 @@ On 2026-11-02 an independent verifier agent failed the `eth10_match` work.
 Reports are numbered by inbox item. They are the project's local verifier records
 and are not published with this repository.
 
-**Status of the fixes: fixed in new commits, not yet passed.** All of them are on
-the local branch `improve-2026-11`, not on `main`.
+**Status of the fixes: passed at `0bdcbe5`, on the third fix.** All of them are
+on the local branch `improve-2026-11`, not on `main`.
 
 | Commits | Review | Result |
 |---|---|---|
 | `7d9377c`, `aedf991` | Report 001 | FAIL. All nine findings were addressed, and delay mutations of N ≥ 1 fail at both clocks. But the new range of 38.2-38.6 us was false for frames ending in a 0 bit: 38.184-38.204 us at 50 MHz. The same fault again: a sample's range stated as a bound |
 | `1fddeef` | Report 004 | FAIL. The new "exact" assertion cancelled the rise time out of its own equation, so it passed with the pin 2 us late (N = 100). The doc's ranges held, because the reaction tests guard them |
-| `0bdcbe5` | Item 009 | No report when this page was written |
+| `0bdcbe5` | Report 009 | PASS. The rise is bounded directly against the sender's geometry; delay mutations N = 1, 3 and 100 fail, the unmodified firmware passes. The verifier counts the fixes for reports 000, 001 and 004 complete at this commit |
 
-Until a PASS, treat the `eth10_match` numbers as unverified. `main` still carries
-the failed commit's doc and test.
+The `eth10_match` numbers on `improve-2026-11` are the ones report 009 passed.
+`main` still carries the failed commit's doc and test.
 
 ## How an agent's claim gets checked
 
