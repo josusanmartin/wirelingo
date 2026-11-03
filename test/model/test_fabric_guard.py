@@ -326,6 +326,11 @@ def test_the_boards_whole_table_on_2026_11_03(protoemu_kernel):
                          "protoemu40  id_ok    XRT_FLAT             (0+0+0)           0->0,"), "2 active rows"),
     (lambda t: t + "protoemu: Load Error: -1\n", "isn't a row"),
     (lambda t: t.replace(f"XRT_FLAT{MERGED}", f"XRT_FLAT{MERGED[:-1]}"), "isn't a row"),       # Base isn't the name
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}", f"XRT_FLAT{MERGED[:-1]}9"), "isn't a row"),      # nor here, same length
+    (lambda t: t.replace("protoemu40    XRT_FLAT              protoemu40  id_ok",
+                         "protoemu40    XRT_FLAT              protoemu41  id_ok"), "isn't a row"),
+    (lambda t: t.replace("protoemu40    XRT_FLAT              protoemu40  id_ok    XRT_FLAT ",
+                         "protoemu40    xrt_flat              protoemu40  id_ok    xrt_flat "), "isn't a row"),
     (lambda t: t.replace(f"XRT_FLAT{MERGED}", MERGED), "isn't a row"),                       # no type before it
     (lambda t: t.replace(f"XRT_FLAT{MERGED}", f"xrt_flat{MERGED}"), "isn't a row"),          # not a type
     (lambda t: t.replace(f"XRT_FLAT{MERGED}  id_ok", f"XRT_FLAT{MERGED}  1234"), "isn't a row"),
