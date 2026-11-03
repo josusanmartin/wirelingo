@@ -15,6 +15,8 @@ tick 50 MHz / 56.
 """
 import importlib.util
 import pathlib
+import re
+import subprocess
 
 import cocotb
 from cocotb.triggers import ClockCycles, RisingEdge
@@ -35,6 +37,11 @@ if not HAVE_SIGROK:
 M_MDIO, M_MDC, P_MDIO, P_MDC = T.UIO(0), T.UO(0), T.UIO(1), T.UI(0)
 PHY = 5
 REGS = {mdio.BMCR: 0x1140, mdio.BMSR: 0x7949, mdio.PHYID1: 0x0143, mdio.PHYID2: 0xBC30, mdio.ANAR: 0x01E1, 31: 0xABCD}
+
+
+def sigrok_skipped(dut, test, check):
+    """A decoder check that did not run must say so: its test still passes."""
+    dut._log.warning(f"SIGROK SKIPPED: {test}: {check}")
 
 
 def load(name, defines):
@@ -185,6 +192,8 @@ async def bench_mdio_master_and_phy(dut):
             ("READ", PHY, 0, 0x1000, False), ("WRITE", PHY, 4, 0x0DE1, False), ("READ", PHY, 4, 0x0DE1, False),
             ("READ", PHY, 31, 0xABCD, False), ("READ", PHY + 1, 2, 0xFFFF, True)]
         assert [e[1] for e in errs] == ["TA invalid (bit2)"]
+    else:
+        sigrok_skipped(dut, "bench_mdio_master_and_phy", "mdio decoder")
 
 
 @cocotb.test()
@@ -310,6 +319,8 @@ async def bench_qsfp(dut):
         assert not [k for k in toks if isinstance(k, tuple) and k[0] == "WARN"]
         reads = [k[1] for k in toks if isinstance(k, tuple) and k[0] == "DR"]
         assert bytes(reads[3:19]) == b"WIRELINGO       "
+    else:
+        sigrok_skipped(dut, "bench_qsfp", "i2c decoder")
 
 
 @cocotb.test()
@@ -390,3 +401,14 @@ async def bench_pmbus(dut):
         dut._log.info(f"sigrok i2c: {[bytes(f).hex() for f in frames_]}")
         assert len(frames_) == 4
         assert [p3.smbus_pec(bytes(f[:-1])) == f[-1] for f in frames_] == [True, True, False, True]
+    else:
+        sigrok_skipped(dut, "bench_pmbus", "i2c decoder and PEC recomputed over its bytes")
+
+
+@cocotb.test(skip=not HAVE_SIGROK)
+async def bench_sigrok_available(dut):
+    """Passes only where sigrok-cli exists, and is skipped elsewhere, so that a
+    run without the decoder checks shows SKIP=1 in its summary rather than a
+    clean pass. It checks that both decoders the tests need are there."""
+    listed = subprocess.run([sigrok.cli(), "-L"], capture_output=True, text=True, timeout=60).stdout
+    assert re.search(r"^\s*mdio\s", listed, re.M) and re.search(r"^\s*i2c\s", listed, re.M)

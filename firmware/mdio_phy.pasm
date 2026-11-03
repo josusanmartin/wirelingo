@@ -22,8 +22,9 @@
 ;
 ; Sampling: both pins are read after the WAIT on MDC's rising edge completes,
 ; which is the second synchronised sample with MDC high, 1 to 2 clocks after
-; the edge at the pad: the STA must hold MDIO for 2 clocks (40 ns at 50 MHz)
-; after MDC rises, more than 802.3's 10 ns minimum. No setup time is needed.
+; the edge at the pad: an STA must hold MDIO for more than 2 clocks (40 ns at
+; 50 MHz) after MDC rises, against 802.3's 10 ns minimum: exactly 2 clocks works
+; only with MDC on the chip's clock grid. No setup time is needed.
 ; Driving: MDIO changes 4 to 5 clocks after MDC rises at the pad (80..100 ns at
 ; 50 MHz; 802.3: 0..300 ns).
 ;
@@ -33,6 +34,9 @@
 ; rising edges, and release after D0's. Write: TA must be 1, 0 and the 16 bits
 ; are applied after D0. A short preamble, ST 00 (Clause 45), OP 00 or 11 or
 ; another PHYAD: MDIO stays released and we hunt for the next preamble.
+;
+; No timeout: every state moves on MDC edges alone, so an STA that abandons a
+; frame leaves us in it (docs/bench-firmware.md, the measured consequences).
 ;
 ; RX FIFO: a word per write frame addressed to us, whether it was applied or
 ; not: 1 << 23 | REGAD << 18 | TA << 16 | data. Pushed without blocking: a

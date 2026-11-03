@@ -36,7 +36,7 @@ from . import i2cdev
 
 ADDR = 0x50                     # 1010000x
 ID_QSFP_PLUS, ID_QSFP28 = 0x0D, 0x11
-REV_COMPLIANCE = 0x08           # "SFF-8636 Rev 2.8 or later" (Table 6-3)
+REV_COMPLIANCE = 0x08           # 08h: right for the Rev 2.9 map modelled here; Rev 2.12 narrows it to 2.8-2.10
 PAGES = (0x00, 0x03)
 STATUS_DATA_NOT_READY, STATUS_INTL_HIGH = 0x01, 0x02
 T_CLOCK_HOLD_US = 500.0         # SFF-8636 Table 5-1: longest SCL hold
