@@ -901,8 +901,15 @@ def test_ping_step_runs_the_station(run, monkeypatch):
 
         def handle(self, raw):
             return [b"reply"]
-    monkeypatch.setitem(sys.modules, "pe.eth", types.SimpleNamespace(mac=str, ip=str, Station=Station))
-    monkeypatch.setitem(sys.modules, "pe.ethhost", types.SimpleNamespace(Eth10Host=Host, load_writes=lambda f: []))
+    eth = types.SimpleNamespace(mac=str, ip=str, Station=Station)
+    ethhost = types.SimpleNamespace(Eth10Host=Host, load_writes=lambda f: [])
+    monkeypatch.setitem(sys.modules, "pe.eth", eth)
+    monkeypatch.setitem(sys.modules, "pe.ethhost", ethhost)
+    # `from pe import eth` takes the package's attribute when an earlier test in this
+    # process imported the real module: replace that too, or the test depends on order
+    import pe
+    monkeypatch.setattr(pe, "eth", eth, raising=False)
+    monkeypatch.setattr(pe, "ethhost", ethhost, raising=False)
     monkeypatch.setattr(hw_day.BY_NAME["ping"], "files", ())
     monkeypatch.setattr(hw_day, "act_ping", lambda ctx, f=hw_day.act_ping: f(ctx, seconds=0.01))
     run.confirm("rx", "budget")
