@@ -14,10 +14,6 @@ import argparse
 import multiprocessing as mp
 
 import test_faults as T
-from pe import usb, usbdev, usbenum
-from pe.modelhost import ModelHost
-from pe.usbfs import FsControlHost
-from pe.usbhost import ControlHost
 
 
 def one(args):
@@ -45,36 +41,11 @@ def sweep(speed, cycles, step, text, jobs):
         print(f"  missed from {a} to {b}")
 
 
-def session(speed, text, seed=1, jitter=0.0, ppm=0.0, lost=False):
-    mh = ModelHost()
-    mh.apply(usbenum.load_writes(usbenum.assemble(speed, text), speed))
-    mh.pull_up = 0b10
-    mh.step(100)
-    if speed == "full":
-        h = FsControlHost(mh, seed=seed, jitter_ns=jitter, ppm=ppm, ipd_bits=2.0, ack_bits=2.0)
-    else:
-        h = ControlHost(mh, bit=32)
-    if lost:
-        h.faults["lose_host_ack"] = 1
-        h.control_write(0, bytes([0x00, 5, 77, 0, 0, 0, 0, 0]))
-        h._send(usb.token(usb.PID_IN, 77, 0))
-        h._response()
-    else:
-        assert h.get_descriptor(0, 1, 18) == usbdev.DEVICE_DESC
-        h.control_write(0, bytes([0x00, 5, 9, 0, 0, 0, 0, 0]))
-        assert h.get_descriptor(9, 2, 18) == usbdev.CONFIG_DESC
-        h.control_write(9, bytes([0x00, 9, 1, 0, 0, 0, 0, 0]))
-    # in ns at full speed (continuous host time: rounded below float noise), bit times at low speed
-    turn = [round(t[1], 6) for t in h.fs.turnarounds] if speed == "full" else h.turnarounds
-    return turn, h.wire
-
-
 def turnarounds(old):
-    for args in [("full", None, 1, 0, 0, False), ("full", None, 2, 9.25, 2500, False),
-                 ("full", None, 3, 5, -2500, True), ("full", None, 9, 9.25, 2500, True), ("low", None)]:
-        a = session(args[0], old, *args[2:])
-        b = session(*args)
-        print(f"{args[0]} speed {args[2:]}: {len(a[0])} answers; turnarounds equal {a[0] == b[0]}, "
+    for s in T.USB_SESSIONS:
+        a = T.usb_session(s[0], old, *s[1:])
+        b = T.usb_session(s[0], None, *s[1:])
+        print(f"{s[0]} speed {s[1:]}: {len(a[0])} answers; turnarounds equal {a[0] == b[0]}, "
               f"packet bytes equal {a[1] == b[1]}")
 
 

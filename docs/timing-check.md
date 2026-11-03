@@ -245,8 +245,9 @@ command.
 | tLOW at 100 kHz | ≥ 240 clk | ≥ 226 (4.7 µs) | |
 
 The checker corrected the declared numbers: the high phase is 6 ticks, not
-5, for a START, whose `ldi r3, TMO` sits between the SCL release and the
-WAIT.
+5, for a START, whose `ldi r3, TMO` sat between the SCL release and the
+WAIT. Since `fault-fixes` that `ldi` comes before the release, and the 6
+ticks come from the `jmp !pin SDA` (the START's SDA read-back) after the WAIT.
 
 **usb_fs_dev** at 48 MHz. Turnaround (USB 2.0 §7.1.18.1) is from the host's
 SE0 → J at the pads to our first J → K at the pads, 8 to 26 clocks. Two
@@ -324,7 +325,10 @@ host's EOP is seen ([fault-testing.md](fault-testing.md), finding 6). `.cond`
 takes an untimed level WAIT only, so the three turnaround deadlines start at
 the frame end (`tok_end`, `d_end`) instead: the WAIT is reached 7 ticks or
 more after it, after the J (2..6, the old `after=`), so it completes at its
-first attempt (`stall=in_tmo:0`, `hs_tmo:0`, checked by the soundness runs),
+first attempt (`stall=in_tmo:0`, `hs_tmo:0`: the deadlines `in_reach` and
+`hs_reach`, `min=7` ticks from the frame end to the WAIT, pass at 8 and 10, so
+the assumptions follow from the program; the soundness runs, which skip a
+measurement that breaks one, also assert that none does),
 and the J-to-answer time is the interval less 2..6 ticks plus the pads' 3..4:
 `adjust=-3..2`. The bounds are the same as above (10–15, 11–20, 10–21), and
 the test now finds the J in the trace and still requires the bus turnaround

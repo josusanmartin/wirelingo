@@ -307,6 +307,9 @@ def test_usb_enum_deadlines():
     # except by name (not for us, or not an IN), so it may not pass conditionally.
     assert st["in_ta_any"].status == "PASS" and not st["in_ta_any"].nonreaching
     assert st["in_ta"].total() == (10, 15) and st["in_ta_any"].total() == (10, 21)
+    # the timed J WAITs are reached after the J: their stall=..:0 follows from the program
+    assert st["in_reach"].status == st["hs_reach"].status == "PASS"
+    assert (st["in_reach"].lo, st["hs_reach"].lo) == (8, 10)
 
 
 def enum_session(seed, jitter, ppm, lost_ack_in=False):
@@ -346,6 +349,8 @@ def test_usb_enum_sound_and_pad_turnaround():
             mh, tr, h = enum_session(seed, jit, ppm, lost)
             s = soundness(chk, results, tr, label=f"usb_enum seed={seed} lost={lost}")
             assert s["data_ta"][0] > 0 and s["in_ta_any"][0] > 0 and s["rx_bit"][0] > 0
+            # and none broke an assumption (stall=in_tmo:0 / hs_tmo:0 among them)
+            assert all(s[n][1] == 0 for n in ("in_ta", "in_ta_any", "data_ta", "rx_bit")), s
             ms = sorted([(m.start_cycle, m, st[n]) for n in ("in_ta_any", "data_ta")
                          for m in timing.measure(chk, st[n].deadline, tr)], key=lambda x: x[0])
             assert len(ms) == len(h.fs.turnarounds)

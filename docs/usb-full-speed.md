@@ -17,7 +17,10 @@ lists what the runs can't show.
 > 44 MHz; typ met 50 MHz). The current candidate, run fo6, meets 50 MHz at all
 > three corners, and its release receipts run `test_usb_fs_device` and the
 > autonomous enumeration on the netlist with SDF at 20.834 ns (48 MHz) at typ,
-> slow and fast ([release-evidence.md](release-evidence.md)).
+> slow and fast ([release-evidence.md](release-evidence.md)). Those receipts
+> are for software `7685aba`: the autonomous enumeration ran with the
+> 246-word `usb_enum` from before `fault-fixes`, and the 253-word one needs a
+> gate-level rerun before they apply to it.
 
 ## Bottom line
 
@@ -397,6 +400,11 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   the model's clock. On 2026-10-30 `usb_enum` also enumerated at full speed against
   Linux xHCI through the board's USB5744 hub: 14 of 14 attaches, 56,000 of 56,000
   control transfers, 130 of 130 bus resets ([fpga/kv260/README.md](../fpga/kv260/README.md)).
+  Both `usb_enum` results are for the 246-word firmware before `fault-fixes`.
+  The 253-word one (a bus reset is seen wherever it starts:
+  [fault-testing.md](fault-testing.md), finding 6) has run on the model and in
+  RTL simulation only, and needs an FPGA and a gate-level rerun before these
+  results apply to it.
   That is the RTL in FPGA fabric with 3.3 V LVCMOS pins and no scope, so the
   analogue items above stay open, and it doesn't measure the jitter margin.
   `usb_fs_dev` carried data to and from Linux the same day, 350 round trips over

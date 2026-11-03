@@ -305,8 +305,10 @@ make COCOTB_TEST_MODULES=test_sigrok COCOTB_TEST_FILTER=sigrok_usb_autonomous
 Gate level was not run on this branch. It has run since: run fo6's release
 receipts include `test_usb_autonomous` and `test_usb_autonomous_fs` on the
 netlist with SDF at typ, slow and fast at 20.834 ns (48 MHz), validation root
-`f1cb7c9` and again `7685aba`, whose `usb_enum.pasm` is the current one
-([release-evidence.md](release-evidence.md)).
+`f1cb7c9` and again `7685aba` ([release-evidence.md](release-evidence.md)).
+That was the 246-word `usb_enum.pasm` of `7685aba`. The 253-word one from
+`fault-fixes` has not run at gate level, and needs a gate-level rerun
+before that result applies to it.
 
 ## On the KV260, with a replayed host (2026-10-14)
 
@@ -329,7 +331,9 @@ sample equal to the clock-edge-launched pads, as on the FPGA; with its default
 asynchronous edge the full-speed answers come one clock later.) Turnaround on the pads: 2.16 bit times (low
 speed), 3.25-4.00 (full speed; 4.75 for the IN that commits a new address).
 This is the RTL on FPGA fabric with digital pad levels: no transceiver, no
-analogue receiver, no real host controller.
+analogue receiver, no real host controller. It ran the 246-word firmware
+before `fault-fixes`; the 253-word one needs a rerun on the KV260 before
+this result applies to it.
 
 ## What remains
 

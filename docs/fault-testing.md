@@ -22,6 +22,11 @@ remote_test.sh model                # on the compute runner, with the whole suit
 remote_test.sh test                 # the RTL suite: test_uart_rx_glitch, test_i2c_master_bus_fault
 ```
 
+The sigrok tests skip unless sigrok-cli is found: `remote_test.sh` does not pass
+`SIGROK_CLI` over ssh, so on the runner set it in the remote command (the
+`fault-fixes` runs did; at `b5496aa`: model 2131 passed, `test_sigrok` 8/8,
+and without it 2103 passed, 28 skipped).
+
 ## What was injected
 
 | Kind | On the wire | Size |
@@ -147,7 +152,7 @@ fault fell on other bits and the case was `ok`.
 Each has a test named `test_finding_*`. For the four fixed, the test asserts
 the fix, and `test_fix_mutant_fails_its_test` takes each new check out of the
 firmware (or moves it a tick) and requires that test, run on the mutant, to
-fail, and the real firmware to pass it: 16 mutants, all caught. Costs are
+fail, and the real firmware to pass it: 25 mutants, all caught. Costs are
 exact, from the assembler, the static timing checker and the model.
 
 **1. `uart_rx` took a glitch for a start bit. Fixed.** Sweep: `glitch`, seed 3
@@ -244,7 +249,11 @@ changes:
   already there). In five model sessions compared clock for clock (four at full
   speed with offsets, jitter and the lost-ACK IN, one low-speed enumeration;
   `usb_reset_sweep.py turnarounds`, below) the device's turnarounds and the
-  bytes of every packet on the bus are identical to the old firmware's. (The
+  bytes of every packet on the bus are identical to the old firmware's. The
+  suite holds this too: `test_usb_enum_answers_on_the_same_clock_as_before`
+  pins the five sessions' turnarounds as the old firmware gave them (to
+  0.01 ns at full speed, exactly at low speed, where `J_LATE 0` moves them by
+  1 or 2 clocks). (The
   longer program takes 7 more host writes to load, so everything after the
   load is 7 clocks later.)
 
@@ -316,8 +325,15 @@ bits dropped, 92 before, and never a bit of the host's).
   late; each of the four SDA read-backs removed, the read-back replaced by
   zeros, the byte compared against the wrong bit order; `got_in`'s timeout
   removed or the WAIT made untimed; `handshake`'s timeout removed; the echo
-  check removed. Each fails the test of its check, which the real firmware
-  passes.
+  check removed. And, from report 023, nine more: `J_LATE 0` (low-speed
+  answers 1 or 2 clocks early: caught by the pinned turnarounds); the
+  `got_in`, `handshake` and `echo` timeouts lowered (to 40, 40 and 1 ticks:
+  caught by `test_usb_enum_short_se0_is_not_a_reset`, a 1.9 us SE0 at each of
+  those WAITs, which must leave the address set); `echo` without its `[3]`;
+  the mid-bit check a tick late; the read-back compare ignoring the LSB;
+  `start_fault` without its SCL low (stuck seed 13 then hangs); the SOF
+  routed back through `sample`. Each fails the test of its check, which the
+  real firmware passes.
 * The UART strict receiver and the FCS check have their own tests, including
   that they reject what they should.
 * Every fault class is checked clock for clock on a recorded line: exact

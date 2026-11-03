@@ -38,7 +38,8 @@ and sets F0.
   (10) and `test_uart_capture.py` (208), all in the model suite.
 * `uart_rx` is also in the top-level RTL suite (`test_uart_rx` in
   `test/test.py`, nominal timing at 24 clocks per bit), which also runs on
-  the gate-level netlist.
+  the gate-level netlist. The gate-level runs on record (fo6's receipts) used
+  the 13-word firmware; the 14-word one has not run at gate level.
 * KV260 FPGA build: `uart_rx` through a loopback from `uart_tx` and from a
   9600-baud line bit-banged on `ui[0]`; `uart_rx_packed` and
   `uart_rx_capture` with generator-played lines, the capture also at the

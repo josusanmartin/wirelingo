@@ -935,10 +935,14 @@ def test_finding_i2c_master_reports_a_stuck_sda():
     Before the fix every byte read as ACK and F1 stayed clear; now every WRITE
     and READ replies 0x200 and F1 is set. On a clean bus the same transfer is
     NACKed, F1 clear, and after the fault (F1 cleared) a transfer works."""
-    clean = I2c()
+    check_i2c_stuck_sda()
+
+
+def check_i2c_stuck_sda(text=None):
+    clean = I2c(text)
     clean.ee.addr = 0x51
     assert clean.run(clean.write_cmds(1, 2)) == ([1, 1, 1], True) and not clean.mh.chip.flags & 2
-    h = I2c()
+    h = I2c(text)
     h.ee.addr = 0x51
     h.wire.add(faults.Stuck(h.SDA, 0))
     assert h.run(h.write_cmds(1, 2)) == ([0x200, 0x200, 0x200], True)
@@ -1324,6 +1328,119 @@ def test_usb_enum_sees_a_reset_that_starts_anywhere_low_speed(chunk):
     assert not bad, bad
 
 
+def usb_short_se0(off, cycles, text=None):
+    """SE0 for `cycles` from `off` clocks into a control read, as in
+    usb_reset_anywhere. Returns (address afterwards, the next control read
+    at that address works)."""
+    h = Usb(text)
+    assert h.good()
+    h.h.gap()
+    mh = h.mh
+    start = mh.chip.cycle + off
+    h.wire.add(faults.Stuck(0, 0, start, start + cycles), faults.Stuck(1, 0, start, start + cycles))
+    try:
+        h.h.retries = 0
+        h.h.get_descriptor(h.addr, 1, 18)
+    except (TimeoutError, Stall, AssertionError):
+        pass
+    h.h.retries = 3
+    while mh.chip.cycle < start + cycles + 40:
+        h.h.fs._edge()
+    h.wire.clear()
+    mh.step(200)
+    addr = usbenum.state(mh.read)["address"]
+    h.h.fs.last_eop_j = None
+    return addr, h.good()
+
+
+USB_SHORT_SE0 = 90               # clocks: 1.9 us, under the 2.5 us of a bus reset
+
+
+def usb_short_se0_offsets(packets):
+    """From 30 clocks before each of these device packets to 2 before, every
+    2nd clock: SE0s that run on from the host's EOP into the J WAIT of
+    `got_in` (the three DATA) or `handshake` (the two ACK), or hide the
+    device's SYNC from `echo` (all five)."""
+    return [o for a, _ in packets for o in range(a - 30, a - 1, 2)]
+
+
+def check_short_se0(text=None, packets=None):
+    bad = {}
+    for off in usb_short_se0_offsets(packets or usb_device_packets()):
+        addr, ok = usb_short_se0(off, USB_SHORT_SE0, text)
+        if addr != Usb.ADDR or not ok:
+            bad[off] = (addr, ok)
+    assert not bad, bad
+
+
+@pytest.mark.parametrize("packet", range(5))
+def test_usb_enum_short_se0_is_not_a_reset(packet):
+    """An SE0 of 1.9 us is not a bus reset (2.5 us is): wherever in a
+    turnaround it starts, at each of the three WAITs fault-fixes gave a
+    timeout (got_in's and handshake's J WAITs, echo's), the device keeps its
+    address and the next control read at it works. Every other reset test
+    drives 4.2 us or more, so without this a timeout set too short would pass."""
+    pk = usb_device_packets()
+    check_short_se0(packets=pk[packet:packet + 1])
+
+
+def usb_session(speed, text=None, seed=1, jitter=0.0, ppm=0.0, lost=False):
+    """An enumeration (or, with `lost`, SET_ADDRESS with its status ACK lost and
+    an IN first), as in test_timing_check. Returns (the device's turnarounds:
+    ns on the full-speed bus rounded to 0.01, bit times at low speed; every
+    packet on the bus)."""
+    mh = ModelHost()
+    mh.apply(usbenum.load_writes(usbenum.assemble(speed, text), speed))
+    mh.pull_up = 0b10
+    mh.step(100)
+    if speed == "full":
+        h = FsControlHost(mh, seed=seed, jitter_ns=jitter, ppm=ppm, ipd_bits=2.0, ack_bits=2.0)
+    else:
+        h = ControlHost(mh, bit=32)
+    if lost:
+        h.faults["lose_host_ack"] = 1
+        h.control_write(0, bytes([0x00, 5, 77, 0, 0, 0, 0, 0]))
+        h._send(usb.token(usb.PID_IN, 77, 0))
+        h._response()
+    else:
+        assert h.get_descriptor(0, 1, 18) == usbdev.DEVICE_DESC
+        h.control_write(0, bytes([0x00, 5, 9, 0, 0, 0, 0, 0]))
+        assert h.get_descriptor(9, 2, 18) == usbdev.CONFIG_DESC
+        h.control_write(9, bytes([0x00, 9, 1, 0, 0, 0, 0, 0]))
+    turn = [round(t[1], 2) for t in h.fs.turnarounds] if speed == "full" else list(h.turnarounds)
+    return turn, h.wire
+
+
+USB_SESSIONS = [("full", 1, 0, 0, False), ("full", 2, 9.25, 2500, False),
+                ("full", 3, 5, -2500, True), ("full", 9, 9.25, 2500, True), ("low",)]
+# The device's turnarounds in those sessions with usb_enum at 575362a, before
+# fault-fixes; the firmware now must give the same, at both speeds.
+USB_TURNAROUNDS = [
+    [323.0, 278.68, 267.78, 266.79, 309.01, 331.77, 281.01, 327.64, 263.55, 279.98, 266.94, 320.19,
+     324.48, 273.71],
+    [341.23, 273.54, 255.98, 274.62, 325.71, 328.94, 262.12, 335.17, 275.01, 262.64, 291.37, 314.71,
+     347.77, 258.15],
+    [338.85, 277.34, 404.94],
+    [336.02, 286.68, 394.3],
+    [2.15625] * 14,                  # 69 clocks of 32: 2 bit times and 5 clocks
+]
+
+
+def check_turnarounds(text=None):
+    got = [usb_session(s[0], text, *s[1:])[0] for s in USB_SESSIONS]
+    assert got == USB_TURNAROUNDS, got
+
+
+def test_usb_enum_answers_on_the_same_clock_as_before():
+    """The new instructions before each answer are absorbed by its delay
+    (`J_LATE` at low speed, where the J comes after the WAIT is reached): in
+    four full-speed sessions (offsets, jitter, the lost-ACK IN) and a
+    low-speed enumeration, every turnaround equals the old firmware's,
+    pinned in USB_TURNAROUNDS (usb_reset_sweep.py turnarounds compares
+    against the old source itself)."""
+    check_turnarounds()
+
+
 # The fixes' own mutants: each takes out (or weakens) one new check; the test of
 # that check must then fail. ---------------------------------------------------
 FIX_MUTANTS = [
@@ -1392,6 +1509,46 @@ FIX_MUTANTS += [
      "    nop         [TURN - 2 + 2 * J_LATE]", None),                  # the SETUP's DATA EOP
     ("usb_enum", "    jmp t, se0                     ; SE0 for 2.5 us hid our own packet: a reset",
      "    nop", None),                                                  # SE0 in the turnaround
+]
+
+
+def usb_echo_check(text):
+    """An SE0 from just before to just after each of the device's first drive
+    clocks (its SYNC) is a reset."""
+    usb_mutant_check([o for a, _ in usb_device_packets() for o in range(a - 6, a + 3)])(text)
+
+
+def i2c_seed13_check(text):
+    """The sweep's i2c_master stuck seed 13 (docs/fault-testing.md): second-frame."""
+    assert case(I2c, "stuck", 13, text).verdict == "second-frame"
+
+
+# Report 023's mutants: the first four survived b5496aa's suite; the rest were
+# caught by it and are kept here so they stay caught.
+FIX_MUTANTS += [
+    ("usb_enum", ".define J_LATE (TURN > 8)", ".define J_LATE 0", check_turnarounds),
+    ("usb_enum", "    ldi r0, 120                    ; runs on from the token's EOP must get out)",
+     "    ldi r0, 40", lambda text: check_short_se0(text, usb_device_packets()[1:2])),
+    ("usb_enum", "    ldi r0, 120                    ; as in `idle`: 2.5 us",
+     "    ldi r0, 40", lambda text: check_short_se0(text, usb_device_packets()[0:1])),
+    ("usb_enum", "    ldi r0, 120             [3]    ; once its first K can have reached our input,",
+     "    ldi r0, 1               [3]", lambda text: check_short_se0(text, usb_device_packets()[0:1])),
+    ("usb_enum", "    ldi r0, 120             [3]    ; once its first K can have reached our input,",
+     "    ldi r0, 120", usb_echo_check),
+    ("uart_rx", "    wait 0 pin RX              [3]  ; start bit: D, D+1..3\n"
+                "    jmp pin RX, start               ; D+4  mid-bit: high again is a glitch, no frame\n"
+                "    ldi r0, 7                  [6]  ; D+5..11",
+     "    wait 0 pin RX              [4]\n    jmp pin RX, start\n    ldi r0, 7                  [5]",
+     check_uart_glitches),                                          # checked a tick late
+    ("i2c_master", "    cmp r0, 2\n", "    cmp r0, 4\n", check_i2c_stuck_sda),   # the LSB not compared
+    ("i2c_master", "    pin SCL, lo              [1]  ; holding SDA for a clock edge gets it",
+     "    nop", i2c_seed13_check),
+    ("can_rx", "    ldi r3, 1                   [18]  ; D+5  last = recessive: SOF starts a run\n"
+               "    mov r2, pins                      ; D+24 = S+0: the SOF at its sample point\n"
+               "    and r2, 1                         ; S+1\n"
+               "    jmp r2, idle                      ; S+2  recessive: a glitch, not a frame\n"
+               "    jmp sof                           ; S+3  (r1 = 0: no stuff check) -> S+4\n",
+     "    ldi r3, 1                   [17]\n    jmp sample\n", check_can_idle_glitches),   # the SOF via `sample`
 ]
 
 

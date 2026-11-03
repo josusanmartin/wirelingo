@@ -26,7 +26,8 @@ Severities:
   tests' defines where sizes depend on them. Every word count cited in the
   docs matches, including the round totals: 697, 398 and 734 words. The
   240 and 241 words in the KV260 logs are dated transcripts of an older
-  `usb_enum`, labelled as such; it is 246 words now.
+  `usb_enum`, labelled as such; it was 246 words at this audit (253 since
+  `fault-fixes`).
 * **Test names and counts.** Every cited test name exists. Counts were
   taken by grepping `@cocotb.test` and `def test_`: test.py has 25 (also at
   both release tags), test_pio 2, test_eth_service 2, test_post_freeze 16,
