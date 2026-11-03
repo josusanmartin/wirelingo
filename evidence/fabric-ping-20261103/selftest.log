@@ -1,0 +1,523 @@
+PING 10.77.0.2 (10.77.0.2) 18(46) bytes of data.
+26 bytes from 10.77.0.2: icmp_seq=1 ttl=64 time=88.7 ms
+26 bytes from 10.77.0.2: icmp_seq=2 ttl=64 time=43.0 ms
+26 bytes from 10.77.0.2: icmp_seq=3 ttl=64 time=43.1 ms
+26 bytes from 10.77.0.2: icmp_seq=4 ttl=64 time=43.3 ms
+26 bytes from 10.77.0.2: icmp_seq=5 ttl=64 time=43.3 ms
+
+--- 10.77.0.2 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 803ms
+rtt min/avg/max/mdev = 42.962/52.271/88.663/18.196 ms
+
+{
+ "ping": {
+  "sent": 5,
+  "received": 5,
+  "wall_rtt_ms": 52.271,
+  "data_bytes": 18
+ },
+ "ping_1500_byte_packet": "not run: the generator holds a 64-byte frame, the TX FIFOs a 64-byte reply",
+ "udp_echo": "wirelingo",
+ "no_reply_unknown_ip_no_arp": true,
+ "no_reply_other_ip": true,
+ "no_reply_other_mac": true,
+ "no_reply_bad_fcs": true,
+ "answers_again": true,
+ "frames_to_chip": 13,
+ "frames_from_chip": 8,
+ "backend": {
+  "rig": "KV260",
+  "ident": {
+   "rtl_rev": "d1aa46f7ed7e94adc36b895a591338be51da2b7b",
+   "head": "d1aa46f7ed7e94adc36b895a591338be51da2b7b",
+   "dirty": false,
+   "clk_div": 24,
+   "build_time": 1791324460,
+   "build_utc": "2026-10-06 22:07:40",
+   "digest": "3adc796c"
+  },
+  "clock_mhz": 50.0,
+  "f_meas_mhz": 49.99954,
+  "stats": {
+   "rx_frames": 13,
+   "tx_frames": 8
+  },
+  "station": {
+   "rx": 13,
+   "arp": 1,
+   "icmp": 6,
+   "udp": 1,
+   "arp_ignored": 1,
+   "other_ip": 2,
+   "other_dst": 1,
+   "bad_fcs": 1
+  },
+  "last": [
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      5,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 535,
+      "end": 3429,
+      "tp_idl_ns": 290,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5510,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.1
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 918,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 22.6,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      5,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 535,
+      "end": 3428,
+      "tp_idl_ns": 270,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5500,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.2
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 918,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.1,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      4,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 534,
+      "end": 3428,
+      "tp_idl_ns": 270,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5490,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.2
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 924,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.3,
+    "zero_words_restored": 3,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      5,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 535,
+      "end": 3428,
+      "tp_idl_ns": 270,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5500,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.1
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 926,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.3,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      5,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 535,
+      "end": 3427,
+      "tp_idl_ns": 300,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5490,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.1
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 920,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.1,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      5,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 535,
+      "end": 3428,
+      "tp_idl_ns": 300,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5490,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.3
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 910,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.2,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      4,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 534,
+      "end": 3427,
+      "tp_idl_ns": 300,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5490,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 16.1
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 974,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.4,
+    "zero_words_restored": 6,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 924,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.5,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 920,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 21.4,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 916,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 22.0,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 918,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 20.5,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "rx": 64,
+    "same": true,
+    "entries": 920,
+    "burst_words": 800,
+    "status": [
+     5120,
+     0
+    ],
+    "wall_ms": 20.5,
+    "zero_words_restored": 2,
+    "records": [
+     576,
+     1
+    ]
+   },
+   {
+    "tx": 64,
+    "same": true,
+    "both_high": 0,
+    "pulses": [
+     [
+      5,
+      5
+     ]
+    ],
+    "frames": [
+     {
+      "start": 535,
+      "end": 3429,
+      "tp_idl_ns": 270,
+      "driven_runs": [
+       2,
+       3,
+       5
+      ],
+      "decoded": true
+     }
+    ],
+    "open": false,
+    "loaded_words": 16,
+    "burst_words": 866,
+    "samples": 5500,
+    "status": [
+     4224,
+     1280
+    ],
+    "f_go_cleared": true,
+    "wall_ms": 15.3
+   }
+  ]
+ },
+ "pass": true
+}
