@@ -613,15 +613,19 @@ def test_refused_inside_a_step_turns_the_pins_off(run, monkeypatch):
 def test_a_signal_turns_the_pins_off(run, monkeypatch, sig):
     run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "pi-net")
     run.typed = ["wired tx-pi", "passed tx-pi"]
-    before = signal.getsignal(sig)
+    before = signal.signal(sig, signal.SIG_IGN)     # without the launcher's handler, the test run survives to say so
+    monkeypatch.setattr(hw_day, "tx_send", lambda *a: dropped_ssh())
 
-    def dropped_ssh(*a):
+    def dropped_ssh():
         os.kill(os.getpid(), sig)
         raise AssertionError("the signal should have raised first")
-    monkeypatch.setattr(hw_day, "tx_send", dropped_ssh)
-    assert run("tx-pi") == hw_day.EXIT_FAILED
+    try:
+        assert run("tx-pi") == hw_day.EXIT_FAILED
+        assert signal.getsignal(sig) == signal.SIG_IGN               # handlers put back
+    finally:
+        signal.signal(sig, before)
     rig = run.rigs[0]
-    assert rig.spim.calls[-1] == {} and rig.closed == 1 and signal.getsignal(sig) == before
+    assert rig.spim.calls[-1] == {} and rig.closed == 1
     assert any("stopped by signal" in x for x in run.out)            # the handler, not the AssertionError
 
 
@@ -1116,6 +1120,13 @@ def test_it_loads_and_runs_from_a_short_path(tmp_path, capsys, path):
     finally:
         del sys.modules[mod.__name__]
     assert "IndexError" not in capsys.readouterr().err
+
+
+def test_the_eth_stack_list_has_all_eth_tap_needs():
+    assert {"tools/pe/eth.py", "tools/pe/ethhost.py", "tools/pe/ethsim.py", "firmware/eth10_tx_cs.pasm",
+            "fpga/kv260/host/eth_tap.py"} == set(hw_day.ETH_STACK)
+    doc = DOC.read_text()
+    assert all(f in doc for f in hw_day.ETH_STACK)                   # the setup's copy line
 
 
 def test_a_pi_copy_imports_nothing_from_the_board():
