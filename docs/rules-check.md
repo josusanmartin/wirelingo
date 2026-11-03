@@ -14,15 +14,18 @@ silicon.
 
 Everything below was fetched on 2026-11-03. The competition page has no judging
 rubric, no FAQ, no eligibility clause, no AI-use rule and no submission format
-beyond "submit your design". The submission form is not up yet.
+beyond "Submit your design by January 18th, 2027." The submission form is not
+up yet. Quotes below are verbatim; paraphrase is marked as such.
 
 **Competition post**, https://blog.janestreet.com/protocol-emulator-asic-competition/
 (Sep 10, 2026; Benjamin Devlin, Anish Singhani):
 
-* Selection: "We're particularly interested in projects with unique
+* Selection: "This time, you're designing the chip, and we'll pay to fabricate
+  our favorite designs!", "We're particularly interested in projects with unique
   functionality, as well as those that demonstrate novel approaches to design
   and verification methodologies!" and "We'll pay to tape out the most novel
-  designs on a Tiny Tapeout shuttle."
+  designs on a Tiny Tapeout shuttle." Selection is the organisers' taste
+  ("favorite"), not novelty alone.
 * The task: "Design an open-source, general-purpose protocol emulator ASIC."
 * "The goal isn't to put a UART block, an SPI block, and an I2C block on one die
   and call it done. Your chip should be reprogrammable enough to support new
@@ -55,12 +58,16 @@ beyond "submit your design". The submission form is not up yet.
 * Prize: "We're targeting the March 2027 CMOS5L shuttle, subject to the foundry
   schedule. Winners will receive chips and dev boards back after fabrication."
 * Fit: "budget for about 1K logic cells per tile." "For instruction memory, SRAM
-  can be more area-efficient than flip-flops." "Run synthesis early ... Then run
-  the full place-and-route flow and check timing."
+  can be more area-efficient than flip-flops. Tiny Tapeout has examples of SRAM
+  running on this process node you can reference." (The link is the ttihp0p2
+  `tt_um_urish_sram_test`, the 1024x8 macro, not the 256x32 we use.) "Run
+  synthesis early ... Then run the full place-and-route flow and check timing."
 * "We'll add a final submission form to this page closer to the deadline!"
 
 **CMOS5L template**, https://github.com/TinyTapeout/ttihp-verilog-template/tree/cmos5l
-(last commit 2026-10-19, "chore: switch from ihp-sg13g2 to ihp-sg13cmos5l"):
+(last commit 2026-10-19, `231f26a5` "fix(test): add sg13cmos5l UDP models to
+gate-level simulation", after "chore: switch from ihp-sg13g2 to ihp-sg13cmos5l"
+the same day):
 `info.yaml` "Do not change! yaml_version: 6"; "Your top module name must start
 with "tt_um_""; "Source files must be in ./src and you must list each source
 file separately"; pinout "DO NOT delete or add any pins"; `docs/info.md`: "Each
@@ -68,12 +75,15 @@ image must be less than 512 kb in size". Default licence Apache-2.0. Workflows:
 `gds` (build, precheck, gl_test, viewer), `docs`, `test`, `fpga`.
 
 **Tiny Tapeout FAQ**, https://tinytapeout.com/faq/: "A project can't be
-submitted to a shuttle if its GDS action is failing"; required fields "author,
-title, description, how_it_works, how_to_test, and language"; maximum clock "At
-least 50MHz".
+submitted to a shuttle if its GDS action is failing". For the Documentation
+action the FAQ lists the fields it requires (paraphrase of a bullet list):
+author, title, description, how_it_works, how_to_test, language. Its "At least
+50MHz" sits under the chip specs for TT04 to TT10, the SKY130 shuttles; the FAQ
+gives no IHP figure.
 
 **TT specs.** https://tinytapeout.com/specs/clock/: "maximum input frequency of
-66 MHz". https://tinytapeout.com/specs/gpio/: "For SKY130 the official rating is
+66 MHz", the rating of the SKY130 `sky130_ef_io_gpiov2_pad`; nothing
+IHP-specific. https://tinytapeout.com/specs/gpio/: "For SKY130 the official rating is
 33 MHz"; "the worst round trip latency was measured to be 20 ns" (TT3.5
 silicon); nothing IHP-specific. https://tinytapeout.com/specs/memory/: "IHP has
 several variations of SRAM macros which can be used in shuttles which they will
@@ -99,15 +109,15 @@ Status: **met**, **partly**, **not yet** (required later), **at risk**.
 
 | Rule or criterion | Status | Evidence in the entry | Risk a skeptical judge would raise |
 |---|---|---|---|
-| IHP CMOS5L through TT, from the CMOS5L template | met | `info.yaml` yaml_version 6; `gds.yaml` uses `tt-gds-action@ihp-cmos5l` with `pdk: ihp-sg13cmos5l`; fo6 hardened locally with the action's PDK and LibreLane revisions | The official GDS action has **never run**: `gh api repos/josusanmartin/wirelingo/actions/runs` returns no runs. fo6 needs six substituting steps from `librelane_plugin_protoemu.py`, which only `flow/harden.sh`-style local runs have exercised. TT's FAQ: a failing GDS action blocks submission |
-| tiles "6x4" in info.yaml | met | `info.yaml` `tiles: "6x4"`; 47 % cell / 53 % with macros (physical.md) | Three public rivals already harden at 8x4 (Loom, PRISM, JLNuijens), and TT's tools and newest CMOS5L template accept it. If Jane Street allows it, they have 30 % more area; fo6 cannot change without a new signoff |
+| IHP CMOS5L through TT, from the CMOS5L template | met | `info.yaml` yaml_version 6; `gds.yaml` uses `tt-gds-action@ihp-cmos5l` with `pdk: ihp-sg13cmos5l`; fo6 hardened locally with the action's PDK and LibreLane revisions | The official GDS action has **never run**, because Actions is **disabled** on the repository (`gh api repos/josusanmartin/wirelingo/actions/permissions`: `"enabled": false`; `actions/runs`: 0). Zero runs says nothing either way about whether it would pass. fo6 needs six substituting steps from `librelane_plugin_protoemu.py`, exercised only by local `flow/harden.sh` runs, which call the same `tt_tool.py --harden`. TT's FAQ: a failing GDS action blocks submission |
+| tiles "6x4" in info.yaml | met | `info.yaml` `tiles: "6x4"`; 47 % cell / 53 % with macros (physical.md) | Three public rivals already harden at 8x4 (Loom, PRISM, JLNuijens), and TT's tools (`d66cf179`) and its new CMOS5L SRAM example's `info.yaml` accept it (the Verilog template's comment does not list it). If Jane Street allows it, they have 30 % more area; fo6 cannot change without a new signoff |
 | Open source | **not yet** | `LICENSE` Apache-2.0 | The repository is **private** (`gh api`: `"private": true`, last push 2026-10-30). Rivals have been public since September-October. Publication is the author's call |
 | Deadline 2027-01-18; final form | not yet | — | The form is not posted; somebody must watch the page and the sign-up email |
 | Teams | n/a (advice) | one author with agents, disclosed in methodology.md | Not a rule |
 | TT required fields | met | info.yaml title/author/description/language; info.md "How it works", "How to test", "External hardware" | `discord` blank (optional) |
-| TT clock (≥ 50 MHz, input ≤ 66 MHz) | met | fo6 50 MHz at typ/slow/fast (STA, release gate); USB modes need exactly 48 MHz and `bringup.setup()` refuses any other actual frequency | 48 MHz from the RP2350 has not been tried on a demo board (model-tested only, info.md) |
-| TT I/O speed | **at risk (claim)** | info.md: "SCK up to the project clock (about 50 Mbit/s); an optional quad mode moves 4 bits per SCK (about 200 Mbit/s)" | Stated as datasheet fact. Evidence is RTL simulation and the FPGA's own fabric SPI master. TT's GPIO page reports a 20 ns pad round trip on sky130 and nothing for IHP; a read with half a 20 ns period of margin is unlikely through real pads. isa.md and board-transport.md say "unmeasured"; the datasheet does not |
-| SRAM for instruction memory | met, at risk | two `RM_IHPSG13_1P_256x32_c2_bm_bist` macros; LVS/DRC clean; SDF uses the macro's timing views | TT's memory page names only 1024x8 as taped out and tested. If the 256x32 macro or its integration fails on silicon, no firmware runs: there is no flop fallback in the tapeout build |
+| TT clock | met against SKY130 figures only | fo6 50 MHz at typ/slow/fast (STA, release gate); USB modes need exactly 48 MHz and `bringup.setup()` refuses any other actual frequency | TT's "At least 50MHz" (FAQ) and 66 MHz input rating (clock page) are SKY130 figures; TT publishes nothing for the IHP pads or clock input. 48 MHz from the RP2350 has not been tried on a demo board (model-tested only, info.md) |
+| TT I/O speed | **at risk (claim)** | info.md: "SCK up to the project clock (about 50 Mbit/s); an optional quad mode moves 4 bits per SCK (about 200 Mbit/s)" | Stated as datasheet fact. Evidence is RTL simulation and the FPGA's own fabric SPI master. TT's GPIO page reports a 20 ns pad round trip on sky130 and nothing for IHP; a read with half a 20 ns period of margin is unlikely through real pads. isa.md:635-636 ("Board throughput and pad timing require separate measurements") and board-transport.md:75 ("Still to measure on a board") say so; the datasheet does not |
+| SRAM for instruction memory | met, at risk | two `RM_IHPSG13_1P_256x32_c2_bm_bist` macros; LVS/DRC clean; SDF uses the macro's timing views | TT's memory page names only 1024x8 as taped out and tested, and the post's "examples of SRAM running on this process node" link is that same 1024x8 test. If the 256x32 macro or its integration fails on silicon, no firmware runs: there is no flop fallback in the tapeout build |
 | Reprogrammable for new protocols after fabrication | met (strong) | 14 post-freeze protocols in 3 rounds, RTL, GL, SDF typ (slow/fast recorded on this branch), KV260; a blind test (HD44780, ATA PIO) at model and RTL level | The README does not link the blind test. Post-freeze needed one assembler fix (disclosed) |
 | Not fixed protocol blocks | partly | cores + ISA; line unit does NRZI, stuffing, Manchester and clock recovery on core 0 | The line unit is protocol-specific hardware. explain-wirelingo.md Q6 admits "not fully pure". info.yaml's one-liner literally says "PIO-style" |
 | "consider what you'd do differently" from PIO/PRU | partly | README "What we'd do differently from PIO"; pio-comparison.md (model) | pio-comparison.md says PIO is faster and smaller (model vs a PIO model; no RP2040 silicon). A judge may read the ISA as PIO plus extras |
@@ -115,12 +125,12 @@ Status: **met**, **partly**, **not yet** (required later), **at risk**.
 | Low-speed USB (stretch) | met at FPGA level | KV260 fabric against the Kria's Linux xHCI: 18/18 LS and 14/14 FS attaches, 58 + 130 resets, 10,000 + 56,000 descriptor reads; 350/350 data round trips at FS (transcripts in fpga/kv260/README.md) | FPGA pins, one host and hub, no scope, no raw logs in the repo; FS `SET_CONFIGURATION` stall 5/116 open; the Kria is now unresponsive and off limits, so nothing can be re-run |
 | 10 Mbit Ethernet (stretch) | partly | TX: RTL, FPGA sampled; RX: RTL with 802.3 jitter, model sweeps; ARP/ping/UDP at the pads on model, RTL and fo6 GL; Linux pinging the model over TAP | No cable, no magnetics, no comparator: the RX front end is a proposed circuit (eth10-receiver.md). "Ping" is a Linux stack against the cycle model, not against the chip or its RTL in fabric |
 | JTAG, SWD, PS/2, CAN | partly | JTAG, PS/2, CAN: model + KV260 against pre-timed models; SWD model only, parked | No real target, transceiver or keyboard |
-| Test RTL on an FPGA | met | KV260 at 50 and 48 MHz | README:31 overstates coverage (see §3, item 1) |
+| Test RTL on an FPGA | met | KV260 at 50 and 48 MHz | README:31 and info.md:46-48 overstate coverage (see §3, items 1 and 17) |
 | "anything else your architecture makes possible" | met | logic analyzer + I2C clone/MITM, cut-through Ethernet match, PPS timestamps, bench firmware (MDIO, QSFP-style, PMBus) | Mostly model/RTL; eth10_match passed its verifier only on the fourth attempt |
 | Verification techniques (formal, random, AI-assisted) | met (strong) | lockstep model vs RTL, SymbiYosys proofs, netlist-RTL equivalence (7429 points), mutation 34/34, sigrok oracles, independent verifier agent, Hardcaml port proved equal to `src/` | Same agents wrote spec, model, RTL and tests (stated). Mutation count recorded 2026-10-05, not rerun. Verifier reports are "not published with this repository". The CI `formal` and `mutants` jobs have never run on GitHub |
 | Hardcaml (what Jane Street uses; not required) | partly | `ocaml/` port proved equal to `src/` (hardcaml-port.md) | The taped-out source is SystemVerilog; the port came after the freeze |
-| Synthesis early, P&R, timing | met | fo6 signoff, release gate passes with no waiver; netlist reproduced bit for bit on a 4-CPU clean build | Fast-corner hold +0.095 ns; GitHub's standard runner for a **private** repo has 2 CPUs / 8 GB (the reproduction assumed a public repo's 4 CPUs / 16 GB; https://docs.github.com/en/actions/reference/runners/github-hosted-runners) |
-| Explain the design (Advent of FPGA precedent) | at risk | methodology.md author statement; explain-wirelingo.md | methodology.md: "I let the agents lead" and "I cannot personally inspect thousands of gates". explain-wirelingo.md is a coaching page ("so you can stand in front of an engineer"; "AUTHOR TO ANSWER: How much of src/ have you read yourself?"). Published as is, it tells a judge the author may not be able to explain the chip |
+| Synthesis early, P&R, timing | met | fo6 signoff, release gate passes with no waiver; netlist reproduced bit for bit on a 4-CPU clean build | Fast-corner hold +0.095 ns; GitHub's standard runner for a **private** repo has 2 CPUs / 8 GB, for a public one 4 CPUs / 16 GB (https://docs.github.com/en/actions/reference/runners/github-hosted-runners); the 4-CPU local reproductions (ci6, ci7) took 1 h 46 min to 1 h 57 min |
+| Explain the design (Advent of FPGA precedent) | at risk | methodology.md author statement; explain-wirelingo.md | methodology.md: "I let the agents lead" and "I cannot personally inspect thousands of gates". explain-wirelingo.md is a coaching page ("The goal is that you can stand in front of an engineer"; "AUTHOR TO ANSWER: How much of src/ have you read yourself?"). Published as is, it tells a judge the author may not be able to explain the chip |
 | AI disclosure | met | methodology.md, "Who did what"; commit trailers (355 of 433 commits on this branch co-authored by Claude) | methodology.md:37 "Claude Opus 5.5 and Astra" is unexplained (open since claims audit B, 2026-10-14) |
 | Licence hygiene | met | Apache-2.0; files copied from kdp1965/ihp-um-janestreet-prism say so in their headers (`src/pdn_cfg.tcl`, `flow/odb_stripes.py`, `flow/odb_sram_diodes.py`, `librelane_plugin_protoemu.py`) | The README never credits PRISM, a rival entry whose SRAM/PDN plumbing the flow reuses. A one-line credit costs nothing |
 
@@ -147,22 +157,26 @@ claims-audit.md: **wrong**, **overclaim**, **stale**, **unclear**, **unsupported
 | 14 | unclear | usb-uart-byte.md, team-integration-checklist.md, lean-verification*.md | ticket jargon ("Atlas", C13-C24, "settlement") | claims-audit recommendation C, still open |
 | 15 | unclear | methodology.md:37 | "Claude Opus 5.5 and Astra" | Unexplained; Codex is the named reviewer. Author's decision |
 | 16 | unclear | whole repo | 43 docs, 15,275 lines; README first screen full of run names (fo6, t48ba, v2c, g4) and hashes | A judge with an hour will not find the strongest results. guide.md is the map but sits at README:139 |
+| 17 | overclaim | info.md:46-48 (datasheet) | "Most of it (not SWD or the two-core USB device) has also run on an FPGA build of the RTL" | The same overclaim as item 1, where a judge reads it first: `pps_capture`, `mdio_*`, `eth10_tx_cs`, `rmii_*`, the bench firmware and the blind-test firmware appear nowhere in `fpga/kv260/README.md`, which also lists the USB-UART pairs as "Not run" |
 
 No first/only/fastest claim was found in README.md, info.md, methodology.md or
 verification-story.md.
 
 ## 4. Fixes, ranked (cheapest high-value first)
 
-1. **Docs only, minutes each:** fix §3 items 1, 2, 3, 4, 7, 10 and 13. All are
+1. **Docs only, minutes each:** fix §3 items 1, 2, 3, 4, 7, 10, 13 and 17. All are
    wording against facts already in the repo.
 2. **Link the weaknesses from the README.** One line under the firmware table
    pointing at fault-testing.md's six findings, and one at blind-test.md. Showing
    your own failures is the methodology's selling point; hiding them by omission
-   is the overclaim a judge remembers.
+   is the overclaim a judge remembers. When the fault fixes (item 023) merge,
+   those README rows must say the fixes are verified on the model and in RTL
+   simulation only, not at gate level, on the FPGA or in silicon.
 3. **Qualify the datasheet's host-port speeds** (info.md:60-61): "in RTL
    simulation and on the FPGA; through the TT pads unmeasured; the default
    demo-board driver (`tools/micropython/protoemu.py`) bit-bangs the port in
-   MicroPython, far below either figure."
+   MicroPython, far below either figure; the optional `quad_spi.py` PIO/DMA
+   transport it points to is unmeasured on a board."
 4. **Credit PRISM in the README** (one line, with the files reused).
 5. **A judge's one page.** Five lines at the top of README: what it is, the
    evidence table, the three results to look at first (post-freeze + blind
@@ -171,12 +185,16 @@ verification-story.md.
 6. **Decide what explain-wirelingo.md is.** Keep it out of the public tree, or
    rewrite it as a reader's walkthrough without the coaching and the `AUTHOR TO
    ANSWER` prompts (author's decision).
-7. **Make the repository public and let the GitHub Actions run** (author's
-   decision; agents may not push). This is the only fix that turns "the GDS
-   action passes" from a local claim into TT's own evidence, and the
-   open-source rule requires it by the deadline anyway. Compare the action's
-   netlist hash with fo6's `a94a948b…`; a mismatch must be known before
-   January, not after. A private repo gets a 2-CPU, 8 GB runner; fo6-class runs took about 2 h on 4 CPUs.
+7. **Make the repository public and enable GitHub Actions** (author's
+   decision, in the repository settings; agents may not push or change
+   settings). Publishing alone runs nothing: Actions is disabled
+   (`actions/permissions`: `"enabled": false`), so both steps are needed. This
+   is what turns "the GDS action passes" from a local claim into
+   TT's own evidence, and the open-source rule requires publication by the
+   deadline anyway. Compare the action's netlist hash with fo6's `a94a948b…`;
+   a mismatch must be known before January, not after. On a public repo the
+   runner is 4 CPUs / 16 GB, the budget the local reproductions used (1 h 46 to
+   1 h 57 min); a private repo would get 2 CPUs / 8 GB.
 8. **Rerun the release gate on the shipping commit** after the firmware fixes
    (item 023) land: about an hour on runner1. Add `test_post_freeze` at SDF
    slow/fast to the gate so README:94 rests on a gated receipt.
@@ -198,13 +216,13 @@ the docs they point to, not only headlines). Everything is the rival's own
 claim; private entries are invisible. A GitHub search for repositories created
 since 2026-09-10 lists more than 150 candidates; most are templates or a
 UART. The table keeps the ones with real content. "FPGA+3P" means an FPGA
-build against a real third-party device or host; nobody has silicon.
+build against a real third-party device or host; no repo in this table shows silicon.
 
 | Repo | Last commit | Commits | Design | Highest evidence shown (their claim) | Real third-party far end? | CI gds / tiles | Notes |
 |---|---|---|---|---|---|---|---|
-| [parthDOOM/escapement](https://github.com/parthDOOM/escapement) | 2026-11-01 | ~94 | 4-context barrel core, deadline-checked pin events; 2x the same 256x32 macro as ours | GDS rated 33 MHz (signed off at 30 ns); netlist proved equal to RTL; unbounded proof that no pin edge is late; precheck | No. fpga/README.md: "The bitstreams are built and timed but not yet run on a board." Its USB/IP demo is a real Linux kernel against the *simulated* chip | green / 6x4 | Strongest on proved timing. The only other public 6x4 entry with our macro, gds green: layout-level, not silicon |
-| [MarcosAsh/protocol-emulator](https://github.com/MarcosAsh/protocol-emulator) | 2026-11-03 | ~1610 | 2 cores with a host-side timing-certificate checker, **Hardcaml**, 3x 512x16 SRAM | GDS slow +3.49 ns at 50 MHz, precheck; deadline proofs; netlist equal to RTL | **Yes.** Icepi Zero (ECP5) USB keyboard: real Linux `xhci_hcd` enumerates "HID 1209:0001 Keyboard", kernel log + sigrok capture in [release evidence-2026-10-15](https://github.com/MarcosAsh/protocol-emulator/releases/tag/evidence-2026-10-15) | green / 6x4 (8x4 experiment branch) | Publishes CI and board evidence as GitHub releases. Written in Jane Street's own HDL |
-| [mrnathanhumphrey-droid/protocol-emulator-asic](https://github.com/mrnathanhumphrey-droid/protocol-emulator-asic) | 2026-10-26 (`dev`; canary pushes 11-02) | ~360 | table-driven 5-lane EDF scheduler, 8 opcodes, flop store; Lean proofs | GDS 50 MHz all corners, slow +2.68 ns, precheck, GL green | **Yes.** Artix-7 against an MB85RC256V FRAM, a DS18B20 and a USB-UART adapter; I2C and 1-Wire runs captured by a DSLogic analyser, committed as `fpga/witness/*.json` | green / 6x4 | Its own README says the UART run is not a recorded witness |
+| [parthDOOM/escapement](https://github.com/parthDOOM/escapement) | 2026-11-01 | ~94 | 4-context barrel core, deadline-checked pin events; 2x the same 256x32 macro as ours | GDS rated 33 MHz (signed off at 30 ns); netlist proved equal to RTL; unbounded proof that no pin edge is late; precheck | No. fpga/README.md: "The bitstreams are built and timed but not yet run on a board." Its USB/IP demo is a real Linux kernel against the *simulated* chip | green / 6x4 | The other 6x4 entry in this table with the same macro, gds green: layout-level evidence for the macro, not silicon |
+| [MarcosAsh/protocol-emulator](https://github.com/MarcosAsh/protocol-emulator) | 2026-11-03 | ~1610 | 2 cores with a host-side timing-certificate checker, **Hardcaml**, 3x 512x16 SRAM | GDS slow +3.49 ns at 50 MHz, precheck; deadline proofs; netlist equal to RTL | **Yes.** Icepi Zero (ECP5) USB keyboard: real Linux `xhci_hcd` enumerates "HID 1209:0001 Keyboard", kernel log + sigrok capture in [release evidence-2026-10-15](https://github.com/MarcosAsh/protocol-emulator/releases/tag/evidence-2026-10-15); the chip's own host is a Pico running their MicroPython (`run.txt`, `pico_b.log`) | green / 6x4 (8x4 experiment branch) | Publishes CI and board evidence as GitHub releases. Written in Jane Street's own HDL |
+| [mrnathanhumphrey-droid/protocol-emulator-asic](https://github.com/mrnathanhumphrey-droid/protocol-emulator-asic) | 2026-10-26 (`dev`; canary pushes 11-02) | ~360 | table-driven 5-lane EDF scheduler, 8 opcodes, flop store; Lean proofs | GDS 50 MHz all corners, slow +2.68 ns, precheck, GL green | **Yes.** Artix-7 against an MB85RC256V FRAM, a DS18B20 and a USB-UART adapter; I2C and 1-Wire runs captured by a DSLogic analyser; what is committed is decoded records (`fpga/witness/*.json`, "a RECORDED BENCH WITNESS ... not a hardware run in CI"), not raw captures | green / 6x4 | Its own README says the UART run is not a recorded witness |
 | [jeddfadhley/protocol-emulator-asic](https://github.com/jeddfadhley/protocol-emulator-asic) (PEMU) | 2026-10-12 | ~23 | 2 PIO-like engines, packet RAM + DMA | GDS typ +2.72 ns at 50 MHz, slow about 36 MHz; Basys 3 on-chip loopback, 100/100 Ethernet frames | No. Headline "plug it into a laptop and ping it"; docs/fpga.md: "Not yet tried: Ethernet to a real laptop through an RJ45 jack" | green / 6x4 | Headline contradicted by its own doc; quiet for three weeks |
 | [thomasgilbert481/tt_um_loom](https://github.com/thomasgilbert481/tt_um_loom) | 2026-11-03 | ~137 | 4-thread barrel core, per-thread bit engines, 512x16 SRAM | GDS 50 MHz typ, about 43 MHz slow; 109/109 GL | No: "Nothing has run on hardware" | green / **8x4** | Reports (second-hand) an organiser email of 2026-09-28: keep designing at 6x4; an IHP SRAM design can go on the shuttle |
 | [kdp1965/ihp-um-janestreet-prism](https://github.com/kdp1965/ihp-um-janestreet-prism) | 2026-10-15 | ~103 | PRISM state-machine engine + TinyQV RISC-V, 2x 512x32 SRAM | GDS with a forked tt-support-tools; protocols in simulation and GL | No | green / **8x4** (custom) | Says 8x4 is "the size allowed by the Jane Street competition". **Our SRAM/PDN flow code is adapted from this repo** |
@@ -224,15 +242,16 @@ build against a real third-party device or host; nobody has silicon.
 **Where a rival has shown on hardware what we have not:**
 
 * **mrnathanhumphrey-droid** has I2C against a real FRAM and 1-Wire against a
-  real DS18B20 on an FPGA, with logic-analyser captures committed and
-  re-checked. Every one of our I2C, 1-Wire, SPI, CAN and UART runs on the KV260
+  real DS18B20 on an FPGA, with records decoded from logic-analyser captures
+  committed and re-checked in CI. Every one of our I2C, 1-Wire, SPI, CAN and UART runs on the KV260
   is against our own models or the other core.
 * **MarcosAsh** has a real Linux host enumerating its FPGA build as a USB HID
   keyboard that types text, with the kernel log and capture published as a
   release. Ours is comparable in level (real Linux xHCI, LS and FS, FPGA
-  fabric) and larger in count, but our evidence is a transcript in a doc, the
-  host is the same board as the FPGA, and the data path depends on host
-  software. Theirs can be downloaded by a judge today.
+  fabric). Both runs have a microcontroller or CPU as the
+  chip's host (theirs a Pico, ours the Kria's CPU over the SPI port); the
+  difference is that our evidence is a transcript in a doc, while theirs is a
+  kernel log and capture a judge can download today.
 * **Hardcaml:** MarcosAsh, fipe and TD-µT are written in Hardcaml. Ours is a
   port proved equal to the SystemVerilog after the freeze.
 * **Formal timing guarantees:** Escapement (unbounded "never late" proof) and
