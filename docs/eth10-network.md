@@ -54,9 +54,9 @@ both-high on each L to H flip there. How long it lasts at the pads is a question
 or a scope. One tick of both-high injected into the firmware does trip the monitor, at this
 level and on RTL (the same report, claim 6).
 
-The stack has 18 mutants in `test/mutants.py`, each paired with the test that must
+The stack has 21 mutants in `test/mutants.py`, each paired with the test that must
 catch it, including a 95-bit window and the IP source and length checks:
-`python3 test/mutants.py 'eth-*'`, 18 of 18 killed (`mutants.log` in the logs below).
+`python3 test/mutants.py 'eth-*'`, 21 of 21 killed (`mutants.log` in the logs below).
 
 The far end in the tests shares no code with `pe.eth`. The bits are read off TD+
 and TD- by two decoders that work differently, and the FCS is checked with zlib.
@@ -133,16 +133,17 @@ burst loses data.
 
 The budget a slower host has is the FIFOs, not the wire. This is the software time
 allowed per pass with quad SPI at SCK = clk, the longest that passes in 0.5 us steps.
-A slower SCK leaves less. `test_service_budget` asserts each figure and that 0.5 us
-more fails:
+A slower SCK leaves less. `test_service_budget` and `test_service_budget_for_sustained_traffic` assert each
+figure and that 0.5 us more fails:
 
-| Case, 1518-byte frames | 50 MHz | 40 MHz |
+| Case | 50 MHz | 40 MHz |
 |---|---|---|
-| RX, alone or with a reply deferring | 16.5 us | 15.5 us |
-| TX | 22.5 us | 21.5 us |
+| RX, one 1518-byte frame, alone or with a reply deferring | 16.5 us | 15.5 us |
+| RX, frames at the minimum gap: two of 1518 bytes, or twelve of 64 at 50 MHz | 16.0 us | 15.5 us |
+| TX, one 1518-byte frame | 22.5 us | 21.5 us |
 
-1518 bytes is the worst size tried. The sweep ran 64, 300, 600, 800, 1000, 1200 and
-1518 bytes at 4 phases of the host's passes against the frame (`runner1:~/protoemu-flow/eth-logs/aed4c8f/eth-budget.out`);
+For one frame, 1518 bytes is the worst size tried. The sweep ran 64, 300, 600, 800, 1000, 1200 and
+1518 bytes at 4 phases of the host's passes against the frame (`runner1:~/protoemu-flow/eth-stack/logs/363fc2e/eth-budget.out`);
 shorter frames allow more, and only TX at 1000 bytes and 50 MHz moved with phase, by one
 step. Sizes between those were not tried. Plan on **15.5 us for RX and 21.5 us for TX**.
 
@@ -183,8 +184,11 @@ together, and a pass here reads 4 words where a late host reads 8, so compare wi
 about 2.8 us of SPI for 8 words at 50 MHz (an estimate from the clock counts) gives
 about 18 us per pass as the go/no-go, and it is an estimate built on that tested 15.5 us. It borrows the host port: it moves the pins to
 the fabric master and sets QUAD_EN, then restores the select and clears QUAD_EN, its reset
-value, since that register can't be read back. Core 0 should be idle, because a FIFO read
-pops. If Python can't do it, C might: unmeasured. The demo board's bit-banged port is far below the table's lowest SCK (an
+value, since that register can't be read back. That holds on an error, Ctrl-C, SIGTERM and
+SIGHUP, and a second signal can't cut it short. With the master stuck busy the select is
+still restored but QUAD_EN can't be cleared, and it says so. SIGKILL can't be caught. All of
+this is tested against a fake register file, not a board. Core 0 should be idle, because a
+FIFO read pops. If Python can't do it, C might: unmeasured. The demo board's bit-banged port is far below the table's lowest SCK (an
 estimate); its PIO quad transport may reach the table but MicroPython then has to
 make the budget above. `tools/micropython/eth_stack.py` and `eth10_host.py` are the
 same code in the board bundle, and they run on MicroPython 1.22's Unix port against
@@ -238,9 +242,9 @@ any interface but lo (`test_bridge_refuses_the_hosts_namespace`). It never sees 
 adds no route outside the namespace, and sets neighbour timers there only. `-B`
 keeps root from leaving `__pycache__` in the checkout.
 
-Run on runner1 from a clean clone of `7503c14`, whose code is the same as this commit's,
+Run on runner1 from a clean clone of `400b294`, whose code is the same as this commit's,
 inside `unshare --net`, once per clock (logs: `eth-tap-50.log`, `eth-tap-40.log` in
-`runner1:~/protoemu-flow/eth-logs/aed4c8f`):
+`runner1:~/protoemu-flow/eth-stack/logs/363fc2e`):
 
 | | 50 MHz | 40 MHz |
 |---|---|---|
@@ -249,9 +253,9 @@ inside `unshare --net`, once per clock (logs: `eth-tap-50.log`, `eth-tap-40.log`
 | UDP echo from a socket | answered | answered |
 | No reply: unknown IP; chip's MAC with another IP; chip's IP with another MAC; bad FCS | all four | all four |
 | Then a ping is answered again | yes | yes |
-| Wall-clock round trip, short ping, average | 1845 ms | 2702 ms |
-| Simulated round trip, short ping | 209-983 us | 214-1213 us |
-| Simulated round trip, 1472 bytes | 3.8-4.9 ms | 3.8-4.8 ms |
+| Wall-clock round trip, short ping, average | 9222 ms | 4221 ms |
+| Simulated round trip, short ping | 208-1110 us | 215-1129 us |
+| Simulated round trip, 1472 bytes | 3.8-5.0 ms | 3.8-5.0 ms |
 
 The wall-clock figure is the speed of the Python model on a shared machine, not of
 anything else: the two clocks ran side by side, and the figure moves from run to run.
