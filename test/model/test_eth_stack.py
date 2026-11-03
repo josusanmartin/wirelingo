@@ -1027,13 +1027,14 @@ def load_bridge():
 
 class FakeSpimMem:
     """pe_spim's registers and buffer, for what the Spim class does to them. stick_at: the
-    master stays busy from that GO on. on_go: called at each GO with its number."""
+    master stays busy from that GO on. on_go: called at each GO with its number.
+    on_data: called with the words of each write, before its GO."""
 
-    def __init__(self, sel, stick_at=None, on_go=None):
+    def __init__(self, sel, stick_at=None, on_go=None, on_data=None):
         self.regs = {pe_spim.VERSION: pe_spim.VERSION_VALUE, pe_spim.SEL: sel}
         self.log = []
         self.gos = 0
-        self.stick_at, self.on_go = stick_at, on_go
+        self.stick_at, self.on_go, self.on_data = stick_at, on_go, on_data
 
     def rd(self, off):
         return self.regs.get(off, 0)
@@ -1051,6 +1052,8 @@ class FakeSpimMem:
 
     def buf_write(self, words):
         self.log.append(("data", list(words)))
+        if self.on_data:
+            self.on_data(list(words))
 
     def buf_read(self, n):
         return [0] * n
@@ -1070,23 +1073,29 @@ def port_given_back(mem, sel, clear=True):
 
 
 @pytest.fixture
-def handlers():
-    """The session has to put back what it found."""
-    before = [signal.getsignal(n) for n in HANDLED]
-    yield
-    assert [signal.getsignal(n) for n in HANDLED] == before
+def signals():
+    """Python handlers on the three signals, so one the session fails to catch doesn't
+    kill pytest but shows up as a test failure. Yields a check that they are all still
+    in place, which the session must leave them."""
+    def sentinel(signum, frame):
+        pass
+    before = [signal.signal(n, sentinel) for n in HANDLED]
+    yield lambda: all(signal.getsignal(n) is sentinel for n in HANDLED)
+    for n, old in zip(HANDLED, before):
+        signal.signal(n, old)
 
 
 @pytest.mark.parametrize("sel", [0, 2])            # bit 1: the alternate clock, kept
-def test_measure_spim_gives_the_port_back(sel, handlers):
+def test_measure_spim_gives_the_port_back(sel, signals):
     tap = load_bridge()
     mem = FakeSpimMem(sel)
     assert tap.measure_spim_session(pe_spim.Spim(mem=mem), 2) >= 0
     assert mem.log[0] == ("sel", 1) and ("data", [1]) in mem.log       # fabric, then QUAD_EN on
     port_given_back(mem, sel)
+    assert signals()
 
 
-def test_measure_spim_gives_the_port_back_on_an_exception(monkeypatch, handlers):
+def test_measure_spim_gives_the_port_back_on_an_exception(monkeypatch, signals):
     tap = load_bridge()
 
     def boom(*_):
@@ -1096,10 +1105,11 @@ def test_measure_spim_gives_the_port_back_on_an_exception(monkeypatch, handlers)
     with pytest.raises(OSError):
         tap.measure_spim_session(pe_spim.Spim(mem=mem))
     port_given_back(mem, 0)
+    assert signals()
 
 
 @pytest.mark.parametrize("stick_at", [1, 2, 3, 4])
-def test_measure_spim_stuck_master_still_restores_the_select(stick_at, handlers):
+def test_measure_spim_stuck_master_still_restores_the_select(stick_at, signals):
     """GO 1 sets QUAD_EN, 2 and 3 are the pass, 4 clears QUAD_EN: stuck from any of
     them, the error comes out and the pin select still goes back."""
     tap = load_bridge()
@@ -1107,11 +1117,12 @@ def test_measure_spim_stuck_master_still_restores_the_select(stick_at, handlers)
     with pytest.raises(RuntimeError, match="stuck busy"):
         tap.measure_spim_session(pe_spim.Spim(mem=mem), 1)
     port_given_back(mem, 2, clear=False)
+    assert signals()
 
 
 @pytest.mark.parametrize("signum", HANDLED)
 @pytest.mark.parametrize("at", [1, 2, 3])
-def test_measure_spim_signal_gives_the_port_back(signum, at, handlers):
+def test_measure_spim_signal_gives_the_port_back(signum, at, signals):
     """SIGHUP is a dropped ssh session, SIGTERM is `timeout`. At each GO of the session."""
     tap = load_bridge()
 
@@ -1123,23 +1134,31 @@ def test_measure_spim_signal_gives_the_port_back(signum, at, handlers):
         tap.measure_spim_session(pe_spim.Spim(mem=mem), 1000)
     assert e.value.signum == signum
     port_given_back(mem, 0)
+    assert signals()
 
 
 @pytest.mark.parametrize("signum", HANDLED)
-def test_measure_spim_second_signal_cannot_cut_the_restore_short(signum, handlers):
-    """A signal starts the restore, and another arrives during it."""
+def test_measure_spim_second_signal_cannot_cut_the_restore_short(signum, signals):
+    """A signal starts the restore, and another arrives just before the write that
+    clears QUAD_EN: that write still goes out."""
     tap = load_bridge()
     fired = []
 
-    def fire(n):
-        if not fired or mem.log[-1] == QUAD_CLEAR:
-            fired.append(n)
+    def first(n):
+        if n == 2:
+            fired.append("measuring")
             os.kill(os.getpid(), signum)
-    mem = FakeSpimMem(0, on_go=fire)
+
+    def second(words):
+        if words == [0]:
+            fired.append("restoring")
+            os.kill(os.getpid(), signum)
+    mem = FakeSpimMem(0, on_go=first, on_data=second)
     with pytest.raises(tap.SessionSignal):
         tap.measure_spim_session(pe_spim.Spim(mem=mem), 1000)
-    assert len(fired) == 2
+    assert fired == ["measuring", "restoring"]
     port_given_back(mem, 0)
+    assert signals()
 
 
 def test_measure_spim_exit_status_is_the_signals(monkeypatch):
