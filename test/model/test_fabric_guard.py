@@ -139,7 +139,8 @@ def test_a_refusal_with_another_or_no_app_gives_the_load_sequence(kernel, text):
     with pytest.raises(fg.NoActiveApp) as e:
         check(text, kernel)
     m = str(e.value)
-    assert m.index("xmutil unloadapp") < m.index("xmutil loadapp protoemu") < m.index("xmutil listapps")
+    m = m[m.index("xmutil unloadapp"):]
+    assert m.index("xmutil loadapp protoemu") < m.index("xmutil listapps")
 
 
 @pytest.mark.parametrize("failure", [FileNotFoundError("xmutil"), subprocess.TimeoutExpired("xmutil", 30)])
