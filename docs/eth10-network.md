@@ -91,10 +91,15 @@ The frame path is the same as `eth10_tx`: same levels in the same order, times
 within a clock (`test_cs_firmware_sends_the_same_waveform_as_eth10_tx`).
 
 * With F_GO already set, so that only the firmware can hold the frame back, the far
-  end's last edge to our first edge measures 9800 ns at 50 MHz and 9825 ns at 40 MHz
-  across the window; 96 bit times are 9600 ns (`test_carrier_sense_defers_to_an_arriving_frame`,
-  asserted exactly). A 200-byte case on RTL and at gate level measures 9810 ns: the
-  same 9800, read at the next mid-clock (`test_carrier_sense_rtl`).
+  end's last edge to our first edge is 9800 to 9820 ns at 50 MHz, depending on where
+  the far end's edge falls within a clock; 96 bit times are 9600 ns. The model test
+  (`test_carrier_sense_defers_to_an_arriving_frame`, 9800 ns at 50 MHz and 9825 ns at
+  40 MHz, asserted exactly) starts the far end on a clock edge, so it measures one
+  phase only. A 200-byte case on RTL and at gate level measures 9810 ns: the same 9800,
+  read at the next mid-clock (`test_carrier_sense_rtl`). Verifier report 025 shifted the
+  far end by 4 to 16 ns on RTL and got 9804 to 9816 ns. At those phases the model's
+  `pe.ethsim.Wire` stamps our edge one clock late; at the aligned phase it doesn't, so
+  subtracting `WIRE_STAMP` here would be wrong. 40 MHz off-grid phases were not run on RTL.
 * A reply queued during an arrival doesn't reach the core until the line is quiet: the
   glue holds it (`test_reply_queued_during_an_arrival_waits`).
 * Traffic with gaps under 96 bit times holds the chip off for as long as it lasts,

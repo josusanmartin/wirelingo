@@ -77,8 +77,9 @@ gap is longer by the sender's TP_IDL (300 ns in pe.ethsim).
 | Far-end link pulses inside the window restart it; the reply then starts N clocks after 96 bit times from the last pulse | N = 2.98 | N = 3.99 | model | `test_link_pulses_restart_the_window` |
 | A TP_IDL of 60-200 ns delays the reply, never brings it earlier | N up to 11.96 | N up to 10.52 | model | `test_short_tp_idl_only_delays_the_reply` |
 
-Each reply is decoded off the pads by two decoders that must agree (pe.ethsim's edge
-tracker, `test_eth_stack.sampled_decode`'s cell sampler), with exactly 802.3's
+Each reply is decoded off the pads by two decoders of one capture that must agree (pe.ethsim's edge
+tracker, `test_eth_stack.sampled_decode`'s cell sampler; both read the same edge list, so a
+capture or stamping error would reach both), with exactly 802.3's
 preamble and SFD, a TP_IDL of 250-350 ns, TD+ and TD- never both high, and the FCS
 checked with zlib; `test_reply_frame_is_valid_and_fits` checks the IPv4 and UDP
 checksums with code that shares nothing with `pe.eth`. sigrok has no 10BASE-T or
@@ -98,7 +99,9 @@ The bound is derived, then each piece is checked per reply on the model:
   registers; isa.md §4.7): 1 clock.
 
 2..3 + (96 bit times - 8 + 5) + 1 - 96 bit times = [0, 1) clock. `WINDOW_TRIM = 8` in
-`pe.ethreply` is that sum. The blind window is the same chain the other way: a far-end
+`pe.ethreply` is that sum. The bound is half-open only in simulation: a real synchronizer
+whose input changes on a clock edge can resolve either way, so on silicon it is [0, 1];
+N >= 0 is unaffected. The blind window is the same chain the other way: a far-end
 edge is heard if the core sees it by the tick the window's wait times out, 3 clocks
 before our first edge, and the synchronizer adds 2: 5 clocks.
 
