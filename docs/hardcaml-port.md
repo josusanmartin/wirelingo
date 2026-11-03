@@ -148,7 +148,7 @@ is not reproduced. An exception `asm.py` does not catch compares by type.
 | firmware: 57 files, several define sets each | 301 | 352 | 0 | 0 |
 | directed error and edge cases | 137 | 117 | 8 | 0 |
 | fuzz: 5000 seeded edits of firmware | 941 | 4052 | 7 | 0 |
-| corpus: `assemble_all()` calls of the model suite, 287 distinct of 1412 | 263 | 24 | 0 | 0 |
+| corpus: `assemble_all()` calls of the model suite, 287 distinct of 1410 | 263 | 24 | 0 | 0 |
 
 Every one of the 57 files assembled under at least one define set. 278,828 relocated bytes
 were compared. The error row of the firmware set is mostly arbitrary define values that do
@@ -217,12 +217,17 @@ missed by the first version of the script, whose test files never touched that c
 `ocaml/wave_test/` holds Hardcaml expect tests: a block runs under Cyclesim, its waveform is
 printed into the source with `[%expect]`, and `dune test` fails if it changes. Each test also
 asserts the behaviour with `[%test_result]`, on values worked out from docs/isa.md rather than
-copied from a run, so a promoted waveform cannot bless a wrong result.
+copied from a run. A failed assertion fails the test. `dune --auto-promote` would write that
+failure into the source as an exception record, which alone would make the test pass, so a
+dune rule in `wave_test/` fails `dune test` on any such record. A waveform change that no
+assertion covers can still be promoted; the diff is the only guard there. There are 7 tests,
+2 in `test_fifo.ml` and 5 in `test_line.ml`. The FIFOs are built with `log2:2`, 4 deep, where
+the tapeout's are 8 deep.
 
 | block | what is asserted |
 |---|---|
 | `pe_fifo` | full and empty judged on start-of-cycle state: push at full dropped even with a pop, pop at empty ignored, push kept at empty, clear beats push |
-| `pe_fifos`, join | TXF to RXF to core, 8 words in order, the ninth dropped |
+| `pe_fifos`, join | TXF to RXF to core, 8 words in order, the ninth dropped (`log2:2`; 16 words at the tapeout's depth, not tested here) |
 | `pe_line` TX | NRZ bit by bit, then release; Manchester halves and the END symbol; equal-bit stuffing, where the stuff bit starts the next run |
 | `pe_line` RX | Manchester bits and the frame end; an edge's position in the clock moves the frame end by one clock, 13 against 14 |
 
@@ -232,7 +237,9 @@ form, with enable flops in place of the latches and clock gates that the proved 
 `pe_hostport` has four clock domains, so neither has a waveform test.
 
 `self_check.sh` plants 5 RTL bugs for these tests, all caught. The first run missed one, a
-swap of the two edge ages; the frame-end test above was added for it.
+swap of the two edge ages; the frame-end test above was added for it. It also checks that
+promoting a failed assertion leaves `dune test` failing; that case was run alone, not in a
+whole `evidence.sh`.
 
 ## Stage 4: host tools
 

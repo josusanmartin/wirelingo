@@ -32,6 +32,12 @@ EOF
   rm -f "$work"/lock.*
   if [ "$kind" = wave ]; then
     dune build @wave_test/runtest > "$work/check.log" 2>&1 && caught=no || caught=yes
+  elif [ "$kind" = promote ]; then
+    # accepting the failure with --auto-promote must not make the test pass
+    mkdir -p "$work/keep" && cp wave_test/test_*.ml "$work/keep/"
+    dune build @wave_test/runtest --auto-promote > "$work/check.log" 2>&1 || true
+    dune build @wave_test/runtest > "$work/check.log" 2>&1 && caught=no || caught=yes
+    cp "$work"/keep/test_*.ml wave_test/
   elif [ "$kind" = asm ]; then
     python3 test/asm_parity.py --fuzz 300 > "$work/check.log" 2>&1 && caught=no || caught=yes
   else
@@ -63,5 +69,6 @@ try rtl/pe_fifos.ml 'let xfer = i.fjoin &: ~:txf_empty &: ~:rxf_full in' 'let xf
 try rtl/pe_line.ml 'let spb = mux2 manch (of_int_trunc ~width:4 2) (of_int_trunc ~width:4 1) in' 'let spb = of_int_trunc ~width:4 1 in' wave
 try rtl/pe_line.ml 'n_trunbit <-- ~:(trunbit.value)' 'n_trunbit <-- trunbit.value' wave
 try rtl/pe_line.ml 'let m_age = mux2 edge1 (of_int_trunc ~width:21 96) (of_int_trunc ~width:21 32) in' 'let m_age = mux2 edge1 (of_int_trunc ~width:21 32) (of_int_trunc ~width:21 96) in' wave
+try rtl/pe_fifo.ml 'let do_push = i.push &: ~:(bit cnt_w log2) in' 'let do_push = i.push in' promote
 echo "missed: $missed"
 exit $((missed > 0))

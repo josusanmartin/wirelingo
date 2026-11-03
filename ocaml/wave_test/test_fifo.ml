@@ -101,7 +101,7 @@ module J = struct
   ;;
 end
 
-let%expect_test "fifos, join: TXF -> RXF -> core, 8 words, in order" =
+let%expect_test "fifos, join at log2:2: TXF -> RXF -> core, 8 words, in order" =
   let waves, step, o = J.create () in
   let words = List.init 9 ~f:(fun n -> 0xC0 + n) in
   List.iter words ~f:(fun w -> step ~push:(Some w) ());
