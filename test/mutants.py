@@ -251,7 +251,7 @@ MUTANTS = {
     "reply-chunks-any-last-bit": ("tools/pe/ethreply.py", "    if raw[-1] >> 7:", "    if False:", REPLY("chunks_refuse")),
     "reply-chunks-no-fcs-check": ("tools/pe/ethreply.py", "    if not eth.fcs_ok(raw):", "    if False:",
                                   REPLY("chunks_refuse")),
-    "reply-wire-phase-ignored": ("tools/pe/ethsim.py", ' + q["offset"]', "", REPLY50),
+    "reply-wire-phase-ignored": ("tools/pe/ethsim.py", ' + q["offset"]', "", REPLY("blind_window and 50000000.0")),
     "hw-no-prereq-check": ("fpga/kv260/host/hw_day.py", '    if left:\n',
         '    if False:\n', HW_TESTS),
     "hw-direct-needs-only": ("fpga/kv260/host/hw_day.py", '    return [n for n in closure(step) if not fresh(state, n)]',
