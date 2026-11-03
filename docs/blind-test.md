@@ -102,8 +102,9 @@ that mode. The far end negates IORDY as late as tA allows.
 | 4 | TS 3, same build | 220 | 140 | 80 | 180 | 40 | 100 | 120 / 70 / 25 |
 
 Figures are the smallest seen at the pads, in ns. t1 is 100 in all. Each mode
-wrote a sector and read it back, and stayed correct with IORDY held 700 ns, on the
-model (2 sectors) and on the RTL through SPI (1 sector).
+wrote and read back 2 sectors on the model and 1 on the RTL through SPI. With
+IORDY held 700 ns: on the model, 1 sector written and read back; on the RTL, 1
+sector read only. Writes with IORDY held are tested on the model alone.
 
 What this does not say:
 
