@@ -1,0 +1,12 @@
+Commit: 7e19431  Base: improve-2026-11 (6d5bdd5 or near)  Branch: rules-reread
+Item: docs/rules-check.md only, written by a fresh adversarial reviewer: the competition's text, a rule-by-rule table, 16 doc claims a judge could catch, 11 ranked fixes, and a refreshed rival table. This is a document about the entry, so verify the document, not the chip.
+
+Claims to check (each against its source; fetch the URLs yourself):
+1. Every quote from https://blog.janestreet.com/protocol-emulator-asic-competition/ and the pages it links is verbatim and correctly attributed. In particular: "Your submission should be open source"; selection is "the most novel designs"; there is no posted rubric, FAQ, eligibility or AI-use rule; the submission form is not posted. The Advent of FPGA quotes ("obviously AI-generated submissions", "You should be able to explain your design") are from Jane Street's own Advent of FPGA page.
+2. Tiny Tapeout's FAQ says a project whose GDS action fails cannot be submitted, and private-repo runners are 2-CPU / 8 GB. The orchestrator confirmed the repo has zero Actions runs (gh run list is empty).
+3. Each of the 16 doc claims flagged in the doc really is wrong, stale or overstated as the doc says, at the cited file:line on improve-2026-11 HEAD. The orchestrator spot-checked README:31: true. Check the rest, especially: info.md:60-61 host-port speeds; the "SRAM 256x32 never shown in silicon" claim (what does Tiny Tapeout publish?); methodology.md:144 vs equivalence.md; certified software 7685aba predating new firmware; three descriptions of SDF slow/fast results.
+4. Rival table: for each rival, the last-commit date, link and "what it has shown at what evidence level" match the rival's own repo today. Especially mrnathanhumphrey-droid (real FRAM and DS18B20 with captures committed) and MarcosAsh (Hardcaml; real Linux host enumerates its FPGA build as a USB keyboard; kernel log as a GitHub release). The claim that three rivals harden at 8x4 and that TT tooling accepts it. The PRISM (kdp1965) reuse: which of our files carry code from it, and do their headers credit it?
+5. The doc obeys RULES.md: no first/only claims, no edit to the author's statement, no outside contact, only docs/rules-check.md changed.
+6. Anything material the reviewer missed that a strict judge would raise.
+
+Say which ranked fixes you agree with and which are wrong or overstated. Kria off limits; no SWD.

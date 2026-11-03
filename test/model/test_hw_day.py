@@ -635,8 +635,11 @@ def test_step_0_says_dont_power_cycle_a_board_that_answers():
 def test_nothing_tells_anyone_to_chain_the_load():
     # 2026-10-30: a chained load failed and the next command hung the board (fabric_guard.py)
     chained = re.compile(r"unloadapp\s*(;|&&)\s*(sudo\s+)?xmutil\s+loadapp|loadapp\s+[\w$]+\s*(;|&&)")
+    # evidence/ holds verbatim records (a verifier report quotes the chained form it
+    # found), not instructions: only its READMEs are scanned.
     files = [p for p in ROOT.rglob("*") if p.suffix in (".md", ".py", ".sh") and p.is_file()
              and not {".git", "ocaml", "sim_build"} & set(p.relative_to(ROOT).parts)
+             and (p.relative_to(ROOT).parts[0] != "evidence" or p.name == "README.md")
              and p.relative_to(ROOT).as_posix() != "test/mutants.py"]
     assert len(files) > 50
     found = [f"{p.relative_to(ROOT)}:{n}" for p in files
