@@ -150,5 +150,10 @@ the shared local box):
       c, r = timing.check_source(ethreply.FW.read_text(), ethreply.defines(50e6)); \
       print('\n'.join(x.report() for x in r))"
 
+Logs of these runs (model file and RTL at c1b1733, the mutants at c1b1733 and the
+retargeted `reply-wire-phase-ignored` at baa2d3d) are in
+`runner1:~/protoemu-flow/reaction/logs/`. Each new check has a one-line mutant in
+`test/mutants.py` (`reply-*`): 15 of 15 killed.
+
 The register writes from reset to running are `pe.ethreply.load_writes(clock_hz,
 threshold)`; the reply is `pe.ethreply.reply_frame()`.
