@@ -24,6 +24,7 @@ import os
 import pathlib
 import sys
 import time
+import fabric_guard
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]       # repo root
 for sub in ("tools", "tools/micropython"):
@@ -42,6 +43,7 @@ class DevMem:
     """32-bit register access to the two AXI GPIO blocks through /dev/mem."""
 
     def __init__(self):
+        fabric_guard.require_app()           # before anything maps the fabric: see that file
         fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
         try:
             self._maps = [mmap.mmap(fd, 0x1000, offset=a) for a in (GPIO0, GPIO1)]

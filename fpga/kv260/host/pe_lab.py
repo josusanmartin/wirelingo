@@ -10,6 +10,8 @@ import mmap
 import os
 import time
 
+import fabric_guard
+
 BASE = 0xA0030000
 MAGIC = 0x4C414231
 MODE, PG_LEN, PG_CTRL, PG_GO, PG_INIT, PG_D0, PG_CYC = 0x100, 0x110, 0x114, 0x118, 0x11C, 0x120, 0x124
@@ -21,6 +23,7 @@ class LabMem:
     """32-bit accesses to pe_lab's 64 KB window through /dev/mem."""
 
     def __init__(self):
+        fabric_guard.require_app()           # before anything maps the fabric: see that file
         fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
         try:
             self._map = mmap.mmap(fd, 0x10000, offset=BASE)
