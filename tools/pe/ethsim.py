@@ -206,9 +206,12 @@ class Wire:
     def now_ns(self):
         return self.chip.cycle * self.clk
 
-    def send(self, raw=None, bits=None, jitter_ns=0.0, ppm=0.0, at_ns=None, force=False):
+    def send(self, raw=None, bits=None, jitter_ns=0.0, ppm=0.0, at_ns=None, force=False,
+             offset_ns=0.0, tp_idl_ns=TP_IDL_NS):
+        """offset_ns delays the first edge past the clock edge the sender
+        decided on (a sampling phase); tp_idl_ns is the high that ends the frame."""
         self.queue.append(dict(bits=wire_bits(raw) if bits is None else bits, jitter=jitter_ns,
-                               ppm=ppm, at=at_ns, force=force))
+                               ppm=ppm, at=at_ns, force=force, offset=offset_ns, tp_idl=tp_idl_ns))
 
     def pulses(self, times_ns):
         """Link pulses (100 ns high) at the given times, merged into the schedule."""
@@ -240,8 +243,8 @@ class Wire:
             if self.td or t - self.last_td < IFG_NS or t - self.busy_until < IFG_NS:
                 return
         self.queue.pop(0)
-        start = max(t + 2 * self.clk, self.edges[-1][0] if self.edges[self.i:] else 0.0)
-        e = line_edges(q["bits"], start, q["jitter"], q["ppm"], self.rng)
+        start = max(t + 2 * self.clk, self.edges[-1][0] if self.edges[self.i:] else 0.0) + q["offset"]
+        e = line_edges(q["bits"], start, q["jitter"], q["ppm"], self.rng, q["tp_idl"])
         self.edges = self.edges[self.i:] + e
         self.i = 0
         self.busy_until = e[-1][0]
