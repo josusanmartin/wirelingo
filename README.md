@@ -171,6 +171,7 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 | `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 246 of 256 words; full speed at exactly 48 MHz | model (both speeds: offsets, jitter, faults, resets, STALLs) and RTL with the host port idle; sigrok decodes every packet; KV260 at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator: every device pad edge at the model's clock (no PC, no PHY) |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender; KV260: generator frames (sync and 45.93 MHz clock) and from eth10_tx |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model; KV260 at 50 MHz (CLKDIV 1.25), sampled every clock |
+| `eth10_tx_cs` | `eth10_tx` plus **carrier sense**: holds a frame until RXP has been quiet for 96 bit times, decided on the core, so the chip doesn't transmit into an arriving frame ([docs/eth10-network.md](docs/eth10-network.md)) | half duplex, no collision handling | model; RTL; gate level (fo6, functional) |
 | `eth10_match` | **10BASE-T cut-through match**: EtherType, then a 16-bit field against a threshold; a pin rises 200-220 ns after the field's last mid-bit edge, about 38 us before a 64-byte frame ends ([docs/eth10-cut-through.md](docs/eth10-cut-through.md)) | decides before the FCS; one field, one threshold | model; KV260 (generator frames) |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores; KV260 (both cores on a wired-AND line; generator frames and pre-timed nodes); sigrok `can` |
 | `swd_probe` | ARM SWD engine: request parity, ACK, DPIDR, register writes | | model |
@@ -303,6 +304,9 @@ make -C formal                                                   # proofs
 * [RMII study](docs/rmii-study.md): 100 Mbit/s through an external PHY. RX and TX
   work in the model and RTL simulation, one direction at a time; no PHY, pad or
   board has been tried, and the clock path outside the macro is open.
+* [10BASE-T on a network](docs/eth10-network.md): ARP, ping and UDP echo at the
+  pads on the model, RTL and fo6's netlist, and Linux's own stack pinging the model
+  through a TAP. No cable yet.
 
 ## Layout
 
