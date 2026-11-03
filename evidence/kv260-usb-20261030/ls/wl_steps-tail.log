@@ -1,0 +1,40 @@
+18:12:22.153053733 [chip] after the verdict, over the host port: address 60, configured True, pending address False, stalled False
+18:12:22.166771519   left running and attached (--stop detaches)
+18:12:22.181201644 END usb_demo_cycle5 rc=0
+18:12:27.685243772 START usb_demo_cycle6: python3 protoemu48/fpga/kv260/host/usb_demo.py
+18:12:29.628290481 [identity] RTL revision 60b06926cb1d, clk_div 25, built 2026-10-07 03:15:05 UTC
+18:12:29.676667047 [clock] protoemu clk measured 47.9980 MHz
+18:12:29.691879770 [wiring]
+18:12:29.706367433   pins pulsed low then read (of 5): pmod[0] 0, pmod[1] 5, pmod[2] 0, pmod[3] 0
+18:12:29.720160597   pull-up found on pmod[1] = silkscreen 3: columns normal, it is D- (low-speed wiring)
+18:12:29.733854780   holding D- (pmod[1]) low: detached
+18:12:29.747811276   loaded usb_enum (246 words, low speed) into core 0, CRCCTRL, line unit
+18:12:29.761734712   attached: pmod[0] (silkscreen 1) = uio0, pmod[1] (silkscreen 3) = uio1; core 0 started; host port idle from here on
+18:12:29.775558147 [kernel] waiting up to 20 s for 1209:5634 (no host-port access meanwhile)
+18:12:29.791304087   [  252.319834] usb 1-1.4: new low-speed USB device number 32 using xhci-hcd
+18:12:29.805254893   [  252.333882] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+18:12:29.819316481   [  252.333897] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+18:12:29.833371848 PASS: Linux enumerated 1209:5634 at low speed and configured it (1-1.4: devnum 32, speed 1.5 Mbit/s, bConfigurationValue 1, bMaxPacketSize0 8, bcdDevice 0001)
+18:12:29.847119582   $ lsusb -d 1209:5634
+18:12:29.860864115     Bus 001 Device 032: ID 1209:5634 Generic 
+18:12:29.874587619   $ lsusb -t
+18:12:29.888485674     /:  Bus 001.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 480M
+18:12:29.902623063         |__ Port 001: Dev 002, If 0, Class=Hub, Driver=hub/5p, 480M
+18:12:29.916574809             |__ Port 004: Dev 032, If 0, Class=Vendor Specific Class, Driver=[none], 1.5M
+18:12:29.930513815             |__ Port 005: Dev 007, If 0, Class=Vendor Specific Class, Driver=[none], 480M
+18:12:29.944311009     /:  Bus 002.Port 001: Dev 001, Class=root_hub, Driver=xhci-hcd/1p, 5000M
+18:12:29.958080453         |__ Port 001: Dev 002, If 0, Class=Hub, Driver=hub/4p, 5000M
+18:12:29.971952338 [chip] after the verdict, over the host port: address 65, configured True, pending address False, stalled False
+18:12:29.986067187   left running and attached (--stop detaches)
+18:12:30.000538650 END usb_demo_cycle6 rc=0
+18:16:07.239580023 START usb_stress_repo: python3 protoemu48/fpga/kv260/host/usb_stress.py 2000 10
+18:16:14.619315668 GET_STATUS 0000
+18:16:14.668447665 GET_CONFIGURATION 01
+18:16:14.682225838 string 0 EPIPE
+18:16:14.696041812 device qualifier EPIPE
+18:16:14.709947816 2000 transfers in 1.3 s (0.65 ms each)
+18:16:14.723784970   configuration descriptor: ok 1000
+18:16:14.737673714   device descriptor: ok 1000
+18:16:14.751500848 bus resets: 10 of 10 good
+18:16:14.765803138 PASS
+18:16:14.782331709 END usb_stress_repo rc=0

@@ -1,0 +1,140 @@
+[  103.159514] == APP LOADED ==
+[  103.169878] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  111.964734] usb 1-1.4: new low-speed USB device number 8 
+[  112.054482] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  164.024570] usb 1-1.4: reset low-speed USB device number 8 
+[  164.600581] usb 1-1.4: reset low-speed USB device number 8 
+[  165.176646] usb 1-1.4: reset low-speed USB device number 8 
+[  165.752479] usb 1-1.4: reset low-speed USB device number 8 
+[  166.328472] usb 1-1.4: reset low-speed USB device number 8 
+[  166.904456] usb 1-1.4: reset low-speed USB device number 8 
+[  167.480453] usb 1-1.4: reset low-speed USB device number 8 
+[  168.056520] usb 1-1.4: reset low-speed USB device number 8 
+[  168.632568] usb 1-1.4: reset low-speed USB device number 8 
+[  169.208515] usb 1-1.4: reset low-speed USB device number 8 
+[  169.784512] usb 1-1.4: reset low-speed USB device number 8 
+[  170.360456] usb 1-1.4: reset low-speed USB device number 8 
+[  170.936535] usb 1-1.4: reset low-speed USB device number 8 
+[  171.512394] usb 1-1.4: reset low-speed USB device number 8 
+[  172.088467] usb 1-1.4: reset low-speed USB device number 8 
+[  172.664518] usb 1-1.4: reset low-speed USB device number 8 
+[  173.240465] usb 1-1.4: reset low-speed USB device number 8 
+[  173.816452] usb 1-1.4: reset low-speed USB device number 8 
+[  174.392350] usb 1-1.4: reset low-speed USB device number 8 
+[  174.968336] usb 1-1.4: reset low-speed USB device number 8 
+[  175.544423] usb 1-1.4: reset low-speed USB device number 8 
+[  176.120373] usb 1-1.4: reset low-speed USB device number 8 
+[  176.696373] usb 1-1.4: reset low-speed USB device number 8 
+[  177.272407] usb 1-1.4: reset low-speed USB device number 8 
+[  177.848348] usb 1-1.4: reset low-speed USB device number 8 
+[  178.424390] usb 1-1.4: reset low-speed USB device number 8 
+[  179.000340] usb 1-1.4: reset low-speed USB device number 8 
+[  179.576329] usb 1-1.4: reset low-speed USB device number 8 
+[  180.152420] usb 1-1.4: reset low-speed USB device number 8 
+[  180.728361] usb 1-1.4: reset low-speed USB device number 8 
+[  209.062009] usb 1-1.4: USB disconnect, device number 8
+[  209.758021] usb 1-1.4: new low-speed USB device number 9 
+[  209.847785] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  210.085898] usb 1-1.4: USB disconnect, device number 9
+[  210.943172] == APP LOADED ==
+[  210.953567] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  211.293059] usb 1-1.4: new low-speed USB device number 10 
+[  211.373055] usb 1-1.4: device descriptor read/64, error -32
+[  211.561112] usb 1-1.4: device descriptor read/64, error -32
+[  211.744015] usb 1-1.4: new low-speed USB device number 11 
+[  211.822018] usb 1-1.4: device descriptor read/64, error -32
+[  212.009018] usb 1-1.4: device descriptor read/64, error -32
+[  212.116166] usb 1-1-port4: attempt power cycle
+[  213.136048] usb 1-1.4: new low-speed USB device number 12 
+[  213.150184] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  214.384074] usb 1-1.4: reset low-speed USB device number 12 
+[  214.960191] usb 1-1.4: reset low-speed USB device number 12 
+[  215.536071] usb 1-1.4: reset low-speed USB device number 12 
+[  216.998020] usb 1-1.4: USB disconnect, device number 12
+[  217.693964] usb 1-1.4: new low-speed USB device number 13 
+[  217.783651] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  218.022008] usb 1-1.4: USB disconnect, device number 13
+[  218.985165] == APP LOADED ==
+[  218.995589] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  219.232967] usb 1-1.4: new low-speed USB device number 14 
+[  219.312041] usb 1-1.4: device descriptor read/64, error -32
+[  219.497059] usb 1-1.4: device descriptor read/64, error -32
+[  219.687976] usb 1-1.4: new low-speed USB device number 15 
+[  219.764986] usb 1-1.4: device descriptor read/64, error -32
+[  219.952971] usb 1-1.4: device descriptor read/64, error -32
+[  220.068128] usb 1-1-port4: attempt power cycle
+[  221.087957] usb 1-1.4: new low-speed USB device number 16 
+[  221.101973] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  222.392039] usb 1-1.4: reset low-speed USB device number 16 
+[  222.968126] usb 1-1.4: reset low-speed USB device number 16 
+[  223.544023] usb 1-1.4: reset low-speed USB device number 16 
+[  224.934068] usb 1-1.4: USB disconnect, device number 16
+[  225.629928] usb 1-1.4: new low-speed USB device number 17 
+[  225.719615] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  225.958120] usb 1-1.4: USB disconnect, device number 17
+[  226.776680] == APP LOADED ==
+[  226.788931] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  226.916955] usb 1-1.4: new low-speed USB device number 18 
+[  226.993973] usb 1-1.4: device descriptor read/64, error -32
+[  227.188010] usb 1-1.4: device descriptor read/64, error -32
+[  227.375934] usb 1-1.4: new low-speed USB device number 19 
+[  227.453967] usb 1-1.4: device descriptor read/64, error -32
+[  227.640943] usb 1-1.4: device descriptor read/64, error -32
+[  227.756081] usb 1-1-port4: attempt power cycle
+[  228.775928] usb 1-1.4: new low-speed USB device number 20 
+[  228.789788] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  230.184023] usb 1-1.4: reset low-speed USB device number 20 
+[  230.759955] usb 1-1.4: reset low-speed USB device number 20 
+[  231.335959] usb 1-1.4: reset low-speed USB device number 20 
+[  232.614162] usb 1-1.4: USB disconnect, device number 20
+[  233.309912] usb 1-1.4: new low-speed USB device number 21 
+[  233.399629] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  233.638304] usb 1-1.4: USB disconnect, device number 21
+[  234.575019] == APP LOADED ==
+[  234.587050] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  234.846898] usb 1-1.4: new low-speed USB device number 22 
+[  234.923932] usb 1-1.4: device descriptor read/64, error -32
+[  235.112974] usb 1-1.4: device descriptor read/64, error -32
+[  235.303901] usb 1-1.4: new low-speed USB device number 23 
+[  235.380916] usb 1-1.4: device descriptor read/64, error -32
+[  235.568907] usb 1-1.4: device descriptor read/64, error -32
+[  235.684051] usb 1-1-port4: attempt power cycle
+[  236.703892] usb 1-1.4: new low-speed USB device number 24 
+[  236.718097] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  237.991968] usb 1-1.4: reset low-speed USB device number 24 
+[  238.568069] usb 1-1.4: reset low-speed USB device number 24 
+[  239.144012] usb 1-1.4: reset low-speed USB device number 24 
+[  240.550235] usb 1-1.4: USB disconnect, device number 24
+[  241.245866] usb 1-1.4: new low-speed USB device number 25 
+[  241.335786] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  241.574380] usb 1-1.4: USB disconnect, device number 25
+[  242.385391] == APP LOADED ==
+[  242.397362] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  242.576880] usb 1-1.4: new low-speed USB device number 26 
+[  242.653991] usb 1-1.4: device descriptor read/64, error -32
+[  242.842949] usb 1-1.4: device descriptor read/64, error -32
+[  243.031891] usb 1-1.4: new low-speed USB device number 27 
+[  243.108909] usb 1-1.4: device descriptor read/64, error -32
+[  243.296882] usb 1-1.4: device descriptor read/64, error -32
+[  243.412042] usb 1-1-port4: attempt power cycle
+[  244.431863] usb 1-1.4: new low-speed USB device number 28 
+[  244.445944] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  245.799954] usb 1-1.4: reset low-speed USB device number 28 
+[  246.375985] usb 1-1.4: reset low-speed USB device number 28 
+[  246.951944] usb 1-1.4: reset low-speed USB device number 28 
+[  248.230322] usb 1-1.4: USB disconnect, device number 28
+[  248.925857] usb 1-1.4: new low-speed USB device number 29 
+[  249.017489] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  249.257000] usb 1-1.4: USB disconnect, device number 29
+[  250.191126] == APP LOADED ==
+[  250.203147] OF: overlay: WARNING: memory leak will occur if overlay removed, property
+[  250.462841] usb 1-1.4: new low-speed USB device number 30 
+[  250.539882] usb 1-1.4: device descriptor read/64, error -32
+[  250.728966] usb 1-1.4: device descriptor read/64, error -32
+[  250.919840] usb 1-1.4: new low-speed USB device number 31 
+[  250.997858] usb 1-1.4: device descriptor read/64, error -32
+[  251.184851] usb 1-1.4: device descriptor read/64, error -32
+[  251.300030] usb 1-1-port4: attempt power cycle
+[  252.319834] usb 1-1.4: new low-speed USB device number 32 
+[  252.333882] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice
+[  253.623878] usb 1-1.4: reset low-speed USB device number 32 

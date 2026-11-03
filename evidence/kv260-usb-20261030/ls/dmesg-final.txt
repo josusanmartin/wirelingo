@@ -1,0 +1,813 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 6.8.0-1036-xilinx (buildd@bos03-arm64-063) (aarch64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #37-Ubuntu SMP PREEMPT_DYNAMIC Tue Aug 25 06:57:06 UTC 2026 (Ubuntu 6.8.0-1036.37-xilinx 6.8.12)
+[    0.000000] KASLR disabled due to lack of seed
+[    0.000000] Machine model: ZynqMP KV260 revB
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x000000007ff00000..0x000000007fffffff (1024 KiB) nomap non-reusable pmu@7ff00000
+[    0.000000] earlycon: cdns0 at MMIO 0x00000000ff010000 (options '115200n8')
+[    0.000000] printk: legacy bootconsole [cdns0] enabled
+[    0.000000] NUMA: No NUMA configuration found
+[    0.000000] NUMA: Faking a node at [mem 0x0000000000000000-0x000000087fffffff]
+[    0.000000] NUMA: NODE_DATA [mem 0x87f7c4ac0-0x87f7c9fff]
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000000000000-0x00000000ffffffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   [mem 0x0000000100000000-0x000000087fffffff]
+[    0.000000]   Device   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000000000000-0x000000007fefffff]
+[    0.000000]   node   0: [mem 0x000000007ff00000-0x000000007fffffff]
+[    0.000000]   node   0: [mem 0x0000000800000000-0x000000087fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000000000000-0x000000087fffffff]
+[    0.000000] cma: Reserved 800 MiB at 0x0000000044200000 on node -1
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: MIGRATE_INFO_TYPE not supported.
+[    0.000000] psci: SMC Calling Convention v1.2
+[    0.000000] percpu: Embedded 53 pages/cpu s94056 r8192 d114840 u217088
+[    0.000000] pcpu-alloc: s94056 r8192 d114840 u217088 alloc=53*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line:  root=LABEL=writable rootwait earlycon console=ttyPS1,115200 console=tty1 clk_ignore_unused uio_pdrv_genirq.of_id=generic-uio xilinx_tsn_ep.st_pcp=4 cma=800M 
+[    0.000000] Dentry cache hash table entries: 524288 (order: 10, 4194304 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 262144 (order: 9, 2097152 bytes, linear)
+[    0.000000] Fallback order for Node 0: 0 
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 1032192
+[    0.000000] Policy zone: Normal
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:on, heap free:off
+[    0.000000] software IO TLB: area num 4.
+[    0.000000] software IO TLB: mapped [mem 0x000000007bf00000-0x000000007ff00000] (64MB)
+[    0.000000] Memory: 3121752K/4194304K available (28032K kernel code, 3660K rwdata, 17500K rodata, 8832K init, 998K bss, 253352K reserved, 819200K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] ftrace: allocating 77779 entries in 304 pages
+[    0.000000] ftrace: allocated 304 pages with 3 groups
+[    0.000000] Dynamic Preempt: voluntary
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Rude variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 100 jiffies.
+[    0.000000] RCU Tasks: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[    0.000000] RCU Tasks Rude: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[    0.000000] RCU Tasks Trace: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] GIC: Adjusting CPU interface base to 0x00000000f902f000
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] GIC: Using split EOI/Deactivate mode
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer(s) running at 99.99MHz (phys).
+[    0.000000] clocksource: arch_sys_counter: mask: 0x1ffffffffffffff max_cycles: 0x171015c90f, max_idle_ns: 440795203080 ns
+[    0.000000] sched_clock: 57 bits at 100MHz, resolution 10ns, wraps every 4398046511101ns
+[    0.008677] Console: colour dummy device 80x25
+[    0.012539] printk: legacy console [tty1] enabled
+[    0.017230] printk: legacy bootconsole [cdns0] disabled
+[    0.023888] Calibrating delay loop (skipped), value calculated using timer frequency.. 199.99 BogoMIPS (lpj=99999)
+[    0.023915] pid_max: default: 32768 minimum: 301
+[    0.026652] LSM: initializing lsm=lockdown,capability,landlock,yama,apparmor,integrity
+[    0.026760] landlock: Up and running.
+[    0.026771] Yama: becoming mindful.
+[    0.027086] AppArmor: AppArmor initialized
+[    0.028145] Mount-cache hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.028174] Mountpoint-cache hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.032953] rcu: Hierarchical SRCU implementation.
+[    0.032970] rcu: 	Max phase no-delay instances is 400.
+[    0.034468] EFI services will not be available.
+[    0.034966] smp: Bringing up secondary CPUs ...
+[    0.035766] Detected VIPT I-cache on CPU1
+[    0.035858] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.036667] Detected VIPT I-cache on CPU2
+[    0.036721] CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[    0.037443] Detected VIPT I-cache on CPU3
+[    0.037492] CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[    0.037581] smp: Brought up 1 node, 4 CPUs
+[    0.037640] SMP: Total of 4 processors activated.
+[    0.037652] CPU: All CPU(s) started at EL2
+[    0.037679] CPU features: detected: 32-bit EL0 Support
+[    0.037692] CPU features: detected: 32-bit EL1 Support
+[    0.037705] CPU features: detected: CRC32 instructions
+[    0.037754] alternatives: applying system-wide alternatives
+[    0.038598] CPU features: emulated: Privileged Access Never (PAN) using TTBR0_EL1 switching
+[    0.040197] devtmpfs: initialized
+[    0.050839] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1911260446275000 ns
+[    0.050893] futex hash table entries: 1024 (order: 4, 65536 bytes, linear)
+[    0.072658] pinctrl core: initialized pinctrl subsystem
+[    0.073361] DMI not present or invalid.
+[    0.074591] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.075938] DMA: preallocated 512 KiB GFP_KERNEL pool for atomic allocations
+[    0.076126] DMA: preallocated 512 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.076421] DMA: preallocated 512 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.076470] audit: initializing netlink subsys (disabled)
+[    0.076689] audit: type=2000 audit(0.057:1): state=initialized audit_enabled=0 res=1
+[    0.077409] thermal_sys: Registered thermal governor 'fair_share'
+[    0.077416] thermal_sys: Registered thermal governor 'bang_bang'
+[    0.077431] thermal_sys: Registered thermal governor 'step_wise'
+[    0.077444] thermal_sys: Registered thermal governor 'user_space'
+[    0.077512] cpuidle: using governor ladder
+[    0.077551] cpuidle: using governor menu
+[    0.077918] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.078033] ASID allocator initialised with 65536 entries
+[    0.078844] Serial: AMBA PL011 UART driver
+[    0.083974] /axi/interrupt-controller@f9010000: Fixed dependency cycle(s) with /axi/interrupt-controller@f9010000
+[    0.092146] Modules: 17952 pages in range for non-PLT usage
+[    0.092153] Modules: 509472 pages in range for PLT usage
+[    0.093461] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.093488] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.093503] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.093517] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[    0.093531] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.093544] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.093558] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.093571] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.113491] raid6: neonx8   gen()  2494 MB/s
+[    0.130545] raid6: neonx4   gen()  2433 MB/s
+[    0.147607] raid6: neonx2   gen()  2310 MB/s
+[    0.164665] raid6: neonx1   gen()  1983 MB/s
+[    0.181723] raid6: int64x8  gen()  1505 MB/s
+[    0.198770] raid6: int64x4  gen()  1738 MB/s
+[    0.215838] raid6: int64x2  gen()  1538 MB/s
+[    0.232898] raid6: int64x1  gen()  1149 MB/s
+[    0.232912] raid6: using algorithm neonx8 gen() 2494 MB/s
+[    0.249941] raid6: .... xor() 1827 MB/s, rmw enabled
+[    0.249955] raid6: using neon recovery algorithm
+[    0.250857] fbcon: Taking over console
+[    0.250884] ACPI: Interpreter disabled.
+[    0.251775] iommu: Default domain type: Translated
+[    0.251791] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.254388] SCSI subsystem initialized
+[    0.254572] libata version 3.00 loaded.
+[    0.254792] usbcore: registered new interface driver usbfs
+[    0.254879] usbcore: registered new interface driver hub
+[    0.254920] usbcore: registered new device driver usb
+[    0.255148] mc: Linux media interface: v0.10
+[    0.255198] videodev: Linux video capture interface: v2.00
+[    0.255299] pps_core: LinuxPPS API ver. 1 registered
+[    0.255313] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <[email redacted]>
+[    0.255354] PTP clock support registered
+[    0.255627] EDAC MC: Ver: 3.0.0
+[    0.256075] ARM FF-A: FFA_VERSION returned not supported
+[    0.256154] scmi_core: SCMI protocol bus registered
+[    0.256456] zynqmp-ipi-mbox mailbox@ff9905c0: Registered ZynqMP IPI mbox with TX/RX channels.
+[    0.257106] FPGA manager framework
+[    0.257400] Advanced Linux Sound Architecture Driver Initialized.
+[    0.258390] NetLabel: Initializing
+[    0.258404] NetLabel:  domain hash size = 128
+[    0.258415] NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO
+[    0.258551] NetLabel:  unlabeled traffic allowed by default
+[    0.258810] mctp: management component transport protocol core
+[    0.258827] NET: Registered PF_MCTP protocol family
+[    0.258966] vgaarb: loaded
+[    0.264826] clocksource: Switched to clocksource arch_sys_counter
+[    0.972645] VFS: Disk quotas dquot_6.6.0
+[    0.972797] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.973900] AppArmor: AppArmor Filesystem Enabled
+[    0.973992] pnp: PnP ACPI: disabled
+[    0.983148] NET: Registered PF_INET protocol family
+[    0.983359] IP idents hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    1.069486] tcp_listen_portaddr_hash hash table entries: 2048 (order: 3, 32768 bytes, linear)
+[    1.069592] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    1.069708] TCP established hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    1.070058] TCP bind hash table entries: 32768 (order: 8, 1048576 bytes, linear)
+[    1.070771] TCP: Hash tables configured (established 32768 bind 32768)
+[    1.071137] MPTCP token hash table entries: 4096 (order: 5, 98304 bytes, linear)
+[    1.071340] UDP hash table entries: 2048 (order: 4, 65536 bytes, linear)
+[    1.071445] UDP-Lite hash table entries: 2048 (order: 4, 65536 bytes, linear)
+[    1.071781] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    1.072495] RPC: Registered named UNIX socket transport module.
+[    1.072512] RPC: Registered udp transport module.
+[    1.072523] RPC: Registered tcp transport module.
+[    1.072535] RPC: Registered tcp-with-tls transport module.
+[    1.072547] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    1.072564] NET: Registered PF_XDP protocol family
+[    1.072588] PCI: CLS 0 bytes, default 64
+[    1.072927] Trying to unpack rootfs image as initramfs...
+[    1.074926] kvm [1]: IPA Size Limit: 40 bits
+[    1.078932] kvm [1]: vgic interrupt IRQ9
+[    1.079007] kvm [1]: Hyp mode initialized successfully
+[    1.080926] Initialise system trusted keyrings
+[    1.081016] Key type blacklist registered
+[    1.081327] workingset: timestamp_bits=40 max_order=20 bucket_order=0
+[    1.081405] zbud: loaded
+[    1.087377] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    1.090912] NFS: Registering the id_resolver key type
+[    1.090988] Key type id_resolver registered
+[    1.091001] Key type id_legacy registered
+[    1.091115] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    1.091141] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    1.092260] jffs2: version 2.2. (NAND) (SUMMARY)  © 2001-2006 Red Hat, Inc.
+[    1.092549] fuse: init (API version 7.39)
+[    1.093481] integrity: Platform Keyring initialized
+[    1.093531] integrity: Machine keyring initialized
+[    1.147370] NET: Registered PF_ALG protocol family
+[    1.147427] xor: measuring software checksum speed
+[    1.148624]    8regs           :  2771 MB/sec
+[    1.149831]    32regs          :  2766 MB/sec
+[    1.151146]    arm64_neon      :  2550 MB/sec
+[    1.151169] xor: using function: 8regs (2771 MB/sec)
+[    1.151195] Key type asymmetric registered
+[    1.151211] Asymmetric key parser 'x509' registered
+[    1.151332] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 239)
+[    1.151638] io scheduler mq-deadline registered
+[    1.151654] io scheduler kyber registered
+[    1.155421] shpchp: Standard Hot Plug PCI Controller Driver version: 0.4
+[    1.212499] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    1.215265] Serial: AMBA driver
+[    1.227129] brd: module loaded
+[    1.233740] loop: module loaded
+[    1.239020] mtdoops: mtd device (mtddev=name/number) must be supplied
+[    1.242344] tun: Universal TUN/TAP device driver, 1.6
+[    1.243737] PPP generic driver version 2.4.2
+[    1.244339] usbcore: registered new interface driver asix
+[    1.244447] usbcore: registered new interface driver ax88179_178a
+[    1.244513] usbcore: registered new interface driver cdc_ether
+[    1.244566] usbcore: registered new interface driver net1080
+[    1.244617] usbcore: registered new interface driver cdc_subset
+[    1.244679] usbcore: registered new interface driver zaurus
+[    1.244732] usbcore: registered new interface driver cdc_ncm
+[    1.246711] usbcore: registered new interface driver uas
+[    1.246803] usbcore: registered new interface driver usb-storage
+[    1.246864] usbcore: registered new device driver onboard-usb-dev
+[    1.247749] mousedev: PS/2 mouse device common for all mice
+[    1.248167] i2c_dev: i2c /dev entries driver
+[    1.250213] usbcore: registered new interface driver uvcvideo
+[    1.251699] device-mapper: core: CONFIG_IMA_DISABLE_HTABLE is disabled. Duplicate IMA measurements will not be recorded in the IMA log.
+[    1.251919] device-mapper: uevent: version 1.0.3
+[    1.252369] device-mapper: ioctl: 4.48.0-ioctl (2023-03-01) initialised: [email redacted]
+[    1.252719] EDAC MC: ECC not enabled
+[    1.254127] sdhci: Secure Digital Host Controller Interface driver
+[    1.254166] sdhci: Copyright(c) Pierre Ossman
+[    1.254177] sdhci-pltfm: SDHCI platform and OF driver helper
+[    1.255775] ledtrig-cpu: registered to indicate activity on CPUs
+[    1.256228] SMCCC: SOC_ID: ID = jep106:0049:0000 Revision = 0x04724093
+[    1.256383] zynqmp_firmware_probe Platform Management API v1.1
+[    1.256432] zynqmp_firmware_probe Trustzone version v1.0
+[    1.292297] securefw securefw: securefw probed
+[    1.292857] zynqmp-aes zynqmp-aes.0: will run requests pump with realtime priority
+[    1.293356] zynqmp-sha3-384 zynqmp-sha3-384.0: will run requests pump with realtime priority
+[    1.293794] xilinx_rsa xilinx_rsa.0: will run requests pump with realtime priority
+[    1.294098] hid: raw HID events driver (C) Jiri Kosina
+[    1.301178] hw perfevents: enabled with armv8_pmuv3 PMU driver, 7 counters available
+[    1.301796] watchdog: NMI not fully supported
+[    1.301831] watchdog: Hard watchdog permanently disabled
+[    1.303541] fpga_manager fpga0: Xilinx ZynqMP FPGA Manager registered
+[    1.304665] usbcore: registered new interface driver snd-usb-audio
+[    1.306010] pktgen: Packet Generator for packet performance testing. Version: 2.75
+[    1.310649] drop_monitor: Initializing network drop monitor service
+[    1.310983] Initializing XFRM netlink socket
+[    1.311883] NET: Registered PF_INET6 protocol family
+[    1.688085] Freeing initrd memory: 45740K
+[    1.722587] Segment Routing with IPv6
+[    1.722687] In-situ OAM (IOAM) with IPv6
+[    1.722833] NET: Registered PF_PACKET protocol family
+[    1.723037] 8021q: 802.1Q VLAN Support v1.8
+[    1.723386] Key type dns_resolver registered
+[    1.739570] registered taskstats version 1
+[    1.740706] Loading compiled-in X.509 certificates
+[    1.745701] Loaded X.509 cert 'Build time autogenerated kernel key: 52811693be06d39b79f1236954118da808e86540'
+[    1.750239] Loaded X.509 cert 'Canonical Ltd. Live Patch Signing 2025 Kmod: d541cef61dc7e793b7eb7e899970a2eef0b5dc8c'
+[    1.754766] Loaded X.509 cert 'Canonical Ltd. Live Patch Signing: 14df34d1a87cf37625abec039ef2bf521249b969'
+[    1.759344] Loaded X.509 cert 'Canonical Ltd. Kernel Module Signing 2025 Kmod: 4627603d2357a2a3f81006370894c221175893e9'
+[    1.764029] Loaded X.509 cert 'Canonical Ltd. Kernel Module Signing: 88f752e560a1e0737e31163a466ad7b70a850c19'
+[    1.764053] blacklist: Loading compiled-in revocation X.509 certificates
+[    1.764155] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing: 61482aa2830d0ab2ad5af10b7250da9033ddcef0'
+[    1.764229] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2017): 242ade75ac4a15e50d50c84b0d45ff3eae707a03'
+[    1.764304] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (ESM 2018): 365188c1d374d6b07c3c8f240f8ef722433d6a8b'
+[    1.764383] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2019): c0746fd6c5da3ae827864651ad66ae47fe24b3e8'
+[    1.764458] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v1): a8d54bbb3825cfb94fa13c9f8a594a195c107b8d'
+[    1.764533] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v2): 4cf046892d6fd3c9a5b03f98d845f90851dc6a8c'
+[    1.764614] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v3): 100437bb6de6e469b581e61cd66bce3ef4ed53af'
+[    1.764708] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (Ubuntu Core 2019): c1d57b8f6b743f23ee41f4f7ee292f06eecadfb9'
+[    1.788996] Key type .fscrypt registered
+[    1.789035] Key type fscrypt-provisioning registered
+[    1.793193] Btrfs loaded, zoned=yes, fsverity=yes
+[    1.835145] Key type encrypted registered
+[    1.835202] AppArmor: AppArmor sha256 policy hashing enabled
+[    1.835250] ima: No TPM chip found, activating TPM-bypass!
+[    1.835290] Loading compiled-in module X.509 certificates
+[    1.839967] Loaded X.509 cert 'Build time autogenerated kernel key: 52811693be06d39b79f1236954118da808e86540'
+[    1.839995] ima: Allocated hash algorithm: sha256
+[    1.840078] ima: No architecture policies found
+[    1.840161] evm: Initialising EVM extended attributes:
+[    1.840174] evm: security.selinux
+[    1.840185] evm: security.SMACK64
+[    1.840195] evm: security.SMACK64EXEC
+[    1.840206] evm: security.SMACK64TRANSMUTE
+[    1.840216] evm: security.SMACK64MMAP
+[    1.840226] evm: security.apparmor
+[    1.840236] evm: security.ima
+[    1.840245] evm: security.capability
+[    1.840255] evm: HMAC attrs: 0x1
+[    1.859313] ff010000.serial: ttyPS1 at MMIO 0xff010000 (irq = 20, base_baud = 6249999) is a xuartps
+[    1.859380] printk: legacy console [ttyPS1] enabled
+[    3.611933] of-fpga-region fpga-region: FPGA Region probed
+[    3.624860] xilinx-zynqmp-dpdma fd4c0000.dma-controller: Xilinx DPDMA engine is probed
+[    4.108474] zynqmp-display fd4a0000.display: vtc bridge property not present
+[    4.580062] xilinx-dp-snd-codec fd4a0000.display:zynqmp-dp-snd-codec0: Xilinx DisplayPort Sound Codec probed
+[    4.590435] xilinx-dp-snd-pcm zynqmp_dp_snd_pcm0: Xilinx DisplayPort Sound PCM probed
+[    4.598762] xilinx-dp-snd-pcm zynqmp_dp_snd_pcm1: Xilinx DisplayPort Sound PCM probed
+[    4.608844] xilinx-dp-snd-card fd4a0000.display:zynqmp-dp-snd-card: Xilinx DisplayPort Sound Card probed
+[    4.619295] xlnx-drm xlnx-drm.0: bound fd4a0000.display (ops zynqmp_dpsub_component_ops)
+[    4.815721] Console: switching to colour frame buffer device 80x30
+[    4.839753] zynqmp-display fd4a0000.display: [drm] fb0: xlnxdrmfb frame buffer device
+[    4.848156] [drm] Initialized xlnx 1.0.0 20130509 for fd4a0000.display on minor 0
+[    4.855744] zynqmp-display fd4a0000.display: ZynqMP DisplayPort Subsystem driver probed
+[    4.871432] tpm_tis_spi spi2.0: 2.0 TPM (device-id 0x1B, rev-id 22)
+[    4.881694] macb ff0e0000.ethernet eth0: Cadence GEM rev 0x50070106 at 0xff0e0000 irq 41 ([MAC redacted])
+[    4.881786] tpm tpm0: A TPM error (256) occurred attempting the self test
+[    4.884872] xilinx-axipmon ffa00000.perf-monitor: Probed Xilinx APM
+[    4.884918] tpm tpm0: starting up the TPM manually
+[    4.886524] xilinx-axipmon fd0b0000.perf-monitor: Probed Xilinx APM
+[    4.922735] xilinx-axipmon fd490000.perf-monitor: Probed Xilinx APM
+[    4.930558] xilinx-axipmon ffa10000.perf-monitor: Probed Xilinx APM
+[    4.968618] xhci-hcd xhci-hcd.0.auto: xHCI Host Controller
+[    4.975244] xhci-hcd xhci-hcd.0.auto: new USB bus registered, assigned bus number 1
+[    4.985162] xhci-hcd xhci-hcd.0.auto: hcc params 0x0238f625 hci version 0x100 quirks 0x0000008002000810
+[    4.996683] xhci-hcd xhci-hcd.0.auto: irq 44, io mem 0xfe200000
+[    5.003877] xhci-hcd xhci-hcd.0.auto: xHCI Host Controller
+[    5.010419] xhci-hcd xhci-hcd.0.auto: new USB bus registered, assigned bus number 2
+[    5.020087] xhci-hcd xhci-hcd.0.auto: Host supports USB 3.0 SuperSpeed
+[    5.027836] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.08
+[    5.038089] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    5.047291] usb usb1: Product: xHCI Host Controller
+[    5.053180] usb usb1: Manufacturer: Linux 6.8.0-1036-xilinx xhci-hcd
+[    5.060546] usb usb1: SerialNumber: xhci-hcd.0.auto
+[    5.067056] hub 1-0:1.0: USB hub found
+[    5.071810] hub 1-0:1.0: 1 port detected
+[    5.077466] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    5.087746] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    5.109511] usb usb2: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 6.08
+[    5.119600] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    5.128664] usb usb2: Product: xHCI Host Controller
+[    5.134507] usb usb2: Manufacturer: Linux 6.8.0-1036-xilinx xhci-hcd
+[    5.141844] usb usb2: SerialNumber: xhci-hcd.0.auto
+[    5.148245] hub 2-0:1.0: USB hub found
+[    5.153005] hub 2-0:1.0: 1 port detected
+[    5.161376] cdns-wdt fd4d0000.watchdog: Xilinx Watchdog Timer with timeout 60s
+[    5.171090] cdns-wdt ff150000.watchdog: Xilinx Watchdog Timer with timeout 10s
+[    5.181892] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    5.192352] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    5.231161] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    5.241577] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    5.273529] input: gpio-keys as /devices/platform/gpio-keys/input/input0
+[    5.288482] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    5.299267] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    5.312089] of_cfs_init
+[    5.315642] of_cfs_init: OK
+[    5.319768] clk: Not disabling unused clocks
+[    5.325451] ALSA device list:
+[    5.329388]   #0: DP mon
+[    5.468006] random: crng init done
+[    5.473237] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    5.483560] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    6.441378] mmc1: SDHCI controller on ff170000.mmc [ff170000.mmc] using ADMA 64-bit
+[    6.451563] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    6.462170] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    6.462183] Freeing unused kernel memory: 8832K
+[    6.541035] Checked W+X mappings: passed, no W+X pages found
+[    6.547856] Run /init as init process
+[    6.552489]   with arguments:
+[    6.552497]     /init
+[    6.552503]   with environment:
+[    6.552508]     HOME=/
+[    6.552514]     TERM=linux
+[    6.594047] mmc1: new high speed SDXC card at address 1388
+[    6.601361] mmcblk1: mmc1:1388 SATC  461 GiB
+[    6.608880]  mmcblk1: p1 p2
+[    6.614237] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    6.624685] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    7.618158] 17 fixed-partitions partitions found on MTD device spi0.0
+[    7.625931] Creating 17 MTD partitions on "spi0.0":
+[    7.632207] 0x000000000000-0x000000080000 : "Image Selector"
+[    7.675882] i2c i2c-1: using pinctrl states for GPIO recovery
+[    7.679352] 0x000000080000-0x000000100000 : "Image Selector Golden"
+[    7.683211] i2c i2c-1: using generic GPIOs for recovery
+[    7.727560] onboard-usb-dev fe200000.usb:hub@1: supply vdd not found, using dummy regulator
+[    7.738862] onboard-usb-dev fe200000.usb:hub@1: supply vdd2 not found, using dummy regulator
+[    7.738881] rtc_zynqmp ffa60000.rtc: registered as rtc0
+[    7.743246] at24 1-0050: supply vcc not found, using dummy regulator
+[    7.743508] 0x000000100000-0x000000120000 : "Persistent Register"
+[    7.745884] 0x000000120000-0x000000140000 : "Persistent Register Backup"
+[    7.750364] rtc_zynqmp ffa60000.rtc: setting system clock to 1970-01-01T00:00:11 UTC (11)
+[    7.762073] at24 1-0050: 8192 byte 24c64 EEPROM, writable, 1 bytes/write
+[    7.784494] 0x000000140000-0x000000200000 : "Open_1"
+[    7.804373] at24 1-0051: supply vcc not found, using dummy regulator
+[    7.884644] 0x000000200000-0x000000f00000 : "Image A (FSBL, PMU, ATF, U-Boot)"
+[    7.901498] at24 1-0051: 8192 byte 24c64 EEPROM, writable, 1 bytes/write
+[    7.915265] cdns-i2c ff030000.i2c: 400 kHz mmio ff030000 irq 50
+[    7.958945] 0x000000f00000-0x000000f80000 : "ImgSel Image A Catch"
+[    7.968217] 0x000000f80000-0x000001c80000 : "Image B (FSBL, PMU, ATF, U-Boot)"
+[    7.980204] 0x000001c80000-0x000001d00000 : "ImgSel Image B Catch"
+[    7.989083] 0x000001d00000-0x000001e00000 : "Open_2"
+[    7.996772] 0x000001e00000-0x000002000000 : "Recovery Image"
+[    8.005156] 0x000002000000-0x000002200000 : "Recovery Image Backup"
+[    8.022890] usb 1-1: new high-speed USB device number 2 using xhci-hcd
+[    8.027578] 0x000002200000-0x000002220000 : "U-Boot storage variables"
+[    8.039890] 0x000002220000-0x000002240000 : "U-Boot storage variables backup"
+[    8.060619] 0x000002240000-0x000002280000 : "SHA256"
+[    8.077951] 0x000002280000-0x0000022a0000 : "Secure OS Storage"
+[    8.092473] 0x0000022a0000-0x000004000000 : "User"
+[    8.156798] usb 1-1: New USB device found, idVendor=0424, idProduct=2744, bcdDevice= 2.21
+[    8.166844] usb 1-1: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+[    8.174941] usb 1-1: Product: USB2744
+[    8.179505] usb 1-1: Manufacturer: Microchip Tech
+[    8.286124] da9121 1-0032: Device detected (device-ID: 0x05, var-ID: 0x20, DA9130)
+[    8.295873] usb 2-1: new SuperSpeed USB device number 2 using xhci-hcd
+[    8.299500] da9121 1-0033: Device detected (device-ID: 0x05, var-ID: 0x21, DA9131)
+[    8.315800] usb 2-1: New USB device found, idVendor=0424, idProduct=5744, bcdDevice= 2.21
+[    8.325886] usb 2-1: New USB device strings: Mfr=2, Product=3, SerialNumber=0
+[    8.333969] usb 2-1: Product: USB5744
+[    8.338538] usb 2-1: Manufacturer: Microchip Tech
+[    8.344637] hub 1-1:1.0: USB hub found
+[    8.349361] hub 1-1:1.0: 5 ports detected
+[    8.436169] hub 2-1:1.0: USB hub found
+[    8.441005] hub 2-1:1.0: 4 ports detected
+[    8.690850] usb 1-1.4: new low-speed USB device number 3 using xhci-hcd
+[    8.775930] usb 1-1.4: device descriptor read/64, error -32
+[    8.962912] usb 1-1.4: device descriptor read/64, error -32
+[    9.152847] usb 1-1.4: new low-speed USB device number 4 using xhci-hcd
+[    9.237964] usb 1-1.4: device descriptor read/64, error -32
+[    9.295537] async_tx: api initialized (async)
+[    9.430891] usb 1-1.4: device descriptor read/64, error -32
+[    9.541118] usb 1-1-port4: attempt power cycle
+[   10.136858] usb 1-1.4: new low-speed USB device number 5 using xhci-hcd
+[   10.144967] usb 1-1.4: Device not responding to setup address.
+[   10.357245] usb 1-1.4: Device not responding to setup address.
+[   10.572848] usb 1-1.4: device not accepting address 5, error -71
+[   10.655845] usb 1-1.4: new low-speed USB device number 6 using xhci-hcd
+[   10.663841] usb 1-1.4: Device not responding to setup address.
+[   10.877248] usb 1-1.4: Device not responding to setup address.
+[   11.092850] usb 1-1.4: device not accepting address 6, error -71
+[   11.099959] usb 1-1-port4: unable to enumerate USB device
+[   11.181864] usb 1-1.5: new high-speed USB device number 7 using xhci-hcd
+[   11.277959] usb 1-1.5: New USB device found, idVendor=0424, idProduct=2740, bcdDevice= 2.00
+[   11.288082] usb 1-1.5: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+[   11.297190] usb 1-1.5: Product: Hub Controller
+[   11.302553] usb 1-1.5: Manufacturer: Microchip Tech
+[   12.071722] EXT4-fs (mmcblk1p2): mounted filesystem 461d1b5d-3b45-4362-a84f-c5bdff2605fb ro with ordered data mode. Quota mode: none.
+[   13.309580] systemd[1]: System time before build time, advancing clock.
+[   13.448491] systemd[1]: Inserted module 'autofs4'
+[   13.630522] systemd[1]: systemd 255.4-1ubuntu8.18 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)
+[   13.667947] systemd[1]: Detected architecture arm64.
+[   13.694571] systemd[1]: Hostname set to <kria>.
+[   16.398243] systemd[1]: Queued start job for default target graphical.target.
+[   16.457811] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[   16.471082] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[   16.484900] systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
+[   16.497966] systemd[1]: Created slice user.slice - User and Session Slice.
+[   16.507384] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[   16.521867] systemd[1]: Set up automount proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point.
+[   16.537751] systemd[1]: Expecting device dev-disk-by\x2dlabel-system\x2dboot.device - /dev/disk/by-label/system-boot...
+[   16.551924] systemd[1]: Expecting device dev-ttyPS1.device - /dev/ttyPS1...
+[   16.561316] systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
+[   16.573755] systemd[1]: Reached target slices.target - Slice Units.
+[   16.582486] systemd[1]: Reached target snapd.mounts-pre.target - Mounting snaps.
+[   16.593521] systemd[1]: Reached target swap.target - Swaps.
+[   16.601617] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
+[   16.614025] systemd[1]: Listening on dm-event.socket - Device-mapper event daemon FIFOs.
+[   16.626261] systemd[1]: Listening on lvm2-lvmpolld.socket - LVM2 poll daemon socket.
+[   16.638074] systemd[1]: Listening on multipathd.socket - multipathd control socket.
+[   16.673491] systemd[1]: Listening on rpcbind.socket - RPCbind Server Activation Socket.
+[   16.686129] systemd[1]: Listening on syslog.socket - Syslog Socket.
+[   16.695400] systemd[1]: Listening on systemd-fsckd.socket - fsck to fsckd communication Socket.
+[   16.707928] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[   16.720673] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[   16.733701] systemd[1]: Listening on systemd-journald.socket - Journal Socket.
+[   16.744634] systemd[1]: systemd-pcrextend.socket - TPM2 PCR Extension (Varlink) was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[   16.763219] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[   16.775354] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[   16.801103] systemd[1]: Mounting dev-hugepages.mount - Huge Pages File System...
+[   16.827198] systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...
+[   16.842955] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[   16.858403] systemd[1]: Mounting sys-kernel-tracing.mount - Kernel Trace File System...
+[   16.889796] systemd[1]: Starting systemd-journald.service - Journal Service...
+[   16.901357] systemd[1]: auth-rpcgss-module.service - Kernel Module supporting RPCSEC_GSS was skipped because of an unmet condition check (ConditionPathExists=/etc/krb5.keytab).
+[   16.934463] systemd[1]: Starting keyboard-setup.service - Set the console keyboard layout...
+[   16.951192] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[   16.970681] systemd[1]: Starting lvm2-monitor.service - Monitoring of LVM2 mirrors, snapshots etc. using dmeventd or progress polling...
+[   16.996789] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[   17.015168] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
+[   17.043438] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[   17.059410] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[   17.061753] systemd-journald[402]: Collecting audit messages is disabled.
+[   17.098890] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[   17.117525] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...
+[   17.132224] systemd[1]: systemd-fsck-root.service - File System Check on Root Device was skipped because of an unmet condition check (ConditionPathExists=!/run/initramfs/fsck-root).
+[   17.195391] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[   17.207337] systemd[1]: systemd-pcrmachine.service - TPM2 PCR Machine ID Measurement was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[   17.230074] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[   17.243561] systemd[1]: systemd-tpm2-setup-early.service - TPM2 SRK Setup (Early) was skipped because of an unmet condition check (ConditionSecurity=measured-uki).
+[   17.266311] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[   17.286133] systemd[1]: Started systemd-journald.service - Journal Service.
+[   17.403991] EXT4-fs (mmcblk1p2): re-mounted 461d1b5d-3b45-4362-a84f-c5bdff2605fb r/w.
+[   17.583197] systemd-journald[402]: Received client request to flush runtime journal.
+[   18.303058] systemd-journald[402]: /var/log/journal/a2b6a2d3cde7474c9d58effb9e8a8c54/system.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   18.303096] systemd-journald[402]: Rotating system journal.
+[   18.422325] platform ina260-u14: deferred probe pending: iio_hwmon: Failed to get channels
+[   18.593075] loop0: detected capacity change from 0 to 122008
+[   18.596645] loop1: detected capacity change from 0 to 122008
+[   18.673510] loop2: detected capacity change from 0 to 141288
+[   18.737937] loop3: detected capacity change from 0 to 141400
+[   18.804348] loop4: detected capacity change from 0 to 108656
+[   18.831967] loop5: detected capacity change from 0 to 95432
+[   18.868947] loop6: detected capacity change from 0 to 87312
+[   18.875210] loop7: detected capacity change from 0 to 79128
+[   21.529025] EDAC DEVICE0: Giving out device to module zynqmp-ocm-edac controller zynqmp_ocm: DEV ff960000.memory-controller (INTERRUPT)
+[   22.076410] optee: probing for conduit method.
+[   22.076437] optee: api uid mismatch
+[   22.076443] optee: probe of firmware:optee failed with error -22
+[   22.076736] Driver 'optee' was unable to register with bus_type 'arm_ffa' because the bus was not initialized.
+[   23.469971] audit: type=1400 audit(1791790586.160:2): apparmor="STATUS" operation="profile_load" profile="unconfined" name="1password" pid=759 comm="apparmor_parser"
+[   23.470100] audit: type=1400 audit(1791790586.160:3): apparmor="STATUS" operation="profile_load" profile="unconfined" name="QtWebEngineProcess" pid=762 comm="apparmor_parser"
+[   23.470225] audit: type=1400 audit(1791790586.160:4): apparmor="STATUS" operation="profile_load" profile="unconfined" name="Discord" pid=760 comm="apparmor_parser"
+[   23.470783] audit: type=1400 audit(1791790586.160:5): apparmor="STATUS" operation="profile_load" profile="unconfined" name=4D6F6E676F444220436F6D70617373 pid=761 comm="apparmor_parser"
+[   23.484546] audit: type=1400 audit(1791790586.174:6): apparmor="STATUS" operation="profile_load" profile="unconfined" name="brave" pid=764 comm="apparmor_parser"
+[   23.484689] audit: type=1400 audit(1791790586.174:7): apparmor="STATUS" operation="profile_load" profile="unconfined" name="buildah" pid=765 comm="apparmor_parser"
+[   23.484857] audit: type=1400 audit(1791790586.174:8): apparmor="STATUS" operation="profile_load" profile="unconfined" name="balena-etcher" pid=763 comm="apparmor_parser"
+[   23.488260] audit: type=1400 audit(1791790586.178:9): apparmor="STATUS" operation="profile_load" profile="unconfined" name="busybox" pid=766 comm="apparmor_parser"
+[   23.490723] audit: type=1400 audit(1791790586.180:10): apparmor="STATUS" operation="profile_load" profile="unconfined" name="cam" pid=767 comm="apparmor_parser"
+[   23.491515] audit: type=1400 audit(1791790586.181:11): apparmor="STATUS" operation="profile_load" profile="unconfined" name="ch-checkns" pid=768 comm="apparmor_parser"
+[   35.776061] kauditd_printk_skb: 113 callbacks suppressed
+[   35.776080] audit: type=1400 audit(1793383594.088:125): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="rsyslogd" pid=1014 comm="apparmor_parser"
+[   40.900629] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[   40.912764] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[   41.836175] NET: Registered PF_QIPCRTR protocol family
+[   45.553269] loop8: detected capacity change from 0 to 8
+[   45.932642] macb ff0e0000.ethernet eth0: PHY [ff0e0000.ethernet-ffffffff:01] driver [TI DP83867] (irq=POLL)
+[   45.932675] macb ff0e0000.ethernet eth0: configuring for phy/rgmii-id link mode
+[   45.933736] macb ff0e0000.ethernet: gem-ptp-timer ptp clock registered.
+[   49.013496] macb ff0e0000.ethernet eth0: Link is Up - 1Gbps/Full - flow control tx
+[   64.538452] systemd-journald[402]: /var/log/journal/a2b6a2d3cde7474c9d58effb9e8a8c54/user-1000.journal: Journal file uses a different sequence number ID, rotating.
+[  103.159514] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  103.169878] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  103.179784] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  103.189351] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  111.964734] usb 1-1.4: new low-speed USB device number 8 using xhci-hcd
+[  112.054482] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  112.054507] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  164.024570] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  164.600581] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  165.176646] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  165.752479] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  166.328472] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  166.904456] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  167.480453] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  168.056520] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  168.632568] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  169.208515] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  169.784512] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  170.360456] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  170.936535] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  171.512394] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  172.088467] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  172.664518] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  173.240465] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  173.816452] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  174.392350] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  174.968336] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  175.544423] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  176.120373] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  176.696373] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  177.272407] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  177.848348] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  178.424390] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  179.000340] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  179.576329] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  180.152420] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  180.728361] usb 1-1.4: reset low-speed USB device number 8 using xhci-hcd
+[  209.062009] usb 1-1.4: USB disconnect, device number 8
+[  209.758021] usb 1-1.4: new low-speed USB device number 9 using xhci-hcd
+[  209.847785] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  209.847809] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  210.085898] usb 1-1.4: USB disconnect, device number 9
+[  210.943172] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  210.953567] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  210.963410] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  210.972992] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  211.293059] usb 1-1.4: new low-speed USB device number 10 using xhci-hcd
+[  211.373055] usb 1-1.4: device descriptor read/64, error -32
+[  211.561112] usb 1-1.4: device descriptor read/64, error -32
+[  211.744015] usb 1-1.4: new low-speed USB device number 11 using xhci-hcd
+[  211.822018] usb 1-1.4: device descriptor read/64, error -32
+[  212.009018] usb 1-1.4: device descriptor read/64, error -32
+[  212.116166] usb 1-1-port4: attempt power cycle
+[  213.136048] usb 1-1.4: new low-speed USB device number 12 using xhci-hcd
+[  213.150184] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  213.150213] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  214.384074] usb 1-1.4: reset low-speed USB device number 12 using xhci-hcd
+[  214.960191] usb 1-1.4: reset low-speed USB device number 12 using xhci-hcd
+[  215.536071] usb 1-1.4: reset low-speed USB device number 12 using xhci-hcd
+[  216.998020] usb 1-1.4: USB disconnect, device number 12
+[  217.693964] usb 1-1.4: new low-speed USB device number 13 using xhci-hcd
+[  217.783651] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  217.783675] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  218.022008] usb 1-1.4: USB disconnect, device number 13
+[  218.985165] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  218.995589] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  219.005483] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  219.015061] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  219.232967] usb 1-1.4: new low-speed USB device number 14 using xhci-hcd
+[  219.312041] usb 1-1.4: device descriptor read/64, error -32
+[  219.497059] usb 1-1.4: device descriptor read/64, error -32
+[  219.687976] usb 1-1.4: new low-speed USB device number 15 using xhci-hcd
+[  219.764986] usb 1-1.4: device descriptor read/64, error -32
+[  219.952971] usb 1-1.4: device descriptor read/64, error -32
+[  220.068128] usb 1-1-port4: attempt power cycle
+[  221.087957] usb 1-1.4: new low-speed USB device number 16 using xhci-hcd
+[  221.101973] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  221.101989] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  222.392039] usb 1-1.4: reset low-speed USB device number 16 using xhci-hcd
+[  222.968126] usb 1-1.4: reset low-speed USB device number 16 using xhci-hcd
+[  223.544023] usb 1-1.4: reset low-speed USB device number 16 using xhci-hcd
+[  224.934068] usb 1-1.4: USB disconnect, device number 16
+[  225.629928] usb 1-1.4: new low-speed USB device number 17 using xhci-hcd
+[  225.719615] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  225.719632] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  225.958120] usb 1-1.4: USB disconnect, device number 17
+[  226.776680] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  226.788931] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  226.800571] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  226.811999] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  226.916955] usb 1-1.4: new low-speed USB device number 18 using xhci-hcd
+[  226.993973] usb 1-1.4: device descriptor read/64, error -32
+[  227.188010] usb 1-1.4: device descriptor read/64, error -32
+[  227.375934] usb 1-1.4: new low-speed USB device number 19 using xhci-hcd
+[  227.453967] usb 1-1.4: device descriptor read/64, error -32
+[  227.640943] usb 1-1.4: device descriptor read/64, error -32
+[  227.756081] usb 1-1-port4: attempt power cycle
+[  228.775928] usb 1-1.4: new low-speed USB device number 20 using xhci-hcd
+[  228.789788] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  228.789804] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  230.184023] usb 1-1.4: reset low-speed USB device number 20 using xhci-hcd
+[  230.759955] usb 1-1.4: reset low-speed USB device number 20 using xhci-hcd
+[  231.335959] usb 1-1.4: reset low-speed USB device number 20 using xhci-hcd
+[  232.614162] usb 1-1.4: USB disconnect, device number 20
+[  233.309912] usb 1-1.4: new low-speed USB device number 21 using xhci-hcd
+[  233.399629] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  233.399652] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  233.638304] usb 1-1.4: USB disconnect, device number 21
+[  234.575019] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  234.587050] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  234.598593] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  234.609952] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  234.846898] usb 1-1.4: new low-speed USB device number 22 using xhci-hcd
+[  234.923932] usb 1-1.4: device descriptor read/64, error -32
+[  235.112974] usb 1-1.4: device descriptor read/64, error -32
+[  235.303901] usb 1-1.4: new low-speed USB device number 23 using xhci-hcd
+[  235.380916] usb 1-1.4: device descriptor read/64, error -32
+[  235.568907] usb 1-1.4: device descriptor read/64, error -32
+[  235.684051] usb 1-1-port4: attempt power cycle
+[  236.703892] usb 1-1.4: new low-speed USB device number 24 using xhci-hcd
+[  236.718097] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  236.718113] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  237.991968] usb 1-1.4: reset low-speed USB device number 24 using xhci-hcd
+[  238.568069] usb 1-1.4: reset low-speed USB device number 24 using xhci-hcd
+[  239.144012] usb 1-1.4: reset low-speed USB device number 24 using xhci-hcd
+[  240.550235] usb 1-1.4: USB disconnect, device number 24
+[  241.245866] usb 1-1.4: new low-speed USB device number 25 using xhci-hcd
+[  241.335786] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  241.335815] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  241.574380] usb 1-1.4: USB disconnect, device number 25
+[  242.385391] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  242.397362] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  242.408899] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  242.420311] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  242.576880] usb 1-1.4: new low-speed USB device number 26 using xhci-hcd
+[  242.653991] usb 1-1.4: device descriptor read/64, error -32
+[  242.842949] usb 1-1.4: device descriptor read/64, error -32
+[  243.031891] usb 1-1.4: new low-speed USB device number 27 using xhci-hcd
+[  243.108909] usb 1-1.4: device descriptor read/64, error -32
+[  243.296882] usb 1-1.4: device descriptor read/64, error -32
+[  243.412042] usb 1-1-port4: attempt power cycle
+[  244.431863] usb 1-1.4: new low-speed USB device number 28 using xhci-hcd
+[  244.445944] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  244.445959] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  245.799954] usb 1-1.4: reset low-speed USB device number 28 using xhci-hcd
+[  246.375985] usb 1-1.4: reset low-speed USB device number 28 using xhci-hcd
+[  246.951944] usb 1-1.4: reset low-speed USB device number 28 using xhci-hcd
+[  248.230322] usb 1-1.4: USB disconnect, device number 28
+[  248.925857] usb 1-1.4: new low-speed USB device number 29 using xhci-hcd
+[  249.017489] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  249.017513] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  249.257000] usb 1-1.4: USB disconnect, device number 29
+[  250.191126] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  250.203147] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  250.214684] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  250.226052] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  250.462841] usb 1-1.4: new low-speed USB device number 30 using xhci-hcd
+[  250.539882] usb 1-1.4: device descriptor read/64, error -32
+[  250.728966] usb 1-1.4: device descriptor read/64, error -32
+[  250.919840] usb 1-1.4: new low-speed USB device number 31 using xhci-hcd
+[  250.997858] usb 1-1.4: device descriptor read/64, error -32
+[  251.184851] usb 1-1.4: device descriptor read/64, error -32
+[  251.300030] usb 1-1-port4: attempt power cycle
+[  252.319834] usb 1-1.4: new low-speed USB device number 32 using xhci-hcd
+[  252.333882] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  252.333897] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  253.623878] usb 1-1.4: reset low-speed USB device number 32 using xhci-hcd
+[  254.199862] usb 1-1.4: reset low-speed USB device number 32 using xhci-hcd
+[  254.775930] usb 1-1.4: reset low-speed USB device number 32 using xhci-hcd
+[  256.166378] usb 1-1.4: USB disconnect, device number 32
+[  256.861813] usb 1-1.4: new low-speed USB device number 33 using xhci-hcd
+[  256.951446] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  256.951476] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  257.192870] usb 1-1.4: USB disconnect, device number 33
+[  258.020475] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  258.032542] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  258.044086] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  258.055451] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  258.223821] usb 1-1.4: new low-speed USB device number 34 using xhci-hcd
+[  258.300837] usb 1-1.4: device descriptor read/64, error -32
+[  258.491851] usb 1-1.4: device descriptor read/64, error -32
+[  258.679821] usb 1-1.4: new low-speed USB device number 35 using xhci-hcd
+[  258.756859] usb 1-1.4: device descriptor read/64, error -32
+[  258.944833] usb 1-1.4: device descriptor read/64, error -32
+[  259.059975] usb 1-1-port4: attempt power cycle
+[  259.655805] usb 1-1.4: new low-speed USB device number 36 using xhci-hcd
+[  259.656327] usb 1-1.4: Device not responding to setup address.
+[  259.860337] usb 1-1.4: Device not responding to setup address.
+[  260.067844] usb 1-1.4: device not accepting address 36, error -71
+[  260.150796] usb 1-1.4: new low-speed USB device number 37 using xhci-hcd
+[  260.151332] usb 1-1.4: Device not responding to setup address.
+[  260.356392] usb 1-1.4: Device not responding to setup address.
+[  260.563804] usb 1-1.4: device not accepting address 37, error -71
+[  260.570930] usb 1-1-port4: unable to enumerate USB device
+[  417.887769] usb 1-1.4: new low-speed USB device number 38 using xhci-hcd
+[  417.977306] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  417.977323] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  419.934800] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  420.510786] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  421.086787] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  421.662836] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  422.238774] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  422.814830] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  423.390783] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  423.966811] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  424.542858] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  425.118858] usb 1-1.4: reset low-speed USB device number 38 using xhci-hcd
+[  426.408071] usb 1-1.4: USB disconnect, device number 38
+[  427.103733] usb 1-1.4: new low-speed USB device number 39 using xhci-hcd
+[  427.193571] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  427.193598] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  427.432207] usb 1-1.4: USB disconnect, device number 39
+[  428.366405] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  428.378499] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  428.390015] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  428.401252] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  428.639717] usb 1-1.4: new low-speed USB device number 40 using xhci-hcd
+[  428.717736] usb 1-1.4: device descriptor read/64, error -32
+[  428.903821] usb 1-1.4: device descriptor read/64, error -32
+[  429.094766] usb 1-1.4: new low-speed USB device number 41 using xhci-hcd
+[  429.173752] usb 1-1.4: device descriptor read/64, error -32
+[  429.359739] usb 1-1.4: device descriptor read/64, error -32
+[  429.474887] usb 1-1-port4: attempt power cycle
+[  430.070705] usb 1-1.4: new low-speed USB device number 42 using xhci-hcd
+[  430.071256] usb 1-1.4: Device not responding to setup address.
+[  430.275165] usb 1-1.4: Device not responding to setup address.
+[  430.482699] usb 1-1.4: device not accepting address 42, error -71
+[  430.565702] usb 1-1.4: new low-speed USB device number 43 using xhci-hcd
+[  430.566164] usb 1-1.4: Device not responding to setup address.
+[  430.771266] usb 1-1.4: Device not responding to setup address.
+[  430.978695] usb 1-1.4: device not accepting address 43, error -71
+[  430.985786] usb 1-1-port4: unable to enumerate USB device
+[  469.601538] usb 1-1.4: new low-speed USB device number 44 using xhci-hcd
+[  469.693077] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  469.693108] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  471.950632] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  472.526576] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  473.102617] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  473.678610] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  474.254619] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  474.830600] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  475.406600] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  475.982591] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  476.558602] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  477.134596] usb 1-1.4: reset low-speed USB device number 44 using xhci-hcd
+[  478.632636] usb 1-1.4: USB disconnect, device number 44
+[  479.328503] usb 1-1.4: new low-speed USB device number 45 using xhci-hcd
+[  479.418157] usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+[  479.418176] usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[  479.656645] usb 1-1.4: USB disconnect, device number 45
+[  480.536373] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/firmware-name
+[  480.548556] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /fpga-region/resets
+[  480.560026] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/afi0
+[  480.571151] OF: overlay: WARNING: memory leak will occur if overlay removed, property: /__symbols__/clocking0
+[  480.864514] usb 1-1.4: new low-speed USB device number 46 using xhci-hcd
+[  480.941527] usb 1-1.4: device descriptor read/64, error -32
+[  481.127537] usb 1-1.4: device descriptor read/64, error -32
+[  481.318493] usb 1-1.4: new low-speed USB device number 47 using xhci-hcd
+[  481.396534] usb 1-1.4: device descriptor read/64, error -32
+[  481.583518] usb 1-1.4: device descriptor read/64, error -32
+[  481.698681] usb 1-1-port4: attempt power cycle
+[  482.294487] usb 1-1.4: new low-speed USB device number 48 using xhci-hcd
+[  482.294906] usb 1-1.4: Device not responding to setup address.
+[  482.498879] usb 1-1.4: Device not responding to setup address.
+[  482.706489] usb 1-1.4: device not accepting address 48, error -71
+[  482.789482] usb 1-1.4: new low-speed USB device number 49 using xhci-hcd
+[  482.789880] usb 1-1.4: Device not responding to setup address.
+[  482.994998] usb 1-1.4: Device not responding to setup address.
+[  483.202495] usb 1-1.4: device not accepting address 49, error -71
+[  483.209665] usb 1-1-port4: unable to enumerate USB device
