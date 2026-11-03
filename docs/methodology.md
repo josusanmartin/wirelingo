@@ -34,11 +34,13 @@ If it can, the larger implication is much more interesting than this particular 
 
 ## How it was built
 
-The author worked with Claude Opus 5.5 and Astra. In the project's records,
-Astra is `gpt-6-astra`, an OpenAI model run through the Codex CLI. From
-2026-10-11 to 2026-10-14 it directed a team of Codex agents: five workers on
-`gpt-6.1-sol`, for Lean proofs, protocol firmware, signoff tooling,
-documentation and experiments, each in its own worktree. The 17 commits of
+The author worked with Claude Opus 5.5 and Astra. That sentence was written
+on 2026-10-06, before the team below existed, and the records do not say what
+it referred to then. The project's records name `gpt-6-astra`, an OpenAI model
+run through the Codex CLI: from 2026-10-11 to 2026-10-14 it directed a team of
+Codex agents, five workers on `gpt-6.1-sol` (Lean proofs, protocol
+firmware, flow tooling and release tests, documentation, and an expansion
+study), each in its own worktree. The 17 commits of
 theirs accepted for integration are on `main`. When that team stopped on
 2026-10-14 the work moved to Claude Code and its subagents. The independent
 reviewer named "Codex" in the table below and in [review.md](review.md) was
