@@ -14,7 +14,7 @@ silicon, and no cable or real network peer has been involved.
 | Question | Answer, from the code |
 |---|---|
 | Cores | 2 in the IHP build (`NCORES=2`, `NBANKS=2`, 8-word FIFOs: `src/project.v`, isa.md §7) |
-| Program memory | 256 words per core, in the core's own bank only (isa.md §3). `eth10_reply` takes 162 |
+| Program memory | 256 words per core, in the core's own bank only (isa.md §3). `eth10_reply` takes 161 |
 | Who can transmit Manchester | The line unit, core 0 only, both ways at once: RX clock recovery and TX with DIFF (TD- = !TD+) and TP_IDL (`END=2`) from one LINECFG (isa.md §4.7). TX takes up to 32 bits per `out line`, two entries queued |
 | Hand-off between cores | 8 global flags and 8 virtual pins; no interrupts. FIFOs connect a core to the host only, so one core can't hand frame bytes to another |
 | CRC-32 | None: the CRC tap is at most 16 bits wide (isa.md §4.5). The chip can't compute an FCS |
@@ -68,14 +68,14 @@ gap is longer by the sender's TP_IDL (300 ns in pe.ethsim).
 | End of the far end's last bit to our first edge (300 ns TP_IDL) | 9900.1-9919.9 ns | 9900.6-9923.2 ns | model | same |
 | The same with 802.3's +-13.5 ns edge jitter | 0 <= N < 1 (0.025-0.779, 12 replies) | not run (RX at 40 MHz has no margin for that jitter) | model | `test_reply_with_8023_jitter` |
 | One valid reply per matching frame, none otherwise, no host access after loading | 60 frames, 31 replies | 60 frames, 38 replies | model | `test_match_then_reply_timing` |
-| N on RTL, read at the falling clock edge after the pad (+0.5 clock) | 0.5 <= N < 1.5, 3 replies, +-13.5 ns jitter | 0.5 <= N < 1.5, back to back | RTL simulation | `test_eth_reply_rtl.py` |
+| N on RTL at the pads (the monitor reads half a clock later; the test asserts 0.5 <= read < 1.5) | 0.12, 0.24, 0.58: 3 replies, +-13.5 ns jitter, -200 ppm | 0.00: the far end's last edge fell on a clock edge (back to back, 0 ppm) | RTL simulation | `test_eth_reply_rtl.py` |
 | Frames back to back at 802.3's 96-bit gap: all heard, every match answered after the train | 2-5 frames | 2-5 frames | model; 3 frames on RTL at 40 MHz | `test_back_to_back_frames_are_all_heard`, `test_back_to_back_rtl_40mhz` |
 | Our TP_IDL's end to our next reply's first edge | 10140 ns | 10175 ns | model; 40 MHz also RTL | same |
 | A far-end first edge this long before ours goes unheard (collision); 5 ns more is heard | 95 ns (5 clocks: 100 ns is heard) | 120 ns (5 clocks: 125 ns is heard) | model | `test_blind_window` |
 | A frame arriving while we reply (1, 25, 50, 56 us after our first edge): our reply whole, that frame not heard, the next one heard and answered | yes | yes | model | `test_frame_arriving_while_replying` |
 | A far-end frame whose first edge comes up to this long after our TP_IDL's end is not heard; 5 ns later is | 480 ns | 500 ns | model | `test_frame_just_after_our_reply` |
 | Far-end link pulses inside the window restart it; the reply then starts N clocks after 96 bit times from the last pulse | N = 2.98 | N = 3.99 | model | `test_link_pulses_restart_the_window` |
-| A TP_IDL of 60-200 ns delays the reply, never brings it earlier | N up to 11.96 | N up to 10.61 | model | `test_short_tp_idl_only_delays_the_reply` |
+| A TP_IDL of 60-200 ns delays the reply, never brings it earlier | N up to 11.96 | N up to 10.52 | model | `test_short_tp_idl_only_delays_the_reply` |
 
 Each reply is decoded off the pads by two decoders that must agree (pe.ethsim's edge
 tracker, `test_eth_stack.sampled_decode`'s cell sampler), with exactly 802.3's
