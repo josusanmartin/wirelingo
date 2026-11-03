@@ -84,6 +84,9 @@ describes how, and what it caught.
 * Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
+  That is against the FPGA's own fabric SPI master on the chip's clock; the
+  demo board's MicroPython driver is far slower, and the port's speed through
+  the Tiny Tapeout pads is unmeasured ([docs/info.md](docs/info.md#how-to-test)).
   At 48 MHz the autonomous USB device enumerates, at low and full speed,
   against a host model's waveform replayed on its pads by the FPGA's pattern
   generator, with every device edge at the clock the cycle model gives when
@@ -156,7 +159,9 @@ for:
   USB device, low or full speed, and 10BASE-T receive meets 802.3's ±13.5 ns
   edge jitter.
 - **A host link that keeps up:** quad SPI at SCK = clk, 193 Mbit/s of payload
-  in simulation and 193.6 Mbit/s measured on the FPGA.
+  in RTL simulation and 193.6 Mbit/s on the FPGA, against its fabric SPI
+  master on the same clock; not yet measured through the pads or from the
+  demo board.
 
 **Reviewers:** [docs/guide.md](docs/guide.md) maps each claim to its evidence
 and the command that reproduces it.

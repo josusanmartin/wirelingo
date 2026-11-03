@@ -67,8 +67,21 @@ The full specification is in `docs/isa.md` in the repository.
 The host talks to the chip over SPI mode 0:
 
 * `ui[7]` = CS_n, `ui[6]` = SCK, `ui[5]` = MOSI, `uo[7]` = MISO.
-* SCK up to the project clock (about 50 Mbit/s); an optional quad mode moves
-  4 bits per SCK (about 200 Mbit/s) on ui[5:2] / uo[7:4] (docs/isa.md §6.1).
+* SCK up to the project clock: 1 bit per SCK (50 Mbit/s at 50 MHz), or in an
+  optional quad mode 4 bits per SCK (200 Mbit/s on the wire) on ui[5:2] /
+  uo[7:4] (docs/isa.md §6.1). These rates are shown in RTL simulation (a
+  quad burst moves 193 Mbit/s of payload) and in FPGA fabric, where
+  the KV260's own fabric SPI master runs on the chip's 50 MHz clock: 199.9
+  Mbit/s for 4096-word quad bursts, 193.6 Mbit/s for a 64-word write, and
+  183.6 Mbit/s from a separate 45.93 MHz clock (`fpga/kv260/README.md`).
+  Through the Tiny Tapeout pads and the demo board they are unmeasured; at
+  SCK = clk the host has half a clock period, less pad and board delays, to
+  sample MISO. The default demo-board
+  driver (`tools/micropython/protoemu.py`) bit-bangs the port from MicroPython
+  and is far slower than either figure (an estimate: it has not been
+  measured). The optional PIO/DMA transport it points to (`quad_spi.py`,
+  docs/board-transport.md) defaults to SCK at half the project clock, at most
+  96 Mbit/s on the wire at 48 MHz, and has not run on a board.
   Reads have 8 dummy SCK (one byte) after the address.
 * Transaction: `cmd addr[15:0] data…`. The commands are 0x02 write, 0x03 read,
   0x0A write-fixed and 0x0B read-fixed. Data is 32-bit big-endian words.
