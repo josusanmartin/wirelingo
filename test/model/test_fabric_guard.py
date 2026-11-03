@@ -134,9 +134,10 @@ def test_every_refusal_says_no_tool_may_run(kernel):
             check(text, kernel)
 
 
-def test_a_refusal_with_another_app_gives_the_load_sequence(kernel):
+@pytest.mark.parametrize("text", [BOARD_2026_11_03, table(None)], ids=["another app", "no app"])
+def test_a_refusal_with_another_or_no_app_gives_the_load_sequence(kernel, text):
     with pytest.raises(fg.NoActiveApp) as e:
-        check(BOARD_2026_11_03, kernel)
+        check(text, kernel)
     m = str(e.value)
     assert m.index("xmutil unloadapp") < m.index("xmutil loadapp protoemu") < m.index("xmutil listapps")
 
