@@ -7,6 +7,7 @@ touched. Exit status 1 if any mutant survives.
     python3 test/mutants.py [name or pattern ...]      # from the repo root (needs the test env)
     python3 test/mutants.py 'eth-*'                    # the 10BASE-T stack
     python3 test/mutants.py 'hw-*'                     # the hardware-day launcher and fabric guard
+    python3 test/mutants.py 'reply-*'                  # match, then answer (eth10_reply)
 """
 import fnmatch
 import os
@@ -37,6 +38,13 @@ def ETH(selection):
     return pytest(f'test/model/test_eth_stack.py -k "{selection}"')
 
 HW_TESTS = pytest("test/model/test_hw_day.py test/model/test_fabric_guard.py")
+
+
+def REPLY(selection):
+    return pytest(f'test/model/test_eth10_reply.py -k "{selection}"')
+
+
+REPLY50 = REPLY("match_then_reply_timing and 50000000.0")
 
 # name: (file, original text, mutated text, test command)
 MUTANTS = {
@@ -221,6 +229,29 @@ MUTANTS = {
                               ETH("line_never_quiet")),
     "eth-wrong-rx-period": ("tools/pe/ethhost.py", "return (1 << 8) | 0x40, 5 ", "return (1 << 8) | 0x40, 4 ",
                             ETH("arp_then_ping")),
+    # match, then answer (`python3 test/mutants.py 'reply-*'`, docs/eth10-reaction.md)
+    "reply-fw-no-window": ("firmware/eth10_reply.pasm", "    jmp t, first\n", "    jmp first\n", REPLY50),
+    "reply-95-bit-window": ("tools/pe/ethreply.py", "IFG_BITS = 96", "IFG_BITS = 95",
+                            REPLY("match_then_reply_timing and 40000000.0")),
+    "reply-window-a-clock-short": ("tools/pe/ethreply.py", "WINDOW_TRIM = 8", "WINDOW_TRIM = 9", REPLY50),
+    "reply-fw-no-low-wait": ("firmware/eth10_reply.pasm", "    wait 0 pin RXP                ;",
+                             "    nop                           ;", REPLY50),
+    "reply-fw-carrier-not-heard": ("firmware/eth10_reply.pasm", "    jmp frame                     ; carrier:",
+                                   "    jmp defer                     ; carrier:", REPLY("back_to_back")),
+    "reply-fw-quiet-ends-on-carrier": ("firmware/eth10_reply.pasm", "    jmp quiet\n", "    jmp ended\n",
+                                       REPLY("frame_just_after_our_reply and 50000000.0")),
+    "reply-quiet-too-short": ("tools/pe/ethreply.py", "QUIET_BITS = 40", "QUIET_BITS = 30",
+                              REPLY("back_to_back and 50000000.0")),
+    "reply-fw-owed-not-counted": ("firmware/eth10_reply.pasm", "    add r0, 1 ", "    nop        ", REPLY50),
+    "reply-fw-owed-never-paid": ("firmware/eth10_reply.pasm", "    sub r0, 1\n", "    nop\n", REPLY50),
+    "reply-fw-second-preamble": ("firmware/eth10_reply.pasm", "    ldi r1, 0x5555                ; the next",
+                                 "    ldi r1, 0x5554                ; the next", REPLY("back_to_back and 40000000.0")),
+    "reply-short-tp-idl": ("tools/pe/ethreply.py", "END_BITS = 3 ", "END_BITS = 2 ", REPLY50),
+    "reply-tx-rate": ("tools/pe/ethreply.py", "(128 if p == 5 else 0)", "(64 if p == 5 else 0)", REPLY50),
+    "reply-chunks-any-last-bit": ("tools/pe/ethreply.py", "    if raw[-1] >> 7:", "    if False:", REPLY("chunks_refuse")),
+    "reply-chunks-no-fcs-check": ("tools/pe/ethreply.py", "    if not eth.fcs_ok(raw):", "    if False:",
+                                  REPLY("chunks_refuse")),
+    "reply-wire-phase-ignored": ("tools/pe/ethsim.py", ' + q["offset"]', "", REPLY("blind_window and 50000000.0")),
     "hw-no-prereq-check": ("fpga/kv260/host/hw_day.py", '    if left:\n',
         '    if False:\n', HW_TESTS),
     "hw-direct-needs-only": ("fpga/kv260/host/hw_day.py", '    return [n for n in closure(step) if not fresh(state, n)]',

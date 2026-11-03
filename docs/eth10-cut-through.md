@@ -56,4 +56,5 @@ last edge.
 * 40 MHz has no margin for 802.3's jitter: at +-13.5 ns, 1 of 160 frames lost its HIT
   and record on the model (one independent sample, not a rate). See
   [guide.md](guide.md#known-limits).
-* Only pin output so far: no reply frame.
+* Only pin output here. `eth10_reply` adds a reply frame after the frame and the
+  96-bit gap: [eth10-reaction.md](eth10-reaction.md).
