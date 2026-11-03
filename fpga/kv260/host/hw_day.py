@@ -22,14 +22,15 @@ What it enforces, and tests in test/model/test_hw_day.py check:
   step names: anything else raises and turns every pin off.
 * Every exit from a step (end, exception, SIGINT, SIGTERM, SIGHUP) turns every
   pin off. SIGKILL can't be caught: `hd off`.
-* /dev/mem is not opened until `xmutil listapps` shows a protoemu app active:
-  reading the fabric's addresses with no app loaded can hang the board.
+* /dev/mem is not opened until fabric_guard.py shows a protoemu app active: reading
+  the fabric's addresses with no app loaded can hang the board. On 2026-11-03 it
+  probably did. A failed `xmutil loadapp` means stop: docs/hardware-day.md, step 0.
 * One process: a lock, and a refusal if another board script is running.
 
 This file never reboots anything, never runs a command on the Kria's eth0,
 never runs or imports pmod_test.py. pi-* subcommands refuse to run off a Pi.
 
-The board libraries are imported inside the actions: the Pi has none of them.
+The board libraries and fabric_guard are imported inside the actions: the Pi has none.
 """
 import argparse
 import binascii
@@ -98,6 +99,7 @@ class Step:
     phrase: str = ""                  # default "wired <name>"; only asked when pins is not empty
     files: tuple = ()                 # paths under ROOT the step needs: on eth-stack, not in this tree
     pi: tuple = ()                    # commands for the Pi, printed
+    kria: tuple = ()                  # read-only commands for the Kria, printed; none of them maps anything
     ok: str = ""
     fail: str = ""
 
@@ -115,7 +117,16 @@ TX_WIRES = (("J2 silkscreen 1 (TD+)", "a2"), ("220 ohm", "b2 to b6"), ("100 nF",
 PI_GROUND = (("J2 silkscreen 9 (GND)", "a24"), ("Pi pin 6 (GND), first of the Pi wires", "b24"))
 
 STEPS = [
-    Step("preflight", "Read the board, change nothing", apps=ANY_APP, action="preflight",
+    Step("recover", "Bring the board back; find out why loadapp failed",
+         kria=("uptime", "sudo xmutil listapps", "cat /sys/class/fpga_manager/fpga0/state",
+               "sudo dmesg | grep -iE 'fpga|dfx|overlay|zynqmp' | tail -n 60",
+               "sudo journalctl -u dfx-mgr -b --no-pager | tail -n 60",
+               "sudo journalctl -u dfx-mgr -b -1 --no-pager | tail -n 60",
+               "ls -l /lib/firmware/xilinx/protoemu/"),
+         off=("Every wire in J2: out, before the power goes back on",),
+         ok="the Kria answers, the cause of the failed load is written down, and a clean load shows protoemu active",
+         fail="no answer, or a load fails again: stop. No tool runs on a board with no active app"),
+    Step("preflight", "Read the board, change nothing", needs=("recover",), apps=ANY_APP, action="preflight",
          off=("Nothing changes in this step: leave the wiring as it is",),
          ok="active app named, chip ID read, PMOD0 and PMOD1 both 00000000",
          fail="no protoemu app active: run the xmutil line it prints. PMOD not zero: `hd off`, run again"),
@@ -307,6 +318,10 @@ def describe(step, out=print):
             out(f"  {x}")
     if step.pins:
         out("PINS THIS STEP ENABLES: " + ", ".join(f"silkscreen {SILK[p]}" for p in sorted(step.pins)))
+    if step.kria:
+        out("ON THE KRIA, READ-ONLY:")
+        for c in step.kria:
+            out(f"  {c}")
     if step.pi:
         out("ON THE PI:")
         for c in step.pi:
@@ -334,34 +349,29 @@ class PinGuard:
         return getattr(self._spim, name)
 
 
-def active_app(text):
-    """The active app in `xmutil listapps`: the row whose last column isn't -1.
-    The format is from memory of dfx-mgr; None when nothing can be read from it,
-    which refuses, and `--active-app NAME` is a person saying what they read."""
-    for line in text.splitlines():
-        t = line.split()
-        if len(t) >= 2 and t[0] != "Accelerator" and t[-1].rstrip(",").isdigit():
-            return t[0]
-    return None
-
-
 def listapps():
-    return subprocess.run(["xmutil", "listapps"], capture_output=True, text=True, check=True).stdout
+    import fabric_guard
+    return fabric_guard.listapps()
 
 
-def check_app(step, read=listapps, told=None):
-    """Before anything opens /dev/mem. Returns the app's name, or raises Refused."""
-    text = None if told else read()
-    app = told or active_app(text)
-    if app is None:
-        raise Refused(f"can't read the active app from `xmutil listapps`:\n{text}\n"
-                      "read it yourself and pass --active-app NAME")
+def load_line(app):
+    return (f"Run: sudo xmutil unloadapp; sudo xmutil loadapp {app} && sudo xmutil listapps\n"
+            "If it prints any error, or the table doesn't show it active: stop, run nothing, go to step 0 "
+            "of docs/hardware-day.md")
+
+
+def check_app(step, read=None, told=None):
+    """Before anything opens /dev/mem. Returns the app's name, or raises Refused.
+    `told` is --active-app: a person's reading of a table this can't parse."""
+    import fabric_guard
+    try:
+        app = fabric_guard.check(read or listapps, env={fabric_guard.OVERRIDE: told} if told else {})
+    except fabric_guard.NoActiveApp as e:
+        raise Refused(str(e))
     if app not in APPS:
-        raise Refused(f"active app is {app!r}, not a protoemu app. Nothing was opened. "
-                      f"Run: sudo xmutil unloadapp; sudo xmutil loadapp {step.apps[0]}")
+        raise Refused(f"active app is {app!r}, not one this runbook knows. Nothing was opened. {load_line(step.apps[0])}")
     if app not in step.apps:
-        raise Refused(f"step {step.name} needs {' or '.join(step.apps)}, and {app} is active. "
-                      f"Run: sudo xmutil unloadapp; sudo xmutil loadapp {step.apps[0]}")
+        raise Refused(f"step {step.name} needs {' or '.join(step.apps)}, and {app} is active. {load_line(step.apps[0])}")
     return app
 
 
@@ -858,7 +868,7 @@ def real_rig():
     return pfd.HwRig()
 
 
-def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapps_fn=listapps, told=None,
+def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapps_fn=None, told=None,
              proc="/proc", lock=LOCK):
     state = load_state(state_path)
     left = missing_prereqs(step, state)
@@ -924,12 +934,13 @@ def prompt(read, text):
         return ""
 
 
-def turn_off(listapps_fn=listapps, told=None):
+def turn_off(listapps_fn=None, told=None):
     """Every PMOD pin disabled; nothing else touched."""
-    app = told or active_app(listapps_fn())
-    if app not in APPS:
-        raise Refused("no protoemu app is active, so PMOD isn't either: nothing to do")
-    sys.path.insert(0, str(HERE))
+    import fabric_guard
+    try:
+        fabric_guard.check(listapps_fn or listapps, env={fabric_guard.OVERRIDE: told} if told else {})
+    except fabric_guard.NoActiveApp as e:
+        raise Refused(f"PMOD can't be reached, and with no app there are no PMOD pins on. {e}")
     from pe_spim import Spim
     Spim().pmod({})
     print("every PMOD pin is off")
@@ -1043,6 +1054,8 @@ def main(argv=None):
     s.add_argument("--seconds", type=float, default=60)
     s.add_argument("--gap-us", type=float, default=1000)
     a = ap.parse_args(argv)
+    if getattr(a, "active_app", None):                 # the openers' own check reads the same table
+        os.environ["PE_ACTIVE_APP"] = a.active_app
     try:
         if a.cmd == "list":
             state = load_state(a.state)

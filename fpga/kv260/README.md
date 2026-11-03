@@ -131,6 +131,12 @@ against the known sequence, continuing across bursts, and the next word read
 over the GPIO path); at SCK = mclk quad also the spec's 64-word quad
 WRITE_FIXED. The firmware is loaded through the fabric master.
 
+**After a failed load, run nothing.** Any error from `xmutil loadapp` means no tool on
+that board: a read of a fabric address with no working bitstream can hang it (probably
+what happened on 2026-11-03). `host/fabric_guard.py` refuses before `/dev/mem` is opened
+unless a protoemu app is shown active, and every opener here calls it. Recovery:
+docs/hardware-day.md, step 0.
+
 Offline checks of the same steps (no hardware):
 
     python3 fpga/kv260/host/bringup_kria.py --model    # cycle model + SPI port model

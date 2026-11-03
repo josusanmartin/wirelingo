@@ -222,6 +222,8 @@ def test_refuses_without_the_prerequisite(run):
 
 
 def test_a_step_confirmed_unlocks_the_next_and_only_then(run):
+    run.typed = ["passed recover"]
+    assert run("recover") == 0
     run.typed = ["passed preflight"]
     assert run("preflight") == 0
     run.typed = ["maybe"]
@@ -230,7 +232,7 @@ def test_a_step_confirmed_unlocks_the_next_and_only_then(run):
         run("rails")
     run.typed = ["passed usb-off"]
     assert run("usb-off") == 0
-    assert run.confirmed() == {"preflight", "usb-off"}
+    assert run.confirmed() == {"recover", "preflight", "usb-off"}
 
 
 @pytest.mark.parametrize("typed", [[], [""], ["wired"], ["WIRED TX-BENCH"], ["wired tx-pi"]])
@@ -262,7 +264,7 @@ def test_tx_switch_needs_the_poe_phrase(run):
 @pytest.mark.parametrize("apps,why", [
     ("", "can't read"),
     ("Accelerator\n  k26-starter-kits XRT_FLAT k26 XRT_FLAT (0+0) 0,\n", "not a protoemu app"),
-    (LISTAPPS.replace("  0,", " -1"), "can't read"),
+    (LISTAPPS.replace("  0,", " -1"), "no active app"),
     (LISTAPPS.replace("protoemu40", "protoemu4x").replace("protoemu48", "protoemu40").replace("protoemu4x", "protoemu48"),
      "needs protoemu40"),
 ])
@@ -420,13 +422,15 @@ def test_preflight_fails_if_a_pin_was_left_on(run):
     def on(rig):
         rig.spim.mem = type("Mem", (), {"rd": lambda s, a: 0x88})()
     run.board = on
+    run.confirm("recover")
     run.typed = ["passed preflight"]
     assert run("preflight") == hw_day.EXIT_FAILED
-    assert not run.state.exists()
+    assert run.confirmed() == {"recover"}
 
 
 def test_preflight_reports_a_missing_app(run, monkeypatch):
     monkeypatch.setattr(hw_day, "listapps", lambda: LISTAPPS.replace("protoemu48", "other"))
+    run.confirm("recover")
     run.typed = ["passed preflight"]
     assert run("preflight") == hw_day.EXIT_FAILED
     assert any("MISSING protoemu48" in x for x in run.out)
@@ -468,10 +472,10 @@ def test_the_whole_day_walks_through_in_order(run, monkeypatch):
         monkeypatch.setattr(s, "files", ())
     for s in hw_day.STEPS:
         run.typed = ([s.typed()] if s.pins else []) + [f"passed {s.name}"]
-        app = s.apps[0] if s.apps else None
-        if app:
+        app = s.apps[0] if s.apps else "none"
+        if s.apps:
             monkeypatch.setattr(FakeRig, "ident", dict(FakeRig.ident, clk_div=hw_day.APPS[app]))
-        assert run(s.name, told=app) == 0, s.name
+        assert run(s.name, apps=f"  {app} XRT_FLAT {app} XRT_FLAT (0+0) 0,") == 0, s.name
     assert run.confirmed() == set(hw_day.BY_NAME)
 
 
@@ -539,7 +543,7 @@ def test_usb_step_stays_inside_its_pins_through_the_real_usb_demo(run):
         rig.spim.pad = 1
     run.board = board
     run.typed = ["vbus taped wired usb-pi", "", "passed usb-pi"]
-    assert run("usb-pi", told="protoemu48") == 0
+    assert run("usb-pi", apps="  protoemu48 XRT_FLAT protoemu48 XRT_FLAT (0+0) 0,") == 0
     calls = run.rigs[0].spim.calls
     assert {1: hw_day.UIO0, 0: hw_day.UIO1} in calls and calls[-1] == {}
 
@@ -821,6 +825,30 @@ def test_a_missing_route_table_counts_as_on_a_network(tmp_path):
 SOURCE = (ROOT / "fpga/kv260/host/hw_day.py").read_text()
 
 
+def test_recover_opens_nothing_and_comes_first(run):
+    assert hw_day.STEPS[0].name == "recover" and "recover" in closure("preflight")
+    s = hw_day.STEPS[0]
+    assert not s.action and not s.pins and not s.apps
+    run.typed = ["passed recover"]
+    assert run("recover", apps="") == 0                              # works with no app active
+    assert run.rigs == []
+    for needle in ("xmutil listapps", "dmesg", "journalctl -u dfx-mgr"):
+        assert any(needle in c for c in s.kria)
+    for c in s.kria:
+        assert "loadapp" not in c and "/dev/mem" not in c and "bringup" not in c
+
+
+def test_a_refused_load_says_stop():
+    with pytest.raises(hw_day.Refused, match="stop, run nothing"):
+        hw_day.check_app(hw_day.BY_NAME["usb-pi"], lambda: LISTAPPS)
+
+
+def test_turn_off_opens_nothing_without_an_app(monkeypatch):
+    monkeypatch.setattr("os.open", lambda *a, **k: pytest.fail("opened"))
+    with pytest.raises(hw_day.Refused, match="no app"):
+        hw_day.turn_off(lambda: LISTAPPS.replace("  0,", " -1"))
+
+
 def test_source_never_reboots_or_touches_the_network_or_runs_pmod_test():
     tree = ast.parse(SOURCE)
     imports = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
@@ -828,7 +856,7 @@ def test_source_never_reboots_or_touches_the_network_or_runs_pmod_test():
     assert "pmod_test" not in imports
     runs = [ast.get_source_segment(SOURCE, n) for n in ast.walk(tree) if isinstance(n, ast.Call)
             and isinstance(n.func, ast.Attribute) and n.func.attr in ("run", "Popen", "system", "call", "check_call")]
-    assert len(runs) == 2 and "xmutil" in runs[0] + runs[1] and "tcpdump" in runs[0] + runs[1]
+    assert len(runs) == 1 and "tcpdump" in runs[0]                   # xmutil only through fabric_guard
     for word in ("shutdown", "poweroff", "swd", "SWD", "systemctl", "ethtool", "ifconfig", "os.system"):
         assert word not in SOURCE, word
 
@@ -846,11 +874,6 @@ def test_refusal_is_exit_2_with_a_reason(tmp_path, capsys):
     assert "usb-off" in capsys.readouterr().err
 
 
-def test_active_app_reads_the_listing():
-    assert hw_day.active_app(LISTAPPS) == "protoemu40"
-    assert hw_day.active_app("") is None
-
-
 # ---------------------------------------------------------------- the runbook matches the launcher
 
 def test_runbook_has_every_step_in_order_with_this_wiring():
@@ -865,6 +888,8 @@ def test_runbook_has_every_step_in_order_with_this_wiring():
         for c in s.pi:
             if not c.startswith("restart"):
                 assert c in text, (s.name, c)
+        for c in s.kria:
+            assert c in text, (s.name, c)
         for word in ("Must stay disconnected", "Success", "Failure", "Risk"):
             assert word in text, (s.name, word)
 
@@ -872,5 +897,5 @@ def test_runbook_has_every_step_in_order_with_this_wiring():
 def test_runbook_states_the_rules():
     doc = DOC.read_text().lower()
     for needle in ("48 v", "pmod_test.py", "check before wiring", "eth0", "one process", "reboot", "shared ground",
-                   "estimate", "squelch", "no swd", "vbus"):
+                   "estimate", "squelch", "no swd", "vbus", "load error", "no tool"):
         assert needle in doc, needle

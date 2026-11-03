@@ -13,6 +13,7 @@ HOSTCFG.QUAD_EN = 1, which `enable_quad()` sets with a 1-bit write.
 import mmap
 import os
 import time
+import fabric_guard
 
 BASE = 0xA0020000
 CMD, LEN, CFG, SEL, GO, PCYC, MCYC = 0x8000, 0x8004, 0x8008, 0x800C, 0x8010, 0x8018, 0x801C
@@ -25,6 +26,7 @@ class SpimMem:
     """32-bit accesses to pe_spim's 64 KB window through /dev/mem."""
 
     def __init__(self):
+        fabric_guard.require_app()           # before anything maps the fabric: see that file
         fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
         try:
             self._map = mmap.mmap(fd, 0x10000, offset=BASE)

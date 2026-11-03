@@ -13,6 +13,8 @@ RTL in FPGA fabric, not silicon. What a step proves is limited to that level.
 
 No SWD work of any kind is part of this day.
 
+**The Kria is down as of 2026-11-03, after a failed load. Start at step 0.**
+
 ## Rules
 
 Read these before you touch anything. Each is a way to break something or to lose
@@ -45,10 +47,9 @@ the board.
 7. **One process on the Kria at a time.** Two programs on the board's registers break
    each other. The launcher takes a lock and looks for the other board scripts, but
    it can't see a hand-typed one-liner.
-8. **Never reboot the Kria or power it off.** Nothing in this runbook asks for it.
-   The Pi may restart and shut down; check your prompt before you type. If the Kria
-   stops answering, the board work is over for the day, and what to do is your
-   decision, not a step here.
+8. **Never reboot the Kria or power it off,** with one exception: step 0, by you, by
+   hand. The Pi may restart and shut down; check your prompt before you type. If the
+   Kria stops answering later, the board work is over until you decide to repeat step 0.
 9. **Take the USB wiring off before any Ethernet wiring goes on.** Step 2, in full:
    USB plug out, then the three J2 jumpers out. D+ and D- are on J2 silkscreen 1 and
    3, the pins Ethernet uses, and there is a 1.5 kohm pull-up to 3.3 V on one of them.
@@ -59,6 +60,11 @@ the board.
     unsure. For anything that touches the Pi's header, shut the Pi down and unplug it.
 12. **Stop if something is wrong.** Anything warm, any smell, a board going quiet: pull
     the wires from J2, then think. `hd off` after that.
+13. **If `xmutil loadapp` fails, stop. Run nothing.** Any error line, `Load Error` in
+    particular, or a table that doesn't show the app active, means the next command is
+    not a tool. No tool may run on a board with no active app: reading the fabric's
+    addresses can hang the Kria, and only a power cycle brings it back. Go to step 0's
+    diagnosis, read-only. Never chain a tool after a load.
 
 ## What you need
 
@@ -125,7 +131,20 @@ Then, on the Kria:
 runs, turns the pins off on any exit, then asks whether you saw success. It refuses a
 step whose prerequisite you haven't confirmed. Confirmations are in
 `/var/tmp/hw_day_state.json`. If a step asks for another app, it prints the line to
-run; run that with no other program going, then run the step again.
+run; run that with no other program going, read what it printed, then run the step
+again. Rule 13 applies to every load.
+
+### The fabric guard
+
+`fpga/kv260/host/fabric_guard.py` runs before any program here opens `/dev/mem`:
+`pe_kria.py`, `pe_spim.py` and `pe_lab.py` call it, so every demo and test script on the
+board does too. It refuses unless `xmutil listapps` shows a protoemu app active, the
+FPGA manager's state isn't a failure, and the device tree's firmware-name isn't another
+bitstream. None of those reads a fabric address: its docstring says what each read
+is, and how far that is known. `xmutil`'s internals and this board's sysfs paths
+have not been seen on a board with no app. If the table's format isn't what the guard
+expects it refuses, and a person who has read the table can set `PE_ACTIVE_APP=<app>`
+(`hd run NAME --active-app <app>`). That can't overrule a table it can read.
 
 ## Reference
 
@@ -205,7 +224,7 @@ because it is the one step where a pin could be hurt by a signal that is doing w
 it should. The cheap, independent steps should be done before that risk is taken.
 If time runs short, stop before step 16 and lose nothing that was already proved.
 
-All 18 steps add up to about 6 hours (estimate), more than the day may have. Steps 1 to
+Steps 1 to 18 add up to about 6 hours (estimate), more than the day may have. Steps 1 to
 9 are about 2 hours. If networking matters most, steps 10 to 15 can be skipped: `rx` needs
 only `tx-pi`, so 1 to 9 then 16 to 18 is about 3.5 hours (estimate). That is a choice to
 take the pin risk without the safer results in hand.
@@ -315,9 +334,68 @@ line. See What you need.
 
 ## The steps
 
+### Step 0: Bring the board back; find out why loadapp failed (`recover`)
+
+Time: 30 min (estimate). App: any. Needs: nothing.
+
+**Risk.** This is the one step where the Kria is powered off, by you, by hand, once. On 2026-11-03 `xmutil loadapp protoemu` returned Load Error -1, the next command ran a host tool anyway, and the Kria stopped answering. The likely cause, not proved: that tool read a fabric address with no working bitstream behind it, which can hang the bus. Nothing remote can bring it back. A board with no active app must have no tool run on it: no `hd run` of a board step, no demo, no `bringup_kria.py`, nothing that opens `/dev/mem`. This step opens nothing: it only prints what to read.
+
+**Before you start.** **Power.** Take every wire out of J2. Unplug the Kria's power, wait 10 seconds, plug it back in. It reboots into its default app, not ours (expected).
+
+**Confirm it came back,** from another machine, after a few minutes (estimate): `ssh ubuntu@kria.[tailnet domain redacted] uptime` answers, with an uptime of minutes. Its network settings are as they were; don't touch them. If it doesn't answer in 10 minutes, check its link LEDs and power LED, and stop there.
+
+**Find out why the load failed, before any retry.** Read only. Run the commands below and write down what they say. `-b -1` is the boot that failed, and may be empty if the journal doesn't persist. What to look for:
+
+* An app already active in the table: a load fails if another is still in the slot, so `sudo xmutil unloadapp` comes first.
+* `ls` shows no `protoemu.bit.bin` or `.dtbo`: the install is incomplete. Run `install.sh` with `LOAD=0` from your checkout.
+* `dfx-mgr` not running, or errors about `shell.json`, overlays, or the FPGA manager: note them. Don't work around them.
+* The bitstream is rejected in `dmesg`: a corrupt or wrong file. Rebuild or reinstall it.
+
+**Retry once, only when you have a cause:**
+
+    sudo xmutil unloadapp
+    sudo xmutil loadapp protoemu
+    sudo xmutil listapps
+    cat /sys/class/fpga_manager/fpga0/state
+
+It worked only if no line says error, the table shows `protoemu` active, and the state says `operating`. If not, stop. Run no tool. A second failure is the day's result until the cause is known.
+
+Then `fabric_guard.py` is what stands between a failed load and the fabric: every program here that maps it goes through that check.
+
+**Must stay disconnected:**
+
+* Every wire in J2: out, before the power goes back on
+
+**On the Kria, read-only:**
+
+```
+uptime
+sudo xmutil listapps
+cat /sys/class/fpga_manager/fpga0/state
+sudo dmesg | grep -iE 'fpga|dfx|overlay|zynqmp' | tail -n 60
+sudo journalctl -u dfx-mgr -b --no-pager | tail -n 60
+sudo journalctl -u dfx-mgr -b -1 --no-pager | tail -n 60
+ls -l /lib/firmware/xilinx/protoemu/
+```
+
+**Command, on the Kria:**
+
+```
+hd run recover
+```
+
+**Success:**
+
+* The Kria answers with a fresh uptime; the cause of the failed load is written down; the retry shows `protoemu` active and the state `operating`. On the Kria, `hd run recover` and type `passed recover`. `hd` only records this; if it isn't installed yet, do Setting up first, which copies files and touches no fabric.
+
+**Failure, and what to try:**
+
+* No answer after 10 minutes: leave it for now. Nothing in this runbook works without it.
+* Load fails again: stop. Keep the logs. No tool runs on this board until an app shows active.
+
 ### Step 1: Read the board, change nothing (`preflight`)
 
-Time: 5 min (estimate). App: protoemu or protoemu40 or protoemu48. Needs: nothing.
+Time: 5 min (estimate). App: protoemu or protoemu40 or protoemu48. Needs: `recover`.
 
 **Risk.** None. No wire moves and no pin is enabled. Like every demo, it resets the chip's cores. The USB wiring may still be on the board: that is fine here, because every PMOD pin is off.
 
@@ -1191,7 +1269,10 @@ on one, it says so.
 | Pin 1 of the Pi's header, physically | Official documentation gives pin numbers; its position here is by description | `pinout` on the Pi |
 | RJ45 colours on a cut cable | T568A or T568B, unknown | Use the breakout |
 | The I2C part's pins, voltage, address width | Not chosen yet | Its datasheet |
-| `xmutil listapps` table format | From memory; `--active-app` covers a mismatch | Step `preflight` |
+| `xmutil listapps` table format, and what it shows after a failed load | From memory; `--active-app` covers an unreadable table | Step `recover` |
+| `xmutil listapps` doesn't touch the fabric | From dfx-mgr's design; source not read. Never seen with no app on this board | dfx-mgr's source |
+| `/sys/class/fpga_manager/fpga0/state` and `/proc/device-tree/fpga-full/firmware-name` exist here | Expected; the guard ignores them if absent | Step `recover` |
+| Why the Kria hung on 2026-11-03 | The fabric read is likely, not proved | Step `recover`'s logs |
 | How long a receiver keeps link with no pulses | 50 to 150 ms, from memory, as in docs/eth10-network.md | 802.3 clause 14 |
 | Whether the Pi can be an SPI device for the chip's master firmware | Not found in the documentation read. So `spi` tests capture only | A real SPI part |
 
@@ -1201,6 +1282,7 @@ The AMD, Raspberry Pi and Xilinx pages and the gist were opened. UG1089, the ele
 post, the datasheet listings and the Tenda listings were read only as a search tool's
 excerpts, because the pages timed out or weren't fetched: treat those as weaker.
 
+* [Linux sysfs-class-fpga-manager ABI](https://gbmc.googlesource.com/linux/+/7b2e57c26d45d55aa00d9f2904db12633596ffdb/Documentation/ABI/testing/sysfs-class-fpga-manager): the `state` values, from a search excerpt. [dfx-mgr, a mirror](https://gitee.com/mirrors_Xilinx/dfx-mgr).
 * [DS925, absolute maximum ratings](https://docs.amd.com/r/en-US/ds925-zynq-ultrascale-plus/Absolute-Maximum-Ratings): HD I/O VIN -0.55 V to VCCO + 0.55 V, VCCO 3.4 V maximum.
 * [DS925, overshoot and undershoot](https://docs.amd.com/r/en-US/ds925-zynq-ultrascale-plus/VIN-Maximum-Allowed-AC-Voltage-Overshoot-and-Undershoot): the -0.30 V and -0.45 V figures.
 * [DS925, DC characteristics](https://docs.amd.com/r/en-US/ds925-zynq-ultrascale-plus/DC-Characteristics-Over-Recommended-Operating-Conditions): 4.75 pF die input capacitance.
