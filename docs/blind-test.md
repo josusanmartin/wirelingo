@@ -187,16 +187,17 @@ The first and last two are labelled in the far-end sources too.
   written before their firmware, from the sources above. On the RTL they react
   to pad changes and drive at the exact nanosecond of their table. During a read
   they drive the complement until data is valid, so an early sample fails.
-* **Model tests**: `test/model/test_hd44780.py`, `test_ata_pio.py`, 56 tests:
+* **Model tests**: `test/model/test_hd44780.py`, `test_ata_pio.py`, 70 tests:
   every byte value, warm restart in 8-bit, 4-bit and mid-nibble states, slow
   oscillators, BF stuck, BSY stuck, IORDY extended and stuck, RX full mid-sector,
   slow TX refill, refused blocks, seeded random stress.
-* **RTL**: `test/test_blind.py`, 13 tests through the SPI port.
+* **RTL**: `test/test_blind.py`, 17 tests through the SPI port.
 * **Static timing**: 8 HD44780 and 10 ATA (mode 0) deadlines pass (3 of ATA's are
   conditional, meaning they bound only the paths that reach the end point) and
   both firmwares' bounds are checked against model measurements.
-* **Mutants**: `test/blind_mutants.py`, 29 one-line firmware bugs, 29 killed
-  after a passing baseline. They run on the model tests, not on RTL.
+* **Mutants**: `test/blind_mutants.py`, 34 firmware bugs, 34 killed after a passing
+  baseline. They run on the model tests, not on RTL. The list includes the
+  verifier's three survivors and one more per the same gaps.
 * **Far-end teeth**: tests that a too-fast host is rejected, that an unpolled
   write is caught, and that a device outside the 400 ns window does fool the
   poll, so that test can fail.
@@ -270,6 +271,8 @@ not yet valid, and at its rise this decoder would need the sample before the edg
     model and RTL now agree. Earlier, a separate window had been written down for
     the model instead of finding this.
 22. Mode 3/4 first used TS 2, which sampled IORDY 5 ns past tA. Moved to TS 3.
+23. Making the far end negate IORDY at tA broke the RTL tests only: `next_change`
+    had no wakeup at that time, so on the event-driven RTL IORDY never fell.
 
 ## What the docs did not say
 
@@ -322,6 +325,13 @@ account.
 
 Reading was shared and work overlapped, so the two do not add up. Mutants, review
 and the verifier's findings continued after those points and changed firmware.
+
+## Final results
+
+At commit 82f6195 (later commits touch only this file): whole model suite 1464
+passed, 23 skipped, including this work's 70; `test_blind` 17/17 without sigrok and
+17/17 with it, the `parallel` checks running on both protocols; mutants 34/34
+killed after a passing baseline.
 
 ## Open
 
