@@ -183,6 +183,14 @@ MUTANTS = {
                          pytest("test/model/test_pmbus.py -k through_the_firmware")),
     "fw-smbus-pec-not-checked": ("firmware/smbus_host.pasm", "    ldi r1, 0x8200\n", "    ldi r1, 0x8100\n",
                                  pytest("test/model/test_pmbus.py -k every_single_bit")),
+    # full-speed data over endpoint 0 (pe.usbfsdata; KV260 bug of 2026-11-03)
+    "usbfs-zlp-staged-twice": ("tools/pe/usbfsdata.py",
+                               "            self.incoming, self.expected = bytearray(), wlen   # service() stages the status ZLP once\n",
+                               "            self.incoming, self.expected = bytearray(), wlen\n"
+                               "            if not wlen:\n                self.pending = [b\"\"]\n",
+                               pytest("test/model/test_usb_fs_data.py -k zero_length_writes_with_software")),
+    "usbfs-read0-no-status": ("tools/pe/usbfsdata.py", " % 8 == 0 or not wlen:", " % 8 == 0:",
+                              pytest('test/model/test_usb_fs_data.py -k "round_trips and 0"')),
     # the 10BASE-T stack (`python3 test/mutants.py 'eth-*'`)
     "eth-fw-no-window": ("firmware/eth10_tx_cs.pasm", "    jmp t, frame              side 0       ; quiet all the way",
                          "    jmp frame                 side 0       ; quiet all the way", ETH("carrier_sense_defers")),

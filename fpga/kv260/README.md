@@ -1352,6 +1352,18 @@ simulated figures in docs/usb-full-speed.md (1 MB/s) assume a far faster SPI
 host and have not been measured here. Data stays on endpoint 0, because the
 firmware's token filter matches one address and endpoint.
 
+**Zero-length requests (2026-11-03).** The demo above never sends wLength 0. A
+run of zero-length vendor writes on the board found a device-software bug:
+`pe.usbfsdata` staged the status-stage ZLP of a zero-length write twice. In
+that run Linux got `-32` on the first request and a timeout on the third. A
+zero-length read had the opposite bug: no status ZLP at all. Both are fixed in
+`pe.usbfsdata`; the evidence is the model only
+(`test/model/test_usb_fs_data.py`, with the device software running over SPI
+concurrently with the bus). There the stale ZLP, a DATA0, answers a later
+request's status stage, or that request's INs go unanswered; the model does
+not show where Linux's `-32` came from. Zero-length requests have not been
+rerun on the board.
+
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,
 so the demo tries up to three times and prints each retry. In the two stalls
