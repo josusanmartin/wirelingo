@@ -107,6 +107,28 @@ def test_each_kernel_file_must_be_there_and_agree(kernel, piece, content, why):
         check(table("protoemu40"), kernel)
 
 
+@pytest.mark.parametrize("firmware", [b"protoemu40.bit.bin\0", b"protoemu48.bit.bin\0"])
+def test_an_app_whose_name_starts_the_file_name_still_refuses(kernel, firmware):
+    kernel["firmware"].write_bytes(firmware)
+    with pytest.raises(fg.NoActiveApp, match="not protoemu.bit.bin"):
+        check(table("protoemu"), kernel)
+
+
+# The header and the protoemu40 row exactly as inbox item 022 quotes the 2026-11-03 read
+# (that capture was cut at 110 columns, so only these two lines are verbatim)
+REAL_HEADER = ("                     Accelerator  Accel_type                    Base    Pid   Base_type  "
+               "#slots(RPU+PL+AIE)    slot->handle")
+REAL_ROW = ("                    protoemu40    XRT_FLAT              protoemu40  id_ok    XRT_FLAT             "
+            "(0+0+0)              -1")
+
+
+def test_the_boards_own_lines_refuse_inactive_and_pass_active(kernel):
+    with pytest.raises(fg.NoActiveApp):
+        check(f"{REAL_HEADER}\n{REAL_ROW}\n", kernel)
+    active = REAL_ROW[:-len("-1")] + "0->0,"
+    assert check(f"{REAL_HEADER}\n{active}\n", kernel) == "protoemu40"
+
+
 def test_an_uninstalled_app_refuses(kernel):
     (kernel["firmware_dir"] / "protoemu40" / "protoemu40.bit.bin").unlink()
     with pytest.raises(fg.NoActiveApp, match="isn't installed"):

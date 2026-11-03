@@ -48,7 +48,7 @@ the board.
    each other. The launcher takes a lock and looks for the other board scripts, but
    it can't see a hand-typed one-liner.
 8. **Never reboot the Kria or power it off,** with one exception: step 0, by you, by
-   hand. The Pi may restart and shut down; check your prompt before you type. If the
+   hand, and only if the board doesn't answer for 10 minutes. The Pi may restart and shut down; check your prompt before you type. If the
    Kria stops answering later, the board work is over until you decide to repeat step 0.
 9. **Take the USB wiring off before any Ethernet wiring goes on.** Step 2, in full, and
    again after `usb-pi`: USB plug out first, then the J2 jumpers. D+ and D- are on J2
@@ -222,7 +222,7 @@ Each group adds one new kind of risk:
 
 | Steps | New risk |
 |---|---|
-| 0 | Recovery: the one power cycle, by you |
+| 0 | Recovery: a power cycle, by you, only if the board doesn't answer |
 | 1 to 6 | None to the pins. No pin is enabled |
 | 7 to 9 | Chip outputs, through resistors and capacitors, into a transformer |
 | 10 to 15 | A shared ground and direct logic connections to the Pi, then USB's 5 V nearby |
