@@ -70,10 +70,10 @@ gap is longer by the sender's TP_IDL (300 ns in pe.ethsim).
 | One valid reply per matching frame, none otherwise, no host access after loading | 60 frames, 31 replies | 60 frames, 38 replies | model | `test_match_then_reply_timing` |
 | N on RTL, read at the falling clock edge after the pad (+0.5 clock) | 0.5 <= N < 1.5, 3 replies, +-13.5 ns jitter | 0.5 <= N < 1.5, back to back | RTL simulation | `test_eth_reply_rtl.py` |
 | Frames back to back at 802.3's 96-bit gap: all heard, every match answered after the train | 2-5 frames | 2-5 frames | model; 3 frames on RTL at 40 MHz | `test_back_to_back_frames_are_all_heard`, `test_back_to_back_rtl_40mhz` |
-| Our TP_IDL's end to our next reply's first edge | 10120 ns | 10150 ns | model; 40 MHz also RTL | same |
-| A far-end first edge this long before ours goes unheard (collision); 5 ns more is heard | 115 ns (6 clocks) | 145 ns (6 clocks) | model | `test_blind_window` |
+| Our TP_IDL's end to our next reply's first edge | 10140 ns | 10175 ns | model; 40 MHz also RTL | same |
+| A far-end first edge this long before ours goes unheard (collision); 5 ns more is heard | 95 ns (5 clocks: 100 ns is heard) | 120 ns (5 clocks: 125 ns is heard) | model | `test_blind_window` |
 | A frame arriving while we reply (1, 25, 50, 56 us after our first edge): our reply whole, that frame not heard, the next one heard and answered | yes | yes | model | `test_frame_arriving_while_replying` |
-| A far-end frame whose first edge comes up to this long after our TP_IDL's end is not heard; 5 ns later is | 460 ns | 475 ns | model | `test_frame_just_after_our_reply` |
+| A far-end frame whose first edge comes up to this long after our TP_IDL's end is not heard; 5 ns later is | 480 ns | 500 ns | model | `test_frame_just_after_our_reply` |
 | Far-end link pulses inside the window restart it; the reply then starts N clocks after 96 bit times from the last pulse | N = 2.98 | N = 3.99 | model | `test_link_pulses_restart_the_window` |
 | A TP_IDL of 60-200 ns delays the reply, never brings it earlier | N up to 11.96 | N up to 10.61 | model | `test_short_tp_idl_only_delays_the_reply` |
 
@@ -92,14 +92,24 @@ The bound is derived, then each piece is checked per reply on the model:
   start of the cycle that sees it (isa.md §2: two flops, plus the edge's phase); the
   low wait completes in that cycle;
 * the firmware: pe.timing's `ifg` deadline, from the low wait's completion to the first
-  `out line` completing, is exact: 476 clocks at 50 MHz, 380 at 40 (IFG_TICKS + 5);
-* the output: 2 clocks from `out line` completing to TD changing (the line unit picks
-  the entry up in the next cycle and its output register drives TD after that; isa.md §4.7).
+  `out line` completing, is exact: 477 clocks at 50 MHz, 381 at 40 (IFG_TICKS + 5);
+* the output: TD changes at the clock edge after the one ending the cycle `out line`
+  completes in (the line unit takes the entry in the next cycle, and its outputs are
+  registers; isa.md §4.7): 1 clock.
 
-2..3 + (96 bit times - 9 + 5) + 2 - 96 bit times = [0, 1) clock. `WINDOW_TRIM = 9` in
+2..3 + (96 bit times - 8 + 5) + 1 - 96 bit times = [0, 1) clock. `WINDOW_TRIM = 8` in
 `pe.ethreply` is that sum. The blind window is the same chain the other way: a far-end
-edge is heard if the core sees it by the tick the window's wait times out, which is 4
-clocks before our first edge, and the synchronizer adds 2: 6 clocks.
+edge is heard if the core sees it by the tick the window's wait times out, 3 clocks
+before our first edge, and the synchronizer adds 2: 5 clocks.
+
+**Model time and pad time.** `pe.ethsim.Wire` samples RXP at a clock edge but stamps a
+TD change one clock later, at the end of the model cycle that made it. The model tests
+move TD times back by that clock (`WIRE_STAMP`). The first version of this firmware was
+tuned on the Wire's stamps and came out a clock early on RTL: the RTL test read N at
+-0.42 and -1.0 clock at the pads, before the 96 bit times had passed. The RTL numbers
+above are from the corrected firmware. The same stamping is in the numbers
+`docs/eth10-network.md` quotes from the model; the RTL check there (9810 ns) used one
+phase only, and this was not looked into further.
 
 ## Limits
 
@@ -109,13 +119,13 @@ clocks before our first edge, and the synchronizer adds 2: 6 clocks.
   program with the core disabled. The program has room for about 31 more chunks, a
   reply of up to about 126 bytes (arithmetic, not built). Its last bit must be 0
   (`pe.ethreply.chunks` refuses otherwise): after a 1, three bit times of TP_IDL would
-  be 350 ns and two would be 240 ns at 50 MHz.
+  be 350 ns and two 240 or 260 ns at 50 MHz.
 * Speculative, as `eth10_match`: the decision comes before the FCS, so a corrupted frame
   can be answered. One field at a fixed place, one threshold set at load (16 bits).
 * Half duplex without collision handling: no detection, jam, back-off or retry. A frame
-  that arrives during our reply, or starts inside the 6-clock blind window, is lost to
+  that arrives during our reply, or starts inside the 5-clock blind window, is lost to
   us and our reply goes out whole. A far end that keeps the 96-bit gap is never affected
-  by the 460-475 ns after our TP_IDL in which a frame is not heard.
+  by the 480-500 ns after our TP_IDL in which a frame is not heard.
 * The window is counted from the far end's last edge at the pad, not from a real PHY's
   carrier-sense deassertion, which comes later. A far-end TP_IDL shorter than about
   250 ns ends before the core reaches the low wait, and the reply comes later.
