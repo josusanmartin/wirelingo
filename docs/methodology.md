@@ -141,8 +141,11 @@ flow) and [review.md](review.md) (the independent review).
 * The agents made every engineering decision below the level of goals and
   scope. The verification is broad, but it checks the spec as the agents
   wrote it; it can't catch a spec that asks for the wrong thing.
-* Nothing formally proves that synthesis preserved the RTL's behaviour;
-  the gate-level tests cover the exercised cases.
+* Synthesis preserving the RTL's behaviour is proved for run fo6's netlist
+  ([equivalence.md](equivalence.md)): functionally, at zero delay, with the
+  PDK's cell models, under the assumptions listed there. The inside of the
+  cells is not checked; timing is left to STA and the timing-annotated
+  gate-level tests.
 * The FPGA validates the logic at speed, not the IHP silicon: pads, real
   timing and the latch FIFOs are only covered by static timing analysis,
   timing-annotated gate-level simulation of the exercised paths and,
