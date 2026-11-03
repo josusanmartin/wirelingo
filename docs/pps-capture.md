@@ -139,11 +139,13 @@ missed pulse and a 3-clock runt.
 
 ## Limits of the evidence and the analysis
 
-* **The longest interval run on the RTL is about 1.4 ms** (70000 clocks, longer
-  than the 65536-tick rollover). The carry and the counter's top were reached
-  by loading the counter near them, not by counting there. A 1 s interval on the
-  RTL was not run: at the roughly 2000 clocks per second the simulation managed
-  on the compute runner it would take about 7 hours (an estimate from that log).
+* **One real 1 s interval ran on the RTL**, once: `pps_one_second`, 50,000,003
+  clocks between two pulses with the host port idle, reported to the clock
+  (+0.060 ppm, as driven). It took 6831 s on the compute runner, so it runs only
+  with `PPS_LONG=1`, not in CI; the run was on commit 04cfbf6. The regression's
+  other RTL intervals are up to 70000 clocks. The carry and the counter's top
+  were reached on the RTL by loading the counter near them, not by counting there,
+  and a train of 1 s pulses was run on the model only.
 * `analyse` anchors on the first wide pulse. If that one is off grid, every real
   pulse lands in `offgrid` and nothing is fitted
   (`test_an_off_grid_first_pulse_is_reported_not_hidden`): it fails visibly, it
