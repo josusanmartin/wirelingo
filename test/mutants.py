@@ -7,6 +7,7 @@ touched. Exit status 1 if any mutant survives.
     python3 test/mutants.py [name or pattern ...]      # from the repo root (needs the test env)
     python3 test/mutants.py 'eth-*'                    # the 10BASE-T stack
     python3 test/mutants.py 'hw-*'                     # the hardware-day launcher and fabric guard
+    python3 test/mutants.py 'fab-*'                    # eth_tap's FPGA backend (fabric_eth.py)
     python3 test/mutants.py 'reply-*'                  # match, then answer (eth10_reply)
 """
 import fnmatch
@@ -38,6 +39,7 @@ def ETH(selection):
     return pytest(f'test/model/test_eth_stack.py -k "{selection}"')
 
 HW_TESTS = pytest("test/model/test_hw_day.py test/model/test_fabric_guard.py")
+FAB = pytest("test/model/test_fabric_ping.py test/model/test_fabric_guard.py")
 
 
 def REPLY(selection):
@@ -394,6 +396,33 @@ MUTANTS = {
         '        pass\n', HW_TESTS),
     "hw-chained-load-line": ("fpga/kv260/host/hw_day.py", 'f"  sudo xmutil unloadapp\\n  sudo xmutil loadapp {app}\\n  sudo xmutil listapps\\n"',
         'f"  sudo xmutil unloadapp; sudo xmutil loadapp {app} && sudo xmutil listapps\\n"', HW_TESTS),
+    # eth_tap's FPGA backend through the KV260 fabric (`python3 test/mutants.py 'fab-*'`)
+    "fab-zero-words-not-restored": ("fpga/kv260/host/fabric_eth.py", "        out += words + [last, w]",
+        "        out += [x for x in words if x] + [last, w]", FAB),
+    "fab-last-word-dropped": ("fpga/kv260/host/fabric_eth.py", "        last = burst[i - 1] if i else 0",
+        "        last = 0", FAB),
+    "fab-no-cadence-check": ("fpga/kv260/host/fabric_eth.py", "if not top < k < full or abs(j - i0 - k * r) > tol:",
+        "if not top < k < full:", FAB),
+    "fab-cadence-not-refined": ("fpga/kv260/host/fabric_eth.py", "                r = (j - i0) / k\n", "", FAB),
+    "fab-generator-unbounded": ("fpga/kv260/host/fabric_eth.py", "    if len(out) > PG_DEPTH:\n", "    if False:\n", FAB),
+    "fab-tx-fifos-unbounded": ("fpga/kv260/host/fabric_eth.py", "if not eth.MIN_FRAME <= len(raw) <= TX_MAX:",
+        "if not eth.MIN_FRAME <= len(raw) <= eth.MAX_FRAME:", FAB),
+    "fab-both-high-uncounted": ("fpga/kv260/host/fabric_eth.py", "        both += v == 3\n", "        both += 0\n", FAB),
+    "fab-any-app-will-do": ("fpga/kv260/host/fabric_eth.py",
+        "    fabric_guard.require_app(expect=fabric_guard.APP_FOR_MHZ[round(clock_hz / 1e6)])",
+        "    fabric_guard.require_app()", FAB),
+    "fab-guard-expect-ignored": ("fpga/kv260/host/fabric_guard.py", "    if expect is not None and _checked != expect:\n",
+        "    if False:\n", FAB),
+    "fab-measure-spim-any-app": ("fpga/kv260/host/eth_tap.py",
+        "fabric_guard.require_app(expect=fabric_guard.APP_FOR_MHZ[int(a.clock)])", "fabric_guard.require_app()", FAB),
+    "fab-board-not-closed": ("fpga/kv260/host/eth_tap.py", "            backend.close()\n", "            pass\n", FAB),
+    "fab-no-sighup": ("fpga/kv260/host/eth_tap.py", "    signals = (signal.SIGTERM, signal.SIGHUP)",
+        "    signals = (signal.SIGTERM,)", FAB),
+    "fab-compare-blind-to-edges": ("fpga/kv260/host/eth_tap.py", "if edges in phases:", "if True:", FAB),
+    "fab-bad-fcs-to-linux": ("fpga/kv260/host/eth_tap.py", "            if f is None or not eth.fcs_ok(f):",
+        "            if f is None:", FAB),
+    "fab-port-not-given-back": ("fpga/kv260/host/postfreeze_demo.py", "        self.spim.select(fabric=False)\n",
+        "        pass\n", FAB),
 }
 
 

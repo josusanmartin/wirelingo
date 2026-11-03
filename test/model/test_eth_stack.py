@@ -1168,6 +1168,7 @@ def test_measure_spim_exit_status_is_the_signals(monkeypatch):
         raise tap.SessionSignal(signal.SIGHUP)
     monkeypatch.setattr(tap, "measure_spim_session", stopped)
     monkeypatch.setattr(tap.pe_spim, "Spim", lambda **_: None)
+    monkeypatch.setattr(tap.fabric_guard, "require_app", lambda **_: "protoemu")
     assert tap.main(["--measure-spim"]) == 128 + signal.SIGHUP
 
 
@@ -1227,9 +1228,7 @@ def test_bridge_backend_is_a_nic_to_a_tap():
     check_ping_reply(t.outbox[1] + fcs(t.outbox[1]), 1, data)
     assert len(b.backend.rtt_us) == 1 and b.backend.report()["td_both_high"] == 0
     b.backend.send(bytes(1515))
-    assert b.backend.oversize == 1
-    with pytest.raises(SystemExit):
-        tap.FpgaBackend()
+    assert b.backend.oversize == 1           # FpgaBackend: test_fabric_ping.py
 
 
 def test_measure_spim_counts_a_pass_as_the_glue_does():

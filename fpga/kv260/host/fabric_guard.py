@@ -43,6 +43,7 @@ import re
 import subprocess
 
 KNOWN = ("protoemu", "protoemu40", "protoemu48")          # our apps, by exact name
+APP_FOR_MHZ = {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}   # install.sh's names for build.sh's clocks
 HEADER = ["Accelerator", "Accel_type", "Base", "Pid", "Base_type", "#slots(RPU+PL+AIE)", "slot->handle"]
 SLOTS = re.compile(r"\(\d+\+\d+\+\d+\)")
 ACTIVE = re.compile(r"\d+->\d+,")
@@ -125,9 +126,16 @@ def check(read=None, state=None, firmware=None, firmware_dir=None):
 _checked = None
 
 
-def require_app(**kw):
-    """Every opener's first line. Once per process: a script doesn't load apps."""
+def require_app(expect=None, **kw):
+    """Every opener's first line. Once per process: a script doesn't load apps.
+    expect: the one app this run is for (a clock, a pin map); any other active app,
+    ours or not, refuses, on the first call and on every later one."""
     global _checked
+    if expect is not None and expect not in KNOWN:
+        raise NoActiveApp(f"{expect!r} is not one of our apps {list(KNOWN)}. {STOP}")
     if _checked is None:
         _checked = check(**kw)
+    if expect is not None and _checked != expect:
+        raise NoActiveApp(f"the active app is {_checked!r}, and this run needs {expect!r}. "
+                          f"{SEQUENCE.replace('protoemu', expect)}. {STOP}")
     return _checked

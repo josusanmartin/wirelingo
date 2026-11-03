@@ -82,9 +82,10 @@ class HwRig:
 
     model = False
 
-    def __init__(self):
+    def __init__(self, hw=None):
+        """hw: a v2_demo.Hw built on fakes (tests); by default the board's."""
         from v2_demo import Hw
-        self.hw = Hw()
+        self.hw = Hw() if hw is None else hw
         self.pe, self.lab, self.spim, self.board = self.hw.pe, self.hw.lab, self.hw.spim, self.hw.board
         self.spim.enable_quad()
         self.spim.quad = False

@@ -16,8 +16,20 @@ outside a dedicated network namespace, and refuses a namespace with any interfac
 but lo. `unshare --net` makes one that disappears with the process, so there is
 nothing to clean up, no route outside it, and eth0 can't be reached from here.
 
-A backend is anything with Backend's four methods. FpgaBackend is the place for
-the board, and is a stub: docs/eth10-network.md lists what it needs.
+A backend is anything with Backend's methods. FpgaBackend is the chip RTL in the
+KV260's fabric with no cable (fabric_eth.py): pe_lab's pattern generator plays
+each of Linux's frames into eth10_rx, and eth10_tx_cs's reply is sampled off TD
+by the chip's other core. One frame at a time, at most 64 bytes each way: ping
+with -s 18 at most. --backend fpga-model runs that same code on the cycle model.
+
+    sudo python3 -B fpga/kv260/host/eth_tap.py --backend fpga --probe --save b.json   # no network at all
+    sudo unshare --net -- python3 -B fpga/kv260/host/eth_tap.py --backend fpga --selftest
+    python3 fpga/kv260/host/eth_tap.py --compare b.json m.json    # m.json: the same probe, fpga-model
+
+On the board nothing maps the fabric until fabric_guard shows the app for --clock
+(protoemu at 50 MHz) as the one active row; nothing here loads an app. The board
+is given back (cores stopped, pe_lab idle, host port on the GPIO path, quad off,
+PMOD disabled) on any end: normal, an exception, Ctrl-C, SIGTERM, SIGHUP.
 """
 import argparse
 import fcntl
@@ -37,6 +49,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import fabric_guard                            # noqa: E402
 import pe_spim                                 # noqa: E402
 from pe import eth, ethsim                     # noqa: E402
 
@@ -44,6 +57,11 @@ TUNSETIFF = 0x400454CA
 IFF_TAP, IFF_NO_PI = 0x0002, 0x1000
 SETTLE_US = 150                                # simulated time after the last activity
 CHIP_MAC_TEXT, OTHER_MAC_TEXT = "02:57:4c:00:00:02", "02:57:4c:00:00:03"
+# The TAP's own MAC for the fpga backends: Linux's ARP request from it is 974
+# generator edges (a random MAC needs up to about 1014 of the 1024)
+HOST_MAC_TEXT = "02:57:4c:55:55:01"
+FABRIC = ("fpga", "fpga-model")
+FABRIC_PING = 18                               # ping data bytes: a 64-byte frame
 
 
 class NetnsError(RuntimeError):
@@ -74,11 +92,18 @@ class Tap:
         self.fd = os.open("/dev/net/tun", os.O_RDWR | os.O_NONBLOCK)
         fcntl.ioctl(self.fd, TUNSETIFF, struct.pack("16sH", name.encode(), IFF_TAP | IFF_NO_PI))
 
-    def up(self, cidr, mtu=1500):
-        for cmd in (["ip", "link", "set", "lo", "up"],
-                    ["ip", "link", "set", self.name, "mtu", str(mtu)],
-                    ["ip", "addr", "add", cidr, "dev", self.name],
-                    ["ip", "link", "set", self.name, "up"]):
+    def up(self, cidr, mtu=1500, mac=None, ipv6=True):
+        """mac: the TAP's own address; ipv6=False keeps Linux's IPv6 chatter off it
+        (this namespace only)."""
+        cmds = [["ip", "link", "set", "lo", "up"], ["ip", "link", "set", self.name, "mtu", str(mtu)]]
+        if mac:
+            cmds.append(["ip", "link", "set", self.name, "address", mac])
+        for cmd in cmds:
+            subprocess.run(cmd, check=True)
+        v6 = pathlib.Path(f"/proc/sys/net/ipv6/conf/{self.name}/disable_ipv6")
+        if not ipv6 and v6.exists():
+            v6.write_text("1")
+        for cmd in (["ip", "addr", "add", cidr, "dev", self.name], ["ip", "link", "set", self.name, "up"]):
             subprocess.run(cmd, check=True)
 
     def read(self):
@@ -109,6 +134,9 @@ class Backend:
 
     def report(self):
         return {}
+
+    def close(self):
+        """Give the hardware back, if there is any."""
 
 
 class ModelBackend(Backend):
@@ -187,13 +215,106 @@ class ModelBackend(Backend):
 
 
 class FpgaBackend(Backend):
-    """The KV260: not written yet, and it needs the orchestrator's hardware."""
+    """The chip RTL in the KV260's fabric, one frame at a time and no cable
+    (fabric_eth.py). send() plays Linux's frame into eth10_rx and hands what the
+    chip recorded to pe.eth.Station, the stack's host side; poll() has eth10_tx_cs
+    send each reply and returns the frames read off TD with a good FCS.
 
-    def __init__(self, *a, **kw):
-        raise SystemExit("the FPGA backend is a stub: see docs/eth10-network.md, 'The FPGA backend'")
+    rig: a postfreeze_demo rig. None is the board, and fabric_guard runs before it
+    is touched; `model()` is the cycle model with pe_lab modelled, through the same
+    code. corrupt = n spoils the FCS of the next n IPv4 frames from Linux."""
+    KEEP = 20                                  # exchanges kept for report()
+
+    def __init__(self, ipaddr, clock_hz=50e6, rig=None, **_):
+        import fabric_eth
+        self.fe = fabric_eth
+        rig = fabric_eth.board_rig(clock_hz) if rig is None else rig
+        try:
+            self.fab = fabric_eth.FabricEth(rig, clock_hz)
+        except Exception:
+            rig.close()
+            raise
+        self.station = eth.Station(eth.mac(CHIP_MAC_TEXT), ipaddr)
+        self.replies, self.log, self.stats = [], [], {}
+        self.corrupt = 0
+
+    @classmethod
+    def model(cls, ipaddr, clock_hz=50e6, **kw):
+        import postfreeze_demo
+        return cls(ipaddr, clock_hz, rig=postfreeze_demo.ModelRig(clock_hz))
+
+    def count(self, name):
+        self.stats[name] = self.stats.get(name, 0) + 1
+
+    def _keep(self, entry):
+        self.log = (self.log + [entry])[-self.KEEP:]
+
+    def send(self, frame):
+        frame = frame + bytes(max(0, eth.MIN_FRAME - eth.FCS - len(frame)))      # a NIC pads
+        if len(frame) > eth.MAX_FRAME - eth.FCS:
+            self.count("oversize")
+            return
+        fcs = eth.crc32(frame)
+        if self.corrupt and frame[12:14] == b"\x08\x00":
+            self.corrupt -= 1
+            fcs ^= 1
+        raw = frame + fcs.to_bytes(4, "little")
+        try:
+            got, info = self.fab.receive(raw)
+        except self.fe.TooBig as e:
+            self.count("rx_too_big")
+            self._keep(dict(rx=len(raw), why=str(e)))
+            return
+        except self.fe.RxGap as e:
+            self.count("rx_gap")
+            self._keep(dict(rx=len(raw), why=str(e)))
+            return
+        info.pop("fifo_words", None)
+        self._keep(dict(rx=len(raw), same=got == raw, **info))
+        if got is None:
+            self.count("rx_lost")
+            return
+        self.count("rx_frames")
+        if got != raw:
+            self.count("rx_differs")
+        self.replies += self.station.handle(got)
+
+    def poll(self):
+        out = []
+        while self.replies:
+            r = self.replies.pop(0)
+            try:
+                f, info = self.fab.transmit(r)
+            except self.fe.TooBig as e:
+                self.count("tx_too_big")
+                self._keep(dict(tx=len(r), why=str(e)))
+                continue
+            for x in info["frames"]:
+                x.pop("edges")
+            self._keep(dict(tx=len(r), same=f == r, **info))
+            if f is None or not eth.fcs_ok(f):
+                self.count("tx_lost")
+                continue
+            self.count("tx_frames")
+            if f != r:
+                self.count("tx_differs")
+            out.append(f[:-eth.FCS])
+        return out
+
+    def busy(self):
+        return bool(self.replies)
+
+    def report(self):
+        rig = self.fab.rig
+        return dict(rig="cycle model" if rig.model else "KV260", ident=rig.ident,
+                    f_meas_mhz=round(rig.f_meas / 1e6, 5), stats=self.stats, station=self.station.stats,
+                    last=self.log)
+
+    def close(self):
+        self.fab.close()
 
 
-BACKENDS = {"model": ModelBackend, "fpga": FpgaBackend}
+BACKENDS = {"model": ModelBackend, "fpga": FpgaBackend, "fpga-model": FpgaBackend.model}
 
 
 class Bridge:
@@ -326,31 +447,36 @@ def selftest(a, bridge):
                                 stderr=subprocess.DEVNULL)
         time.sleep(0.5)
     res = {}
-    n, rtt, text = ping(bridge, a.chip_ip, a.count, 56, a.wait)
+    fabric = a.backend in FABRIC
+    size = FABRIC_PING if fabric else 56
+    n, rtt, text = ping(bridge, a.chip_ip, a.count, size, a.wait)
     print(text)
-    res["ping"] = dict(sent=a.count, received=n, wall_rtt_ms=rtt)
-    n, rtt, text = ping(bridge, a.chip_ip, 2, 1472, a.wait)
-    print(text)
-    res["ping_1500_byte_packet"] = dict(sent=2, received=n, wall_rtt_ms=rtt)
+    res["ping"] = dict(sent=a.count, received=n, wall_rtt_ms=rtt, data_bytes=size)
+    if fabric:
+        res["ping_1500_byte_packet"] = "not run: the generator holds a 64-byte frame, the TX FIFOs a 64-byte reply"
+    else:
+        n, rtt, text = ping(bridge, a.chip_ip, 2, 1472, a.wait)
+        print(text)
+        res["ping_1500_byte_packet"] = dict(sent=2, received=n, wall_rtt_ms=rtt)
     got = udp_echo(bridge, a.chip_ip, eth.UDP_ECHO_PORT, b"wirelingo", a.wait)
     res["udp_echo"] = got.decode() if got else None
     # Frames the chip must not answer, sent by Linux itself: neighbour entries
     # aim them at the chip's MAC with another IP, and at the chip's IP with another MAC.
     short = min(a.wait, 6)
-    n, _, _ = ping(bridge, a.other_ip, 1, 56, short)
+    n, _, _ = ping(bridge, a.other_ip, 1, size, short)
     res["no_reply_unknown_ip_no_arp"] = n == 0
     subprocess.run(["ip", "neigh", "replace", a.other_ip, "lladdr", CHIP_MAC_TEXT, "dev", a.tap], check=True)
-    n, _, _ = ping(bridge, a.other_ip, 1, 56, short)
+    n, _, _ = ping(bridge, a.other_ip, 1, size, short)
     res["no_reply_other_ip"] = n == 0
     subprocess.run(["ip", "neigh", "replace", a.chip_ip, "lladdr", OTHER_MAC_TEXT, "dev", a.tap], check=True)
-    n, _, _ = ping(bridge, a.chip_ip, 1, 56, short)
+    n, _, _ = ping(bridge, a.chip_ip, 1, size, short)
     res["no_reply_other_mac"] = n == 0
     subprocess.run(["ip", "neigh", "replace", a.chip_ip, "lladdr", CHIP_MAC_TEXT, "dev", a.tap], check=True)
     if hasattr(bridge.backend, "corrupt"):
         bridge.backend.corrupt = 1
-        n, _, _ = ping(bridge, a.chip_ip, 1, 56, short)
+        n, _, _ = ping(bridge, a.chip_ip, 1, size, short)
         res["no_reply_bad_fcs"] = n == 0
-    n, _, _ = ping(bridge, a.chip_ip, 1, 56, a.wait)
+    n, _, _ = ping(bridge, a.chip_ip, 1, size, a.wait)
     res["answers_again"] = n == 1
     if pcap:
         time.sleep(0.5)
@@ -358,12 +484,148 @@ def selftest(a, bridge):
         pcap.wait()
     res["frames_to_chip"], res["frames_from_chip"] = bridge.to_chip, bridge.from_chip
     res["backend"] = bridge.backend.report()
-    ok = (res["ping"]["received"] == a.count and res["ping_1500_byte_packet"]["received"] == 2
+    ok = (res["ping"]["received"] == a.count and (fabric or res["ping_1500_byte_packet"]["received"] == 2)
           and res["udp_echo"] == "wirelingo" and res["answers_again"]
           and all(v for k, v in res.items() if k.startswith("no_reply")))
+    if fabric:                                 # and the chip's path itself was whole every time
+        st = res["backend"]["stats"]
+        ok = ok and not any(st.get(k) for k in ("rx_gap", "rx_lost", "rx_differs", "tx_lost", "tx_differs"))
     res["pass"] = ok
     print(json.dumps(res, indent=1))
     return 0 if ok else 1
+
+
+# ---------------------------------------------------------------- the fabric probe, no network
+def probe_frames(chip_ip, host_ip):
+    """(name, frame destination..FCS, a reply expected) for --probe: what Linux's
+    first exchanges look like, built here, from HOST_MAC_TEXT."""
+    hm, cm, om = eth.mac(HOST_MAC_TEXT), eth.mac(CHIP_MAC_TEXT), eth.mac(OTHER_MAC_TEXT)
+    hi, ci = eth.ip(host_ip), eth.ip(chip_ip)
+    data = struct.pack("<qq", 1793750400, 123456) + bytes((0x10, 0x11))     # ping -s 18: a timeval, then 0x10..
+    echo = eth.icmp_echo(eth.ICMP_ECHO_REQUEST, 0x1234, 1, data)
+    ping_ = eth.frame(cm, hm, eth.ETH_IP, eth.ipv4(hi, ci, eth.PROTO_ICMP, echo, ident=0x4242))
+    bad = ping_[:-1] + bytes([ping_[-1] ^ 1])
+    return [("arp", eth.arp_request(hm, hi, ci), True),
+            ("ping", ping_, True),
+            ("udp", eth.frame(cm, hm, eth.ETH_IP, eth.ipv4(hi, ci, eth.PROTO_UDP,
+                                                           eth.udp(hi, ci, 40000, eth.UDP_ECHO_PORT, b"wirelingo"))), True),
+            ("bad_fcs", bad, False),
+            ("other_mac", eth.frame(om, hm, eth.ETH_IP, eth.ipv4(hi, ci, eth.PROTO_ICMP, echo, ident=0x4242)), False)]
+
+
+def probe(backend, chip_ip, host_ip):
+    """Each probe frame into RXP; the Station's answer out of TD. Returns (pass, results)."""
+    fab, out, ok = backend.fab, [], True
+    station = eth.Station(eth.mac(CHIP_MAC_TEXT), eth.ip(chip_ip))
+    for name, raw, want in probe_frames(chip_ip, host_ip):
+        got, rx = fab.receive(raw)
+        r = dict(name=name, sent=raw.hex(), received_same=got == raw, rx_records=rx["records"],
+                 rx_fifo_words=rx["fifo_words"], rx_zero_words_restored=rx["zero_words_restored"],
+                 rx_entries=rx["entries"], rx_wall_ms=rx["wall_ms"])
+        replies = station.handle(got) if got is not None else []
+        r["replies"] = len(replies)
+        good = got == raw and len(replies) == int(want)
+        if replies:
+            f, tx = fab.transmit(replies[0])
+            fr = tx["frames"][0] if len(tx["frames"]) == 1 else {}
+            r.update(reply=replies[0].hex(), td_same=f == replies[0], td_fcs_ok=bool(f) and eth.fcs_ok(f),
+                     tx_pulses=tx["pulses"], tx_frame_start=fr.get("start"), tx_driven_runs=fr.get("driven_runs"),
+                     tx_tp_idl_ns=fr.get("tp_idl_ns"), tx_edges=fr.get("edges"), tx_both_high=tx["both_high"],
+                     tx_f_go_cleared=tx["f_go_cleared"], tx_wall_ms=tx["wall_ms"], tx_why=tx.get("why"))
+            good = good and f == replies[0] and eth.fcs_ok(f)
+            if fab.rig.model:                  # every phase core 1's divider can have at the trigger
+                r["tx_edges_phases"] = [r["tx_edges"]]
+                for k in range(1, backend.fe.TX_PHASES):
+                    f2, tx2 = fab.transmit(replies[0], phase=k)
+                    good = good and f2 == replies[0]
+                    r["tx_edges_phases"].append(tx2["frames"][0]["edges"] if len(tx2["frames"]) == 1 else None)
+        r["pass"] = good
+        ok = ok and good
+        out.append(r)
+        print(f"{name}: {len(raw)} bytes in, {'as sent' if got == raw else 'NOT as sent'}, records {rx['records']}, "
+              f"{rx['zero_words_restored']} zero words restored; "
+              + (f"reply {len(replies[0])} bytes off TD {'as sent' if r['td_same'] else 'NOT as sent'}, "
+                 f"FCS {'ok' if r['td_fcs_ok'] else 'BAD'}, link pulse {r['tx_pulses']}, frame from sample "
+                 f"{r['tx_frame_start']}, driven runs {r['tx_driven_runs']} clocks, TP_IDL {r['tx_tp_idl_ns']} ns"
+                 if replies else "no reply") + f": {'PASS' if good else 'FAIL'}", flush=True)
+    return ok, out
+
+
+DETERMINISTIC = ("sent", "received_same", "rx_records", "rx_fifo_words", "replies", "reply", "td_same")
+
+
+def tx_timing(x, y):
+    """None if the TD edges agree to the clock, else why not. A model run carries the
+    edges for each phase of core 1's divider at the trigger (FabricEth.transmit),
+    and a board's run must be one of them."""
+    px, py = x.get("tx_edges_phases"), y.get("tx_edges_phases")
+    if px and py:
+        return None if px == py else "the models' phases differ"
+    if px or py:
+        phases, edges = (px, y.get("tx_edges")) if px else (py, x.get("tx_edges"))
+        if edges in phases:
+            print(f"  TD edges: {len(edges or [])} of them, equal to the model's at divider phase {phases.index(edges)}")
+            return None
+        best = min(range(len(phases)), key=lambda k: sum(p != q for p, q in zip(phases[k] or [], edges or [])))
+        return f"TD edges equal to none of the model's {len(phases)} phases (closest: phase {best})"
+    return None if x.get("tx_edges") == y.get("tx_edges") else "TD edges differ"
+
+
+def compare(path_a, path_b):
+    """Two --probe --save files, field by field: the board's and the model's must
+    agree to the clock. Exit status 0 only if every deterministic field is equal and
+    the TD edges are one of the model's divider phases (tx_timing)."""
+    a, b = (json.loads(pathlib.Path(p).read_text()) for p in (path_a, path_b))
+    ra, rb = ({r["name"]: r for r in x["results"]} for x in (a, b))
+    print(f"{path_a}: {a['rig']}, {a['ident'].get('rtl_rev', '?')[:12]}; {path_b}: {b['rig']}, "
+          f"{b['ident'].get('rtl_rev', '?')[:12]}")
+    same = sorted(ra) == sorted(rb)
+    for name in sorted(set(ra) | set(rb)):
+        x, y = ra.get(name, {}), rb.get(name, {})
+        diff = [k for k in DETERMINISTIC if x.get(k) != y.get(k)]
+        why = tx_timing(x, y) if "reply" in x or "reply" in y else None
+        same = same and not diff and why is None
+        print(f"{name}: {'same' if not diff and why is None else 'differs in ' + ', '.join(diff + ([why] if why else []))}")
+        for k in diff:
+            u, v = x.get(k), y.get(k)
+            if isinstance(u, list) and isinstance(v, list):
+                i = next((i for i, (p, q) in enumerate(zip(u, v)) if p != q), min(len(u), len(v)))
+                print(f"  {k}: lengths {len(u)} / {len(v)}, first difference at {i}: "
+                      f"{u[i] if i < len(u) else '-'} / {v[i] if i < len(v) else '-'}")
+            else:
+                print(f"  {k}: {u} / {v}")
+    print("SAME" if same else "DIFFERENT")
+    return 0 if same else 1
+
+
+def run_closing(backend, body):
+    """body(), then backend.close() whatever happens. SIGTERM and SIGHUP (a dropped
+    ssh session) raise SessionSignal; once the close has begun no signal, SIGINT
+    included, can cut it short. Returns body's status, or 128 + the signal."""
+    live = [True]
+
+    def stop(signum, frame):
+        if live[0]:
+            live[0] = False
+            raise SessionSignal(signum)
+
+    signals = (signal.SIGTERM, signal.SIGHUP)
+    old = [signal.signal(n, stop) for n in signals]
+    old_int = signal.getsignal(signal.SIGINT)
+    try:
+        return body()
+    except SessionSignal as e:
+        print(f"stopped by {e}; giving the board back", file=sys.stderr)
+        return 128 + e.signum
+    finally:
+        live[0] = False
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            backend.close()
+        finally:
+            signal.signal(signal.SIGINT, old_int)
+            for n, handler in zip(signals, old):
+                signal.signal(n, handler)
 
 
 def main(argv=None):
@@ -384,8 +646,20 @@ def main(argv=None):
     ap.add_argument("--measure-spim", action="store_true",
                     help="on the Kria, as root, no network involved: how fast can this Python serve RX? "
                          "Borrows the host port and gives it back; core 0 should be idle")
+    ap.add_argument("--probe", action="store_true",
+                    help="fpga backends, no network: fixed ARP, ping, UDP and two unanswerable frames "
+                         "through the chip, each reply read off TD, then exit")
+    ap.add_argument("--save", help="--probe: write the results here, for --compare")
+    ap.add_argument("--compare", nargs=2, metavar=("A", "B"), help="two --probe --save files, field by field")
     a = ap.parse_args(argv)
+    if a.compare:
+        return compare(*a.compare)
     if a.measure_spim:
+        try:                                   # the app for this clock, or nothing is mapped
+            fabric_guard.require_app(expect=fabric_guard.APP_FOR_MHZ[int(a.clock)])
+        except fabric_guard.NoActiveApp as e:
+            print(f"refusing to run: {e}", file=sys.stderr)
+            return 2
         try:
             print(f"{measure_spim_session(pe_spim.Spim(div=1)):.1f} us per pass; docs/eth10-network.md has the budget")
         except SessionSignal as e:
@@ -397,26 +671,57 @@ def main(argv=None):
         return 0
     if a.backend is None:
         ap.error("say which chip: --model")
+    fabric = a.backend in FABRIC
+    if a.probe and not fabric:
+        ap.error("--probe is for --backend fpga or fpga-model")
+
+    def make():
+        return BACKENDS[a.backend](eth.ip(a.chip_ip), clock_hz=a.clock * 1e6, quad=not a.single, sck_div=a.sck_div)
+    if a.probe:                                # no interface is created: no namespace needed
+        try:
+            backend = make()
+        except fabric_guard.NoActiveApp as e:
+            print(f"refusing to run: {e}", file=sys.stderr)
+            return 2
+
+        def run_probe():
+            ok, results = probe(backend, a.chip_ip, a.host_ip)
+            rep = backend.report()
+            if a.save:
+                pathlib.Path(a.save).write_text(json.dumps(dict(rig=rep["rig"], ident=rep["ident"],
+                                                                f_meas_mhz=rep["f_meas_mhz"], clock_mhz=a.clock,
+                                                                results=results), indent=1))
+            print(f"{rep['rig']}, RTL {rep['ident'].get('rtl_rev', '?')[:12]}, {rep['f_meas_mhz']} MHz measured: "
+                  f"{'PASS' if ok else 'FAIL'}")
+            return 0 if ok else 1
+        return run_closing(backend, run_probe)
     try:
         require_dedicated_netns()
     except NetnsError as e:
         print(f"refusing to run: {e}", file=sys.stderr)
         return 2
-    tap = Tap(a.tap)
-    tap.up(f"{a.host_ip}/24")
-    sysctl(f"net/ipv4/neigh/{a.tap}/retrans_time_ms", 15000)     # this namespace only
-    sysctl(f"net/ipv4/neigh/{a.tap}/base_reachable_time_ms", 600000)
-    backend = BACKENDS[a.backend](eth.ip(a.chip_ip), clock_hz=a.clock * 1e6, quad=not a.single, sck_div=a.sck_div)
-    bridge = Bridge(tap, backend)
-    if a.selftest:
-        return selftest(a, bridge)
-    print(f"{a.tap} is {a.host_ip}; the chip is {a.chip_ip}. Ctrl-C ends it.", flush=True)
     try:
-        while True:
-            bridge.step()
-    except KeyboardInterrupt:
-        print(json.dumps(backend.report(), indent=1))
-    return 0
+        backend = make()                       # before the TAP: a refusal leaves nothing behind
+    except fabric_guard.NoActiveApp as e:
+        print(f"refusing to run: {e}", file=sys.stderr)
+        return 2
+
+    def run_bridge():
+        tap = Tap(a.tap)
+        tap.up(f"{a.host_ip}/24", mac=HOST_MAC_TEXT if fabric else None, ipv6=not fabric)
+        sysctl(f"net/ipv4/neigh/{a.tap}/retrans_time_ms", 15000)     # this namespace only
+        sysctl(f"net/ipv4/neigh/{a.tap}/base_reachable_time_ms", 600000)
+        bridge = Bridge(tap, backend)
+        if a.selftest:
+            return selftest(a, bridge)
+        print(f"{a.tap} is {a.host_ip}; the chip is {a.chip_ip}. Ctrl-C ends it.", flush=True)
+        try:
+            while True:
+                bridge.step()
+        except KeyboardInterrupt:
+            print(json.dumps(backend.report(), indent=1))
+        return 0
+    return run_closing(backend, run_bridge)
 
 
 if __name__ == "__main__":

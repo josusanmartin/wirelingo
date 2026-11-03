@@ -263,3 +263,30 @@ def test_every_dev_mem_opener_in_the_tree_is_guarded():
 def test_the_guard_itself_never_maps_anything():
     text = (HOST / "fabric_guard.py").read_text().split('"""', 2)[2]
     assert "mmap" not in text and "/dev/mem" not in text and "memoryview" not in text
+
+
+def test_require_app_with_expect_refuses_any_other_active_app(monkeypatch, kernel):
+    """A run for one clock and pin map (eth_tap's fpga backend, --measure-spim) names
+    its app: another of ours, active and well loaded, refuses too, then and later."""
+    monkeypatch.setattr(fg, "_checked", None)
+    text = table("protoemu40")
+    with pytest.raises(fg.NoActiveApp, match="active app is 'protoemu40', and this run needs 'protoemu'"):
+        fg.require_app(expect="protoemu", read=lambda: text, **kernel)
+    with pytest.raises(fg.NoActiveApp, match="loadapp protoemu`"):
+        fg.require_app(expect="protoemu")
+    assert fg.require_app(expect="protoemu40") == fg.require_app() == "protoemu40"
+    with pytest.raises(fg.NoActiveApp, match="not one of our apps"):
+        fg.require_app(expect="k26-starter-kits")
+
+
+def test_require_app_expect_still_needs_every_check(monkeypatch, kernel):
+    monkeypatch.setattr(fg, "_checked", None)
+    kernel["state"].write_text("unknown\n")
+    with pytest.raises(fg.NoActiveApp, match="'unknown'"):
+        fg.require_app(expect="protoemu40", read=lambda: table("protoemu40"), **kernel)
+    assert fg._checked is None
+
+
+def test_app_names_for_the_clocks():
+    assert fg.APP_FOR_MHZ == {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}
+    assert set(fg.APP_FOR_MHZ.values()) == set(fg.KNOWN)
