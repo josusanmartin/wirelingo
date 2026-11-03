@@ -1,0 +1,70 @@
+{
+ "archive": "wirelingo-usb-real-host-20261030.tar.gz",
+ "archive_sha256": "7d3a6160c8de411cfbfb9051285495d62f1c33a1e281cf50b2bc09b0f89d01f2",
+ "files": {
+  "fs/dmesg.txt": {
+   "original": "39339f82035938ac6d84e109da9697e8ec581a0792692e579fdbcf0d514fc98a",
+   "committed": "0feec3a75cb270a00a5f1136859205c43419415cdac7234abee9c5885e858ab6"
+  },
+  "fs/wl_steps.log": {
+   "original": "0b145c71aa031789c846413ae96981ee685e136df8f84c8b3a6d0a2083316a7d",
+   "committed": "0b145c71aa031789c846413ae96981ee685e136df8f84c8b3a6d0a2083316a7d"
+  },
+  "ls/dmesg-final.txt": {
+   "original": "d2b6e71c9cb6eedbbd6edfc3a0170d46c8f17a2bd8387df1f6ddd939d79118ef",
+   "committed": "f0c1f20e77f8c249012d048d281e654b584ce182682af56c5f4ce1649c1b559d"
+  },
+  "ls/timeline.txt": {
+   "original": "4b4f54e4a86e9de5de30ae7795f3031b921e3a1bae8e4768ed997df8c81d8fc9",
+   "committed": "4b4f54e4a86e9de5de30ae7795f3031b921e3a1bae8e4768ed997df8c81d8fc9"
+  },
+  "ls/usb_stress-first-version.py": {
+   "original": "61decf7f875c9f85b777120c82c509955f9ee23c1fba90440103093b4fc2f34b",
+   "committed": "61decf7f875c9f85b777120c82c509955f9ee23c1fba90440103093b4fc2f34b"
+  },
+  "ls/usb_stress-repo.py": {
+   "original": "dc7832e1dd4ce8b3b3a98f4ad5d33786809f959559d8684f909a8e9da38952d2",
+   "committed": "dc7832e1dd4ce8b3b3a98f4ad5d33786809f959559d8684f909a8e9da38952d2"
+  },
+  "ls/wl_steps-tail.log": {
+   "original": "75831d2cbb6282611b8c086769dc901a4cbfbef71c8009d01bf4e80a04b29f66",
+   "committed": "75831d2cbb6282611b8c086769dc901a4cbfbef71c8009d01bf4e80a04b29f66"
+  },
+  "ls/wl_steps.log": {
+   "original": "7b3a25bae8f67d71a9caa56a34eec54cc01045dc2ffe565341d4ae1ad3b75a18",
+   "committed": "7b3a25bae8f67d71a9caa56a34eec54cc01045dc2ffe565341d4ae1ad3b75a18"
+  }
+ },
+ "redactions": [
+  {
+   "file": "ls/dmesg-final.txt",
+   "line": 149,
+   "kind": "email"
+  },
+  {
+   "file": "ls/dmesg-final.txt",
+   "line": 239,
+   "kind": "email"
+  },
+  {
+   "file": "ls/dmesg-final.txt",
+   "line": 319,
+   "kind": "mac"
+  },
+  {
+   "file": "fs/dmesg.txt",
+   "line": 149,
+   "kind": "email"
+  },
+  {
+   "file": "fs/dmesg.txt",
+   "line": 240,
+   "kind": "email"
+  },
+  {
+   "file": "fs/dmesg.txt",
+   "line": 319,
+   "kind": "mac"
+  }
+ ]
+}

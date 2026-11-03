@@ -15,7 +15,14 @@ load line says "246 words"); the current 253-word one has not run here.
 
 Source: `~/wirelingo-usb-real-host-20261030.tar.gz`, 44,637 bytes, sha256
 `7d3a6160c8de411cfbfb9051285495d62f1c33a1e281cf50b2bc09b0f89d01f2`. Every file
-in it is here, at the same path, verbatim apart from the redactions below.
+in it is here, at the same path, byte for byte apart from the redactions
+below (one line in each kernel log ends in `\r\n`, and is kept so;
+`.gitattributes` stops git converting line endings under `evidence/`).
+`manifest.json` holds each file's sha256 as archived and as committed, and
+each redaction by file, line and kind (never the value removed);
+`test/model/test_evidence.py` checks the committed bytes against it and, given
+the archive (`WIRELINGO_USB_ARCHIVE`), rebuilds every file from the archive
+with the listed redactions and requires it equal to the committed one.
 
 ## Files
 
@@ -29,6 +36,7 @@ in it is here, at the same path, verbatim apart from the redactions below.
 | `ls/usb_stress-repo.py` | `usb_stress.py` as committed (`fpga/kv260/host/usb_stress.py`), run as `usb_stress_repo` |
 | `fs/wl_steps.log` | The same step log from the start of the low-speed session, continued through the full-speed session: `usb_demo.py --speed full`, `usb_stress.py 50000 100`, six more cycles |
 | `fs/dmesg.txt` | The whole kernel log after the full-speed session |
+| `manifest.json` | Not from the archive: the hashes and the redaction list the check uses |
 
 ## What these files show, and what they do not
 
