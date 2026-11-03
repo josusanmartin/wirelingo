@@ -365,7 +365,10 @@ port on the GPIO path; a second signal can't cut that short.
 The fake board's PMOD registers are only ever written 0, and its host-port select ends
 on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
 Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
-15 of 15 killed. Logs of the runs in the table: RUNLOGS.
+15 of 15 killed. The runs in the table and the mutants ran on runner1 from a clean clone
+of `07fef6e`, whose code is the same as this commit's (logs: `selftest-50.log`,
+`selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
+`runner1:~/protoemu-flow/agent-runs/fabric-ping/logs/07fef6e`); the fake board is a test.
 
 With a real cable none of this applies and the bridge isn't needed: Linux on the other
 end of the cable is the test.
