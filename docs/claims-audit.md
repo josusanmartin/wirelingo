@@ -1,5 +1,10 @@
 # Claims audit (2026-10-14)
 
+*Historical record: it describes the repository as it was on 2026-10-14 and
+is not kept up to date. Later state is in [rules-check.md](rules-check.md)
+(2026-11-03) and the docs it points to; where a recommendation below has
+since been acted on, it says so.*
+
 An adversarial read of what the documentation claims against what the
 repository's evidence shows, as a skeptical judge would do it. Base: `main`
 at `0c459b9`. Physical candidate: run fo6, tags `rc-d916d40-fo6` and
@@ -148,8 +153,10 @@ Severities:
   * re-run `flow/release_evidence.py` on the shipping commit (about an hour
     on runner1);
   * or name `f1cb7c9` as the certified software.
-* **F. Post-freeze protocols at gate level.** `test_post_freeze` (16 tests)
-  has never run on a netlist. Adding it to a release receipt would let the
+* **F. Post-freeze protocols at gate level.** (Done later the same day:
+  functional 16/16 and SDF typical 16/16 on fo6's netlist, as supplementary
+  receipts outside the release gate; [release-evidence.md](release-evidence.md).)
+  `test_post_freeze` (16 tests) had never run on a netlist. Adding it to a release receipt would let the
   README drop its "RTL only" caveat.
 * **G. methodology.md, "What this caught".** The FPGA catching the assembler's
   truncating `/` (#42) is a good example of an independent check. It could
