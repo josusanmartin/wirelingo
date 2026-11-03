@@ -32,6 +32,21 @@ describes how, and what it caught.
 | **Signed-off layout (run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
 | **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
 
+**Failures we found in our own work, and a test we did not prepare for:**
+
+* [docs/fault-testing.md](docs/fault-testing.md): seeded wire faults (glitches,
+  stuck lines, truncation, bit flips, stretch, jitter) against six firmware on
+  the cycle model found six real failures in `uart_rx`, `i2c_master`, `can_rx`
+  and `usb_enum`, among them a glitch taken for a start bit, an ACK read from a
+  stuck SDA and a missed bus reset inside a token. Four are fixed (model and
+  RTL simulation only; not yet at gate level or on the FPGA); two are left,
+  with the reason.
+* [docs/blind-test.md](docs/blind-test.md): a fresh agent given two protocols
+  drawn by a rule (HD44780 4-bit and ATA PIO), with the chip and tools frozen.
+  HD44780 fits in 99 words; ATA PIO does not fit as specified, and an 8-bit
+  subset does. Model and RTL simulation only; the draw's list was written by
+  an agent and its fixing in advance cannot be proved.
+
 **Where it stands:**
 
 * **Real USB host (2026-10-30):** on the KV260, Linux enumerated and configured
@@ -207,6 +222,12 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 | `mdio_master` + `mdio_phy` (bench, 2 cores) | **MDIO** (IEEE 802.3 Clause 22): read and write frames, 32-bit preamble, MDIO released and handed back at the turnaround; a PHY stand-in with 32 registers in a jump table, 3 of them live ([docs/bench-firmware.md](docs/bench-firmware.md)) | MDC exactly 400 ns at 50 MHz, no margin to the minimum; the stand-in needs more than 40 ns of STA hold (802.3: 10) and MDC >= 360 ns, and an abandoned frame costs the next one; not a PHY, no line side | RTL (no bus contention, both firmwares on one wire); model: PHY delay 0-340 ns, 200 random frames; sigrok `mdio` |
 | `i2c_device` + `pe.qsfpdev` (bench) | **QSFP-style stand-in**, not a compliant module: an SFF-8636-style map with page select: identifier, vendor name, temperature, supply, thresholds, check codes ([docs/bench-firmware.md](docs/bench-firmware.md)) | listed fields only, the rest read 0; no module pins; SCL held for the host's latency + 23 clocks | RTL through the SPI port; model: roll-over, unsupported pages, 500 us hold limit; sigrok `i2c` |
 | `smbus_host` + `pe.pmbus` (bench) | **PMBus** reads with PEC: temperature and voltage, LINEAR11 and LINEAR16 decoded exactly; a value that fails its PEC is refused ([docs/bench-firmware.md](docs/bench-firmware.md)) | reads only; no PAGE, no DIRECT format | RTL; model: all 24 single-bit flips rejected, all 65536 LINEAR11 words; sigrok `i2c` + PEC |
+
+Under injected wire faults six of these programs were swept on the model, and
+six failures were found and four fixed ([docs/fault-testing.md](docs/fault-testing.md)).
+Two protocols added by an agent not prepared for them, `hd44780_4bit` and
+`ata_pio`, are in [docs/blind-test.md](docs/blind-test.md) (model and RTL
+simulation).
 
 10BASE-T RX (`eth10_rx`, with the line unit) decodes frames from an external
 sender with 802.3's ±13.5 ns of edge jitter at 50 MHz and ±200 ppm, including
