@@ -330,6 +330,12 @@ make -C formal                                                   # proofs
   clock-gate and SRAM input and every output is proved, by ABC and by yosys,
   with the PDK cell models (checked against Liberty). Planted netlist bugs are
   caught. It is a functional, zero-delay check; timing is STA's.
+* The SRAM power and PDN plumbing comes from PRISM
+  ([kdp1965/ihp-um-janestreet-prism](https://github.com/kdp1965/ihp-um-janestreet-prism),
+  Apache-2.0), another entry in this competition: `src/pdn_cfg.tcl`,
+  `flow/odb_stripes.py` and `flow/odb_sram_diodes.py` are copied from it, and
+  `librelane_plugin_protoemu.py` and the SRAM settings in `flow/gen_config.py`
+  are adapted from it, as each file's header says.
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 64 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
   the current RTL routable ([docs/physical.md](docs/physical.md)).
