@@ -1388,6 +1388,25 @@ transfer, nor with `usb_enum`, which answers without the software's delay. The
 cause is not proved: nothing here sees the bus between the xHCI controller, the
 hub's transaction translator and the device.
 
+What the model says (2026-11-03, evidence model only). The Linux sequence
+usbmon recorded in a stalled run (device descriptor read with a 64-byte
+buffer, ended by the first 8-byte packet; port reset; SET_ADDRESS; device
+descriptor; configuration 9 and 18 bytes, 95 and 27 us apart;
+SET_CONFIGURATION 569 us later), against `pe.usbfsdata` running over a
+modelled SPI port concurrently with the bus at 20 to 100 us per transaction,
+with pauses of 0.2 to 2 ms in the service loop: SET_CONFIGURATION's status
+stage was answered with one zero-length DATA1 in all 160 enumerations with
+the software before the fixes above and all 160 after. (At 200 us per
+transaction, 6 of 40 failed earlier, at SET_ADDRESS: the model's host sent it
+0.1 to 3 ms after the port reset, before software that slow had restarted
+the core; Linux took 64 ms there.) The races fixed above leave
+words or F_STAGED behind only when the software stages for a transfer the
+host has left; in the stalled runs the software saw one SET_CONFIGURATION
+and re-staged nothing, so none of them was in play there. The model's host
+always sends the status IN; the board's core saw no IN at all, which the
+model cannot produce. The device software is not ruled out by this, but it
+has no known path to the stall.
+
 ### Build and staging (2026-10-07, branch `kv260-usb`)
 
 On `main` since 2026-10-13, with the USB bus-reset fix (usb_enum waits for
