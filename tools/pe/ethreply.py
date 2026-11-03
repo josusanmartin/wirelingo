@@ -28,12 +28,13 @@ IFG_BITS = 96
 QUIET_BITS = 40                       # after the last chunk: the ~35 bit times of our own frame left, + 5
 # The window's wait counts IFG_TICKS = 96 bit times - WINDOW_TRIM; the trim is the
 # rest of the path from the far end's last edge to our first: 5 instruction ticks
-# outside the count (the `ifg` deadline in the firmware), 2 clocks from `out line` to
-# the TD pad and the pad synchronizer's 2-clock minimum. So the first edge comes 0 to
-# 1 clock after the 96 bit times (docs/eth10-reaction.md).
-WINDOW_TRIM = 9
+# outside the count (the `ifg` deadline in the firmware), 1 clock from the cycle
+# `out line` completes in to the clock edge that changes TD, and the pad
+# synchronizer's 2-clock minimum. So the first edge comes 0 to 1 clock after the 96
+# bit times (docs/eth10-reaction.md).
+WINDOW_TRIM = 8
 PATH_TICKS = 5                        # the ifg deadline minus IFG_TICKS
-OUT_CLOCKS = 2                        # `out line` completing to the TD pad
+OUT_CLOCKS = 1                        # `out line` completing (its cycle's clock edge) to TD changing
 SYNC_CLOCKS = (2, 3)                  # a pad edge to the cycle a core sees it: [2, 3) clocks
 
 

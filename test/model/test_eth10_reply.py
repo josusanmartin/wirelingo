@@ -10,7 +10,10 @@ SFD, a TP_IDL of 250-350 ns and never both TD pads high; zlib checks the FCS.
 
 The reply's start is measured from the far end's last edge at the pad (the end of
 its TP_IDL), against 96 bit times: N = first TD edge - last RXP edge - 9600 ns, in
-clocks. The bound N in [0, 1) is derived from the firmware by pe.timing (the `ifg`
+clocks. The Wire stamps a TD change with the end of the model cycle that made it,
+one clock after the clock edge at which the pads change (the Wire samples RXP at
+that edge); TD times here are moved back by that clock (WIRE_STAMP), and
+test_eth_reply_rtl.py, which reads the RTL's pads, agrees. The bound N in [0, 1) is derived from the firmware by pe.timing (the `ifg`
 deadline, exact) plus the chip's fixed latencies, and each piece is checked on its
 own per reply. Run with -s for the numbers the doc quotes."""
 import math
@@ -50,6 +53,7 @@ def on_wire_ns(raw):
 
 
 REPLY_NS = on_wire_ns(bytes(64))
+WIRE_STAMP = 1          # clocks: pe.ethsim.Wire's TD times are this late (see the docstring)
 
 
 def bounds(clock_hz):
@@ -103,6 +107,10 @@ class Bench:
     def replies(self):
         return [b for b in self.wire.bursts if not b.pulse]
 
+    def td(self, t):
+        """A Wire TD time moved to the clock edge where the pad changes."""
+        return t - WIRE_STAMP * self.clk
+
     def frames(self):
         """Every reply decoded twice, checked as test_eth_stack checks the stack's frames."""
         return stack.wire_frames(self.wire)
@@ -128,16 +136,18 @@ class Bench:
         reps = self.replies()
         assert len(firsts) == len(reps)
         for b, cf in zip(reps, firsts):
-            prior = self.last_rx_edge(b.t0)
+            t0 = self.td(b.t0)
+            prior = self.last_rx_edge(t0)
             cl = max(c for c in lows if c < cf)
-            out.append(((b.t0 - prior - IFG) / self.clk, (cl * self.clk - prior) / self.clk, cf - cl,
-                        (b.t0 - cf * self.clk) / self.clk))
+            out.append(((t0 - prior - IFG) / self.clk, (cl * self.clk - prior) / self.clk, cf - cl,
+                        (t0 - cf * self.clk) / self.clk))
         return out
 
 
 def overlap(bench):
     """Our frames that share air time with a far-end frame (a collision)."""
-    return [b for b in bench.replies() if any(b.t0 < e and s < b.t1 for s, e in bench.wire.sent)]
+    return [b for b in bench.replies()
+            if any(bench.td(b.t0) < e and s < bench.td(b.t1) for s, e in bench.wire.sent)]
 
 
 def assert_timing(bench, label="", first_only=False):
@@ -256,10 +266,11 @@ def test_match_then_reply_timing(clock):
     check_train(b, exp)
     ns = assert_timing(b)
     # the same from the end of the far end's last bit: its 300 ns TP_IDL comes first
-    raw = [r.t0 - (b.last_rx_edge(r.t0) - ethsim.TP_IDL_NS) for r in b.replies()]
+    raw = [b.td(r.t0) - (b.last_rx_edge(b.td(r.t0)) - ethsim.TP_IDL_NS) for r in b.replies()]
     print(f"\n{clock / 1e6:.0f} MHz, {len(ns)} replies: N = {min(ns):.3f}-{max(ns):.3f} clocks after 96 bit "
           f"times from the far end's last edge; last bit's end to our first edge {min(raw):.1f}-{max(raw):.1f} ns")
     assert all(ethsim.TP_IDL_NS + IFG <= x < ethsim.TP_IDL_NS + IFG + b.clk for x in raw)
+    assert max(ns) - min(ns) > 0.8                 # the sampling phases were covered
     # the checker's intervals against the same run (pe.timing.measure)
     chk, res = timing.check_source(ethreply.FW.read_text(), ethreply.defines(clock))
     for r in res:
@@ -330,7 +341,7 @@ def test_back_to_back_frames_are_all_heard(clock, fields):
     n = sum(m is not None for m in exp)
     b.run_to(end + n * (REPLY_NS + 2 * IFG) + 5000)
     sent = b.wire.sent
-    # a frame's first edge is half a bit into its first cell (a 1 is low, then high)
+    # a far-end frame's first edge is half a bit into its first cell (a 1 is low, then high)
     assert all(abs(y[0] - 50 - (x[1] - ethsim.TP_IDL_NS) - IFG) < 1e-6 for x, y in zip(sent, sent[1:]))
     reps = b.replies()
     assert len(reps) == n
@@ -346,7 +357,7 @@ def test_back_to_back_frames_are_all_heard(clock, fields):
         assert all(g == OWN_GAP_NS[clock] for g in gaps), gaps
 
 
-OWN_GAP_NS = {50e6: 10120.0, 40e6: 10150.0}
+OWN_GAP_NS = {50e6: 10140.0, 40e6: 10175.0}
 
 
 @pytest.mark.parametrize("clock", CLOCKS)
@@ -381,7 +392,7 @@ def solo_reply_start(clock):
     raw = far_frame(2000)
     b.send(raw, at_ns=10000.0)
     b.run_to(10000.0 + on_wire_ns(raw) + IFG + REPLY_NS + 3000)
-    return b.replies()[0].t0, raw
+    return b.td(b.replies()[0].t0), raw
 
 
 def first_edge_at(bench, raw, t_edge, **kw):
@@ -415,7 +426,7 @@ def test_blind_window(clock):
     for lead in range(60, 200, 5):
         b = blind_run(clock, t0, lead)
         first = b.replies()[0]
-        if abs(first.t0 - t0) < 1:
+        if abs(b.td(first.t0) - t0) < 1e-6:
             hit.append(lead)
             assert overlap(b)
             assert b.records() == [2000, 4000], (lead, b.records())    # 3000 collided: not heard
@@ -432,7 +443,7 @@ def test_blind_window(clock):
     assert (blind, first_heard) == BLIND_NS[clock]
 
 
-BLIND_NS = {50e6: (115, 120), 40e6: (145, 150)}     # 6 clocks: synchronizer 2, jmp t, out line, line unit 2
+BLIND_NS = {50e6: (95, 100), 40e6: (120, 125)}      # 5 clocks: synchronizer 2, jmp t, out line, line unit 1
 
 
 @pytest.mark.parametrize("clock", CLOCKS)
@@ -469,7 +480,7 @@ def test_frame_just_after_our_reply(clock):
         b.send(far_frame(2000), at_ns=10000.0)
         first_edge_at(b, far_frame(3000, seed=2), t_end + off)
         b.run_to(t_end + off + 3 * REPLY_NS + 3 * IFG)
-        assert abs(b.replies()[0].t1 - t_end) < 1e-6
+        assert abs(b.td(b.replies()[0].t1) - t_end) < 1e-6
         got = 3000 in b.records()
         (heard if got else dropped).append(off)
         assert len(b.replies()) == 1 + got and b.frames() == [ethreply.reply_frame()] * (1 + got)
@@ -479,4 +490,4 @@ def test_frame_just_after_our_reply(clock):
     assert (max(dropped), min(heard)) == CUTOFF_NS[clock]
 
 
-CUTOFF_NS = {50e6: (460, 465), 40e6: (475, 480)}
+CUTOFF_NS = {50e6: (480, 485), 40e6: (500, 505)}

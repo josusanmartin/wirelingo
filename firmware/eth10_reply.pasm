@@ -14,13 +14,16 @@
 ;
 ; The line unit: LINECFG = EN | CODE 2 | DIFF | END 2 | END_BITS 3 | RX_EN, TXP = TD+
 ; (uo0, TD- = uo1), RXP = ui0; LINEDIV RX = clocks per bit, TX = half a bit (2.5
-; clocks at 50 MHz, 2 at 40). CLKDIV 1. IFG_TICKS = 96 bit times in clocks, QUIET_TICKS
-; the wait after our own frame (below). Pins: HIT (uo2) is high from the field's last
-; bit to the end of the matching frame.
+; clocks at 50 MHz, 2 at 40). CLKDIV 1. IFG_TICKS = 96 bit times in clocks less the
+; path around the wait (pe.ethreply.WINDOW_TRIM), QUIET_TICKS the wait after our own
+; frame (below). Pins: HIT (uo2) is high from the field's last bit to the end of the
+; matching frame (after its TP_IDL when a reply is owed).
 ;
 ; Carrier while a reply is owed: the window starts once RXP is low, so the far end's
 ; TP_IDL ends before it, and any transition in it is a frame (or a link pulse)
-; starting: the core goes to hear it, and a frame's end starts the wait again. A frame that arrives while the reply is going out (a collision:
+; starting: the core goes to hear it, and a frame's end starts the wait again.
+;
+; A frame that arrives while the reply is going out (a collision:
 ; nothing here detects it, jams or retries) is not heard: after its last chunk the core
 ; waits until RXP has been quiet for QUIET_TICKS, so it never starts hunting in the
 ; middle of a frame, and the line unit's 32 stale bits of that frame end in a frame end

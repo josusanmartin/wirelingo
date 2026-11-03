@@ -147,7 +147,7 @@ async def test_reply_rtl_50mhz(dut):
 async def test_back_to_back_rtl_40mhz(dut):
     """Two matching frames at the 802.3 minimum gap and a third that doesn't match:
     the core hears all three and answers twice after them, our two replies 96 bit
-    times apart and more (the model's 10150 ns from TP_IDL's end)."""
+    times apart and more (the model's 10175 ns from TP_IDL's end)."""
     clk = 25.0
     spi = await load(dut, clk)
     td, hit = TdLog(dut), Hit(dut)
@@ -160,7 +160,7 @@ async def test_back_to_back_rtl_40mhz(dut):
     n = (a.t0 - spans[-1][1] - IFG) / clk
     dut._log.info("N = %.2f clocks; our gap %.0f ns", n, b.t0 - a.t1)
     assert 0.5 <= n < 1.5, n
-    assert b.t0 - a.t1 == 10150.0
+    assert b.t0 - a.t1 == 10175.0
     assert len(hit.rises) == 2
     assert await records(spi, 3) == [2000, 3000, 0]
     td.check_flips()
