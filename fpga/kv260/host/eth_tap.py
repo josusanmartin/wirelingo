@@ -306,9 +306,9 @@ class FpgaBackend(Backend):
 
     def report(self):
         rig = self.fab.rig
-        return dict(rig="cycle model" if rig.model else "KV260", ident=rig.ident,
-                    f_meas_mhz=round(rig.f_meas / 1e6, 5), stats=self.stats, station=self.station.stats,
-                    last=self.log)
+        return dict(rig="cycle model" if rig.model else "KV260", ident=rig.ident, clock_mhz=rig.f_clk / 1e6,
+                    f_meas_mhz=None if rig.model else round(rig.f_meas / 1e6, 5), stats=self.stats,
+                    station=self.station.stats, last=self.log)
 
     def close(self):
         self.fab.close()
@@ -685,14 +685,16 @@ def main(argv=None):
             return 2
 
         def run_probe():
-            ok, results = probe(backend, a.chip_ip, a.host_ip)
             rep = backend.report()
+            meas = f", {rep['f_meas_mhz']} MHz measured" if rep["f_meas_mhz"] else ""
+            print(f"{rep['rig']} at {rep['clock_mhz']:g} MHz{meas}, RTL revision {rep['ident'].get('rtl_rev', '?')[:12]}, "
+                  f"built {rep['ident'].get('build_utc', '?')}", flush=True)
+            ok, results = probe(backend, a.chip_ip, a.host_ip)
             if a.save:
                 pathlib.Path(a.save).write_text(json.dumps(dict(rig=rep["rig"], ident=rep["ident"],
                                                                 f_meas_mhz=rep["f_meas_mhz"], clock_mhz=a.clock,
                                                                 results=results), indent=1))
-            print(f"{rep['rig']}, RTL {rep['ident'].get('rtl_rev', '?')[:12]}, {rep['f_meas_mhz']} MHz measured: "
-                  f"{'PASS' if ok else 'FAIL'}")
+            print("probe PASS" if ok else "probe FAIL")
             return 0 if ok else 1
         return run_closing(backend, run_probe)
     try:
