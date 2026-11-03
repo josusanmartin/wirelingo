@@ -149,6 +149,9 @@ def test_mutation_infrastructure_is_not_a_kill(tmp_path):
     (tmp_path / "m.xml").write_text('<testsuites><testsuite><testcase name="old"><failure/></testcase></testsuite></testsuites>')
     assert module.result(tmp_path, "false").startswith("INFRASTRUCTURE")
     assert not (tmp_path / "m.xml").exists()
+    assert "eth-no-fcs-check" in module.select(["eth-*"]) and module.select(["model-alu-borrow"]) == ["model-alu-borrow"]
+    with pytest.raises(SystemExit, match="no mutant matches"):      # not "all of them"
+        module.select(["eth-*", "eth-mistyped"])
 
 
 @pytest.mark.parametrize("fault", [None, "slow-setup", "typ-setup", "fast-hold", "drc", "lvs",

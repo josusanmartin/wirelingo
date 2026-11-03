@@ -129,6 +129,14 @@ MUTANTS = {
                                "if ihl < 20 or total < ihl or checksum(p[:ihl]):", ETH("station_rejects")),
     "eth-rejects-dribble-bits": ("tools/pe/eth.py", "    if start is None:\n", "    if start is None or (count - start) & 7:\n",
                                  ETH("core_behind_at_a_frames_end")),
+    "eth-spim-select-not-nested": ("fpga/kv260/host/eth_tap.py",
+                                   "            if sel is not None:\n                spim.enable_quad(False)\n        finally:\n",
+                                   "            if sel is not None:\n                spim.enable_quad(False)\n        except ZeroDivisionError:\n            pass\n        else:\n",
+                                   ETH("stuck_master")),
+    "eth-spim-no-sighup": ("fpga/kv260/host/eth_tap.py", "signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)",
+                           "signals = (signal.SIGINT, signal.SIGTERM)", ETH("measure_spim_signal")),
+    "eth-spim-second-signal": ("fpga/kv260/host/eth_tap.py", "        live[0] = False            # from here on a signal raises nothing\n",
+                               "        live[0] = True\n", ETH("second_signal")),
     "eth-echoes-padding": ("tools/pe/eth.py", "return p[12:16], p[16:20], p[9], p[ihl:total], p[8]",
                            "return p[12:16], p[16:20], p[9], p[ihl:], p[8]", ETH("station_answers")),
     "eth-blind-fifo-read": ("tools/pe/ethhost.py", "        n = (st >> 4) & 15\n", "        n = 8\n", ETH("arp_then_ping")),
@@ -216,6 +224,17 @@ def run(name, scratch, baselines, candidate, files):
     return f"{'SURVIVED' if status == 'pass' else status} ({time.time() - t:.0f} s)"
 
 
+def select(patterns):
+    """Mutant names for shell-style patterns; a pattern that matches none is an error."""
+    names = []
+    for pattern in patterns:
+        hit = fnmatch.filter(MUTANTS, pattern)
+        if not hit:
+            sys.exit(f"no mutant matches {pattern!r}")
+        names += hit
+    return names
+
+
 def main(names):
     scratch = tempfile.mkdtemp(prefix="protoemu-mutants-")
     bad = 0
@@ -230,4 +249,4 @@ def main(names):
 
 
 if __name__ == "__main__":
-    main([n for pattern in sys.argv[1:] for n in fnmatch.filter(MUTANTS, pattern)])
+    main(select(sys.argv[1:]))

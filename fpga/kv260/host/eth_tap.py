@@ -26,6 +26,7 @@ import os
 import pathlib
 import re
 import select
+import signal
 import socket
 import struct
 import subprocess
@@ -235,20 +236,50 @@ def measure_spim(spim, passes=2000):
     return (time.monotonic() - t) / passes * 1e6
 
 
+class SessionSignal(Exception):
+    """A signal ended the session, which then gave the port back."""
+
+    def __init__(self, signum):
+        super().__init__(f"signal {signum}")
+        self.signum = signum
+
+
 def measure_spim_session(spim, passes=2000):
-    """measure_spim with the host port borrowed and given back. It moves the host
-    pins to the fabric master and sets QUAD_EN, as the measurement needs. The
-    select goes back to what it was; QUAD_EN goes to 0, its reset value, because
-    the register is write-only and can't be read first."""
-    sel = spim.mem.rd(pe_spim.SEL)
-    spim.select(fabric=True)
+    """measure_spim with the host port borrowed and given back, on a board nobody may
+    be able to reach. It moves the host pins to the fabric master and sets QUAD_EN, as
+    the measurement needs. The select goes back to what it was, and QUAD_EN to 0, its
+    reset value, because the register is write-only and can't be read first.
+
+    That happens on a normal end, on any exception, on SIGINT, SIGTERM (`timeout`) and
+    SIGHUP (a dropped ssh session), which raise SessionSignal once the port is back. The
+    first signal raises; any after it are ignored, so one can't cut the restore short.
+    With the master stuck busy QUAD_EN can't be cleared: the select is still written,
+    and the error says so. SIGKILL can't be caught."""
+    live = [True]
+
+    def stop(signum, frame):
+        if live[0]:
+            live[0] = False
+            raise SessionSignal(signum)
+
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    old = [signal.signal(n, stop) for n in signals]
+    sel = None
     try:
+        sel = spim.mem.rd(pe_spim.SEL)
+        spim.select(fabric=True)
         spim.enable_quad()
         return measure_spim(spim, passes)
     finally:
-        spim.enable_quad(False)
-        spim.wait_idle()
-        spim.mem.wr(pe_spim.SEL, sel)
+        live[0] = False            # from here on a signal raises nothing
+        try:
+            if sel is not None:
+                spim.enable_quad(False)
+        finally:
+            if sel is not None:
+                spim.mem.wr(pe_spim.SEL, sel)
+            for n, handler in zip(signals, old):
+                signal.signal(n, handler)
 
 
 def sysctl(path, value):
@@ -355,7 +386,14 @@ def main(argv=None):
                          "Borrows the host port and gives it back; core 0 should be idle")
     a = ap.parse_args(argv)
     if a.measure_spim:
-        print(f"{measure_spim_session(pe_spim.Spim(div=1)):.1f} us per pass; docs/eth10-network.md has the budget")
+        try:
+            print(f"{measure_spim_session(pe_spim.Spim(div=1)):.1f} us per pass; docs/eth10-network.md has the budget")
+        except SessionSignal as e:
+            print(f"stopped by {e}; host port given back", file=sys.stderr)
+            return 128 + e.signum
+        except RuntimeError as e:
+            print(f"{e}; pin select restored, but QUAD_EN may still be set", file=sys.stderr)
+            return 1
         return 0
     if a.backend is None:
         ap.error("say which chip: --model")
