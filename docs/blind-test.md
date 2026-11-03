@@ -197,7 +197,7 @@ The first and last two are labelled in the far-end sources too.
   both firmwares' bounds are checked against model measurements.
 * **Mutants**: `test/blind_mutants.py`, 34 firmware bugs, 34 killed after a passing
   baseline. They run on the model tests, not on RTL. The list includes the
-  verifier's three survivors and one more per the same gaps.
+  verifier's three survivors, the Status poll at both its sites, and early IORDY.
 * **Far-end teeth**: tests that a too-fast host is rejected, that an unpolled
   write is caught, and that a device outside the 400 ns window does fool the
   poll, so that test can fail.
