@@ -210,8 +210,8 @@ class _Host(ModelHost):
         assert (self.chip.ncores, self.chip.nbanks, self.chip.bank_words, self.chip.fifo_depth) == (2, 2, 256, 8)
         self.apply(usbenum.load_writes(self.usb, "low", start=False))
         self.apply(host.load_program(1, self.uart, 256, in_pins=RX, clkdiv=DIV, profile=TAPEOUT))
-        assert self.chip.enable == 0 and len(self.usb.words) == 246 and len(self.uart.words) == 19
-        assert [self.chip.fetch(i) for i in range(246)] == self.usb.words
+        assert self.chip.enable == 0 and len(self.usb.words) == 253 and len(self.uart.words) == 19
+        assert [self.chip.fetch(i) for i in range(253)] == self.usb.words
         assert [self.chip.fetch(256+i) for i in range(19)] == self.uart.relocate(256)
         self.cold_writes = len([o for o in self.operations if o["kind"] == "write"])
 

@@ -186,7 +186,9 @@ def test_i2c_master_no_stretch_assumption_needs_clkdiv_3():
     ms = timing.measure(chk, r.deadline, i2c_run(2, 0, stretch_p=0))
     broken = [m for m in ms if m.violations]
     assert broken and all("stall 1 > assumed 0" in m.violations[0] for m in broken)
-    assert {m.ticks for m in broken} == {5}       # in a byte: 4 ticks + the late read-back
+    # in a byte: 4 ticks + the late read-back; START: 6 + 1 (since fault-fixes its
+    # `ldi r3` comes before the SCL release, so the WAIT follows the release directly)
+    assert {m.ticks for m in broken} == {5, 7}
     assert all(m.violations or r.contains(m.ticks, m.clocks) for m in ms)
 
 
@@ -330,6 +332,11 @@ def enum_session(seed, jitter, ppm, lost_ack_in=False):
     return mh, tr, h
 
 
+def enum_j_offset(tr, start):
+    """Clocks from `start` to the first cycle the core sees J (DM, pin 1, high)."""
+    return next(cyc for cyc, _, pins, _ in tr.cycles if cyc >= start and (pins >> 1) & 1) - start
+
+
 def test_usb_enum_sound_and_pad_turnaround():
     chk, results = check_enum()
     st = {r.deadline.name: r for r in results}
@@ -345,7 +352,11 @@ def test_usb_enum_sound_and_pad_turnaround():
             for (_, m, r), (_, ns) in zip(ms, h.fs.turnarounds):
                 clk = ns / h.fs.tclk
                 lo, hi = r.total()
-                assert lo <= clk <= hi and 3 <= clk - m.clocks <= 4, (r.deadline.name, clk, m.clocks)
+                # the deadlines count from the frame end; the J the host's
+                # turnaround counts from is visible to the core 2..6 ticks later
+                j = enum_j_offset(tr, m.start_cycle)
+                assert 2 <= j <= 6, (r.deadline.name, j)
+                assert lo <= clk <= hi and 3 <= clk - (m.clocks - j) <= 4, (r.deadline.name, clk, m.clocks, j)
                 if clk > 26:
                     late.append(round(clk, 2))
             if lost:                           # the forced IN: the last response

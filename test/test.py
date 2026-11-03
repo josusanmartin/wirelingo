@@ -272,6 +272,50 @@ async def test_uart_rx(dut):
     assert (await spi.read(sim.A_FSET))[0] & 1 == 0, "unexpected framing error flag"
 
 
+@cocotb.test()
+async def test_uart_rx_glitch(dut):
+    """uart_rx rechecks the start bit at mid-bit (docs/fault-testing.md, finding
+    1): low pulses of 1 and 3 ticks on the idle line are no frame; a pulse of 5
+    ticks is low at mid-bit, a start bit, and gives 0xFF; a byte sent 2 ticks
+    after a rejected pulse is received. F0 stays clear throughout."""
+    spi = await setup(dut)
+    RX = UI(0)
+    prog = load_fw("uart_rx", RX=RX)
+    div = 3
+    cpb = 8 * div
+    await run_program(spi, core(1), prog, in_pins=RX, clkdiv=div << 8)
+    spi.set_low_inputs(1)
+    await ClockCycles(dut.clk, 50)
+
+    async def pulse(ticks):
+        spi.set_low_inputs(0)
+        await ClockCycles(dut.clk, ticks * div)
+        spi.set_low_inputs(1)
+
+    async def send(byte):
+        for bit in [0] + [(byte >> i) & 1 for i in range(8)] + [1]:
+            spi.set_low_inputs(bit)
+            await ClockCycles(dut.clk, cpb)
+
+    async def drain():
+        st = (await spi.read(sim.core_reg(core(1), sim.C_STATUS)))[0]
+        n = (st >> 4) & 15
+        return await spi.read(sim.core_reg(core(1), sim.C_FIFO), n, fixed=True) if n else []
+
+    got = {}
+    for ticks in (1, 3, 5):
+        await pulse(ticks)
+        await ClockCycles(dut.clk, 12 * cpb)
+        got[ticks] = await drain()
+    await pulse(3)
+    await ClockCycles(dut.clk, 2 * div)
+    await send(0x5A)
+    await ClockCycles(dut.clk, 3 * cpb)
+    got["byte"] = await drain()
+    assert got == {1: [], 3: [], 5: [0xFF], "byte": [0x5A]}, got
+    assert (await spi.read(sim.A_FSET))[0] & 1 == 0, "unexpected framing error flag"
+
+
 class SpiSlave:
     """Mode-0 SPI slave on the uio pins: samples MOSI on SCK rise, shifts MISO on fall."""
 
@@ -563,6 +607,63 @@ async def test_i2c_master(dut):
     assert r[0] & 1 == 1
     assert (await spi.read(sim.A_FSET))[0] & 2 == 0, "clock-stretch timeout flag set"
     dut._log.info("i2c log: " + " ".join(eeprom.log))
+
+
+@cocotb.test()
+async def test_i2c_master_bus_fault(dut):
+    """i2c_master reads SDA back where it releases it (docs/fault-testing.md,
+    finding 2). With the EEPROM on the bus: a write and a read work and leave
+    F1 clear, every reply exact. Then SDA is held low from outside: START finds
+    it low (F1), the address byte reads back wrong (reply 0x200), STOP cannot
+    raise it. Released, F1 cleared, the next transfer works."""
+    spi = await setup(dut)
+    SDA, SCL = UIO(0), UIO(1)
+    prog = load_fw("i2c_master", SDA=SDA, SCL=SCL)
+    if not need_words(len(prog.words)):
+        dut._log.warning(f"i2c_master needs {len(prog.words)} words; skipped with BANK_AW={BANK_AW}")
+        return
+    dut.pull_up.value = 0b11
+    await spi.write(sim.A_POUT, [0b11])
+    await spi.write(sim.A_OD, [0b11])
+    await spi.apply(host.pin_owner_writes({SDA: core(3), SCL: core(3)}))
+    bus = OdBus([SDA, SCL])                   # the EEPROM and a stuck-SDA driver, wired-AND
+    eeprom = BusEeprom(dut, bus, SDA, SCL)
+    await run_program(spi, core(3), prog, out_pins=(SDA, 1), in_pins=SDA, clkdiv=4 << 8)
+    START, STOP = 2, 3
+    WR = lambda b: b << 24
+    fifo = sim.core_reg(core(3), sim.C_FIFO)
+
+    async def xfer(words, n):
+        for w in words:
+            await spi.write(fifo, [w], fixed=True)
+        out = []
+        for _ in range(400):
+            st = (await spi.read(sim.core_reg(core(3), sim.C_STATUS)))[0]
+            k = (st >> 4) & 15
+            if k:
+                out += await spi.read(fifo, k, fixed=True)
+            if len(out) >= n and st & 15 == 0:
+                break
+            await ClockCycles(dut.clk, 100)
+        await ClockCycles(dut.clk, 400)
+        return out
+
+    async def f1():
+        return (await spi.read(sim.A_FSET))[0] >> 1 & 1
+
+    got = {"write": await xfer([START, WR(0xA0), WR(0x20), WR(0x5C), STOP], 3)}
+    got["read"] = await xfer([START, WR(0xA0), WR(0x20), START, WR(0xA1), 1 | 4, STOP], 4)
+    got["f1 clean"] = await f1()
+    bus.set("stuck", 1 << SDA)               # SDA held low by the bus
+    got["stuck"] = await xfer([START, WR(0xA0), STOP], 1)
+    got["f1 stuck"] = await f1()
+    bus.set("stuck", 0)
+    await spi.write(sim.A_FCLR, [2])
+    got["after"] = await xfer([START, WR(0xA0), WR(0x20), START, WR(0xA1), 1 | 4, STOP], 4)
+    got["f1 after"] = await f1()
+    dut._log.info("i2c log: " + " ".join(eeprom.log))
+    assert got == {"write": [0, 0, 0], "read": [0, 0, 0, 0x5C], "f1 clean": 0,
+                   "stuck": [0x200], "f1 stuck": 1, "after": [0, 0, 0, 0x5C], "f1 after": 0}, got
 
 
 # ------------------------------------------------------------------ reverse engineering

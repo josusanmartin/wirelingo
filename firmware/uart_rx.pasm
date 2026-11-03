@@ -9,6 +9,9 @@
 ; D+76. The byte is pushed during the stop bit, so a good stop bit returns to
 ; the start-bit WAIT at D+77. In the selected +3 % true-baud regression it
 ; can rearm 9 clocks after the next physical START (docs/uart-rx-timing.md).
+; The start bit is read again at D+4, its middle: a low pulse that is over by
+; then is a glitch, not a frame, and the receiver goes back to the WAIT with
+; nothing pushed and no flag (docs/fault-testing.md, finding 1).
 ; The WAIT is on the level, not the edge: arriving just after
 ; a start edge, an edge WAIT would miss it (its first attempt only samples).
 .program uart_rx
@@ -16,8 +19,9 @@
     wait 1 pin RX                   ; once: the line idles high (a virtual pin starts low)
 .wrap_target
 start:
-    wait 0 pin RX                   ; start bit: D
-    ldi r0, 7                  [10] ; D+1..11
+    wait 0 pin RX              [3]  ; start bit: D, D+1..3
+    jmp pin RX, start               ; D+4  mid-bit: high again is a glitch, no frame
+    ldi r0, 7                  [6]  ; D+5..11
 bitloop:
     in pins, 1                      ; D+12 + 8k
     jmp !r0, last                   ;  +1

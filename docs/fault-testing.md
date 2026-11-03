@@ -1,15 +1,25 @@
 # Fault injection on existing firmware
 
 `tools/pe/faults.py` puts seeded faults on the wire between a pins-only protocol
-model and the chip. `test/model/test_faults.py` runs firmware against them with
-the firmware unchanged. Every result here is from the cycle model at a fixed
-seed sweep, deterministic on any machine. The sweep was not run on the RTL, at
-gate level, or on hardware. The model is lockstep-checked against the RTL on
-tested traces, and that is all that connects these results to the RTL.
+model and the chip. `test/model/test_faults.py` runs firmware against them as
+it is, with no test-only change. Every result here is from the cycle model at a
+fixed seed sweep, deterministic on any machine. The sweep was not run on the
+RTL, at gate level, or on hardware. The model is lockstep-checked against the
+RTL on tested traces, and that is all that connects these results to the RTL
+(two of the fixes below also have their own RTL tests).
+
+The sweep found six weaknesses. Branch `fault-fixes` fixed four of them in the
+firmware (1, 2, 5 and 6 below; base `575362a`) and left two (3: expected I2C
+behaviour; 4: a CAN check outside the README's scope). **The KV260 runs,
+including Linux's enumeration of `usb_enum`, were made with the firmware
+before these fixes.** `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` as
+they are now have not run on the FPGA, and those results apply to them only
+after a rerun there.
 
 ```
 PYTHONPATH=tools python -m pytest -q test/model/test_faults.py
 remote_test.sh model                # on the compute runner, with the whole suite
+remote_test.sh test                 # the RTL suite: test_uart_rx_glitch, test_i2c_master_bus_fault
 ```
 
 ## What was injected
@@ -68,30 +78,31 @@ USB), because the sweep's `stuck` is bounded by a frame.
 
 ## Results
 
-16 seeds per firmware and fault kind: 576 cases, 7 not `ok`: 5 `false-good`
-(findings 1 and 2 below) and 2 `second-frame` (finding 3). No `hang`, no
-`needs-reset`, no `bus-clear`. "Changed" counts the cases where the fault
-changed what the receiver reported at all: where it is low, the fault mostly
-didn't matter to that firmware, and that row is weak evidence (`uart_rx` and
-`can_rx` under `jitter` changed nothing at these sizes; `eth10_match` looks at
-only 16 bits of a frame). The table is pinned to the sweep by
-`test_doc_table_is_the_sweep`.
+16 seeds per firmware and fault kind: 576 cases, 1 not `ok`: a `second-frame`
+(`i2c_master` under `stuck`, seed 13, below). No `hang`, no `needs-reset`, no
+`bus-clear`, no `false-good`. Before `fault-fixes` (at `575362a`) the same sweep
+gave 7 not `ok`: 5 `false-good` (findings 1 and 2) and 2 `second-frame`
+(finding 3). "Changed" counts the cases where the fault changed what the
+receiver reported at all: where it is low, the fault mostly didn't matter to
+that firmware, and that row is weak evidence (`uart_rx` and `can_rx` under
+`jitter` changed nothing at these sizes; `eth10_match` looks at only 16 bits
+of a frame). The table is pinned to the sweep by `test_doc_table_is_the_sweep`.
 
 | Firmware | Fault | Cases | Changed | Not ok (seed: verdict) |
 |---|---|---|---|---|
-| uart_rx | glitch | 16 | 10 | 3: false-good |
+| uart_rx | glitch | 16 | 9 | - |
 | uart_rx | stuck | 16 | 15 | - |
 | uart_rx | truncate | 16 | 10 | - |
 | uart_rx | flip | 16 | 16 | - |
 | uart_rx | stretch | 16 | 6 | - |
 | uart_rx | jitter | 16 | 0 | - |
-| i2c_master | glitch | 16 | 14 | - |
-| i2c_master | stuck | 16 | 13 | 0: false-good, 4: false-good |
-| i2c_master | truncate | 16 | 16 | 3: second-frame, 15: second-frame |
-| i2c_master | flip | 16 | 16 | 8: false-good, 12: false-good |
+| i2c_master | glitch | 16 | 15 | - |
+| i2c_master | stuck | 16 | 13 | 13: second-frame |
+| i2c_master | truncate | 16 | 16 | - |
+| i2c_master | flip | 16 | 13 | - |
 | i2c_master | stretch | 16 | 8 | - |
 | i2c_master | jitter | 16 | 6 | - |
-| can_rx | glitch | 16 | 6 | - |
+| can_rx | glitch | 16 | 5 | - |
 | can_rx | stuck | 16 | 12 | - |
 | can_rx | truncate | 16 | 14 | - |
 | can_rx | flip | 16 | 11 | - |
@@ -116,54 +127,182 @@ only 16 bits of a frame). The table is pinned to the sweep by
 | eth10_match | stretch | 16 | 10 | - |
 | eth10_match | jitter | 16 | 2 | - |
 
+The rows that moved: `uart_rx` glitch (seed 3 is now `ok`; a glitch the
+receiver drops changes nothing, so Changed went 10 to 9); `i2c_master` stuck,
+truncate and flip (findings 2 and 3; its WRITE command is now 9 ticks longer,
+so a fault fixed in clocks lands on other bits, which also moves glitch and
+flip's Changed); `can_rx` glitch (a dropped idle glitch changes nothing).
+
+**The new `second-frame`, `i2c_master` stuck seed 13.** SCL is held high
+for about 21 bit times during a WRITE. The EEPROM misses clocks, and is left
+driving its ACK on SDA after the transfer. The faulted transfer is reported:
+its last byte replies 0x200 and F1 is set. The next transfer's START finds
+SDA low, which sets F1; its bytes go to an EEPROM that saw no START and are
+ACKed, so the harness counts it failed (F1 set, data elsewhere), but the host
+is told by F1. The transfer after it works. Before `fault-fixes` this seed's
+fault fell on other bits and the case was `ok`.
+
 ## Failures found
 
-None was patched: each fix costs timing or words in firmware other things rest on
-(see each). Each has a test named `test_finding_*` that pins today's behaviour
-with the minimal case, so a fix must change the test.
+Each has a test named `test_finding_*`. For the four fixed, the test asserts
+the fix, and `test_fix_mutant_fails_its_test` takes each new check out of the
+firmware (or moves it a tick) and requires that test, run on the mutant, to
+fail, and the real firmware to pass it: 16 mutants, all caught. Costs are
+exact, from the assembler, the static timing checker and the model.
 
-**1. `uart_rx` takes a glitch for a start bit.** Sweep: `glitch`, seed 3. Minimal:
-one tick low on the idle line delivers 0xFF with no error flag; so does any
-pulse up to 12 ticks, of 8 ticks per bit (13 reaches the first data sample: 0xFE).
-Below one tick it depends on a tick falling in the pulse (1 clock at CLKDIV 4: 1
-phase in 4). The start bit is never re-read at mid-bit. A frame that starts 3 bits
-after the glitch is read from its middle and its byte isn't delivered, with F0 set
-or not depending on its data bit 5; the next frame after an idle line is fine. The check is one `jmp pin`, but `uart_rx`'s timing is fixed by
-[uart-rx-timing.md](uart-rx-timing.md), so it isn't a one-line change.
+**1. `uart_rx` took a glitch for a start bit. Fixed.** Sweep: `glitch`, seed 3
+was `false-good`. Then one tick low on the idle line delivered 0xFF with no
+error flag, and so did any pulse up to 12 ticks of a bit's 8; a frame
+starting 3 bits after the glitch was read from its middle. Now the start bit
+is read again at D+4, its middle (`jmp pin RX, start`): a pulse of up to 4
+ticks is no frame, at every tick phase; from 5 ticks the line is low at
+mid-bit, a start bit by the book, and the firmware agrees with the strict
+receiver for every width from 1 to 15 ticks. A frame 0 to 24 ticks after a
+dropped glitch is received exactly. Cost: 1 word (13 to 14). No time: the
+WAIT's `[10]` became `[3]`, the check and `[6]`, so the data samples
+(D+12+8k), the STOP check (D+76) and the return to the WAIT (D+77) are where
+they were, and `test_uart.py`'s ±3 % timing windows and
+`test_pio_comparison.py`'s back-to-back tolerance pass unchanged. RTL:
+`test_uart_rx_glitch`. Not changed: `uart_rx_packed`, `uart_rx_capture` and
+the USB-UART pairs' receivers have no such check.
 
-**2. `i2c_master` reports an ACK from a stuck SDA.** Sweep: `stuck` seeds 0, 4,
-`flip` seeds 8, 12. Minimal: SDA held low with no device at the address: every
-WRITE reads ACK, a READ returns 0x00, F1 stays clear; the same transfer on a clean
-bus is NACKed. The firmware never reads back what it drives. The same root lets a
-flipped data bit be stored and ACKed. A stuck SCL, by contrast, is caught: SCL has
-a timeout, SDA has none.
+**2. `i2c_master` reported an ACK from a stuck SDA. Fixed.** Sweep: `stuck`
+seeds 0, 4 and `flip` seeds 8, 12 were `false-good`. Then SDA held low with no
+device at the address made every WRITE read ACK, a READ returned 0x00 and F1
+stayed clear. Now SDA is read back wherever the master releases it: before a
+START (SCL high, SDA must be high), after a STOP (SDA must have risen), every
+bit of a written byte (sampled while SCL is high and compared with the byte
+after the ACK) and a READ's NACK. A low read-back is a bus fault: F1, and a
+WRITE or READ replies 0x200 (bit 9; an SCL timeout is 0x100) instead of its
+ACK or data. START and STOP have no reply, so F1 alone. A START that finds
+SDA low is not made, but SCL still goes low once, as after a START, so a
+target holding SDA for a clock edge gets one. The same minimal case now
+replies 0x200 to every byte with F1 set. Cost: 19 words (71 to 90). The SCL
+waveform inside a command is unchanged (4 ticks low, 4 high, 6 for START's
+high phase; the timing checker's five deadlines pass with the same bounds). A
+WRITE command takes 88 ticks instead of 79 (4 more before its first bit, 5
+after its ACK), a READ 3 more (after its ACK); START and STOP none. So
+back-to-back written bytes run 11 % slower. Below the documented minimum of
+CLKDIV 3, START's high phase is now 7 ticks at CLKDIV 2 (it was 6): its
+`ldi r3` moved before the SCL release to make room for the check. RTL:
+`test_i2c_master_bus_fault`. The master still drives all 8 bits of a byte
+before comparing, so it does not stop early on a lost arbitration; it is not
+a multi-master.
 
-**3. `i2c_master`'s next transfer is lost after a truncated read.** Sweep:
-`truncate` seeds 3, 15. Minimal: SCL held high over the end of a READ leaves the
-EEPROM model driving SDA low. The firmware has no bus clear, so its STOP can't
-raise SDA and the next START doesn't happen. That transfer comes back NACKed, so
-the host is told, and it clocks the target free; the next one works. The host can
-do the bus clear itself with the existing commands: READ with NACK, then STOP.
+**3. `i2c_master`'s next transfer is lost after a truncated read. Left: the
+usual result without a bus clear.** The sweep's `truncate` seeds 3 and 15
+were `second-frame` and are now `ok`, because the faults moved (finding 2's
+cost), not because of a change for this. The minimal case still holds: SCL
+held high over the end of a READ leaves the EEPROM model driving SDA low. The
+read-back now sees it at the NACK, so that READ replies 0x200 with F1. The
+firmware has no bus clear, so the next transfer is NACKed (the host is told)
+and clocks the target free; the one after works. The host can do the bus
+clear itself with the existing commands: READ with NACK, then STOP.
 
-**4. `can_rx` has no form check.** Not visible to the sweep's oracle, so it is
-directed. A dominant bit in the CRC delimiter, ACK delimiter or EOF is a form
-error; `can_rx` stops looking after the last CRC bit, reports status 1 and ACKs.
-The payload is intact.
+**4. `can_rx` has no form check. Left.** Not visible to the sweep's oracle,
+so it is directed. A dominant bit in the CRC delimiter, ACK delimiter or EOF
+is a form error; `can_rx` stops looking after the last CRC bit, reports
+status 1 and ACKs. The payload is intact. A check of the CRC delimiter alone
+would be a few words, but the ACK delimiter and EOF come after the status
+word is pushed, so checking them means pushing it about 8 bits later, a
+change to when the host learns of a frame. That is beyond "frames, not a full
+controller" in the README, so it is left.
 
-**5. `can_rx` answers a glitch on the idle bus with an error flag.** Directed.
-One clock low on the idle bus (up to 47 tested) starts a frame, because the SOF
-isn't re-read at its sample point. The recessive bits after it are a stuff error:
-status 2 and 288 ticks of dominant on TX. It recovers by itself, but a frame that
-starts during the flag is destroyed.
+**5. `can_rx` answered a glitch on the idle bus with an error flag. Fixed.**
+Then one clock low on the idle bus (up to 47 tested) started a frame, and the
+recessive bits after it were a stuff error: status 2 and 288 ticks of
+dominant on TX, destroying a frame that started during the flag. Now the SOF
+is read again at its sample point, D+24, by a copy of the sample
+instructions on the same tick as every later bit's (`jmp r2, idle` if it is
+recessive). A low pulse of up to 24 clocks is no frame, no flag, no status;
+from 25 clocks the SOF is dominant at the sample point, which is a SOF by the
+book, and the stuff error follows as before. A frame 2 bits after a dropped
+glitch is received and ACKed. Cost: 3 words (97 to 100); no tick on any path
+(the SOF path reaches the shared code at S+4, as before). Not changed:
+`can_tx`'s receive side.
 
-**6. `usb_enum` can miss a bus reset that starts in an EOP.** Directed. SE0 for
-4.2 us (the firmware's threshold is 2.5 us) starting at each of 22 bit positions
-around an IN token: from the end of a valid token addressed to the device (start
-bits 30 to 35) the firmware is at `got_in: wait 1 pin DM`, with no timeout and no
-SE0 check, so the reset is not seen. The device keeps its address and answers when
-the line returns; the next transfer works. A host doesn't start a reset inside a
-token, so this takes a fault. The firmware uses 246 of 256 words and the
-path is on the turnaround budget, so it isn't a small fix.
+**6. `usb_enum` missed a bus reset that started in an EOP. Fixed.** Then SE0
+from the end of a valid token addressed to the device (start bits 30 to 35)
+found the firmware at `got_in: wait 1 pin DM`, with no timeout and no SE0
+check, and the verifier showed no reset length got out: a 10 ms reset there
+left the address set, and a host that resets and enumerates at address 0 then
+gets no answer. A per-clock sweep found the same for every SE0 starting in
+the 24 to 27 clocks before each of the device's five packets in a control
+read (the host's EOP and the turnaround), 125 of 4400 start clocks. Three
+changes:
+
+* `got_in` and `handshake` wait for the J with a timeout, 121 ticks (2.5 us,
+  as `idle` does), and go to `se0` on it: an SE0 that runs on from the EOP is
+  a reset.
+* `echo`, which drains the device's own packet as it comes back through the
+  receiver, first waits up to 121 ticks for J or K on its input. An SE0 that
+  starts in the turnaround hides the device's own SYNC from it, so its echo
+  never begins; that is now a reset too.
+* The turnaround delays absorb the new instructions, so every answer leaves
+  on the same clock as before, at both speeds (`J_LATE`: at low speed the
+  2-bit EOP outlasts the instructions before the WAIT; at full speed the J is
+  already there). In five model sessions compared clock for clock (four at full
+  speed with offsets, jitter and the lost-ACK IN, one low-speed enumeration;
+  `usb_reset_sweep.py turnarounds`, below) the device's turnarounds and the
+  bytes of every packet on the bus are identical to the old firmware's. (The
+  longer program takes 7 more host writes to load, so everything after the
+  load is 7 clocks later.)
+
+Results (model, full speed unless stated):
+
+* SE0 of 4.2 us from each of 22 bit positions of an IN token, and of 10 ms
+  from bits 30, 32 and 35: a reset every time, address 0, and the device
+  enumerates again (`test_finding_usb_enum_sees_a_reset_that_starts_in_an_eop`
+  and `..._a_10ms_reset_...`).
+* SE0 of 3000 clocks (63 us, longer than any of the device's packets plus
+  2.5 us) starting at every clock of a GET_DESCRIPTOR control read, 4400
+  start clocks: the core reached `reset` while the SE0 lasted at every one,
+  at most 461 clocks (9.6 us) after the SE0 began (the longest is inside the
+  device's own 8-byte DATA packet, which it finishes first), and enumerated
+  again at address 0 every time. The old firmware failed 125 of the 4400.
+  The sweep is too long for the suite (`usb_reset_sweep.py`, below); the suite's
+  `test_usb_enum_sees_a_reset_that_starts_anywhere` runs every clock of the
+  five turnaround windows (24 before to 8 after each packet's first clock)
+  and a 29-clock grid over the rest (262 starts),
+  with the 461 as its bound, and requires that the device starts no packet
+  of its own more than 16 clocks into the SE0.
+* A 10 ms SE0 (480,000 clocks) from every 37th clock of the same read, 119
+  starts: a reset at every one, at most 455 clocks after the SE0 began, and
+  enumerated again.
+* Low speed: SE0 of 20,000 clocks (417 us) from every 4th clock of a
+  low-speed control read, 9000 start clocks: a reset at every one, at most
+  2702 clocks (56 us) after the SE0 began, and enumerated again. The suite's
+  `test_usb_enum_sees_a_reset_that_starts_anywhere_low_speed` runs 93 of those
+  starts (every 16th clock of the 200 before each of the device's packets,
+  and a 997-clock grid) with the 2702 as its bound. The old firmware, from
+  every 64th clock: 11 of 563 starts missed, each in the 150 clocks before one
+  of the device's packets.
+
+The sweeps run on the compute runner (`--firmware` takes another `usb_enum`
+source, such as the one at `575362a`):
+
+```
+cd test/model && export PYTHONPATH=../../tools
+python usb_reset_sweep.py full 3000 1          # 4400 starts, 0 missed, at most 461 clocks
+python usb_reset_sweep.py full 3000 1 --firmware OLD.pasm      # the old firmware: 125 missed
+python usb_reset_sweep.py full 480000 37       # 10 ms: 119 starts, 0 missed, at most 455
+python usb_reset_sweep.py low 20000 4          # 9000 starts, 0 missed, at most 2702
+python usb_reset_sweep.py turnarounds OLD.pasm # the five sessions, clock for clock
+```
+
+A longer reset only keeps the device longer in `reset`'s WAIT for J, so
+"any length" here means any SE0 that lasts until the core reaches `reset`:
+at most 461 clocks at full speed (2702 at low speed). A shorter SE0 that
+starts inside the device's own packet can be over before the device has
+finished sending and looks, with the old firmware and the new: it does not
+watch the line while it sends. Cost: 7 words (246 to 253 of 256,
+3 left); the timing checker's three turnaround deadlines pass with the same
+bounds (10-15, 11-20 and 10-21 clocks), now measured from the frame end
+because its `.cond` takes only an untimed WAIT ([timing-check.md](timing-check.md)).
+The echo check adds 4 ticks before the device drains its own packet, which
+no deadline covers; at low speed it drops one more bit of its own 96-bit
+DATA echo in one packet of an enumeration (`test_line_echo.py`: 93 echo
+bits dropped, 92 before, and never a bit of the host's).
 
 ## The tests of the tests
 
@@ -172,6 +311,13 @@ path is on the turnaround budget, so it isn't a small fix.
   `false-good`), `eth10_match` that never leaves `drain` (`needs-reset`),
   `i2c_master` with no timeout on the data bits (misses the bound). Two more
   break the clean frame, which aborts the case rather than passing it.
+* The fixes' own 16 mutants (`FIX_MUTANTS`): the mid-bit check removed or a
+  tick early; the SOF check removed, made unconditional, a tick early or
+  late; each of the four SDA read-backs removed, the read-back replaced by
+  zeros, the byte compared against the wrong bit order; `got_in`'s timeout
+  removed or the WAIT made untimed; `handshake`'s timeout removed; the echo
+  check removed. Each fails the test of its check, which the real firmware
+  passes.
 * The UART strict receiver and the FCS check have their own tests, including
   that they reject what they should.
 * Every fault class is checked clock for clock on a recorded line: exact
@@ -182,15 +328,21 @@ path is on the turnaround budget, so it isn't a small fix.
 
 * This is a sample: 16 seeds per cell, one fault per case, one frame shape per
   firmware. "No hang in 576 cases" is that, not a proof. The firmware WAITs without
-  a timeout (`uart_rx`'s, `can_rx`'s, `usb_enum`'s) are cleared by the line
+  a timeout (`uart_rx`'s, `can_rx`'s, `usb_enum`'s `reset`) are cleared by the line
   returning, shown only in the stuck-line runs above.
 * Faults are digital and whole-clock on the model's pads, apart from Ethernet's
   half-clock sender. No analog levels, no metastability, no ringing, no bus
-  capacitance.
+  capacitance. On USB the fault reaches only the chip's input, so an SE0
+  during the device's own packet hides that packet from it; on a real bus the
+  two drivers would fight.
 * The peer models are behavioural and our own. A real I2C target or CAN node
   would differ, and other nodes on the bus are not modelled: no retransmission,
   no error confinement.
-* `usb_enum` was swept at full speed only; `eth10` at 50 MHz, short frames; `can_rx`
-  at CLKDIV 1, `uart_rx` at CLKDIV 4, `i2c_master` at CLKDIV 4.
+* `usb_enum` was swept at full speed only (the reset sweeps also at low
+  speed); `eth10` at 50 MHz, short frames; `can_rx` at CLKDIV 1, `uart_rx` at
+  CLKDIV 4, `i2c_master` at CLKDIV 4.
 * A host that stops reading is not part of this. FIFO overflow is covered
   elsewhere.
+* The fixes are model and RTL-simulation results. They were not run at gate
+  level or on the KV260, and the KV260 results elsewhere in this repository
+  were made with the firmware before them.

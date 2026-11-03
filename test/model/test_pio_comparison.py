@@ -46,7 +46,7 @@ PIO_SIZES = {"uart_tx": 4, "uart_rx": 9, "uart_rx_mini": 4, "spi_cpha0": 2, "spi
 
 def test_program_sizes():
     got = {n: len(pe_prog(n, **d).words) for n, d in PE_SIZES.items()}
-    assert got == {"uart_tx": 4, "uart_rx": 13, "spi_master": 2, "i2c_master": 71}
+    assert got == {"uart_tx": 4, "uart_rx": 14, "spi_master": 2, "i2c_master": 90}
     # what the I2C timeouts cost: `ldi r3, TMO` + `jmp t` around each of the six
     # SCL-release WAITs, plus the stretch_timeout handler at the end
     i2c = pe_prog("i2c_master", SDA=0, SCL=1)
@@ -447,8 +447,11 @@ def test_i2c_clean_transactions_match():
     # (jmp pin [2], out, out, jmp, set, out [7])
     assert r["pio_scl_high_min_us"] == 5.0 and r["pio_scl_low_min_us"] == 4.6875
     # bus time from START to STOP at nominal 100 kHz: protoemu is slower per byte
-    assert r["pe_byte_us"] == pytest.approx(105.0) and r["pio_byte_us"] == pytest.approx(89.6875)
-    assert r["read"]["pe_bus_us"] == pytest.approx(560.0)
+    # protoemu: 105.0 and 560.0 us before fault-fixes added the SDA read-back (+9 ticks per
+    # WRITE command, +3 per READ)
+    assert r["pe_byte_us"] == pytest.approx(111.24, abs=0.01) and r["pio_byte_us"] == pytest.approx(89.6875)
+    assert r["read"]["pe_bus_us"] == pytest.approx(601.26, abs=0.01)
+    assert r["write"]["pe_bus_us"] == pytest.approx(575.0, abs=0.01)
     assert r["read"]["pio_bus_us"] == pytest.approx(478.125)
     # host traffic for the register read: protoemu 8 commands / 5 replies (3 ACK + 2 data);
     # pico-examples 19 halfword FIFO writes (START 4, RSTART 6, STOP 4, 5 bytes) and 3 reads
@@ -553,7 +556,8 @@ def test_i2c_nack():
 
 
 def i2c_sda_stuck():
-    """SDA held low by a broken target: both engines read false ACKs."""
+    """SDA held low by a broken target. pico-examples reads false ACKs;
+    protoemu, since fault-fixes, reads SDA back and replies 0x200 (bus fault)."""
     r = {}
     tp = I2cTarget(sda_stuck=True)
     pe = PeI2c(tp)
@@ -567,7 +571,7 @@ def i2c_sda_stuck():
 
 def test_i2c_sda_stuck_low():
     r = i2c_sda_stuck()
-    assert r["pe_replies"] == ["0x0", "0x0"]             # "ACK", data 0x00, no error
+    assert r["pe_replies"] == ["0x200", "0x200"]         # bus fault on the address byte and the NACK
     assert r["pio_err"] == 0                             # "success"
 
 

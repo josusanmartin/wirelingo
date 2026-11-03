@@ -3,12 +3,21 @@
 ;   python -m pe.timing firmware/usb_enum.pasm --timing firmware/usb_enum.timing -D DP=0 -D DM=1 -D TURN=4
 ; Same conventions as usb_fs_dev.pasm: the core sees the host's J 2..6 ticks after
 ; the frame end reaches the firmware (tok_end and d_end are 2 ticks after the
-; `in line` that returned T = 1); pads: adjust=3..4; the line transmitter is idle
+; `in line` that returned T = 1); pads: 3..4 clocks; the line transmitter is idle
 ; when a response starts (stall=...:0).
-@point in_wait at=got_in              ; wait 1 pin DM
-@point in_out at=got_in+2             ; out line, 16: SYNC + DATA0/DATA1/STALL
-@point hs_wait at=handshake           ; wait 1 pin DM
-@point hs_out at=handshake+2          ; out line, 16: SYNC + ACK/STALL
+; The firmware waits for the J before each response with a timed WAIT (in_tmo,
+; hs_tmo: 121 ticks), so that a bus reset that runs on from the host's EOP gets
+; out to `se0` (docs/fault-testing.md, finding 6). The checker's `.cond` takes
+; an untimed WAIT only, so the turnaround is timed from the frame end instead:
+; the WAIT is reached 7 ticks or more after it, after the J (2..6), and so
+; completes at its first attempt (stall=in_tmo:0 / hs_tmo:0, which the
+; soundness runs check). From the J the response then takes the interval less
+; 2..6 ticks, plus the pads' 3..4: adjust=-3..2. (Until fault-fixes these were
+; `.cond` deadlines on an untimed `wait 1 pin DM`, with the same bounds.)
+@point in_tmo at=got_in+1             ; wait 1 pin DM timeout r0 (r0 = 120)
+@point in_out at=got_in+4             ; out line, 16: SYNC + DATA0/DATA1/STALL
+@point hs_tmo at=handshake+2          ; wait 1 pin DM timeout r0 (r0 = 120)
+@point hs_out at=handshake+4          ; out line, 16: SYNC + ACK/STALL
 @point not_in at=ours+4               ; cmp r0, 0x2D: the token is not an IN (no answer to time)
 @point lost_ack at=tok_end+6          ; mov r3, r2: the inline commit of a token to the new address, status ACK lost
 ; in_ta excludes `lost_ack` (the usual case: the status ACK arrived, or the
@@ -19,7 +28,7 @@
 ; the lost_ack path went through `call commit` and `prep` and FAILED (an IN
 ; answered up to 30 clocks after the host's EOP; 27.4-28.2 on the model); the
 ; commit is now inline, without `prep`, and the path is 6 ticks longer than in_ta.
-@deadline in_ta from=in_wait.cond after=tok_end:2..6 to=in_out avoid=idle,got_setup,expect,lost_ack stall=in_out:0 min=8 max=26 adjust=3..4 reach=conditional "IN token -> DATA/STALL (r1 prepared ahead)"
-@deadline in_ta_any from=in_wait.cond after=tok_end:2..6 to=in_out avoid=idle,not_in stall=in_out:0 min=8 max=26 adjust=3..4 "the same, with the lost-ACK commit path"
-@deadline data_ta from=hs_wait.cond after=d_end:2..6 to=hs_out avoid=idle stall=hs_out:0 min=8 max=26 adjust=3..4 "DATA0/1 -> ACK/STALL"
+@deadline in_ta from=tok_end.enter to=in_out avoid=idle,got_setup,expect,lost_ack stall=in_tmo:0,in_out:0 min=8 max=26 adjust=-3..2 reach=conditional "IN token -> DATA/STALL (r1 prepared ahead)"
+@deadline in_ta_any from=tok_end.enter to=in_out avoid=idle,not_in stall=in_tmo:0,in_out:0 min=8 max=26 adjust=-3..2 "the same, with the lost-ACK commit path"
+@deadline data_ta from=d_end.enter to=hs_out avoid=idle stall=hs_tmo:0,hs_out:0 min=8 max=26 adjust=-3..2 "DATA0/1 -> ACK/STALL"
 @deadline rx_bit from=d_bit to=d_bit.enter avoid=d_end max=4 reach=conditional "DATA receive loop: a bit every 4 clocks"

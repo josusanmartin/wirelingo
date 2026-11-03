@@ -11,7 +11,7 @@ SET_ADDRESS.
 ## Bottom line
 
 **It fits on one core, at low speed and at full speed, with the same
-firmware.** `firmware/usb_enum.pasm` is 246 of core 0's 256 instruction words
+firmware.** `firmware/usb_enum.pasm` is 253 of core 0's 256 instruction words (246 until `fault-fixes`)
 (36 of them the descriptors), uses the line unit, and leaves core 1 free.
 `pe.usbenum.load_writes()` is the whole host side: the program, CRCCTRL, the
 line unit's three registers and the start. From then on the host transport is
@@ -248,6 +248,20 @@ STALLed and cleared by the next SETUP (including OUT data of an unsupported
 control write), tokens to other addresses/endpoints, a bad CRC5 and a bad
 CRC16 ignored, and sigrok's decode of a whole enumeration with faults.
 
+**A reset that starts anywhere (`fault-fixes`).** Until then a bus reset
+whose SE0 ran on from the host's EOP, or began in the turnaround before the
+device's own packet, was waited through: the device kept its address and a
+host enumerating at address 0 got no answer (docs/fault-testing.md, finding
+6). The WAITs for J before an answer (`got_in`, `handshake`) now time out
+after 2.5 µs into `se0`, and `echo` first waits up to 2.5 µs for its own
+packet to show on its input (J or K), so an SE0 that hides it is a reset too.
+Cost: 7 words (253 of 256), no change to any answer's clock (the delays
+absorb the new instructions; `J_LATE` covers low speed, where the J comes
+after the WAIT is reached). Evidence is the model's:
+`test_usb_enum_sees_a_reset_that_starts_anywhere` and the finding tests in
+`test_faults.py`, the full-speed sweep in fault-testing.md, and these
+suites, which pass unchanged.
+
 `test/test.py::test_usb_autonomous` and `test_usb_autonomous_fs` (RTL):
 load over SPI, then the whole flow with a lost SETUP ACK, SET_ADDRESS's
 status ACK lost followed by an IN to the new address, a lost host ACK,
@@ -341,6 +355,12 @@ analogue receiver, no real host controller.
   have not been tried. Requests outside the list above are STALLed,
   which hosts accept (Windows' 0xEE string, the device qualifier); SET_INTERFACE
   is STALLed too, which Linux tolerates for single-setting interfaces.
+  **These runs used the 246-word firmware from before `fault-fixes`.** The
+  253-word one (a bus reset is now seen wherever it starts:
+  [fault-testing.md](fault-testing.md), finding 6) has run on the model only;
+  it needs a rerun against Linux on the KV260 before these results apply to
+  it. Its answers leave on the same clock as before in the model's sessions at
+  both speeds, which is a reason to expect the same, not evidence of it.
 * **Full speed on silicon** needs the chip at exactly 48 MHz and the line
   unit's receive jitter margin (docs/usb-full-speed.md: v2's half-cycle NRZI
   sample point); none of that changes here.

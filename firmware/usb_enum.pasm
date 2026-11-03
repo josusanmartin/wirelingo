@@ -59,6 +59,13 @@
 .define F_SETUP 4
 .define F_CFG 5
 .define FILTER0 0x0008             ; token filter of address 0, endpoint 0
+; Before each response the J that ends the host's EOP is awaited with a timeout
+; (2.5 us of SE0 there is a bus reset). At full speed the J is already there
+; when that WAIT is reached, so the instructions before it count toward the
+; turnaround; at low speed (TURN 63) the 2-bit EOP outlasts them and the WAIT
+; waits. J_LATE tells the turnaround delays which, so the answer goes out on
+; the same clock as before at either speed (docs/fault-testing.md, finding 6).
+.define J_LATE (TURN > 8)
 .define CRC5_K 0x08                ; constant term of the software CRC5 (`addr_filter`)
     jmp reset
 ; ---------------------------------------------------------------- descriptors
@@ -171,9 +178,11 @@ expect:
     flag set F_EXP
     jmp idle
 ; ---------------------------------------------------------------- IN
-got_in:
-    wait 1 pin DM                  ; the host's EOP is over (J)
-    mov osr, r1             [TURN] ; turnaround
+got_in:                            ; (no untimed WAIT here: a bus reset that
+    ldi r0, 120                    ; runs on from the token's EOP must get out)
+    wait 1 pin DM timeout r0       ; the host's EOP is over (J), or a bus reset:
+    jmp t, se0                     ; SE0 (or K) for 121 ticks, no answer
+    mov osr, r1  [TURN - 2 + J_LATE] ; turnaround, as long as before fault-fixes
     out line, 16                   ; SYNC + STALL / DATA0 / DATA1
     jmp f F_STALL, echo
     flag set F_SENT
@@ -205,7 +214,10 @@ finish:                            ; the CRC16, inverted, MSB first
 fin_prep:
     call prep                      ; r1 was the data: again, for a retry
 ; ---------------------------------------------------------------- packet ends
-echo:                              ; our own packet comes back: drop it
+echo:                              ; our own packet comes back: drop it. First,
+    ldi r0, 120             [3]    ; once its first K can have reached our input,
+    wait pins != r1 mask 3 timeout r0 ; J or K there (r1 is prep's: [1:0] = 0)
+    jmp t, se0                     ; SE0 for 2.5 us hid our own packet: a reset
 skip:                              ; or the rest of one we don't want
     in line, 16
     jmp t, idle
@@ -313,9 +325,11 @@ d_crc:
     jmp !f F_STALL, handshake
     ldi r0, 0x1E80                 ; SYNC + STALL: OUT data of a refused request
 handshake:
-    wait 1 pin DM                  ; the host's EOP is over (J)
-    mov osr, r0             [TURN] ; turnaround
-    out line, 16
+    mov osr, r0
+    ldi r0, 120                    ; as in `idle`: 2.5 us
+    wait 1 pin DM timeout r0       ; the host's EOP is over (J), or a bus reset:
+    jmp t, se0  [TURN - 2 + 2 * J_LATE] ; SE0 (or K) for 121 ticks; turnaround,
+    out line, 16                   ; as long as before fault-fixes
     jmp !f F_SETUP, echo
 ; ---------------------------------------------------------------- SETUP requests
 ; While our ACK goes out (76 clocks at full speed): r1 = bRequest << 8 |

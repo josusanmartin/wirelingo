@@ -162,7 +162,7 @@ instruction apply to the instruction on their line, else to the next one.
 
 A **sidecar file** holds the same items, one per line without the leading
 `;`, for firmware that should not be edited: `firmware/usb_enum.timing` has
-`@point in_wait at=got_in` and its deadlines.
+`@point in_tmo at=got_in+1` and its deadlines.
 
 ### Paths that never arrive, and HALT
 
@@ -317,6 +317,22 @@ that is not an IN), so it is the required deadline; `in_ta` is kept as the
 ordinary path's bound (`PASS (conditional)`). `test_usb_enum_sound_and_pad_turnaround` measures the
 forced case in all 5 sessions at 18.4–19.0 clocks on the bus, inside the
 checker's 10–21, and no response anywhere is later than 26.
+
+**From the frame end, since `fault-fixes`.** usb_enum's WAITs for the J
+before an answer now have a timeout, so that a bus reset running on from the
+host's EOP is seen ([fault-testing.md](fault-testing.md), finding 6). `.cond`
+takes an untimed level WAIT only, so the three turnaround deadlines start at
+the frame end (`tok_end`, `d_end`) instead: the WAIT is reached 7 ticks or
+more after it, after the J (2..6, the old `after=`), so it completes at its
+first attempt (`stall=in_tmo:0`, `hs_tmo:0`, checked by the soundness runs),
+and the J-to-answer time is the interval less 2..6 ticks plus the pads' 3..4:
+`adjust=-3..2`. The bounds are the same as above (10–15, 11–20, 10–21), and
+the test now finds the J in the trace and still requires the bus turnaround
+to be 3..4 clocks more than the core's. The firmware's delays keep the
+answer on the same clock as before at both speeds (`J_LATE` in the source:
+at low speed the J comes after the WAIT is reached). An untimed WAIT kept
+only for the checker would have left a 2-clock window in which an SE0
+starting just after the J is waited through, which a per-clock sweep found.
 
 **Broken variants fail** (`test_broken_*`): `uart_tx` with `[5]` instead of
 `[6]` in the bit loop gives 7-tick bits (FAIL); `usb_fs_dev` with seven

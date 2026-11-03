@@ -5,7 +5,9 @@
 **What it does.** Three optional one-core UART receivers, 8N1 at eight
 execution ticks per bit, with a sticky F0 for a bad STOP:
 
-* `firmware/uart_rx.pasm`: one byte per RX FIFO word, continuous, 13 words.
+* `firmware/uart_rx.pasm`: one byte per RX FIFO word, continuous, 14 words
+  (13 before `fault-fixes`, which added a mid-bit recheck of the start bit:
+  [fault-testing.md](fault-testing.md), finding 1).
 * `firmware/uart_rx_packed.pasm`: four bytes per RX word, so the eight-word
   FIFO holds 32 bytes without service; 13 words.
 * `firmware/uart_rx_capture.pasm`: a declared length of 1 to 32 bytes, then
@@ -41,7 +43,9 @@ and sets F0.
   9600-baud line bit-banged on `ui[0]`; `uart_rx_packed` and
   `uart_rx_capture` with generator-played lines, the capture also at the
   model's ±3 % corners (fpga/kv260/README.md, "SPI and UART firmware on
-  hardware").
+  hardware"). Those runs used the 13-word `uart_rx` from before
+  `fault-fixes`. The 14-word one has not run on the FPGA: the KV260 result
+  applies to it only after a rerun there.
 * Not covered: a real external UART, electrical timing, metastability, or
   the baud and jitter cases on RTL or at gate level.
 
@@ -112,7 +116,10 @@ insufficient: equal adjacent bits could hide a late sampling error.
 Let `D` be the tick at which the start-bit level WAIT completes. The current
 source samples data at `D+12, D+20, ..., D+68`, right-aligns at `D+70`,
 pushes at `D+71`, checks STOP at `D+76`, and attempts the next START WAIT
-at `D+77` after a good STOP. In these runs STOP-to-rearm takes one fractional
+at `D+77` after a good STOP. (Since `fault-fixes` it also reads the start
+bit again at `D+4` and goes back to the WAIT if it is high; the wait's
+`[10]` became `[3]` + the check + `[6]`, so every time above is unchanged.)
+In these runs STOP-to-rearm takes one fractional
 divider interval of 52 or 53 clocks. This includes the last byte; the final
 rearm is observed during idle rather than inferred from the received data.
 
@@ -154,7 +161,8 @@ a general break-duration specification or a noise-rejection proof.
 
 ### Scope and diagnostics
 
-The receiver uses one core, 13 program words (52 bytes), R0/ISR, F0 and its
+The receiver uses one core, 14 program words (56 bytes; 13 and 52 before
+`fault-fixes`), R0/ISR, F0 and its
 RX FIFO. No TX, bundle, model or helper, ISA, USB, hardware profile or RTL
 change is required. The supported finite contract is 18 eight-byte timing
 cases plus the four-byte error and recovery case, alongside the older 64-byte
@@ -182,7 +190,9 @@ One recorded run of the full file passed **23 tests**, receiving 377 bytes in
 `firmware/uart_rx_packed.pasm` is a separate optional receiver, not a
 replacement for the byte-per-word program or its bundle. It uses the same
 8N1 wire format, RX define and IN_BASE, eight-ticks-per-bit divider and one
-core. Both programs occupy **13 words / 52 bytes**. Packed mode enables
+core. It occupies **13 words / 52 bytes**, as the byte receiver did until
+`fault-fixes` gave that one a mid-bit start check (14 words); the packed
+receiver has no such check. Packed mode enables
 right-shift `autopush 32` and substitutes two NOPs for the per-byte alignment
 and manual PUSH. Data samples remain `D+12+8k`, STOP remains `D+76`, and the
 level WAIT rearms at `D+77`. No ISA, model, FIFO depth, host API or bundle
@@ -479,7 +489,9 @@ in numbered tickets, and later integrated on `main` with the model suite.
   clocks (54.12 s of pytest time). An earlier focused 19-case run used
   674266 clocks; the ticket's total was 2312207 of its 2500000-clock budget.
   The final run was made once on the unchanged test source; the 13-word
-  receiver firmware is byte-identical to the ticket's baseline. An earlier,
+  receiver firmware is byte-identical to the ticket's baseline (it is 14
+  words since `fault-fixes`, with the same sample times; the file's tests run
+  on it in the model suite). An earlier,
   separate UART-to-SPI bridge experiment (its "D13" variant, divider 13, not
   part of `main`) had shortened a four-instruction handoff after STOP, and
   failed at ±6 %; this receiver has no such handoff, and ±6 % was not
