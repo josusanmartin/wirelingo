@@ -328,8 +328,9 @@ bits dropped, 92 before, and never a bit of the host's).
   check removed. And, from report 023, nine more: `J_LATE 0` (low-speed
   answers 1 or 2 clocks early: caught by the pinned turnarounds); the
   `got_in`, `handshake` and `echo` timeouts lowered (to 40, 40 and 1 ticks:
-  caught by `test_usb_enum_short_se0_is_not_a_reset`, a 1.9 us SE0 at each of
-  those WAITs, which must leave the address set); `echo` without its `[3]`;
+  caught by `test_usb_enum_short_se0_is_not_a_reset`, a 2.4 us SE0 at each of
+  those WAITs, which must leave the address set; it also catches each
+  timeout lowered to 100 ticks); `echo` without its `[3]`;
   the mid-bit check a tick late; the read-back compare ignoring the LSB;
   `start_fault` without its SCL low (stuck seed 13 then hangs); the SOF
   routed back through `sample`. Each fails the test of its check, which the

@@ -1353,7 +1353,8 @@ def usb_short_se0(off, cycles, text=None):
     return addr, h.good()
 
 
-USB_SHORT_SE0 = 90               # clocks: 1.9 us, under the 2.5 us of a bus reset
+USB_SHORT_SE0 = 115              # clocks: 2.4 us, under the 2.5 us of a bus reset (report 027: 90 let a
+                                 # timeout of 90-119 ticks pass; 115 catches 100 at all three WAITs)
 
 
 def usb_short_se0_offsets(packets):
@@ -1375,7 +1376,7 @@ def check_short_se0(text=None, packets=None):
 
 @pytest.mark.parametrize("packet", range(5))
 def test_usb_enum_short_se0_is_not_a_reset(packet):
-    """An SE0 of 1.9 us is not a bus reset (2.5 us is): wherever in a
+    """An SE0 of 2.4 us is not a bus reset (2.5 us is): wherever in a
     turnaround it starts, at each of the three WAITs fault-fixes gave a
     timeout (got_in's and handshake's J WAITs, echo's), the device keeps its
     address and the next control read at it works. Every other reset test

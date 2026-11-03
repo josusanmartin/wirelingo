@@ -72,7 +72,9 @@ describes how, and what it caught.
   At 48 MHz the autonomous USB device enumerates, at low and full speed,
   against a host model's waveform replayed on its pads by the FPGA's pattern
   generator, with every device edge at the clock the cycle model gives when
-  the model samples the pads the way the FPGA drives them.
+  the model samples the pads the way the FPGA drives them. (That was the
+  2026-10-14 replay with the 246-word `usb_enum` from before `fault-fixes`;
+  the 253-word one needs a KV260 rerun before it applies.)
 * A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
   handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
   gate-level simulation of the signed-off netlist
@@ -284,7 +286,9 @@ make -C formal                                                   # proofs
   compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
-  delays. The GDS passes Tiny Tapeout's precheck. Outside the release gate,
+  delays. (These receipts ran software `7685aba`, with the firmware of that
+  time; `uart_rx`, `i2c_master`, `can_rx` and the 253-word `usb_enum` changed
+  by `fault-fixes` need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,
   hash-bound receipt). With SDF at the typical corner all 16 pass
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)).
