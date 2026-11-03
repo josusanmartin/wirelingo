@@ -399,7 +399,7 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   answered the pins-only model host's replayed waveform with every pad edge at
   the model's clock. On 2026-10-30 `usb_enum` also enumerated at full speed against
   Linux xHCI through the board's USB5744 hub: 14 of 14 attaches, 56,000 of 56,000
-  control transfers, 130 of 130 bus resets ([fpga/kv260/README.md](../fpga/kv260/README.md)).
+  descriptor reads (`GET_DESCRIPTOR` control transfers), 130 of 130 bus resets ([fpga/kv260/README.md](../fpga/kv260/README.md)).
   Both `usb_enum` results are for the 246-word firmware before `fault-fixes`.
   The 253-word one (a bus reset is seen wherever it starts:
   [fault-testing.md](fault-testing.md), finding 6) has run on the model and in

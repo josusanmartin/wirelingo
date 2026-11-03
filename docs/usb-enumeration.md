@@ -354,8 +354,9 @@ this result applies to it.
 * **Real hosts.** Both speeds passed against Linux on the KV260 (2026-10-30,
   Linux xHCI through the board's USB5744 hub; the chip's RTL in fabric, not
   silicon: [fpga/kv260/README.md](../fpga/kv260/README.md)). Low speed: 18 of
-  18 attaches, 10,000 of 10,000 control transfers, 58 of 58 bus resets. Full
-  speed: 14 of 14 attaches, 56,000 of 56,000, 130 of 130. Windows and macOS
+  18 attaches, 10,000 of 10,000 descriptor reads (`GET_DESCRIPTOR` control
+  transfers), 58 of 58 bus resets. Full speed: 14 of 14 attaches, 56,000 of
+  56,000 descriptor reads, 130 of 130. Windows and macOS
   have not been tried. Requests outside the list above are STALLed,
   which hosts accept (Windows' 0xEE string, the device qualifier); SET_INTERFACE
   is STALLed too, which Linux tolerates for single-setting interfaces.
