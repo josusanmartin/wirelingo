@@ -33,7 +33,7 @@ link, and it says nothing about the chip's pads.
 2. `eth_tap.py --compare fabric-ping-b.json fabric-ping-m.json`: the board's
    and the cycle model's runs are the same: each reply frame's TD edges equal
    the model's at one of its divider phases, and the received records are
-   equal. SAME. The link pulses are not compared (report 029, finding 2).
+   equal. SAME. The link pulses are not compared ([report 029](../verifier/029-fabric-ping.report.md), finding 2).
 3. `unshare --net -- eth_tap.py --backend fpga --selftest`: a real Linux
    network stack in a namespace, against the board: 5 of 5 pings (average
    round trip 52.3 ms), UDP echo of "wirelingo", no reply for an unknown IP,
