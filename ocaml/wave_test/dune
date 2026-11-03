@@ -1,0 +1,9 @@
+; Waveform expect tests: run the module under Cyclesim, print the waveform into the
+; source with [%expect], and assert the behaviour too. `dune test` fails on either.
+
+(library
+ (name wirelingo_wave_test)
+ (inline_tests)
+ (libraries base stdio hardcaml hardcaml_waveterm wirelingo_rtl)
+ (preprocess
+  (pps ppx_jane)))
