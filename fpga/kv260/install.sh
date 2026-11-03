@@ -6,7 +6,7 @@
 #
 # On the Kria: /lib/firmware/xilinx/$APP/{$APP.bit.bin,$APP.dtbo,shell.json}
 # (dtbo compiled there from protoemu.dtsi, firmware-name = $APP.bit.bin),
-# `xmutil unloadapp; xmutil loadapp $APP` (LOAD=0 skips it), and
+# `xmutil unloadapp`, then `xmutil loadapp $APP`, then `xmutil listapps` (LOAD=0 skips it), and
 # ~/$APP/{tools,firmware,fpga/kv260/host} for bringup_kria.py, with
 # host/expected_build.json = this checkout's RTL revision (build_id.py info).
 # APP defaults to protoemu.
@@ -44,7 +44,10 @@ if [ "${LOAD:-1}" = 1 ]; then
   ssh "$kria" "set -e; sudo xmutil unloadapp || true
     sudo xmutil loadapp $app
     sudo xmutil listapps | grep -E \"$app|Accelerator\""
-  echo "loaded; test with: ssh $kria sudo python3 $app/fpga/kv260/host/bringup_kria.py"
+  # xmutil can print "Load Error" and still exit 0, so this never says the load worked
+  echo "load attempted. Run nothing unless the table above shows $app as its one active row and no line says error."
+  echo "Then test with: ssh $kria sudo python3 $app/fpga/kv260/host/bringup_kria.py"
 else
-  echo "installed $app (not loaded): ssh $kria 'sudo xmutil unloadapp; sudo xmutil loadapp $app'"
+  echo "installed $app (not loaded). On the Kria, one command at a time, reading each:"
+  echo "  sudo xmutil unloadapp"; echo "  sudo xmutil loadapp $app"; echo "  sudo xmutil listapps"
 fi

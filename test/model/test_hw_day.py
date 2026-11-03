@@ -632,6 +632,18 @@ def test_step_0_says_dont_power_cycle_a_board_that_answers():
     assert seq.index("sudo xmutil unloadapp") < seq.index("sudo xmutil loadapp protoemu") < seq.index("sudo xmutil listapps")
 
 
+def test_nothing_tells_anyone_to_chain_the_load():
+    # 2026-10-30: a chained load failed and the next command hung the board (fabric_guard.py)
+    chained = re.compile(r"unloadapp\s*(;|&&)\s*(sudo\s+)?xmutil\s+loadapp|loadapp\s+[\w$]+\s*(;|&&)")
+    files = [p for p in ROOT.rglob("*") if p.suffix in (".md", ".py", ".sh") and p.is_file()
+             and not {".git", "ocaml", "sim_build"} & set(p.relative_to(ROOT).parts)
+             and p.relative_to(ROOT).as_posix() != "test/mutants.py"]
+    assert len(files) > 50
+    found = [f"{p.relative_to(ROOT)}:{n}" for p in files
+             for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1) if chained.search(line)]
+    assert not found, found
+
+
 def test_pins_on_after_the_phrase_and_off_at_the_end(run):
     run.confirm("preflight", "usb-off", "rails")
     run.board = bench

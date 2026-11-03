@@ -1173,7 +1173,7 @@ Type at its prompt: `pin risk accepted wired rx`. It enables only: silkscreen 1,
 
 * The launcher says the pad sits high: the input's trip point is below 1.1 V, or a divider wire is wrong. It stops with the pins off. The levels here are outside the guaranteed input thresholds on purpose (see Receive): this is the first thing that can stop it.
 * Only short records: frames aren't reaching ui0 as edges. The high level, 1.93 V (estimate), is under the 2.0 V normally guaranteed. If the trip point is above it, this circuit can't work.
-* Long records, FCS never good: try `sudo xmutil unloadapp; sudo xmutil loadapp protoemu` for 50 MHz (5 clocks per bit, the production receiver's rate), and check the Pi still has link, since that app's pins are 4 mA. Then swap RJ45 pins 1 and 2: a swapped pair inverts every bit and nothing corrects it.
+* Long records, FCS never good: try the 50 MHz app `protoemu`, loaded one command at a time as in Setting up, (5 clocks per bit, the production receiver's rate), and check the Pi still has link, since that app's pins are 4 mA. Then swap RJ45 pins 1 and 2: a swapped pair inverts every bit and nothing corrects it.
 * Any failure here is a normal result. Write down what it printed and stop. Don't raise the signal level to try again.
 
 ### Step 17: Mid-frame reaction on live traffic (`cut`)
@@ -1313,7 +1313,7 @@ Type at its prompt: `pin risk accepted wired ping`. It enables only: silkscreen 
 1. The patch cable out of the breakout first: with J2 11 out and J2 7 still in, the bias
    is gone and the pad would follow the pair through 1 kohm.
 2. `hd off`. Then the J2 wires, signal pins first, 9 and 11 last.
-3. Back to the 50 MHz app: `sudo xmutil unloadapp; sudo xmutil loadapp protoemu`.
+3. Back to the 50 MHz app `protoemu`, loaded one command at a time as in Setting up: `sudo xmutil unloadapp`, then `sudo xmutil loadapp protoemu`, then `sudo xmutil listapps`, reading each before the next.
 4. To restore the USB wiring: the three 1 kohm go back at `j3`-`j7`, `i7`-`i11`, `g7`-`g11`, the
    jumper `f11`-`f22` stays, then J2 silkscreen 1 to `a30`, 3 to `a20`, 11 to `i3`. Tape the black
    wire. The USB plug goes back in the Kria.

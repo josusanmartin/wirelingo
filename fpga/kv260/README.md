@@ -276,7 +276,8 @@ by pe_lab; no PMOD pin was enabled (the J2 wiring was not known, so no
 protocol went over real pins).
 
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu/fpga/kv260/host/postfreeze_demo.py --save pf50.json
-    # 48 MHz (DShot): sudo xmutil unloadapp; sudo xmutil loadapp protoemu48, then
+    # 48 MHz (DShot): sudo xmutil unloadapp, then sudo xmutil loadapp protoemu48, then sudo xmutil listapps
+    # (one at a time; run nothing unless protoemu48 is the one active row), then
     ssh ubuntu@kria.[tailnet domain redacted] sudo python3 -u protoemu48/fpga/kv260/host/postfreeze_demo.py dshot bidir --save pf48.json
     scp ubuntu@kria.[tailnet domain redacted]:pf50.json /tmp/ && python3 fpga/kv260/host/postfreeze_demo.py sigrok /tmp/pf50.json
     python3 fpga/kv260/host/postfreeze_demo.py --model          # the same runs on the cycle model (about 5 min)
@@ -1185,12 +1186,16 @@ contacts facing you, from the left: 1 VBUS, 2 D-, 3 D+, 4 GND).
 
 On the Kria (one process on the board at a time):
 
-    sudo xmutil unloadapp; sudo xmutil loadapp protoemu48
+    sudo xmutil unloadapp                                                   # one at a time, reading each
+    sudo xmutil loadapp protoemu48
+    sudo xmutil listapps                                                    # protoemu48 the one active row, else stop
     sudo python3 protoemu48/fpga/kv260/host/bringup_kria.py --mhz 48       # optional: build identity + chip checks
     sudo python3 protoemu48/fpga/kv260/host/usb_demo.py                     # the demo
     lsusb -d 1209:5634; sudo dmesg | tail
     sudo python3 protoemu48/fpga/kv260/host/usb_demo.py --stop              # again, detaching at the end
-    sudo xmutil unloadapp; sudo xmutil loadapp protoemu                     # back to the 50 MHz app
+    sudo xmutil unloadapp                                                   # back to the 50 MHz app
+    sudo xmutil loadapp protoemu
+    sudo xmutil listapps
 
 `usb_demo.py` checks the bitstream is the 48 MHz build and measures the clock
 (within 0.1 %), reads the wiring (each top-row pin pulsed low and read back

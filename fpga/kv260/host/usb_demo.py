@@ -340,7 +340,9 @@ def main():
           f"clk_div {ident['clk_div']}, built {ident['build_utc']} UTC")
     if ident["clk_div"] != 25:
         sys.exit(f"FAIL: this bitstream runs protoemu at 1200/{ident['clk_div']} MHz; USB needs the 48 MHz "
-                 "build (clk_div 25): sudo xmutil unloadapp; sudo xmutil loadapp protoemu48")
+                 "build (clk_div 25). Load it one command at a time, reading what each prints:\n"
+                 "  sudo xmutil unloadapp\n  sudo xmutil loadapp protoemu48\n  sudo xmutil listapps\n"
+                 "and run nothing unless the table shows protoemu48 as its one active row")
     board = Board()
     board.reset()
     f = board.clk_hz()

@@ -152,7 +152,7 @@ STEPS = [
     Step("preflight", "Read the board, change nothing", needs=("recover",), apps=ANY_APP, action="preflight",
          off=("Nothing changes in this step: leave the wiring as it is",),
          ok="active app named, chip ID read, PMOD0 and PMOD1 both 00000000",
-         fail="no protoemu app active: run the xmutil line it prints. PMOD not zero: `hd off`, run again"),
+         fail="no protoemu app active: run the xmutil commands it prints, one at a time. PMOD not zero: `hd off`, run again"),
     Step("usb-off", "Take the USB wiring off the Kria", needs=("preflight",),
          remove=("USB plug out first, of whichever port holds it, the Kria's or the Pi's (and leave it out)",
                  "Jumper J2 silkscreen 1 to a30: remove both ends", "Jumper J2 silkscreen 3 to a20: remove both ends",

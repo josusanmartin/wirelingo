@@ -141,7 +141,9 @@ def main():
     ident = lab.identity()
     lab.mode(Lab.GPIO)
     if ident["clk_div"] != 25:
-        sys.exit("FAIL: this needs the 48 MHz build: sudo xmutil unloadapp; sudo xmutil loadapp protoemu48")
+        sys.exit("FAIL: this needs the 48 MHz build. Load it one command at a time, reading what each prints:\n"
+                 "  sudo xmutil unloadapp\n  sudo xmutil loadapp protoemu48\n  sudo xmutil listapps\n"
+                 "and run nothing unless the table shows protoemu48 as its one active row")
     board = Board()
     board.reset()
     spim = Spim()
