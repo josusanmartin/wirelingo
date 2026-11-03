@@ -1,22 +1,54 @@
 # Blind protocol test
 
-Can a fresh agent add protocols it was not prepared for, on the frozen chip,
-using only the public docs? Evidence level throughout: **cycle model and RTL
-simulation**. Nothing here ran at gate level, on an FPGA or against a real LCD
-or disk, and no electrical property was examined.
+Can an agent add protocols it was not prepared for, on the frozen chip?
+
+**Conditions.** The agent used the public docs (`docs/isa.md`, `docs/asm.md`,
+`docs/guide.md`), public datasheets and specifications, and the existing firmware,
+tools and tests as examples. It did not change the assembler, model, tools or RTL.
+"Blind" here means *not prepared for this protocol*. It does not mean a stranger:
+the agent is the same model that has worked on this kind of task, and it knew
+what kind of chip and tests to expect. What it read is listed under "What the docs
+did not say".
+
+Evidence level throughout: **cycle model and RTL simulation**. Nothing here ran
+at gate level, on an FPGA or against a real LCD or disk, and no electrical
+property was examined.
 
 ## The draw
 
-The candidate list has 19 sorted entries. sha256("wirelingo blind test 61af9b2")
-is `fe43bc64...4274bbff`. The value mod 19 is 5 and (value >> 16) mod 19 is 1:
-**HD44780 4-bit** and **ATA PIO**. Recomputed here; it matches the brief.
+The rule: sort the candidates, take sha256("wirelingo blind test 61af9b2") as a
+number, and index the list by the value mod 19 and by (value >> 16) mod 19. The
+hash is `fe43bc640eb56e8caf084802074f23fc1cb58e754f8027188a74f3874274bbff`.
+
+| # | Candidate | # | Candidate |
+|---|---|---|---|
+| 0 | AS-Interface | 10 | MicroWire EEPROM |
+| **1** | **ATA PIO** | 11 | ModBus ASCII |
+| 2 | BiSS-C | 12 | PSI5 |
+| 3 | DMX RDM | 13 | Profibus DP frame |
+| 4 | HART | 14 | SDI-12 |
+| **5** | **HD44780 4-bit** | 15 | SENT SAE J2716 |
+| 6 | Hall-sensor SPC | 16 | Sony SIRC IR |
+| 7 | KNX TP1 | 17 | TM1637 display |
+| 8 | M-Bus EN 13757-2 | 18 | nRF24 SPI framing |
+| 9 | MAX6675 thermocouple read | | |
+
+The value mod 19 is 5 and (value >> 16) mod 19 is 1: HD44780 4-bit (the LCD write
+and busy-flag read) and ATA PIO.
+
+**What the draw does and does not show.** The list was written by the orchestrator,
+an AI agent, not an outsider. It started with 20 entries; SWIM (the STM8 debug
+link) was removed before the draw because the project keeps debug-link work
+parked. The list was made and drawn in one step on 2026-11-02 with no independent
+timestamp, so **that it was fixed in advance cannot be proved**. The arithmetic
+can be checked; the list's independence cannot.
 
 ## Verdicts
 
 | Protocol | Verdict | Program | Reasoned limit |
 |---|---|---|---|
 | HD44780 4-bit, write and busy-flag read | **Fits** | `firmware/hd44780_4bit.pasm`, 99 words, one core | Assumes a 3.3 V LCD; see Open |
-| ATA PIO | **Does not fit as specified. Largest honest subset works**: 8-bit-wide host, PIO mode 0, polled | `firmware/ata_pio.pasm`, 100 words, one core | No 16-bit Data register, so no ordinary ATA disk's sectors |
+| ATA PIO | **Does not fit as specified. A working subset exists**: an 8-bit-wide host, polled, PIO mode 0 and faster builds for modes 1 to 4 | `firmware/ata_pio.pasm`, 100 words, one core | No 16-bit Data register, so no ordinary ATA disk's sectors |
 
 ### Why ATA PIO does not fit
 
@@ -27,11 +59,18 @@ chip has 8 bidirectional pads (uio), 7 output-only (uo[6:0]) and 5 input-only
 cannot be had: the output-only pads cannot be released, and there are 8 fewer
 bidirectional pads than ATA's data bus alone needs.
 
-What does fit: all 8 bidirectional pads on DD7:0, the 7 outputs on DA2:0, CS0-,
-CS1-, DIOR-, DIOW-, and IORDY on an input. Not wired: DD15:8, RESET- (software
-reset instead), INTRQ (polling), DMARQ/DMACK-.
+What this firmware uses: all 8 bidirectional pads on DD7:0, all 7 outputs on
+DA2:0, CS0-, CS1-, DIOR-, DIOW-, and IORDY on an input.
 
-That gives a real subset, because ATA's task-file registers are 8 bits on DD7:0
+* **Do not fit:** DD15:8, and RESET-, since the output pads are full (software
+  reset instead).
+* **Left out by choice:** INTRQ. This firmware polls. 4 input pads stay free, so a
+  design could wire it. DMARQ/DMACK- are unused.
+* **Cost to the host port:** taking all of uo[6:0] includes uo[6:4], the quad
+  port's data pads (isa.md §6.1), so with this firmware the host port runs 1-bit.
+  That limits sector rate. No rate was measured; the tests run SPI at clk/8.
+
+That gives a working subset, because ATA's task-file registers are 8 bits on DD7:0
 (ATA-3, DD signal description) and the CFA feature set has an 8-bit PIO mode:
 
 * **CFA device (CompactFlash in True IDE mode):** after SET FEATURES 01h, full
@@ -42,8 +81,41 @@ That gives a real subset, because ATA's task-file registers are 8 bits on DD7:0
   be moved, and a write would leave DD15:8 undriven.
 
 External latches on the 8-bit bus, as XT-IDE adapters use, are a possible way to
-16 bits. That is glue logic on a board, untested and not claimed here. Faster PIO
-modes were not attempted, so mode 0 is what was tried, not a measured ceiling.
+16 bits. That is glue logic on a board, untested and not claimed here.
+
+### Faster PIO modes: what was tried
+
+An earlier version of this report called mode 0 the "largest" subset. That was
+wrong: an independent check got sector transfers at PIO mode 1 timing by removing
+two padding delays. So each mode was then tried properly. The far end holds each
+mode's table (ATA-3 Table 21, with t2 and mode 2's t0 as noted below) and enforces
+it, including t2i. A device starts at mode 0, so the host runs the mode 0 build,
+sends SET FEATURES 03h (ATA-3 Table 16, `00001nnn`), then loads the build for
+that mode. The far end negates IORDY as late as tA allows.
+
+| Mode | Build (`pio_defines`) | t0 | t2 | t2i | t3 | t4 | t9 | Spec t0 / t2 / t2i |
+|---|---|---|---|---|---|---|---|---|
+| 0 | TS 12 | 620 | 320 | 300 | 360 | 100 | 160 | 600 / 290 / - |
+| 1 | TS 13 | 420 | 340 | 80 | 380 | 40 | 100 | 383 / 290 / - |
+| 2 | TS 13, same build | 420 | 340 | 80 | 380 | 40 | 100 | 330 (memory) / 290 / - |
+| 3 | TS 3 | 220 | 140 | 80 | 180 | 40 | 100 | 180 / 80 / 70 |
+| 4 | TS 3, same build | 220 | 140 | 80 | 180 | 40 | 100 | 120 / 70 / 25 |
+
+Figures are the smallest seen at the pads, in ns. t1 is 100 in all. Each mode
+wrote a sector and read it back, and stayed correct with IORDY held 700 ns, on the
+model (2 sectors) and on the RTL through SPI (1 sector).
+
+What this does not say:
+
+* **Mode 4's timing is met; its rate is not.** One fast build serves modes 3 and
+  4. Its byte cycle is 220 ns reading and, by instruction count, 280 ns writing,
+  against mode 4's 120 ns. The instruction overhead of a strobe sets that.
+* **No maximum is claimed.** These builds were chosen to meet each table with
+  margin, not to find the fastest possible. Mode 1's and 2's t2 at 290 ns is the
+  secondary figure below, and it decides those builds.
+* Static deadlines cover mode 0 only; the faster builds' figures are measured.
+* WAIT's unit shrinks with the build, since it counts polls.
+* That a real CF card accepts these modes in 8-bit mode is unverified.
 
 ## Pins and host protocol
 
@@ -120,7 +192,7 @@ The first and last two are labelled in the far-end sources too.
   oscillators, BF stuck, BSY stuck, IORDY extended and stuck, RX full mid-sector,
   slow TX refill, refused blocks, seeded random stress.
 * **RTL**: `test/test_blind.py`, 13 tests through the SPI port.
-* **Static timing**: 8 HD44780 and 10 ATA deadlines pass (3 of ATA's are
+* **Static timing**: 8 HD44780 and 10 ATA (mode 0) deadlines pass (3 of ATA's are
   conditional, meaning they bound only the paths that reach the end point) and
   both firmwares' bounds are checked against model measurements.
 * **Mutants**: `test/blind_mutants.py`, 29 one-line firmware bugs, 29 killed
@@ -181,11 +253,23 @@ not yet valid, and at its rise this decoder would need the sample before the edg
 17. The far end drove DD on an invalid address. Found by that new test. Fixed from
     Table 6.
 18. t0 was exactly 600 ns on block writes, zero margin. One delay tick added.
-19. The sigrok run at the final code failed in `sigrok.decode`, not in a check:
+19. The sigrok run at the code of that time failed in `sigrok.decode`, not in a check:
     the `sg-bench-fw` copy named in the brief was deleted from runner1 during the
     run, by something other than this work. Rerun with `bench-fw/sigrok`, version
     0.7.2 as well. The plain `remote_test.sh` run had skipped those branches
     silently, so 13/13 there did not show them.
+20. **Found by the verifier, not by me.** "Largest subset" was false; the doc's
+    first sentence oversold "blind"; the list was unpublished; the header said no
+    pad was left for INTRQ; the times were called log points; the quad-port cost
+    was missing; and three test gaps let mutants through: ERR ignored when DRQ is
+    up, idling with CS0- low, polling Status instead of Alternate Status.
+21. The model rig showed the far end's output at the start of a cycle, a clock
+    before the edge that samples it. That made the read sample look like 260 ns
+    against the RTL's 280, and it read a mode 2 device's status as garbage here (likely
+    the mode 2 stall the verifier reported, not confirmed). Fixed in the rig;
+    model and RTL now agree. Earlier, a separate window had been written down for
+    the model instead of finding this.
+22. Mode 3/4 first used TS 2, which sampled IORDY 5 ns past tA. Moved to TS 3.
 
 ## What the docs did not say
 
@@ -224,23 +308,20 @@ not yet valid, and at its rise this decoder would need the sample before the edg
 
 ## Times
 
-Wall clock from first read at 21:16:20 UTC, 2026-11-02. Log points are when a
-result was seen, so these are upper bounds. Work overlapped, and reading was
-shared, so the two do not add up.
+**These are the agent's own record, with no log behind them.** They come from the
+agent's shell timestamps during the session. No log was published or can be
+checked, and none has been reconstructed. Treat them as a statement, not a
+measurement. Git has one firmware commit, so it cannot show the order of work
+either: that the far ends came before their firmware is also the agent's own
+account.
 
-| Protocol | First read to all its model and RTL tests passing |
+| Protocol | First read to all its model and RTL tests passing, as recorded |
 |---|---|
-| HD44780 4-bit | 60 min 55 s (22:17:15) |
-| ATA PIO subset | 86 min 32 s (22:42:52) |
+| HD44780 4-bit | 60 min 55 s |
+| ATA PIO subset, mode 0 | 86 min 32 s |
 
-Mutants and review continued after those points and changed firmware (longer
-tADD wait, one more recovery tick). Hardening and final verification ended at
-about 23:50:52 UTC.
-
-Final results, at commit 3218e99 (a later commit touches only this file):
-whole model suite 1450 passed, 23 skipped, including this work's 56; `test_blind`
-13/13 without sigrok and 13/13 with it, the `parallel` checks running on both
-protocols; mutants 29/29 killed after a passing baseline.
+Reading was shared and work overlapped, so the two do not add up. Mutants, review
+and the verifier's findings continued after those points and changed firmware.
 
 ## Open
 
@@ -252,6 +333,7 @@ protocols; mutants 29/29 killed after a passing baseline.
   strobes with the polarity changed in firmware. Unresolved.
 * HD44780 at 5 V needs level shifting on DB reads. Only a 3.3 V module was
   assumed. The HD44780S and clones have other tables, not checked.
+* The list's independence: see The draw.
 * The far ends are one reader's interpretation of the sources, with the
   from-memory items above. No real device has disagreed with them because none
   has been tried.
@@ -267,7 +349,7 @@ protocols; mutants 29/29 killed after a passing baseline.
 remote_test.sh model test_blind       # [home directory redacted]/dev/protoemu-agent-tools/
 # with sigrok, in the runner1 checkout it prints:
 cd test && PATH=$HOME/tools/oss-cad-suite/bin:$PATH \
-  SIGROK_CLI=$HOME/protoemu-flow/agent-runs/bench-fw/sigrok/sigrok-cli \
+  SIGROK_CLI=$HOME/protoemu-flow/sigrok/sigrok-cli \
   make COCOTB_TEST_MODULES=test_blind
 # mutants, from the checkout root:
 PYTHONPATH=tools ~/protoemu-flow/test-venv/bin/python test/blind_mutants.py

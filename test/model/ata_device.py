@@ -28,8 +28,17 @@ iordy(t) its IORDY level. DD15:8 are not wired to the chip, which it records.
 """
 from collections import namedtuple
 
-Pio = namedtuple("Pio", "t0 t1 t2 t2_16 t3 t4 t5 t6 t6z t9 ta tb")
-MODE0 = Pio(t0=600, t1=70, t2=290, t2_16=165, t3=60, t4=30, t5=50, t6=5, t6z=30, t9=20, ta=35, tb=1250)
+Pio = namedtuple("Pio", "t0 t1 t2 t2_16 t3 t4 t5 t6 t6z t9 ta tb t2i")
+# [ATA3] Table 21, except t2 here: 8-bit, [LINUX] `ataspec_t2_8`; and mode 2's t0,
+# 330 ns, the 8-bit register figure, from memory (the table's 240 is 16-bit).
+MODES = [
+    Pio(t0=600, t1=70, t2=290, t2_16=165, t3=60, t4=30, t5=50, t6=5, t6z=30, t9=20, ta=35, tb=1250, t2i=0),
+    Pio(t0=383, t1=50, t2=290, t2_16=125, t3=45, t4=20, t5=35, t6=5, t6z=30, t9=15, ta=35, tb=1250, t2i=0),
+    Pio(t0=330, t1=30, t2=290, t2_16=100, t3=30, t4=15, t5=20, t6=5, t6z=30, t9=10, ta=35, tb=1250, t2i=0),
+    Pio(t0=180, t1=30, t2=80, t2_16=80, t3=30, t4=10, t5=20, t6=5, t6z=30, t9=10, ta=35, tb=1250, t2i=70),
+    Pio(t0=120, t1=25, t2=70, t2_16=70, t3=20, t4=10, t5=20, t6=5, t6z=30, t9=10, ta=35, tb=1250, t2i=25),
+]
+MODE0 = MODES[0]
 
 BSY, DRDY, DF, DSC, DRQ, CORR, IDX, ERR = 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01
 ABRT = 0x04
@@ -39,9 +48,13 @@ STATUS_WINDOW_NS = 400      # [ATA3] 6.2: BSY or DRQ set within 400 ns of the Co
 class AtaDevice:
     def __init__(self, cfa=True, nsectors=64, exec_ns=20_000, between_ns=5_000, power_busy_ns=0,
                  iordy_low_ns=0, iordy_stuck=False, stuck_bsy=False, reset_busy_ns=100_000,
-                 tm=MODE0, model="WIRELINGO BLIND TEST ATA", status_window_ns=STATUS_WINDOW_NS):
+                 tm=MODE0, model="WIRELINGO BLIND TEST ATA", status_window_ns=STATUS_WINDOW_NS,
+                 max_mode=4, err_with_drq=False):
         self.tm = tm
         self.window = status_window_ns
+        self.max_mode = max_mode
+        self.err_with_drq = err_with_drq    # ERR set while DRQ is up: a block must be refused
+        self.status_reads = 0       # Status, which clears a pending interrupt; Alternate Status does not
         self.cfa = cfa
         self.exec_ns, self.between_ns, self.reset_busy_ns = exec_ns, between_ns, reset_busy_ns
         self.iordy_low_ns, self.iordy_stuck, self.stuck_bsy = iordy_low_ns, iordy_stuck, stuck_bsy
@@ -89,6 +102,7 @@ class AtaDevice:
         self.out_end = None         # valid until here
         self.out_off = None         # released at this time
         self.iordy_rise = None      # IORDY active again at this time (None = active)
+        self.iordy_from = 0         # and negated only from here: tA after the strobe, the latest allowed
         self.max_low = 0
 
     # ---------------------------------------------------------------- helpers
@@ -171,6 +185,10 @@ class AtaDevice:
         if self.t_prev_fall is not None and t - self.t_prev_fall < self.tm.t0:
             self._e(t, f"t0: {t - self.t_prev_fall:.0f} ns")
         self.t_prev_fall = t
+        self._see("t2i", t - self.t_rise)
+        if t - self.t_rise < self.tm.t2i:
+            self._e(t, f"t2i: {t - self.t_rise:.0f} ns")
+        self.iordy_from = t + self.tm.ta
         if self.iordy_stuck:
             self.iordy_rise = float("inf")
         elif self.iordy_low_ns:
@@ -230,6 +248,7 @@ class AtaDevice:
         if reg == 0:
             return self._data_read(t)
         if reg == 7:
+            self.status_reads += 1
             return self._shown_status(t)
         return {1: self.err, 2: self.sc, 3: self.sn, 4: self.cl, 5: self.ch, 6: self.dh}[reg]
 
@@ -273,6 +292,7 @@ class AtaDevice:
             if t - self.srst_t < 5000:
                 self._e(t, f"SRST held only {t - self.srst_t:.0f} ns (ATA-3 note 25: 5 us)")
             self.bus8 = False
+            self.tm = MODE0
             self.buf, self.pos, self.dir = bytearray(), 0, None
             self.busy_until = t + self.reset_busy_ns
 
@@ -324,13 +344,15 @@ class AtaDevice:
 
     def _load(self, data, d):
         self.buf, self.pos, self.dir = bytearray(data), 0, d
-        self.status = DRDY | DSC | DRQ
+        self.status = DRDY | DSC | DRQ | (ERR if self.err_with_drq else 0)
 
     def _set_features(self, t):
         if self.feat == 0x01 and self.cfa:
             self.bus8 = True
         elif self.feat == 0x81 and self.cfa:
             self.bus8 = False
+        elif self.feat == 0x03 and self.sc & 0xF8 == 0x08 and self.sc & 7 <= self.max_mode:
+            self.tm = MODES[self.sc & 7]    # [ATA3] 8.x Set transfer mode, Table 16
         else:
             self._abort(t)
 
@@ -408,6 +430,7 @@ class AtaDevice:
     # ---------------------------------------------------------------- outputs
     def next_change(self, t):
         c = [self.out_valid_from if self.out_on else None, self.out_end, self.out_off, self.iordy_rise,
+             self.iordy_from if self.iordy_rise is not None else None,
              self.busy_until if self.after else None]
         c = [x for x in c if x is not None and x > t and x != float("inf")]
         return min(c) if c else None
@@ -424,9 +447,9 @@ class AtaDevice:
 
     def iordy(self, t):
         """IORDY as the pad sees it. Active (1) when no strobe is extended.
-        The device has tA = 35 ns from the strobe to negate it; this model is
-        faster than that, the host's sampling only has to be later."""
-        if self.iordy_rise is None:
+        The device has tA = 35 ns from the strobe to negate it, and this model
+        takes all of it: a host that looks earlier misses the extension."""
+        if self.iordy_rise is None or t < self.iordy_from:
             return 1
         if t >= self.iordy_rise:
             self.iordy_rise = None

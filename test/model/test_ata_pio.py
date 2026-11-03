@@ -18,7 +18,7 @@ FW = pathlib.Path(__file__).resolve().parents[2] / "firmware"
 CLK_NS = 20
 IORDY = 16
 FIO = 7
-DEFS = {"IORDY": IORDY, "ITO": 70, "FIO": FIO}
+DEFS = {"IORDY": IORDY, "ITO": 70, "FIO": FIO, **pio_defines(0)}
 SIDE = 13
 
 def load(**over):
@@ -30,6 +30,7 @@ class Rig:
         self.mh = ModelHost()
         self.dev = dev or ata.AtaDevice()
         self.clk_ns = clk_ns
+        self.clkdiv = clkdiv
         self.mh.apply(host.load_program(0, load(**over), out_pins=(0, 13), in_pins=0, side_pins=SIDE,
                                         clkdiv=clkdiv))
         self.mh.write(sim.A_POUT, 0x7F00)     # strobes and chip selects inactive
@@ -43,15 +44,25 @@ class Rig:
     def t(self):
         return self.mh.chip.cycle * self.clk_ns
 
+    def use_mode(self, mode):
+        """The device stays in the mode it was told; the host loads the build for it."""
+        self.mh.write(sim.A_CTRL, 0)
+        self.mh.apply(host.load_program(0, load(**pio_defines(mode)), out_pins=(0, 13), in_pins=0,
+                                        side_pins=SIDE, clkdiv=self.clkdiv))
+        self.mh.start(1)
+
     def step(self):
         m = self.mh
         t = self.t()
         uo, _, oe = m.chip.outputs()
         bus = m.bus_uio()
         self.dev.feed(t, uo & 7, (uo >> 3) & 1, (uo >> 4) & 1, (uo >> 5) & 1, (uo >> 6) & 1, bus & 0xFF, oe & 0xFF)
-        v, doe = self.dev.drive(t)
+        # What the far end shows just before this cycle's closing edge, the one that
+        # samples the pads. A change exactly on that edge goes to the next, as on the RTL.
+        edge = t + self.clk_ns - 1
+        v, doe = self.dev.drive(edge)
         m.uio, m.ext_oe = v, doe
-        m.ui = (m.ui & ~1) | self.dev.iordy(t)
+        m.ui = (m.ui & ~1) | self.dev.iordy(edge)
         if self.pending is None:
             m.step()
         else:                           # a host write is a cycle too: the far end must see it
@@ -421,7 +432,7 @@ def test_static_bounds_are_sound_on_the_model():
 
 # ------------------------------------------------------------- exact figures
 
-ATA_SEEN = {"t0": 620, "t1": 100, "t2": 320, "t3": 360, "t4": 100, "t9": 160}
+ATA_SEEN = {"t0": 620, "t1": 100, "t2": 320, "t2i": 300, "t3": 360, "t4": 100, "t9": 160}
 
 
 def test_smallest_figures_seen_at_the_pads():
@@ -439,11 +450,10 @@ def test_smallest_figures_seen_at_the_pads():
     assert not r.dev.errors, r.dev.errors
 
 
-@pytest.mark.parametrize("valid_ns,ok", [(250, True), (270, False)])
+@pytest.mark.parametrize("valid_ns,ok", [(270, True), (290, False)])
 def test_read_sample_point_from_both_sides(valid_ns, ok):
-    """Here the pad a device drives appears at the next cycle start, so the
-    sample is at 260 ns of model time; the RTL test ata_read_sample_point pins
-    the continuous figure, 280 ns. Mode 0 gives 240 ns (t2 - t5)."""
+    """DD is sampled 280 ns after DIOR- falls, as ata_read_sample_point finds on
+    the RTL. Mode 0 gives 240 ns (t2 - t5)."""
     d = ata.AtaDevice(tm=ata.MODE0._replace(t5=290 - valid_ns))
     r = Rig(d)
     r.push([wr(R_SN, 0x5A), rd(R_SN)])
@@ -483,3 +493,117 @@ def test_random_stress(seed):
         r.idle(rng.randrange(0, 5000))
     assert not d.errors, d.errors[:5]
     assert not r.mh.chip.flags & (1 << FIO)
+
+
+# ------------------------------------------------------------- the status path
+
+def test_err_with_drq_refuses_the_block():
+    """The check is BSY = 0, DRQ = 1, ERR = 0. Here DRQ is up and only ERR says no."""
+    r = ready()
+    r.dev.err_with_drq = True
+    r.push(lba(1) + [wr(R_CMD, 0x20)])
+    assert r.status() & 0x1FF == 0x59
+    r.dev.cycles.clear()
+    r.push([bread(128)])
+    assert r.expect(1)[0] == (REFUSED | 0x59)
+    assert [c for c in r.dev.cycles if c[3] == 0] == []
+    assert not r.dev.errors, r.dev.errors
+
+
+def test_idle_bus_is_deselected():
+    """CS0- and CS1- high and DD released after every kind of op."""
+    r = ready()
+    for words, n in (([rd(R_SN)], 1), ([wr(R_SN, 1)], 0), ([wait()], 1), ([delay(1)], 0)):
+        r.push(words)
+        r.expect(n)
+        r.idle(3000)
+        uo, _, oe = r.mh.chip.outputs()
+        assert (uo >> 3) & 3 == 3 and (uo >> 5) & 3 == 3 and oe == 0, (words, bin(uo), oe)
+
+
+def test_polls_use_alternate_status():
+    """A device clears a pending interrupt when Status is read, so neither WAIT
+    nor the block check may read it: every status read is CS1-, DA = 6."""
+    r = ready()
+    r.dev.status_reads = 0
+    r.dev.cycles.clear()
+    r.read_sectors(2)
+    assert r.dev.status_reads == 0
+    alt = [c for c in r.dev.cycles if c[3] == 1 and c[4] == 0]
+    assert alt and all(c[2] == "r" and c[5] == 6 for c in alt)
+
+
+# ------------------------------------------------------------- faster modes
+
+MODE_SEEN = {
+    1: {"t0": 420, "t1": 100, "t2": 340, "t2i": 80, "t3": 380, "t4": 40, "t9": 100},
+    2: {"t0": 420, "t1": 100, "t2": 340, "t2i": 80, "t3": 380, "t4": 40, "t9": 100},
+    3: {"t0": 220, "t1": 100, "t2": 140, "t2i": 80, "t3": 180, "t4": 40, "t9": 100},
+    4: {"t0": 220, "t1": 100, "t2": 140, "t2i": 80, "t3": 180, "t4": 40, "t9": 100},
+}
+
+
+def at_mode(mode, **kw):
+    """Mode 0 until the device is told, then the build for that mode."""
+    d = ata.AtaDevice(**kw)
+    r = Rig(d)
+    r.reset()
+    assert r.enable_8bit() & 0x1FF == 0x50
+    r.push(set_mode(mode))
+    assert r.status() & 0x1FF == 0x50
+    assert d.tm == ata.MODES[mode]
+    r.use_mode(mode)
+    d.seen.clear()
+    d.cycles.clear()
+    return r
+
+
+@pytest.mark.parametrize("mode", [1, 2, 3, 4])
+def test_faster_mode_read_write(mode):
+    r = at_mode(mode)
+    data = bytes(random.Random(mode).getrandbits(8) for _ in range(1024))
+    r.write_sectors(20, data)
+    assert r.read_sectors(20, 2) == data
+    r.push([rd(R_SN), wr(R_SN, 1), rd(R_SN)])
+    r.expect(2)
+    r.idle(2000)
+    assert not r.dev.errors, r.dev.errors[:4]
+    assert r.dev.seen == MODE_SEEN[mode]
+
+
+@pytest.mark.parametrize("mode", [1, 2, 3, 4])
+def test_faster_mode_follows_iordy(mode):
+    """The device takes all of tA to negate IORDY, the firmware must still see it."""
+    r = at_mode(mode)
+    r.dev.iordy_low_ns = 700
+    data = bytes(range(256)) * 2
+    r.write_sectors(30, data)
+    assert r.read_sectors(30) == data
+    assert not r.dev.errors, r.dev.errors[:4]
+    assert not r.mh.chip.flags & (1 << FIO)
+    assert min(b - a for a, b, *_ in r.dev.cycles) >= 700     # every strobe stretched
+
+
+@pytest.mark.parametrize("mode", [1, 3])
+def test_fast_build_on_a_mode0_device_is_caught_negative(mode):
+    """The control: the far end does enforce each mode. Skip SET FEATURES 03h."""
+    d = ata.AtaDevice()
+    r = Rig(d)
+    r.reset()
+    assert r.enable_8bit() & 0x1FF == 0x50
+    r.push(lba(1) + [wr(R_CMD, 0x20)])
+    assert r.status() & 0x1FF == 0x58
+    r.use_mode(mode)
+    r.push([bread(4)])
+    r.expect(1, limit=20000)
+    r.idle(5000)
+    assert any(k in e for e in d.errors for k in ("t0:", "t2:")), d.errors[:4]
+
+
+def test_set_features_refuses_a_mode_the_device_lacks():
+    d = ata.AtaDevice(max_mode=2)
+    r = Rig(d)
+    r.reset()
+    r.push(set_mode(3))
+    assert r.status() & 0x1FF == 0x51
+    assert d.tm == ata.MODE0

@@ -261,7 +261,12 @@ ATA_IORDY, ATA_ITO, ATA_FIO = 16, 70, 7
 
 
 def ata_prog(ito=ATA_ITO):
-    return asm.assemble((FW / "ata_pio.pasm").read_text(), {"IORDY": ATA_IORDY, "ITO": ito, "FIO": ATA_FIO})
+    return ata_prog_mode(0, ito)
+
+
+def ata_prog_mode(mode, ito=ATA_ITO):
+    return asm.assemble((FW / "ata_pio.pasm").read_text(),
+                        {"IORDY": ATA_IORDY, "ITO": ito, "FIO": ATA_FIO, **ah.pio_defines(mode)})
 
 
 def ata_farend(dut, spi, dev):
@@ -372,7 +377,7 @@ async def ata_identify_read_write(dut):
     assert lows == {320.0}
     assert gap == 620
     dut._log.info(f"ATA: smallest figures at the pads {dev.seen}")
-    assert dev.seen == {"t0": 620, "t1": 100, "t2": 320, "t3": 360, "t4": 100, "t9": 160}, dev.seen
+    assert dev.seen == {"t0": 620, "t1": 100, "t2": 320, "t2i": 300, "t3": 360, "t4": 100, "t9": 160}, dev.seen
 
     if HAVE_SIGROK:
         dut._log.info("ATA: sigrok parallel decoder ran")
@@ -532,3 +537,72 @@ async def ata_reset_window_is_a_real_limit(dut):
     assert (await ata_replies(dut, spi, 1))[0] == 0x5A
     fe.stop()
     assert not dev.errors, dev.errors[:5]
+
+
+async def ata_mode_run(dut, mode):
+    """Mode 0 until the device is told, then the build for that mode: a sector
+    written and read back through SPI, IORDY held on the read."""
+    dev = ata.AtaDevice()
+    spi, fe = await ata_start(dut, dev)
+    await ata_ready(dut, spi)
+    await ata_push(spi, ah.set_mode(mode))
+    assert await ata_status(dut, spi) == 0x50
+    assert dev.tm == ata.MODES[mode]
+    await spi.write(sim.A_CTRL, [0])
+    await T.run_program(spi, 0, ata_prog_mode(mode), out_pins=(0, 13), in_pins=0, side_pins=13, clkdiv=1 << 8)
+    dev.seen.clear()
+    data = bytes((i * 7 + mode) & 255 for i in range(512))
+    await ata_push(spi, ah.lba(9) + [ah.wr(ah.R_CMD, 0x30)])
+    assert await ata_status(dut, spi) == 0x58
+    await ata_push(spi, [ah.bwrite(128)] + ah.be_words(data))
+    assert (await ata_replies(dut, spi, 1))[0] == 0x58
+    assert await ata_status(dut, spi) == 0x50
+    await ata_push(spi, ah.lba(9) + [ah.wr(ah.R_CMD, 0x20)])
+    assert await ata_status(dut, spi) == 0x58
+    await ata_push(spi, [ah.bread(128)])
+    got = await ata_replies(dut, spi, 129)
+    assert b"".join(w.to_bytes(4, "big") for w in got[1:]) == data
+    assert await ata_status(dut, spi) == 0x50
+    await ata_push(spi, [ah.rd(ah.R_SN), ah.wr(ah.R_SN, 1), ah.rd(ah.R_SN)])
+    await ata_replies(dut, spi, 2)
+    await PF.wait_ns(dut, 2000, 20)
+    assert not dev.errors, dev.errors[:5]
+    seen = dict(dev.seen)
+    dut._log.info(f"ATA: mode {mode} smallest figures at the pads {seen}")
+    dev.iordy_low_ns = 700
+    await ata_push(spi, ah.lba(9) + [ah.wr(ah.R_CMD, 0x20)])
+    assert await ata_status(dut, spi) == 0x58
+    await ata_push(spi, [ah.bread(128)])
+    got = await ata_replies(dut, spi, 129)
+    fe.stop()
+    assert b"".join(w.to_bytes(4, "big") for w in got[1:]) == data
+    assert not dev.errors, dev.errors[:5]
+    assert seen == ATA_MODE_SEEN[mode], seen
+
+
+ATA_MODE_SEEN = {
+    1: {"t0": 420, "t1": 100, "t2": 340, "t2i": 80, "t3": 380, "t4": 40, "t9": 100},
+    2: {"t0": 420, "t1": 100, "t2": 340, "t2i": 80, "t3": 380, "t4": 40, "t9": 100},
+    3: {"t0": 220, "t1": 100, "t2": 140, "t2i": 80, "t3": 180, "t4": 40, "t9": 100},
+    4: {"t0": 220, "t1": 100, "t2": 140, "t2i": 80, "t3": 180, "t4": 40, "t9": 100},
+}
+
+
+@cocotb.test()
+async def ata_mode1(dut):
+    await ata_mode_run(dut, 1)
+
+
+@cocotb.test()
+async def ata_mode2(dut):
+    await ata_mode_run(dut, 2)
+
+
+@cocotb.test()
+async def ata_mode3(dut):
+    await ata_mode_run(dut, 3)
+
+
+@cocotb.test()
+async def ata_mode4(dut):
+    await ata_mode_run(dut, 4)

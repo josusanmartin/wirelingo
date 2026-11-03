@@ -1,5 +1,5 @@
-; ATA PIO, the subset that fits this chip's pads: an 8-bit-wide host at PIO
-; mode 0, polled. docs/blind-test.md says what does not fit and why.
+; ATA PIO, a working subset on this chip's pads: an 8-bit-wide host, polled,
+; assembled for one PIO mode. docs/blind-test.md says what does not fit and why.
 ;
 ;   DD7:0 = P0-P7 (uio)              the only 8 bidirectional pads there are
 ;   DA0-2, CS0-, CS1- = P8-P12       OUT_BASE 0, OUT_COUNT 13: one MOV sets
@@ -7,15 +7,23 @@
 ;   DIOR- = P13, DIOW- = P14         side-set base 13, 2 pins, bit 0 = DIOR-
 ;   IORDY = an input pad, IORDY define
 ;
-; Not wired, because no pad is left: DD15:8, RESET- (use SRST), INTRQ is
-; optional and polling does not need it, DMARQ/DMACK- (tie DMACK- high).
+; Not wired, because no pad is left: DD15:8, which need bidirectional pads, and
+; RESET- (use SRST): all 7 output pads are taken, which also means the quad host
+; port's uo[6:4] are, so the host port runs 1-bit. Not used by choice: INTRQ.
+; This firmware polls, and 4 input pads stay free if a design wants it.
+; DMARQ/DMACK- are not used (tie DMACK- high).
 ; A device with a 16-bit Data register gets full register access and reads of
 ; the low byte only. 512-byte sectors need the CFA feature set's 8-bit mode
 ; (SET FEATURES 01h), which is the host's first command.
 ;
 ; Tick = 20 ns (CLKDIV 1 at 50 MHz; a slower clock only lengthens everything).
-; Smallest figures at the pads (test_smallest_figures_seen_at_the_pads): t0 620,
-; t1 100, DIOR-/DIOW- low 320 (t2 >= 290 for 8-bit), t3 360, t4 100, t9 160 ns.
+; TS, RREC, RGAP, WREC, WGAP set one mode's strobe and recovery; ata_host.py's
+; pio_defines(mode) gives them. A device starts at mode 0: run the mode 0 build,
+; send SET FEATURES 03h, then load the faster build. Static deadlines below are
+; for mode 0; the others are measured (docs/blind-test.md has the table).
+; Smallest figures at the pads, mode 0 (test_smallest_figures_seen_at_the_pads):
+; t0 620, t1 100, DIOR-/DIOW- low 320 (t2 >= 290 for 8-bit), t3 360, t4 100,
+; t9 160 ns.
 ; Reads take DD 2 clocks of synchroniser before the sample tick, so 40 ns before
 ; DIOR- rises: 280 ns after it fell, later than the 240 ns (t2 - t5) at which a
 ; mode 0 device guarantees data.
@@ -24,7 +32,7 @@
 ;   0 WRITE    write the image's register and data
 ;   1 READ     read the image's register. RX: [7:0]
 ;   2 WAIT     poll Alternate Status until BSY = 0, for (arg + 1) * 1024 polls
-;              of 620 ns. RX: [7:0] last status, [8] timed out. A WAIT queued
+;              (620 ns each at mode 0). RX: [7:0] last status, [8] timed out. A WAIT queued
 ;              behind a Command write polls 540 ns after that write's rise, past
 ;              the 400 ns ATA-3 gives BSY to appear (deadline status_400)
 ;   3 BREAD    one status read, then only if BSY = 0, DRQ = 1, ERR = 0 read
@@ -136,7 +144,7 @@ bread:
     ldi r0, 3
 bbyte:
     call rd_strobe
-    jmp r0--, bbyte           [8]
+    jmp r0--, bbyte           [RGAP]
     push block                        ; bus idle while the host catches up
     jmp r2--, bread
     jmp done
@@ -152,7 +160,7 @@ bwbyte:
     or r1, 0x1000
     mov pins, r1
     call wr_strobe
-    jmp r0--, bwbyte          [5]
+    jmp r0--, bwbyte          [WGAP]
     jmp r2--, bwword
     jmp done
 
@@ -167,26 +175,28 @@ drain:
     jmp r2--, drain
     jmp done
 
-; ---- leaves: one strobe each. r3 is theirs. Fall to rise 16 ticks if IORDY is high.
+; ---- leaves: one strobe each. r3 is theirs. Fall to rise TS + 4 ticks if IORDY is high.
+; The WAIT reads IORDY TS + 2 ticks after the fall, less 2 of synchroniser: 60 ns
+; at TS = 3, the shortest build, past tA's 35.
 rd_strobe:
-    nop                       side 2 [12]     ; @point rs0
+    nop                       side 2 [TS]     ; @point rs0
     ldi r3, ITO
     wait 1 pin IORDY timeout r3
     jmp t, rlate
 rend:
     in pins, 8                side 3          ; @point rs1
-    ret                       [3]
+    ret                       [RREC]
 rlate:
     flag set FIO
     jmp rend
 
 wr_strobe:
-    nop                       side 1 [12]     ; @point ws0
+    nop                       side 1 [TS]     ; @point ws0
     ldi r3, ITO
     wait 1 pin IORDY timeout r3
     jmp t, wlate
 wend:
-    nop                       side 3 [3]      ; @point ws1
+    nop                       side 3 [WREC]   ; @point ws1
     ret
 wlate:
     flag set FIO

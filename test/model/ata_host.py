@@ -53,5 +53,18 @@ def lba(n, count=1):
             wr(R_CH, (n >> 16) & 255)]
 
 
+def pio_defines(mode):
+    """Assembler defines for firmware/ata_pio.pasm at a PIO mode. Low time is
+    TS + 4 ticks. Modes 1 and 2 share a build, as do 3 and 4: docs/blind-test.md."""
+    ts, rrec, rgap, wrec, wgap = {0: (12, 3, 8, 3, 5), 1: (13, 0, 0, 0, 0), 2: (13, 0, 0, 0, 0),
+                                  3: (3, 0, 0, 0, 0), 4: (3, 0, 0, 0, 0)}[mode]
+    return {"TS": ts, "RREC": rrec, "RGAP": rgap, "WREC": wrec, "WGAP": wgap}
+
+
+def set_mode(mode):
+    """SET FEATURES 03h, PIO flow control mode (ATA-3 Table 16: 00001nnn)."""
+    return [wr(R_ERR, 0x03), wr(R_SC, 0x08 | mode), wr(R_CMD, 0xEF)]
+
+
 # SRST for 5.76 us, then 2 ms (the wait after clearing it: from memory, see ata_device.py)
 SRST = [word(OP_WR, ctl(R_DEVCTL, 0x06)), delay(9), word(OP_WR, ctl(R_DEVCTL, 0x02)), delay(3126)]
