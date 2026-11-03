@@ -135,7 +135,9 @@ Severities:
     gate level limited to the main suites.
 * **B. methodology.md:37, "Claude Opus 5.5 and Astra".** Only the author can
   say whether "Astra" is intended or should read "Codex", which the table
-  below it and review.md name as the reviewer.
+  below it and review.md name as the reviewer. (Done 2026-11-03: at the
+  author's decision the sentence stays, and the lines after it now say what
+  Astra was, from the team's records.)
 * **C. Host-workflow docs.** Five docs read as internal run logs:
   usb-uart-byte, usb-uart-coexist, spi-packed-host, uart-capture-host and
   uart-rx-timing. Options:
