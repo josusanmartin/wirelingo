@@ -39,13 +39,20 @@ The firmware verified in simulation covers UART TX/RX, SPI master, I2C master
 (with clock stretching), USB devices at low and full speed (48 MHz), including
 one that enumerates on its own with no host traffic after the load, a
 10BASE-T transmitter (at 40 MHz, with link pulses) and receiver, CAN 2.0A
-TX/RX, an SWD debug probe, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
+TX/RX, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
 an 8-channel logic analyzer and an I2C target for reverse engineering,
 DMX512, LIN, NEC infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI,
 Modbus RTU, MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0,
-SMBus with PEC and RC-5 infrared. Most of it (not SWD or the two-core USB
-device) has also run on an FPGA build of the RTL (Kria KV260) against
-pins-only device models. Four of those programs (UART RX, I2C master, CAN RX
+SMBus with PEC and RC-5 infrared. The level differs by program, and the
+README's firmware table gives it for each: most run through the SPI port in
+RTL simulation, while CAN, JTAG, 1-Wire, PS/2, WS2812 and the I2C sniffer are
+checked on the cycle model, which is lockstep-checked against the RTL. An SWD
+debug probe exists on the model only, and is parked.
+Most of these programs have also run on an FPGA build of the RTL (Kria KV260)
+against pins-only device models or the other core: not SWD, the two-core USB
+device or the UART-over-USB pairs, and none of the bench firmware (MDIO,
+QSFP-style, PMBus), `pps_capture`, `eth10_reply` or the blind-test firmware.
+Four of those programs (UART RX, I2C master, CAN RX
 and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
 need an FPGA rerun before those results apply to them. None of it has run on
 silicon yet.
