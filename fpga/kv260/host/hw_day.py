@@ -27,7 +27,9 @@ What it enforces, and tests in test/model/test_hw_day.py check:
   probably did. A failed `xmutil loadapp` means stop: docs/hardware-day.md, step 0.
 * One process: a lock, and a refusal if another board script is running. `hd off`
   takes no lock: it is the emergency stop, and writes only PMOD0 and PMOD1.
-* A step needs its whole chain of prerequisites confirmed, each within MAX_AGE_S.
+* A step needs its whole chain of prerequisites confirmed, each within MAX_AGE_S,
+  except `recover`, the one-time recovery, which doesn't expire: a board that answers
+  with an app active must never be sent back to a power cycle.
   Confirming usb-pi's wiring takes back usb-off: the USB wiring is on J2 again.
 
 This file never reboots anything, never runs a command on the Kria's eth0,
@@ -107,6 +109,7 @@ class Step:
     phrase: str = ""                  # default "wired <name>"; only asked when pins is not empty
     files: tuple = ()                 # paths under root() the step needs: on eth-stack, not in this tree
     clears: tuple = ()                # confirmations this step's wiring takes back
+    once: bool = False                # confirmed once for good: it doesn't expire
     pi: tuple = ()                    # commands for the Pi, printed
     kria: tuple = ()                  # read-only commands for the Kria, printed; none of them maps anything
     ok: str = ""
@@ -136,13 +139,14 @@ RX_OFF = ("The switch and every other network port: the 220 ohm termination is s
 PI_GROUND = (("J2 silkscreen 9 (GND)", "a24"), ("Pi pin 6 (GND), first of the Pi wires", "b24"))
 
 STEPS = [
-    Step("recover", "Bring the board back; find out why loadapp failed",
+    Step("recover", "Bring the board back; find out why loadapp failed", once=True,
          kria=("uptime", "sudo xmutil listapps", "cat /sys/class/fpga_manager/fpga0/state",
+               "cat /proc/device-tree/fpga-region/firmware-name; echo",
                "sudo dmesg | grep -iE 'fpga|dfx|overlay|zynqmp' | tail -n 60",
                "sudo journalctl -u dfx-mgr -b --no-pager | tail -n 60",
                "sudo journalctl -u dfx-mgr -b -1 --no-pager | tail -n 60",
-               "ls -l /lib/firmware/xilinx/protoemu/"),
-         off=("Every wire in J2: out, before the power goes back on",),
+               "ls -l /lib/firmware/xilinx/protoemu/", "ls -ld ~/protoemu ~/protoemu40 ~/protoemu48"),
+         off=("Every wire in J2: out, before anything else",),
          ok="the Kria answers, the cause of the failed load is written down, and a clean load shows protoemu active",
          fail="no answer, or a load fails again: stop. No tool runs on a board with no active app"),
     Step("preflight", "Read the board, change nothing", needs=("recover",), apps=ANY_APP, action="preflight",
@@ -327,9 +331,15 @@ def closure(step):
 
 
 def fresh(state, name):
-    """Confirmed, within MAX_AGE_S. /var/tmp outlives the day; the wiring may not have."""
+    """Confirmed, within MAX_AGE_S. /var/tmp outlives the day; the wiring may not have.
+    A `once` step stays confirmed: it is a recovery, not wiring."""
     t = state.get(name)
-    return isinstance(t, (int, float)) and 0 <= time.time() - t < MAX_AGE_S
+    if not isinstance(t, (int, float)) or isinstance(t, bool) or t != t:
+        return False
+    age = time.time() - t
+    if name in BY_NAME and BY_NAME[name].once:
+        return age >= 0
+    return 0 <= age < MAX_AGE_S
 
 
 def missing_prereqs(step, state):
@@ -395,17 +405,17 @@ def listapps():
 
 
 def load_line(app):
-    return (f"Run: sudo xmutil unloadapp; sudo xmutil loadapp {app} && sudo xmutil listapps\n"
-            "If it prints any error, or the table doesn't show it active: stop, run nothing, go to step 0 "
-            "of docs/hardware-day.md")
+    return ("The load, one command at a time, reading what each prints:\n"
+            f"  sudo xmutil unloadapp\n  sudo xmutil loadapp {app}\n  sudo xmutil listapps\n"
+            f"The table must show {app} as its one active row. Any error line, `Load Error` in particular: stop, "
+            "run nothing, go to step 0 of docs/hardware-day.md")
 
 
-def check_app(step, read=None, told=None):
-    """Before anything opens /dev/mem. Returns the app's name, or raises Refused.
-    `told` is --active-app: a person's reading of a table this can't parse."""
+def check_app(step, read=None):
+    """Before anything opens /dev/mem. Returns the app's name, or raises Refused."""
     import fabric_guard
     try:
-        app = fabric_guard.check(read or listapps, env={fabric_guard.OVERRIDE: told} if told else {})
+        app = fabric_guard.check(read or listapps)
     except fabric_guard.NoActiveApp as e:
         raise Refused(str(e))
     if app not in APPS:
@@ -908,7 +918,7 @@ def real_rig():
     return pfd.HwRig()
 
 
-def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapps_fn=None, told=None,
+def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapps_fn=None,
              proc="/proc", lock=LOCK):
     state = load_state(state_path)
     left = missing_prereqs(step, state)
@@ -934,7 +944,7 @@ def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapp
                 save_state(state_path, state)
                 out(f"{', '.join(step.clears)} is no longer confirmed: run it again before the next step")
         if step.action:
-            app = check_app(step, listapps_fn, told)
+            app = check_app(step, listapps_fn)
             rig = make_rig()
             if rig.ident["clk_div"] != APPS[app]:
                 rig.close()
@@ -981,14 +991,14 @@ def prompt(read, text):
         return ""
 
 
-def turn_off(listapps_fn=None, told=None):
+def turn_off(listapps_fn=None):
     """Every PMOD pin disabled; nothing else touched."""
     import fabric_guard
     try:
-        fabric_guard.check(listapps_fn or listapps, env={fabric_guard.OVERRIDE: told} if told else {})
+        fabric_guard.check(listapps_fn or listapps)
     except fabric_guard.NoActiveApp as e:
-        raise Refused("NOTHING WAS WRITTEN: don't assume the pins are off. Pull the wires from J2. If the table "
-                      f"shows a protoemu app active, run `hd off --active-app NAME`. {e}")
+        raise Refused("NOTHING WAS WRITTEN: don't assume the pins are off. Pull the wires from J2, "
+                      f"and run nothing else on the board. {e}")
     from pe_spim import Spim
     Spim().pmod({})
     print("every PMOD pin is off")
@@ -1088,11 +1098,8 @@ def main(argv=None):
     sub.add_parser("list")
     for name in ("show", "forget"):
         sub.add_parser(name).add_argument("step", choices=list(BY_NAME))
-    r = sub.add_parser("run")
-    r.add_argument("step", choices=list(BY_NAME))
-    r.add_argument("--active-app", help="the app `xmutil listapps` shows, when this program can't read its format")
-    o = sub.add_parser("off")
-    o.add_argument("--active-app")
+    sub.add_parser("run").add_argument("step", choices=list(BY_NAME))
+    sub.add_parser("off")
     w = sub.add_parser("pi-watch")
     w.add_argument("--iface", default="eth0")
     w.add_argument("--seconds", type=int, default=300)
@@ -1102,8 +1109,6 @@ def main(argv=None):
     s.add_argument("--seconds", type=float, default=60)
     s.add_argument("--gap-us", type=float, default=1000)
     a = ap.parse_args(argv)
-    if getattr(a, "active_app", None):                 # the openers' own check reads the same table
-        os.environ["PE_ACTIVE_APP"] = a.active_app
     try:
         if a.cmd == "list":
             state = load_state(a.state)
@@ -1117,13 +1122,13 @@ def main(argv=None):
             state.pop(a.step, None)
             save_state(a.state, state)
         elif a.cmd == "off":
-            turn_off(told=a.active_app)
+            turn_off()
         elif a.cmd == "pi-watch":
             return pi_watch(a.iface, a.seconds, a.filter)
         elif a.cmd == "pi-send":
             return pi_send(a.iface, a.seconds, a.gap_us)
         else:
-            return run_step(BY_NAME[a.step], a.state, told=a.active_app)
+            return run_step(BY_NAME[a.step], a.state)
     except Refused as e:
         print(f"REFUSED: {e}", file=sys.stderr)
         return EXIT_REFUSED

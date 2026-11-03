@@ -22,14 +22,9 @@ import postfreeze_demo as pfd                  # noqa: E402
 from pe import sim                             # noqa: E402
 
 DOC = ROOT / "docs/hardware-day.md"
-# dfx-mgr's table, as remembered: no board was asked. active_app is written to refuse what it can't read.
-LISTAPPS = """                     Accelerator          Accel_type           Base           Base_type      #slots(PL+AIE)         Active_slot
-
-                  k26-starter-kits            XRT_FLAT   k26-starter-kits            XRT_FLAT              (0+0)                 -1
-                          protoemu            XRT_FLAT           protoemu            XRT_FLAT              (0+0)                 -1
-                        protoemu48            XRT_FLAT         protoemu48            XRT_FLAT              (0+0)                 -1
-                        protoemu40            XRT_FLAT         protoemu40            XRT_FLAT              (0+0)                  0,
-"""
+# xmutil's table in the format read on the board on 2026-11-03 (test_fabric_guard.py has the details)
+from test_fabric_guard import table as listing     # noqa: E402
+LISTAPPS = listing("protoemu40")
 
 
 class FakeSpim:
@@ -107,9 +102,9 @@ class Run:
         self.rigs.append(rig)
         return rig
 
-    def __call__(self, name, apps=LISTAPPS, told=None):
+    def __call__(self, name, apps=LISTAPPS):
         return hw_day.run_step(hw_day.BY_NAME[name], self.state, make_rig=self.make_rig, read=self.read,
-                               out=self.out.append, listapps_fn=lambda: apps, told=told,
+                               out=self.out.append, listapps_fn=lambda: apps,
                                proc=str(self.tmp / "proc"), lock=str(self.tmp / "lock"))
 
     def confirm(self, *names):
@@ -123,11 +118,49 @@ class Run:
         return set(json.loads(self.state.read_text()))
 
 
+class Kernel:
+    """The kernel's files the guard reads, kept agreeing with whatever listing a test gives:
+    a good load of the active app, unless a test spoils them."""
+
+    def __init__(self, tmp, monkeypatch):
+        import fabric_guard
+        self.fg, d = fabric_guard, tmp / "kernel"
+        self.state, self.firmware, self.dir = d / "state", d / "firmware-name", d / "fw"
+        for app in fabric_guard.KNOWN:
+            (self.dir / app).mkdir(parents=True)
+            (self.dir / app / f"{app}.bit.bin").write_bytes(b"x")
+        self.state.write_text("operating\n")
+        for name, value in (("FPGA_STATE", self.state), ("FIRMWARE_NAME", self.firmware), ("FIRMWARE_DIR", self.dir)):
+            monkeypatch.setattr(fabric_guard, name, str(value))
+
+    def loaded(self, text):
+        try:
+            app = self.fg.parse(text)
+        except self.fg.NoActiveApp:
+            return
+        if app:
+            self.firmware.write_bytes(f"{app}.bit.bin\0".encode())
+
+
 @pytest.fixture
-def run(tmp_path, monkeypatch):
+def kernel(tmp_path, monkeypatch):
+    k = Kernel(tmp_path, monkeypatch)
+    k.loaded(LISTAPPS)
+    return k
+
+
+@pytest.fixture
+def run(tmp_path, monkeypatch, kernel):
     monkeypatch.setattr(hw_day.time, "sleep", lambda s: None)
     monkeypatch.setattr(hw_day, "listapps", lambda: LISTAPPS)
-    return Run(tmp_path)
+    r = Run(tmp_path)
+
+    class R(Run):
+        def __call__(self, name, apps=LISTAPPS):
+            kernel.loaded(apps)
+            return Run.__call__(self, name, apps)
+    r.__class__ = R
+    return r
 
 
 # ---------------------------------------------------------------- the order of the day
@@ -316,9 +349,9 @@ def test_forget_takes_back_only_that_step(run):
 def test_a_confirmation_expires(run, age):
     run.confirm("usb-off")
     s = json.loads(run.state.read_text())
-    s["recover"] = time.time() - age
+    s["usb-off"] = time.time() - age
     run.state.write_text(json.dumps(s))
-    with pytest.raises(hw_day.Refused, match="recover"):
+    with pytest.raises(hw_day.Refused, match="usb-off"):
         run("rails")
 
 
@@ -355,7 +388,7 @@ def usb_board(rig):
     rig.spim.pad = 1
 
 
-USB_APP = "  protoemu48 XRT_FLAT protoemu48 XRT_FLAT (0+0) 0,"
+USB_APP = listing("protoemu48")
 
 
 def test_usb_pi_takes_back_usb_off_and_rx_then_refuses(run):
@@ -425,11 +458,11 @@ def test_tx_switch_needs_the_poe_phrase(run):
 
 
 @pytest.mark.parametrize("apps,why", [
-    ("", "can't read"),
-    ("Accelerator\n  k26-starter-kits XRT_FLAT k26 XRT_FLAT (0+0) 0,\n", "not a protoemu app"),
-    (LISTAPPS.replace("  0,", " -1"), "no active app"),
-    (LISTAPPS.replace("protoemu40", "protoemu4x").replace("protoemu48", "protoemu40").replace("protoemu4x", "protoemu48"),
-     "needs protoemu40"),
+    ("", "didn't print its table"),
+    ("protoemu: Load Error: -1", "isn't a row"),
+    (listing("k26-starter-kits"), "not one of ours"),
+    (listing(None), "no active app"),
+    (listing("protoemu48"), "needs protoemu40"),
 ])
 def test_the_fabric_is_not_read_unless_the_right_app_is_active(run, apps, why):
     run.confirm("preflight", "usb-off", "rails")
@@ -439,11 +472,23 @@ def test_the_fabric_is_not_read_unless_the_right_app_is_active(run, apps, why):
     assert run.rigs == []
 
 
-def test_a_person_can_say_which_app_is_active_and_the_step_still_checks_it(run):
-    run.confirm("preflight", "usb-off", "rails")
+def test_a_refusal_for_another_app_gives_the_load_one_step_at_a_time(run):
+    run.confirm("rails")
     run.typed = ["wired tx-bench"]
-    with pytest.raises(hw_day.Refused, match="needs protoemu40"):
-        run("tx-bench", apps="garbled", told="protoemu")
+    with pytest.raises(hw_day.Refused) as e:
+        run("tx-bench", apps=listing("protoemu"))
+    m = str(e.value)
+    assert m.index("sudo xmutil unloadapp\n") < m.index("sudo xmutil loadapp protoemu40\n") < m.index("xmutil listapps")
+    assert ";" not in m.split("one command at a time")[1].split("The table")[0] and "&&" not in m
+
+
+def test_hw_day_knows_the_guards_apps():
+    import fabric_guard
+    assert tuple(hw_day.APPS) == fabric_guard.KNOWN
+
+
+def test_the_launcher_has_no_override():
+    assert "active-app" not in SOURCE and "PE_ACTIVE_APP" not in SOURCE and "told" not in SOURCE
 
 
 def test_clock_divider_must_match_the_app(run, monkeypatch):
@@ -539,35 +584,52 @@ class OffSpim:
         self.calls.append(m)
 
 
-def test_off_writes_the_pins_off(monkeypatch, capsys):
+def test_off_writes_the_pins_off(monkeypatch, capsys, kernel):
     monkeypatch.setattr(OffSpim, "calls", [])
     monkeypatch.setattr("pe_spim.Spim", OffSpim)
     hw_day.turn_off(lambda: LISTAPPS)
     assert OffSpim.calls == [{}] and "every PMOD pin is off" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("table", [LISTAPPS.replace("  0,", " -1"), "garbled"])
-def test_off_never_claims_what_it_didnt_do(monkeypatch, table):
+@pytest.mark.parametrize("table", [listing(None), "garbled", listing("k26-starter-kits")])
+def test_off_never_claims_what_it_didnt_do(monkeypatch, kernel, table):
     monkeypatch.setattr(OffSpim, "calls", [])
     monkeypatch.setattr("pe_spim.Spim", OffSpim)
-    with pytest.raises(hw_day.Refused, match="NOTHING WAS WRITTEN.*--active-app"):
+    with pytest.raises(hw_day.Refused, match="NOTHING WAS WRITTEN.*run nothing else"):
         hw_day.turn_off(lambda: table)
     assert OffSpim.calls == []
 
 
-def test_off_takes_a_persons_reading_of_an_unreadable_table(monkeypatch):
+def test_off_refuses_when_the_device_tree_disagrees(monkeypatch, kernel):
     monkeypatch.setattr(OffSpim, "calls", [])
     monkeypatch.setattr("pe_spim.Spim", OffSpim)
-    hw_day.turn_off(lambda: "garbled", told="protoemu")
-    assert OffSpim.calls == [{}]
+    kernel.firmware.write_bytes(b"k26-starter-kits.bit.bin\0")
+    with pytest.raises(hw_day.Refused, match="NOTHING WAS WRITTEN"):
+        hw_day.turn_off(lambda: LISTAPPS)
+    assert OffSpim.calls == []
 
 
-def test_active_app_flag_cant_beat_a_table(run):
+def test_recover_never_expires_but_the_wiring_does(run):
     run.confirm("rails")
-    run.typed = ["wired tx-bench"]
-    with pytest.raises(hw_day.Refused, match="shows k26-starter-kits active"):
-        run("tx-bench", apps="  k26-starter-kits XRT_FLAT k XRT_FLAT (0+0) 0,", told="protoemu40")
-    assert run.rigs == []
+    s = json.loads(run.state.read_text())
+    s["recover"] = time.time() - 30 * 86400                          # a month ago
+    run.state.write_text(json.dumps(s))
+    run.typed = []
+    with pytest.raises(hw_day.Refused, match="nothing was enabled"):
+        run("tx-bench")                                              # past the chain, at its own wiring prompt
+    assert hw_day.fresh(s, "recover") and not hw_day.fresh({"usb-off": time.time() - 13 * 3600}, "usb-off")
+    for bad in (True, float("nan"), "today", time.time() + 3600):
+        assert not hw_day.fresh({"recover": bad}, "recover")
+
+
+def test_step_0_says_dont_power_cycle_a_board_that_answers():
+    doc = DOC.read_text()
+    zero = doc[doc.index("(`recover`)"):doc.index("(`preflight`)")]
+    assert "If it answers, do not power it off" in zero
+    assert zero.index("If it answers, do not power it off") < zero.index("Unplug the Kria's power")
+    assert "~/protoemu" in zero and "unguarded" in zero
+    seq = zero[zero.index("sudo xmutil unloadapp"):]
+    assert seq.index("sudo xmutil unloadapp") < seq.index("sudo xmutil loadapp protoemu") < seq.index("sudo xmutil listapps")
 
 
 def test_pins_on_after_the_phrase_and_off_at_the_end(run):
@@ -722,7 +784,7 @@ def test_the_whole_day_walks_through_in_order(run, monkeypatch):
         app = s.apps[0] if s.apps else "none"
         if s.apps:
             monkeypatch.setattr(FakeRig, "ident", dict(FakeRig.ident, clk_div=hw_day.APPS[app]))
-        assert run(s.name, apps=f"  {app} XRT_FLAT {app} XRT_FLAT (0+0) 0,") == 0, s.name
+        assert run(s.name, apps=listing(app if s.apps else "k26-starter-kits")) == 0, s.name
     assert run.confirmed() == set(hw_day.BY_NAME)
 
 
@@ -1065,7 +1127,7 @@ def test_recover_opens_nothing_and_comes_first(run):
     s = hw_day.STEPS[0]
     assert not s.action and not s.pins and not s.apps
     run.typed = ["passed recover"]
-    assert run("recover", apps="") == 0                              # works with no app active
+    assert run("recover", apps="") == 0                              # works with no table at all
     assert run.rigs == []
     for needle in ("xmutil listapps", "dmesg", "journalctl -u dfx-mgr"):
         assert any(needle in c for c in s.kria)
@@ -1073,15 +1135,30 @@ def test_recover_opens_nothing_and_comes_first(run):
         assert "loadapp" not in c and "/dev/mem" not in c and "bringup" not in c
 
 
-def test_a_refused_load_says_stop():
+def test_a_refused_load_says_stop(kernel):
     with pytest.raises(hw_day.Refused, match="stop, run nothing"):
         hw_day.check_app(hw_day.BY_NAME["usb-pi"], lambda: LISTAPPS)
 
 
-def test_turn_off_opens_nothing_without_an_app(monkeypatch):
+def test_the_incident_stops_every_board_step_before_the_rig(run, monkeypatch):
+    """2026-11-03: k26-starter-kits held the slot after a failed load. No step opens anything."""
+    from test_fabric_guard import BOARD_2026_11_03
+    for s in hw_day.STEPS:
+        monkeypatch.setattr(s, "files", ())
+    for s in hw_day.STEPS:
+        if s.action:
+            run.state.unlink(missing_ok=True)
+            run.confirm(s.name)
+            run.typed = [s.typed(), f"passed {s.name}"] if s.pins else [f"passed {s.name}"]
+            with pytest.raises(hw_day.Refused, match="k26-starter-kits"):
+                run(s.name, apps=BOARD_2026_11_03)
+    assert run.rigs == []
+
+
+def test_turn_off_opens_nothing_without_an_app(monkeypatch, kernel):
     monkeypatch.setattr("os.open", lambda *a, **k: pytest.fail("opened"))
     with pytest.raises(hw_day.Refused, match="NOTHING WAS WRITTEN"):
-        hw_day.turn_off(lambda: LISTAPPS.replace("  0,", " -1"))
+        hw_day.turn_off(lambda: listing(None))
 
 
 def test_source_never_reboots_or_touches_the_network_or_runs_pmod_test():

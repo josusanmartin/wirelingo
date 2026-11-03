@@ -1,5 +1,6 @@
-"""fabric_guard.py: nothing maps the fabric unless an app of ours is shown active.
-Fakes only. The incident it answers is in that file's docstring."""
+"""fabric_guard.py: nothing maps the fabric unless one of our apps is shown active,
+every check passing, and any doubt refuses. Fakes only; the board data below is the
+orchestrator's read-only reading of the Kria on 2026-11-03."""
 import pathlib
 import re
 import subprocess
@@ -15,72 +16,129 @@ import pe_kria                                 # noqa: E402
 import pe_lab                                  # noqa: E402
 import pe_spim                                 # noqa: E402
 
-ACTIVE = """   Accelerator   Accel_type   Base   Base_type   #slots(PL+AIE)   Active_slot
-
-   k26-starter-kits   XRT_FLAT   k26-starter-kits   XRT_FLAT   (0+0)   -1
-   protoemu40   XRT_FLAT   protoemu40   XRT_FLAT   (0+0)   0,
-"""
-INACTIVE = ACTIVE.replace("  0,", "  -1")
-OTHER = INACTIVE.replace("k26-starter-kits   XRT_FLAT   k26-starter-kits   XRT_FLAT   (0+0)   -1",
-                         "k26-starter-kits   XRT_FLAT   k26-starter-kits   XRT_FLAT   (0+0)   0,")
+HEADER = "Accelerator  Accel_type  Base  Pid  Base_type  #slots(RPU+PL+AIE)  slot->handle"
+# The header and each row's last two fields are as read on the board; the middle fields
+# (type, base, Pid, base type) were not quoted, so these values stand in for them.
 
 
-def check(table, tmp_path, state=None, firmware=None, env=None):
-    s, f = tmp_path / "state", tmp_path / "firmware"
-    if state is not None:
-        s.write_text(state + "\n")
-    if firmware is not None:
-        f.write_bytes(firmware.encode() + b"\0")
-    return fg.check(lambda: table, state=str(s), firmware=str(f), env=env or {})
+def row(name, active=False):
+    return f"  {name}  XRT_FLAT  {name}  0  XRT_FLAT  (0+0+0)  {'0->0,' if active else '-1'}"
 
 
-def test_an_active_app_of_ours_passes(tmp_path):
-    assert check(ACTIVE, tmp_path, "operating", "protoemu40.bit.bin") == "protoemu40"
-    assert check(ACTIVE, tmp_path) == "protoemu40"                   # paths absent: the table decides
+def table(active=None, names=("k26-starter-kits", "protoemu", "protoemu40", "protoemu48")):
+    return "\n".join([HEADER, ""] + [row(n, n == active) for n in names]) + "\n"
 
 
-@pytest.mark.parametrize("table,why", [
-    (INACTIVE, "no active app"),
-    (OTHER, "not a protoemu app"),
-    ("", "can't read"),
-    ("Load Error -1", "no active app"),
-    ("garbled", "can't read"),
+BOARD_2026_11_03 = table("k26-starter-kits")         # the incident: the default app held the slot
+LOAD_ERROR = "protoemu: Load Error: -1"                # what the failed load printed
+
+
+@pytest.fixture
+def kernel(tmp_path):
+    """The kernel's view of a good protoemu40 load; tests spoil one piece at a time."""
+    k = dict(state=tmp_path / "state", firmware=tmp_path / "firmware-name", firmware_dir=tmp_path / "fw")
+    k["state"].write_text("operating\n")
+    k["firmware"].write_bytes(b"protoemu40.bit.bin\0")
+    for app in fg.KNOWN:
+        (k["firmware_dir"] / app).mkdir(parents=True)
+        (k["firmware_dir"] / app / f"{app}.bit.bin").write_bytes(b"x")
+    return k
+
+
+def check(text, kernel, **spoil):
+    return fg.check(lambda: text, **{**kernel, **spoil})
+
+
+def test_a_good_load_passes(kernel):
+    assert check(table("protoemu40"), kernel) == "protoemu40"
+
+
+def test_the_incident_refuses(kernel):
+    kernel["firmware"].write_bytes(b"k26-starter-kits.bit.bin\0")
+    with pytest.raises(fg.NoActiveApp, match="'k26-starter-kits', not one of ours"):
+        check(BOARD_2026_11_03, kernel)
+
+
+@pytest.mark.parametrize("text,why", [
+    (table(None), "no active app"),
+    (LOAD_ERROR, "isn't a row"),
+    (table("protoemu40") + LOAD_ERROR + "\n", "isn't a row"),
+    ("protoemu: load failed, error code 1", "isn't a row"),
+    ("Error: Failed to connect to dfx-mgr", "isn't a row"),
+    ("", "didn't print its table"),
+    (HEADER + "\n", "didn't print its table"),
+    (table("protoemu40").replace(HEADER, ""), "didn't print its table"),
+    (HEADER + "\n" + table("protoemu40"), "2 headers"),
+    (table("protoemu40").replace("0  XRT_FLAT  (0+0+0)  0->0,", "XRT_FLAT  (0+0+0)  0->0,"), "isn't a row"),
+    (table("protoemu40").replace("(0+0+0)  0->0,", "(0+0+0)  0->0,  extra"), "isn't a row"),
+    (table("protoemu40").replace("(0+0+0)  0->0,", "(0+0)  0->0,"), "isn't a row"),
+    (table("protoemu40").replace("0->0,", "0,"), "isn't a row"),
+    (table("protoemu40").replace("0->0,", "0->0"), "isn't a row"),
+    (table("protoemu40").replace("(0+0+0)  -1", "(0+0+0)  0->0,", 1), "2 active rows"),
+    (table("protoemu-broken", names=("protoemu-broken", "protoemu40")), "not one of ours"),
+    (table("protoemu_old", names=("protoemu_old",)), "not one of ours"),
+    (table("protoemu4", names=("protoemu4",)), "not one of ours"),
 ])
-def test_the_incident_and_its_relatives_refuse(tmp_path, table, why):
+def test_anything_but_one_known_active_row_refuses(kernel, text, why):
     with pytest.raises(fg.NoActiveApp, match=why):
-        check(table, tmp_path)
+        check(text, kernel)
 
 
-def test_every_refusal_says_no_tool_may_run(tmp_path):
-    with pytest.raises(fg.NoActiveApp, match="No tool may run"):
-        check(INACTIVE, tmp_path)
+def test_old_header_format_refuses(kernel):
+    old = "Accelerator  Accel_type  Base  Base_type  #slots(PL+AIE)  Active_slot\n  protoemu40  XRT_FLAT  protoemu40  XRT_FLAT  (0+0)  0,\n"
+    with pytest.raises(fg.NoActiveApp):
+        check(old, kernel)
 
 
-@pytest.mark.parametrize("state", ["write error", "write init error", "firmware request error", "unknown"])
-def test_a_failed_load_in_the_fpga_manager_refuses_even_if_listed_active(tmp_path, state):
-    with pytest.raises(fg.NoActiveApp, match="a load failed"):
-        check(ACTIVE, tmp_path, state=state)
+@pytest.mark.parametrize("piece,content,why", [
+    ("firmware", None, "firmware-name is missing"),
+    ("firmware", b"k26-starter-kits.bit.bin\0", "'k26-starter-kits.bit.bin'"),
+    ("firmware", b"protoemu.bit.bin\0", "'protoemu.bit.bin', not protoemu40.bit.bin"),
+    ("state", None, "state is missing"),
+    ("state", b"write error\n", "'write error'"),
+    ("state", b"unknown\n", "'unknown'"),
+])
+def test_each_kernel_file_must_be_there_and_agree(kernel, piece, content, why):
+    if content is None:
+        kernel[piece].unlink()
+    else:
+        kernel[piece].write_bytes(content)
+    with pytest.raises(fg.NoActiveApp, match=why):
+        check(table("protoemu40"), kernel)
 
 
-def test_another_bitstream_in_the_device_tree_refuses_even_if_listed_active(tmp_path):
-    with pytest.raises(fg.NoActiveApp, match="firmware-name"):
-        check(ACTIVE, tmp_path, firmware="k26-starter-kits.bit.bin")
+def test_an_uninstalled_app_refuses(kernel):
+    (kernel["firmware_dir"] / "protoemu40" / "protoemu40.bit.bin").unlink()
+    with pytest.raises(fg.NoActiveApp, match="isn't installed"):
+        check(table("protoemu40"), kernel)
 
 
-def test_a_person_can_only_settle_an_unreadable_table(tmp_path):
-    env = {fg.OVERRIDE: "protoemu40"}
-    assert check("garbled table", tmp_path, env=env) == "protoemu40"
-    with pytest.raises(fg.NoActiveApp, match="no active app"):
-        check(INACTIVE, tmp_path, env=env)                           # a readable table isn't overruled
-    with pytest.raises(fg.NoActiveApp, match="shows k26-starter-kits active"):
-        check(OTHER, tmp_path, env=env)
-    with pytest.raises(fg.NoActiveApp, match="shows protoemu40 active"):
-        check(ACTIVE, tmp_path, env={fg.OVERRIDE: "protoemu"})
-    assert check(ACTIVE, tmp_path, env=env) == "protoemu40"
-    with pytest.raises(fg.NoActiveApp, match="not a protoemu app"):
-        check("garbled table", tmp_path, env={fg.OVERRIDE: "k26-starter-kits"})
-    with pytest.raises(fg.NoActiveApp, match="a load failed"):
-        check("garbled table", tmp_path, state="write error", env=env)
+def test_the_real_paths_are_the_boards():
+    assert fg.FIRMWARE_NAME == "/proc/device-tree/fpga-region/firmware-name"
+    assert fg.FIRMWARE_DIR == "/lib/firmware/xilinx" and fg.FPGA_STATE == "/sys/class/fpga_manager/fpga0/state"
+    assert fg.KNOWN == ("protoemu", "protoemu40", "protoemu48")
+
+
+def test_there_is_no_override(kernel, monkeypatch):
+    monkeypatch.setenv("PE_ACTIVE_APP", "protoemu40")
+    for text in ("", "garbled", table(None)):
+        with pytest.raises(fg.NoActiveApp):
+            check(text, kernel)
+    assert "PE_ACTIVE_APP" not in (HOST / "fabric_guard.py").read_text()
+    assert "environ" not in (HOST / "fabric_guard.py").read_text()
+
+
+def test_every_refusal_says_no_tool_may_run(kernel):
+    for text in ("", LOAD_ERROR, table(None), BOARD_2026_11_03):
+        with pytest.raises(fg.NoActiveApp, match="No tool may run"):
+            check(text, kernel)
+
+
+def test_a_refusal_with_another_app_gives_the_load_sequence(kernel):
+    with pytest.raises(fg.NoActiveApp) as e:
+        check(BOARD_2026_11_03, kernel)
+    m = str(e.value)
+    assert m.index("xmutil unloadapp") < m.index("xmutil loadapp protoemu") < m.index("xmutil listapps")
 
 
 @pytest.mark.parametrize("failure", [FileNotFoundError("xmutil"), subprocess.TimeoutExpired("xmutil", 30)])
@@ -104,9 +162,8 @@ OPENERS = [pe_kria.DevMem, pe_spim.SpimMem, pe_lab.LabMem]
 @pytest.mark.parametrize("opener", OPENERS, ids=lambda c: c.__name__)
 def test_each_opener_refuses_before_opening_dev_mem(monkeypatch, opener):
     monkeypatch.setattr(fg, "_checked", None)
-    monkeypatch.setattr(fg, "listapps", lambda: INACTIVE)
+    monkeypatch.setattr(fg, "listapps", lambda: BOARD_2026_11_03)
     monkeypatch.setattr("os.open", lambda *a, **k: pytest.fail("/dev/mem was opened"))
-    monkeypatch.setattr(fg, "check", lambda f=fg.check, **kw: f(lambda: INACTIVE, env={}))
     with pytest.raises(fg.NoActiveApp):
         opener()
 
@@ -131,14 +188,22 @@ def test_each_opener_opens_only_after_the_check_passes(monkeypatch, opener):
 
 @pytest.mark.parametrize("build", [lambda: pe_spim.Spim(), lambda: pe_lab.Lab(), lambda: pe_kria.Board()],
                          ids=["Spim", "Lab", "Board"])
-def test_nothing_reads_a_register_on_a_board_with_no_app(monkeypatch, build):
-    """The incident's path: building the object read VERSION."""
+def test_the_incidents_path_reads_no_register(monkeypatch, build):
+    """Building Spim read VERSION; with the default app active nothing may be mapped."""
     monkeypatch.setattr(fg, "_checked", None)
-    monkeypatch.setattr(fg, "check", lambda f=fg.check, **kw: f(lambda: INACTIVE, env={}))
+    monkeypatch.setattr(fg, "listapps", lambda: BOARD_2026_11_03)
     monkeypatch.setattr("mmap.mmap", lambda *a, **k: pytest.fail("mapped"))
     monkeypatch.setattr("os.open", lambda *a, **k: pytest.fail("opened"))
-    with pytest.raises(fg.NoActiveApp):
+    with pytest.raises(fg.NoActiveApp, match="k26-starter-kits"):
         build()
+
+
+def test_a_refusal_is_not_cached_as_a_pass(monkeypatch):
+    monkeypatch.setattr(fg, "_checked", None)
+    monkeypatch.setattr(fg, "check", lambda: (_ for _ in ()).throw(fg.NoActiveApp("no")))
+    for _ in range(2):
+        with pytest.raises(fg.NoActiveApp):
+            fg.require_app()
 
 
 def test_injected_objects_skip_the_guard(monkeypatch):

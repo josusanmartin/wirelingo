@@ -1,44 +1,59 @@
-"""The one check every /dev/mem opener makes before it maps anything.
+"""The one check every /dev/mem opener makes before it maps anything. It fails closed.
 
-On 2026-11-03 `xmutil loadapp protoemu` returned Load Error -1, the next command
-ran a host script anyway, and the Kria stopped answering. The likely cause, not
-proved: pe_spim.Spim reads VERSION as soon as it is built, and on a Zynq MPSoC a read
-of a fabric address with no working bitstream behind it can hang the bus. So a "not
-found" check on a fabric register comes too late: it is the read that hangs.
+On 2026-11-03 the Kria rebooted into its default app, k26-starter-kits, which held
+the slot. `xmutil loadapp protoemu` printed `protoemu: Load Error: -1`, the next
+command ran a host script anyway, the script read pe_spim's address inside the wrong
+design, and the board froze: the previous boot's journal ends as that command started
+(the orchestrator's reading of the board, read-only). A read of an address the loaded
+design doesn't answer can hang a Zynq MPSoC's bus; that mechanism is the likely one,
+not proved. So a "not found" check on a fabric register comes too late: it is the read
+that hangs.
 
 pe_kria.DevMem, pe_spim.SpimMem and pe_lab.LabMem call require_app() first. Injected
 `mem`/`regs` objects (the simulation, the cycle model, fakes) never reach it.
 
-What is read, and how we know it doesn't touch the fabric:
+Every check below must pass. Each reads something the kernel or the daemon keeps in
+memory or on disk, never a fabric address, and this module maps nothing
+(test_fabric_guard.py proves it doesn't open /dev/mem):
 
-1. `xmutil listapps`, a subprocess. This module maps nothing, and test_fabric_guard.py
-   proves it doesn't open /dev/mem. xmutil itself asks the dfx-mgr daemon for its
-   bookkeeping. That is from its documented design, not from reading its source, and
-   it has not been observed on a board with no app. If that is wrong, the guard can't
-   make it worse: the one failing case was a mapped read.
-2. /sys/class/fpga_manager/fpga0/state, a kernel attribute (the kernel's
-   sysfs-class-fpga-manager ABI). Present and not "operating": refused.
-3. /proc/device-tree/fpga-full/firmware-name, the kernel's in-memory device tree.
-   protoemu.dtsi's overlay sets it to "<app>.bit.bin", and an overlay whose bitstream
-   failed to program is reverted. Present and naming something else: refused.
+1. `xmutil listapps` (a subprocess), in exactly the table's format as read on the board
+   on 2026-11-03: its header, seven columns a row, the slot count as `(n+n+n)`, the
+   slot field `-1` or `n->n,`, exactly one active row, and that row's name one of
+   KNOWN. Any other line, an error message included, refuses. xmutil asks the dfx-mgr
+   daemon for its bookkeeping: from its documented design, not its source.
+2. /proc/device-tree/fpga-region/firmware-name must be "<app>.bit.bin". The overlay
+   (protoemu.dtsi, renamed per app by install.sh) sets it, and the board's boot log names
+   that path (`OF: overlay: WARNING: memory leak will occur if overlay removed, property:
+   /fpga-region/firmware-name`). /proc/device-tree is the kernel's live tree, which
+   overlays change. That the property is removed when the overlay is removed, or reverted
+   when programming fails, is from memory of how overlays work, not checked on this board.
+   It is the check no daemon is involved in: in the incident it would have read
+   k26-starter-kits.bit.bin.
+3. /sys/class/fpga_manager/fpga0/state must be "operating" (the kernel's
+   sysfs-class-fpga-manager ABI). Weak alone: from memory, it can stay "operating" from
+   the last good programming.
+4. /lib/firmware/xilinx/<app>/<app>.bit.bin must exist: install.sh puts it there, and the
+   board has that directory.
 
-2 and 3 cover a daemon listing an app that isn't really there. Their paths are
-expected, not seen on this board, so an absent file is no evidence either way and
-only (1) decides. The table's format is from memory of dfx-mgr. A table this can't
-parse refuses, unless a person who read it sets PE_ACTIVE_APP=<app>; a table it can
-parse is never overruled, a person who disagrees with it is refused, and (2) and (3)
-still apply.
+An absent file refuses, naming the path, so the first real run shows whether the paths
+are right. There is no override: a person can't vouch for a table this can't read.
 """
-import os
 import pathlib
+import re
 import subprocess
 
-APP_PREFIX = "protoemu"                  # protoemu, protoemu40, protoemu48: each is one of our bitstreams
-OVERRIDE = "PE_ACTIVE_APP"
+KNOWN = ("protoemu", "protoemu40", "protoemu48")          # our apps, by exact name
+HEADER = ["Accelerator", "Accel_type", "Base", "Pid", "Base_type", "#slots(RPU+PL+AIE)", "slot->handle"]
+SLOTS = re.compile(r"\(\d+\+\d+\+\d+\)")
+ACTIVE = re.compile(r"\d+->\d+,")
 FPGA_STATE = "/sys/class/fpga_manager/fpga0/state"
-FIRMWARE_NAME = "/proc/device-tree/fpga-full/firmware-name"
+FIRMWARE_NAME = "/proc/device-tree/fpga-region/firmware-name"
+FIRMWARE_DIR = "/lib/firmware/xilinx"
 STOP = ("No tool may run on this board now. See docs/hardware-day.md, step 0: "
         "read-only diagnosis only (dmesg, xmutil listapps, journalctl for dfx-mgr)")
+SEQUENCE = ("The load, one command at a time, reading each: `sudo xmutil unloadapp`, then "
+            "`sudo xmutil loadapp protoemu`, then `sudo xmutil listapps`, which must show protoemu as the "
+            "one active row. Any error line: stop")
 
 
 class NoActiveApp(RuntimeError):
@@ -46,18 +61,25 @@ class NoActiveApp(RuntimeError):
 
 
 def parse(text):
-    """(active app or None, whether any row of the table was understood).
-    An active row ends in a slot number with a comma; an inactive one in -1."""
-    understood = False
+    """The one active row's name, or None when every row is inactive. Anything that
+    isn't this table, exactly, raises."""
+    rows, headers = [], 0
     for line in text.splitlines():
         t = line.split()
-        if len(t) < 2 or t[0] == "Accelerator":
+        if not t:
             continue
-        if t[-1] == "-1":
-            understood = True
-        elif t[-1].rstrip(",").isdigit():
-            return t[0], True
-    return None, understood
+        if t == HEADER:
+            headers += 1
+            continue
+        if len(t) != len(HEADER) or not SLOTS.fullmatch(t[5]) or not (t[6] == "-1" or ACTIVE.fullmatch(t[6])):
+            raise NoActiveApp(f"`xmutil listapps` printed a line that isn't a row of its table: {line.strip()!r}. {STOP}")
+        rows.append(t)
+    if headers != 1 or not rows:
+        raise NoActiveApp(f"`xmutil listapps` didn't print its table ({headers} headers, {len(rows)} rows). {STOP}")
+    active = [t[0] for t in rows if t[6] != "-1"]
+    if len(active) > 1:
+        raise NoActiveApp(f"`xmutil listapps` shows {len(active)} active rows, {active}: one slot holds one. {STOP}")
+    return active[0] if active else None
 
 
 def listapps():
@@ -71,35 +93,32 @@ def listapps():
 
 
 def text_of(path):
-    """A file's stripped text, or None if it isn't there."""
+    """A file's text without NULs and outer whitespace, or None if it can't be read."""
     try:
         return pathlib.Path(path).read_bytes().replace(b"\0", b"").decode(errors="replace").strip()
     except OSError:
         return None
 
 
-def check(read=listapps, state=FPGA_STATE, firmware=FIRMWARE_NAME, env=os.environ):
-    """The active protoemu app's name, or NoActiveApp. Touches no fabric address."""
-    text = read()
-    app, understood = parse(text)
-    told = env.get(OVERRIDE)
-    if app is not None and told and told != app:
-        raise NoActiveApp(f"you said {told}, and `xmutil listapps` shows {app} active. {STOP}")
-    if app is None and understood:
-        raise NoActiveApp(f"`xmutil listapps` shows no active app. {STOP}")
+def check(read=None, state=None, firmware=None, firmware_dir=None):
+    """The active app's name, one of KNOWN, or NoActiveApp. Touches no fabric address."""
+    read, state, firmware = read or listapps, state or FPGA_STATE, firmware or FIRMWARE_NAME
+    firmware_dir = pathlib.Path(firmware_dir or FIRMWARE_DIR)
+    app = parse(read())
     if app is None:
-        app = env.get(OVERRIDE)
-        if not app:
-            raise NoActiveApp(f"can't read the active app from `xmutil listapps`:\n{text}\n"
-                              f"Read it yourself; only if it shows an active protoemu app, set {OVERRIDE}=<app>. {STOP}")
-    if not app.startswith(APP_PREFIX):
-        raise NoActiveApp(f"active app is {app!r}, not a protoemu app, so these addresses aren't ours. {STOP}")
-    s = text_of(state)
-    if s is not None and s != "operating":
-        raise NoActiveApp(f"the FPGA manager's state is {s!r}, not 'operating': a load failed. {STOP}")
+        raise NoActiveApp(f"`xmutil listapps` shows no active app. {SEQUENCE}. {STOP}")
+    if app not in KNOWN:
+        raise NoActiveApp(f"the active app is {app!r}, not one of ours {list(KNOWN)}, so these addresses aren't "
+                          f"what the tools expect. {SEQUENCE}. {STOP}")
     f = text_of(firmware)
-    if f is not None and f != app + ".bit.bin":
-        raise NoActiveApp(f"the device tree's firmware-name is {f!r}, not {app}.bit.bin. {STOP}")
+    if f != app + ".bit.bin":
+        raise NoActiveApp(f"{firmware} is {'missing' if f is None else repr(f)}, not {app}.bit.bin: the device tree "
+                          f"doesn't show our overlay. {STOP}")
+    s = text_of(state)
+    if s != "operating":
+        raise NoActiveApp(f"{state} is {'missing' if s is None else repr(s)}, not 'operating'. {STOP}")
+    if not (firmware_dir / app / f"{app}.bit.bin").is_file():
+        raise NoActiveApp(f"{firmware_dir / app / (app + '.bit.bin')} is missing: {app} isn't installed. {STOP}")
     return app
 
 

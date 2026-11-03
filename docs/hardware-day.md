@@ -63,9 +63,10 @@ the board.
     the wires from J2, then think. `hd off` after that.
 13. **If `xmutil loadapp` fails, stop. Run nothing.** Any error line, `Load Error` in
     particular, or a table that doesn't show the app active, means the next command is
-    not a tool. No tool may run on a board with no active app: reading the fabric's
-    addresses can hang the Kria, and only a power cycle brings it back. Go to step 0's
-    diagnosis, read-only. Never chain a tool after a load.
+    not a tool. No tool may run on a board with no active app of ours: on 2026-11-03 a
+    tool read the fabric while the default app held the slot, and the Kria froze;
+    probably only a power cycle brings it back from that. Go to step 0's diagnosis,
+    read-only. Never chain a tool after a load.
 
 ## What you need
 
@@ -139,14 +140,19 @@ again. Rule 13 applies to every load.
 ### The fabric guard
 
 `fpga/kv260/host/fabric_guard.py` runs before any program here opens `/dev/mem`:
-`pe_kria.py`, `pe_spim.py` and `pe_lab.py` call it, so every demo and test script on the
-board does too. It refuses unless `xmutil listapps` shows a protoemu app active, the
-FPGA manager's state isn't a failure, and the device tree's firmware-name isn't another
-bitstream. None of those reads a fabric address: its docstring says what each read
-is, and how far that is known. `xmutil`'s internals and this board's sysfs paths
-have not been seen on a board with no app. If the table's format isn't what the guard
-expects it refuses, and a person who has read the table can set `PE_ACTIVE_APP=<app>`
-(`hd run NAME --active-app <app>`). That can't overrule a table it can read.
+`pe_kria.py`, `pe_spim.py` and `pe_lab.py` call it, so every demo and test script run from
+`~/hwday` does too. It fails closed. Every check must pass:
+
+* `xmutil listapps` printed exactly its table, in the format read on the board on
+  2026-11-03, with one active row, named `protoemu`, `protoemu40` or `protoemu48`;
+* `/proc/device-tree/fpga-region/firmware-name` names that app's bitstream;
+* `/sys/class/fpga_manager/fpga0/state` says `operating`;
+* `/lib/firmware/xilinx/<app>/<app>.bit.bin` exists.
+
+None of those reads a fabric address; its docstring says what each read is and what is
+from memory. A missing file refuses and names its path, so the first real run shows
+whether the paths are right on this board. There is no override. If it refuses, stop and
+report what it printed: never edit it to get past.
 
 ## Reference
 
@@ -341,33 +347,32 @@ line. See What you need.
 
 Time: 30 min (estimate). App: any. Needs: nothing.
 
-**Risk.** This is the one step where the Kria is powered off, by you, by hand, once. On 2026-11-03 `xmutil loadapp protoemu` returned Load Error -1, the next command ran a host tool anyway, and the Kria stopped answering. The likely cause, not proved: that tool read a fabric address with no working bitstream behind it, which can hang the bus. Nothing remote can bring it back. A board with no active app must have no tool run on it: no `hd run` of a board step, no demo, no `bringup_kria.py`, nothing that opens `/dev/mem`. This step opens nothing: it only prints what to read.
+**Risk.** On 2026-11-03 the Kria had rebooted into its default app, `k26-starter-kits`, which held the slot. `xmutil loadapp protoemu` printed `protoemu: Load Error: -1`, the next command ran a host tool anyway, the tool read pe_spim's address inside the wrong design, and the board froze: its journal for that boot ends as the command started. Probably only a power cycle brings a board back from that; nobody here can do it but you. A board with no active app of ours must have no tool run on it: no `hd run` of a board step, no demo, no `bringup_kria.py`, nothing that opens `/dev/mem`. This step itself opens nothing.
 
-**Before you start.** **Power.** Take every wire out of J2. Unplug the Kria's power, wait 10 seconds, plug it back in. It reboots into its default app, not ours (expected).
+**Before you start.** **First, does it answer?** From another machine: `ssh ubuntu@kria.[tailnet domain redacted] uptime`. If it answers, do not power it off, whatever app is active: go straight to the diagnosis. A power cycle is only for a board that doesn't answer.
 
-**Confirm it came back,** from another machine, after a few minutes (estimate): `ssh ubuntu@kria.[tailnet domain redacted] uptime` answers, with an uptime of minutes. Its network settings are as they were; don't touch them. If it doesn't answer in 10 minutes, check its link LEDs and power LED, and stop there.
+**Only if it doesn't answer for 10 minutes:** take every wire out of J2. Unplug the Kria's power, wait 10 seconds, plug it back in. It boots into `k26-starter-kits`, not ours: expected. After a few minutes (estimate) the `ssh` line above should answer, with an uptime of minutes. If it doesn't within 10 minutes, check the power and link LEDs, and stop there. This is the one power cycle in this runbook; confirming this step lasts, so it never sends you back to it.
 
-**Find out why the load failed, before any retry.** Read only. Run the commands below and write down what they say. `-b -1` is the boot that failed, and may be empty if the journal doesn't persist. What to look for:
+**Diagnosis, read-only.** Run the commands below and write down what they print. `-b -1` is the boot that froze, and may be empty if the journal doesn't persist. What to look for:
 
-* An app already active in the table: a load fails if another is still in the slot, so `sudo xmutil unloadapp` comes first.
+* Another app active in the table, as on 2026-11-03: a load fails while another app holds the slot. The sequence below unloads it first.
 * `ls` shows no `protoemu.bit.bin` or `.dtbo`: the install is incomplete. Run `install.sh` with `LOAD=0` from your checkout.
 * `dfx-mgr` not running, or errors about `shell.json`, overlays, or the FPGA manager: note them. Don't work around them.
 * The bitstream is rejected in `dmesg`: a corrupt or wrong file. Rebuild or reinstall it.
 
-**Retry once, only when you have a cause:**
+**The old copies of the host scripts are unguarded.** `install.sh` put `tools`, `firmware` and `host` in `~/protoemu`, `~/protoemu40` and `~/protoemu48`, from before the guard existed; the last `ls` shows which exist. Rename each one so nothing runs from it, for example `mv ~/protoemu ~/protoemu-unguarded`, and use only `~/hwday` (Setting up). Renaming changes no app: those live in `/lib/firmware/xilinx`.
+
+**The load, one command at a time.** Read what each prints before typing the next. Never put them on one line, and never put a tool after them:
 
     sudo xmutil unloadapp
     sudo xmutil loadapp protoemu
     sudo xmutil listapps
-    cat /sys/class/fpga_manager/fpga0/state
 
-It worked only if no line says error, the table shows `protoemu` active, and the state says `operating`. If not, stop. Run no tool. A second failure is the day's result until the cause is known.
-
-Then `fabric_guard.py` is what stands between a failed load and the fabric: every program here that maps it goes through that check.
+It worked only if no line says error and the table shows `protoemu` as its one active row. If not, stop. Run no tool. A second failure is the day's result until the cause is known. Then tools may run: every program here that maps the fabric goes through `fabric_guard.py` first, and it refuses unless the table, the device tree and the FPGA manager all agree.
 
 **Must stay disconnected:**
 
-* Every wire in J2: out, before the power goes back on
+* Every wire in J2: out, before anything else
 
 **On the Kria, read-only:**
 
@@ -375,10 +380,12 @@ Then `fabric_guard.py` is what stands between a failed load and the fabric: ever
 uptime
 sudo xmutil listapps
 cat /sys/class/fpga_manager/fpga0/state
+cat /proc/device-tree/fpga-region/firmware-name; echo
 sudo dmesg | grep -iE 'fpga|dfx|overlay|zynqmp' | tail -n 60
 sudo journalctl -u dfx-mgr -b --no-pager | tail -n 60
 sudo journalctl -u dfx-mgr -b -1 --no-pager | tail -n 60
 ls -l /lib/firmware/xilinx/protoemu/
+ls -ld ~/protoemu ~/protoemu40 ~/protoemu48
 ```
 
 **Command, on the Kria:**
@@ -389,12 +396,12 @@ hd run recover
 
 **Success:**
 
-* The Kria answers with a fresh uptime; the cause of the failed load is written down; the retry shows `protoemu` active and the state `operating`. On the Kria, `hd run recover` and type `passed recover`. `hd` only records this; if it isn't installed yet, do Setting up first, which copies files and touches no fabric.
+* The Kria answers; what the logs say is written down; the old copies are renamed; the load shows `protoemu` as the one active row. On the Kria, `hd run recover` and type `passed recover`. `hd` only records this; if it isn't installed yet, do Setting up first, which copies files and touches no fabric.
 
 **Failure, and what to try:**
 
-* No answer after 10 minutes: leave it for now. Nothing in this runbook works without it.
-* Load fails again: stop. Keep the logs. No tool runs on this board until an app shows active.
+* No answer after a power cycle and 10 minutes: leave it. Nothing in this runbook works without it.
+* The load fails again: stop. Keep the logs. No tool runs on this board until our app shows active.
 
 ### Step 1: Read the board, change nothing (`preflight`)
 
@@ -422,7 +429,7 @@ hd run preflight
 **Failure, and what to try:**
 
 * `active app is 'k26-starter-kits'` or similar: run the `xmutil` line it prints, then run the step again. The launcher refuses to read the fabric with no protoemu app active, because reading those addresses with nothing behind them can hang the board.
-* `can't read the active app`: read the table yourself with `sudo xmutil listapps` and add `--active-app NAME`. The table's format here is from memory.
+* `isn't a row of its table`, `didn't print its table`, or a missing file named: the guard couldn't confirm our app, so it opened nothing. Stop, copy what it printed for the author, and run nothing else. There is no way round it, on purpose.
 * `MISSING protoemu40`: stop and decide; the transmit steps need that app (it is in the project notes as installed on 2026-10-30, and nothing today has checked that). `MISSING protoemu48` only blocks `usb-pi`.
 * PMOD not zero: run `hd off`, run the step again, and find out what left a pin on.
 
@@ -654,7 +661,7 @@ Time: 30 min (estimate). App: protoemu40. Needs: `tx-bench`, `pi-prep`.
 
 **Before you start.** The Pi has one Ethernet port, and this step takes it off the network. So start the watch first; it writes to files and doesn't need you. On the Pi, while you can still reach it, run the command below. Then take any cable out of the Pi's Ethernet port, and connect the breakout to the Pi's Ethernet port with a plain patch cable, last. Then, on the Kria, run the launcher.
 
-The chip sends on RJ45 pins 3 and 6 here because those are the pair a station like the Pi listens on, 802.3's normal wiring for two stations with no crossover. The Pi's Auto-MDIX could swap pairs on its own (LAN9514's listing has it; `CHECK BEFORE WIRING` for a 3 B+). Its transmit pulses could then reach the chip's pins through 220 ohm and 100 nF, and it is likeliest to hunt like that with no link, so with our pins disabled, before and after the launcher runs. Worked out for that case (estimate, unmeasured): the pads float, and the pair can push them only until one input's upper diode and the other's lower diode conduct, about 4.5 V apart. A pulse of up to 5 V open-circuit then drives about 1 mA through 540 ohm for under 100 ns, 2 mA with the second pair of resistors. Those are short, rare pulses, well inside DS925's undershoot allowance, and small against the 20 mA pad figure. With the pins driven the worst case is about 9 mA for the same time (5 V through 540 ohm).
+The chip sends on RJ45 pins 3 and 6 here because those are the pair a station like the Pi listens on, 802.3's normal wiring for two stations with no crossover. The Pi's Auto-MDIX could swap pairs on its own (LAN9514's listing has it; `CHECK BEFORE WIRING` for a 3 B+). Its transmit pulses could then reach the chip's pins through 220 ohm and 100 nF, and it is likeliest to hunt like that with no link, so with our pins disabled, before and after the launcher runs. Worked out for that case (estimate, unmeasured): the pads float, and the pair can push them only until one input's upper diode and the other's lower diode conduct, about 4.5 V apart. A pulse of up to 5 V open-circuit then drives about 1 mA through 540 ohm for under 100 ns, 2 mA with the second pair of resistors. Those are short, rare pulses, well inside DS925's undershoot allowance, and small against DS925's absolute maximum of 20 mA of output current at a pad. With the pins driven the worst case is about 9 mA for the same time (5 V through 540 ohm).
 
 **Wiring, in this order:**
 
@@ -1333,10 +1340,11 @@ on one, it says so.
 | Pin 1 of the Pi's header, physically | Official documentation gives pin numbers; its position here is by description | `pinout` on the Pi |
 | RJ45 colours on a cut cable | T568A or T568B, unknown | Use the breakout |
 | The I2C part's pins, voltage, address width | Not chosen yet | Its datasheet |
-| `xmutil listapps` table format, and what it shows after a failed load | From memory; `--active-app` covers an unreadable table | Step `recover` |
-| `xmutil listapps` doesn't touch the fabric | From dfx-mgr's design; source not read. Never seen with no app on this board | dfx-mgr's source |
-| `/sys/class/fpga_manager/fpga0/state` and `/proc/device-tree/fpga-full/firmware-name` exist here | Expected; the guard ignores them if absent | Step `recover` |
-| Why the Kria hung on 2026-11-03 | The fabric read is likely, not proved | Step `recover`'s logs |
+| `xmutil listapps` rows' middle columns | The header and each row's last two fields were read on the board on 2026-11-03; a row's type, base and Pid values were not quoted. A row without a Pid value would refuse | Step `recover`, first run |
+| `xmutil listapps` doesn't touch the fabric | From dfx-mgr's design; source not read | dfx-mgr's source |
+| `/sys/class/fpga_manager/fpga0/state` exists here | Expected, not seen. The guard refuses if absent | Step `recover`, first run |
+| An overlay's removal takes `/fpga-region/firmware-name` away | From memory of how overlays work. The path itself is in the board's boot log | Step `recover`, first run |
+| Why the Kria froze on 2026-11-03 | Cause from the board: a tool read pe_spim's address while `k26-starter-kits` held the slot. That the read hung the bus is the likely mechanism, not proved | - |
 | How long a receiver keeps link with no pulses | 50 to 150 ms, from memory, as in docs/eth10-network.md | 802.3 clause 14 |
 | Whether the Pi can be an SPI device for the chip's master firmware | Not found in the documentation read. So `spi` tests capture only | A real SPI part |
 
@@ -1346,6 +1354,7 @@ The AMD, Raspberry Pi and Xilinx pages and the gist were opened. UG1089, the ele
 post, the datasheet listings and the Tenda listings were read only as a search tool's
 excerpts, because the pages timed out or weren't fetched: treat those as weaker.
 
+* The Kria itself, read-only, 2026-11-03, by the orchestrator: the load error's text, `xmutil listapps`' header and slot fields, the boot log's `/fpga-region/firmware-name`, `/lib/firmware/xilinx/`, and the journal of the boot that froze.
 * [Linux sysfs-class-fpga-manager ABI](https://gbmc.googlesource.com/linux/+/7b2e57c26d45d55aa00d9f2904db12633596ffdb/Documentation/ABI/testing/sysfs-class-fpga-manager): the `state` values, from a search excerpt. [dfx-mgr, a mirror](https://gitee.com/mirrors_Xilinx/dfx-mgr).
 * [DS925, absolute maximum ratings](https://docs.amd.com/r/en-US/ds925-zynq-ultrascale-plus/Absolute-Maximum-Ratings): HD I/O VIN -0.55 V to VCCO + 0.55 V, VCCO 3.4 V maximum.
 * [DS925, overshoot and undershoot](https://docs.amd.com/r/en-US/ds925-zynq-ultrascale-plus/VIN-Maximum-Allowed-AC-Voltage-Overshoot-and-Undershoot): the -0.30 V and -0.45 V figures.
