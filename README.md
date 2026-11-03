@@ -96,8 +96,10 @@ describes how, and what it caught.
   PEC, RC-5 infrared. Each is checked by the static timing checker, pins-only
   models, sigrok's decoders where one exists and an RTL test through the SPI
   port, which also passes on fo6's gate-level netlist (functional 16/16;
-  with SDF at 20 ns 16/16 at the typical, slow and fast corners, two of them
-  after their timing assertions got a 1 ns tolerance for sub-ns pad skew). All three rounds also ran on the KV260 FPGA build of the RTL,
+  with SDF at 20 ns 16/16 at the typical corner, two of them after their
+  timing assertions got a 1 ns tolerance for sub-ns pad skew; 16/16 at the
+  slow and fast corners in supplementary single-case runs of 2026-11-02,
+  outside the release gate and with no verifier report). All three rounds also ran on the KV260 FPGA build of the RTL,
   against the other core or the FPGA's pattern generator playing our own
   (mostly pre-timed) device models, with results equal to the cycle model's
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the
@@ -292,7 +294,9 @@ make -C formal                                                   # proofs
   by `fault-fixes` need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,
   hash-bound receipt). With SDF at the typical corner all 16 pass
-  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)).
+  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)), and at the
+  slow and fast corners too, in supplementary single-case runs of 2026-11-02
+  with no verifier report ([docs/release-evidence.md](docs/release-evidence.md)).
 * Its final netlist is formally equivalent to the RTL
   ([docs/equivalence.md](docs/equivalence.md)), for every input and state,
   not only the tested cases. All 1647 flops, 1024 latches, 54 clock gates and

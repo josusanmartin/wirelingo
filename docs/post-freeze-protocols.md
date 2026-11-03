@@ -101,7 +101,10 @@ validation commit `beddbe2` (`main` a1561d6 plus that runner; its `test/`,
   only those assertions to 1 ns (not committed) passes both, sigrok's
   Wiegand decoder included. The committed tests still fail with SDF; this
   needs a test change (a tolerance under SDF) to become a pass.
-* Not run: SDF at the slow and fast corners.
+* Not run in this record: SDF at the slow and fast corners. They ran later,
+  on 2026-11-02, 16/16 at each corner in supplementary single-case runs
+  outside the release gate, with no verifier report
+  ([release-evidence.md](release-evidence.md)).
   **Follow-up (2026-10-14):** both assertions now allow 1 ns (commit
   8dd249a; RTL timing is still exact, `test_post_freeze` 16/16 on RTL).
   Re-run at SDF typ on fo6 with validation `8dd249a`: **`pf_dmx512` and
