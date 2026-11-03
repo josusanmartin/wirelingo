@@ -8,6 +8,16 @@ branch `kv260-v2` the design is built from the v2 RTL (NRZI half-cycle
 sample point, SYNC_BYPASS, WAIT kind 7, CALL/RET), and every bitstream says
 which RTL revision it is (below).
 
+**Firmware changed since these runs (branch `fault-fixes`, 2026-11-03).**
+`uart_rx` (13 to 14 words), `i2c_master` (71 to 90), `can_rx` (97 to 100) and `usb_enum`
+(246 to 253) were changed after every run on this page, to fix faults found
+on the model ([docs/fault-testing.md](../../docs/fault-testing.md)), and
+`tools/micropython/protoemu_fw.py` was regenerated with them. The results
+below, including Linux's enumeration of `usb_enum` at both speeds, were made
+with the earlier firmware and apply to that firmware only. The changed
+firmware needs a rerun on the KV260 before they apply to it. No RTL was
+changed.
+
 ## Design
 
 `kv260_top.v` wraps `tt_um_josusanmartin_protoemu`, staged for FPGA by

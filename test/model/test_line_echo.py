@@ -37,9 +37,11 @@ def test_usb_enum_overflow_is_only_its_own_echo():
     assert peer.get_descriptor(0, 1, 18) == usbdev.DEVICE_DESC
     summary = probe.check()
     own = [(f["queued"] + f["dropped"], f["dropped"]) for f in probe.frames if f["own"]]
-    # SETUP's ACK, DATA1/DATA0 of 8 bytes, DATA1 of 2 bytes, the status ACK
-    assert own == [(16, 0), (96, 46), (96, 46), (48, 0), (16, 0)]
-    assert summary["dropped_bits"] == 92 and summary["peer_peak_rx_queued"] <= 16
+    # SETUP's ACK, DATA1/DATA0 of 8 bytes, DATA1 of 2 bytes, the status ACK. (Since
+    # fault-fixes `echo` first checks that its packet has begun, 4 ticks: one more
+    # bit of the second DATA's echo is dropped, 46 and 92 before.)
+    assert own == [(16, 0), (96, 46), (96, 47), (48, 0), (16, 0)]
+    assert summary["dropped_bits"] == 93 and summary["peer_peak_rx_queued"] <= 16
 
 
 def test_check_rejects_a_dropped_peer_bit():

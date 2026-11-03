@@ -2,7 +2,10 @@
 ; (CLKDIV = f_clk / (48 * bitrate): 2 at 48 MHz for 500 kbit/s); sample point 24/48.
 ; RX = input pin (RXD, absolute and IN_BASE); TX = output pin (TXD, 1 = recessive).
 ;
-; * Hard sync on the SOF edge. Afterwards every recessive->dominant edge
+; * Hard sync on the SOF edge, and the SOF must still be dominant at its
+;   sample point (D+24): a shorter low pulse on the idle bus is a glitch, and
+;   the receiver goes back to idle with nothing reported and no error flag
+;   (docs/fault-testing.md, finding 5). Afterwards every recessive->dominant edge
 ;   resynchronises: the sample point is 24 ticks after the edge. Without an
 ;   edge, samples stay 48 ticks apart (WAIT fall with a timeout). The WAIT is
 ;   re-armed 17 ticks after a sample, 7 before the next nominal edge, which
@@ -35,8 +38,11 @@ idle:
     mov isr, null                     ; D+2
     ldi r0, 0                         ; D+3
     ldi r1, 0                         ; D+4
-    ldi r3, 1                   [17]  ; D+5  last = recessive: SOF starts a run
-    jmp sample                        ; D+23 -> sample at D+24
+    ldi r3, 1                   [18]  ; D+5  last = recessive: SOF starts a run
+    mov r2, pins                      ; D+24 = S+0: the SOF at its sample point
+    and r2, 1                         ; S+1
+    jmp r2, idle                      ; S+2  recessive: a glitch, not a frame
+    jmp sof                           ; S+3  (r1 = 0: no stuff check) -> S+4
 nextbit:
     wait fall RX timeout r2           ; completes at S'-2 (timeout) or at an edge E
     jmp t, sample                     ;  timeout: sample 2 ticks later, on the grid
@@ -46,6 +52,7 @@ sample:
     and r2, 1                         ; S+1
     cmp r1, 5                         ; S+2
     jmp z, stuffbit                   ; S+3
+sof:
     cmp r2, r3                        ; S+4
     jmp z, same                       ; S+5
     ldi r1, 1                         ; S+6

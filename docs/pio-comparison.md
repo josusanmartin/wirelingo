@@ -76,18 +76,18 @@ protoemu 8 ticks per bit at 800 kHz.
 | **Engines** | 2 blocks × 4 SMs, 32 instruction slots per block, shared by its 4 SMs | 2 cores, 256-word private bank each | PIO on engine count; protoemu on per-engine program space |
 | **UART TX** program | 4 instr = 8 B | 4 instr = 16 B | PIO (bytes) |
 | UART TX timing | 8 SM clocks per bit; max 16.6 Mbaud at 133 MHz | 8 ticks per bit; max 6.25 Mbaud at 50 MHz | equal per cycle; PIO in absolute rate |
-| **UART RX** program | 9 instr = 18 B | 13 instr = 52 B | PIO |
+| **UART RX** program | 9 instr = 18 B | 14 instr = 56 B | PIO |
 | UART RX framing error / break | byte dropped, sticky IRQ 4 | byte pushed, sticky flag F0 | PIO (bad byte not delivered) |
 | UART RX, back-to-back frames from a fast sender | fails at −3 % (needs frames ≥ 78 SM clocks) | passes −3.5 % (needs ≥ 77 ticks) | protoemu |
 | **SPI** program | 2 instr = 4 B | 2 instr = 8 B | PIO (bytes) |
 | SPI fastest correct loopback | 4 system clocks per SCK (synchroniser bypassed): 33 MHz at 133 MHz | g4: 8 per SCK (at 4 the synchroniser makes MISO a bit late), 6.25 MHz. v2 with `SYNC_BYPASS`: 4 per SCK, 12.5 MHz | g4: PIO; v2: equal per clock, PIO in absolute rate |
-| **I2C** program | 18 instr in PIO + START/STOP/RSTART injected by the CPU as instructions in the FIFO | 71 instr, all in the engine | PIO on size; protoemu on autonomy |
+| **I2C** program | 18 instr in PIO + START/STOP/RSTART injected by the CPU as instructions in the FIFO | 90 instr, all in the engine | PIO on size; protoemu on autonomy |
 | I2C register read (repeated START, 2 bytes): host accesses | 19 FIFO writes + 3 FIFO reads + 3 control-register writes | 8 FIFO writes + 5 FIFO reads | protoemu (count); bytes similar, see below |
-| I2C bus time, START to STOP | 478 µs; 89.7 µs per byte | 560 µs; 105 µs per byte | PIO |
+| I2C bus time, START to STOP | 478 µs; 89.7 µs per byte | 601 µs; 111 µs per byte (560 and 105 before the SDA read-back) | PIO |
 | I2C SCL low between bytes at 100 kHz | 4.69 µs (UM10204 minimum 4.7) | 5.00 µs | protoemu (marginal) |
 | **I2C SCL held low** | SM waits forever; `pio_i2c_write_blocking` doesn't return (100 ms simulated) | error reply after 2.5 ms per command; idle after 7.6 ms; works again when SCL is freed | protoemu |
 | I2C address NACK | SM halts on `irq wait`; CPU drains, forces a JMP, clears the IRQ, sends STOP; no further bytes clocked | per-byte ACK bit to host; keeps clocking bytes already queued | PIO (stops by itself) |
-| I2C SDA held low | false ACK, "success" | false ACK, data 0x00 | neither |
+| I2C SDA held low | false ACK, "success" | bus fault: reply 0x200, F1 (false ACK and data 0x00 before `fault-fixes`) | protoemu |
 | **USB** | Pico-PIO-USB: 32 instr, 3 SMs; CPU does NRZI/stuff encoding, CRC and handshake timing (source); FS device, FS/LS host | LS device only: 129 instr on one core + line unit (or 143 + 49 on two cores); handshakes, CRC check and stuff errors in the engine | different scope; protoemu on CPU offload |
 | **Area** | not published; "each SM ≈ a standard SPI/I2C controller" (datasheet §3.1) | 0.354 mm² std cells + 0.099 mm² SRAM, whole chip incl. host port and line unit (run g4) | not comparable |
 | **Host link** | on-chip bus, DMA up to 1 word per clock (datasheet §3.1) | external SPI: 193 Mbit/s quad (simulated, 193.6 on FPGA) | PIO |
@@ -112,7 +112,7 @@ Both programs pull one 32-bit FIFO word per byte.
 
 | | PIO `uart_rx` | protoemu `uart_rx` |
 |---|---|---|
-| Instructions / bytes | 9 / 18 | 13 / 52 |
+| Instructions / bytes | 9 / 18 | 14 / 56 |
 | Stop bit low (framing error) | not pushed; `irq 4 rel` sets a sticky flag; waits for idle | pushed; flag F0; waits for idle |
 | Break (line low for 25 bits) | nothing pushed; flag | 0x00 pushed; flag |
 | Recovery | next byte after idle (measured) | next byte after idle (measured) |
@@ -139,12 +139,16 @@ each offset.
 `ldi r0`, `jmp x--` → `jmp r0--`, `irq` → `flag`). That gives 9 instructions,
 and its results on the protoemu model match the PIO model exactly in every case
 above (`test_uart_rx_pio_transliteration`, `test_uart_rx_back_to_back_tolerance`).
-The shipped 13-instruction firmware spends 4 extra instructions on two things:
+The shipped 14-instruction firmware spends 5 extra instructions on three things:
 
 * `in null, 24` to right-align the byte, which pico-examples does instead by
   reading byte lane 3 on the RP2040 bus;
 * pushing before the stop-bit check, which is what buys the tolerance and also
-  why a bad byte is delivered.
+  why a bad byte is delivered;
+* since `fault-fixes`, one `jmp pin` that reads the start bit again at mid-bit
+  and drops a glitch ([fault-testing.md](fault-testing.md), finding 1).
+  pico-examples' `uart_rx` has no such check. It costs no tick: the sample
+  times and the D + 77 return are unchanged, so the tolerance row above holds.
 
 ## SPI (mode 0, full duplex)
 
@@ -202,13 +206,14 @@ clocks, at 133 MHz: 15 ns.
 
 | | PIO `i2c` + `pio_i2c.c` | protoemu `i2c_master` |
 |---|---|---|
-| Engine instructions / bytes | 18 / 36 (56 % of a PIO block's 32 shared slots) | 71 / 284 (28 % of one core's bank) |
+| Engine instructions / bytes | 18 / 36 (56 % of a PIO block's 32 shared slots) | 90 / 360 (35 % of one core's bank) |
 | START / STOP / RSTART | the CPU sends an escape word plus 3, 3 or 5 instruction words, run by `out exec` | one command word each, run in the engine |
 | ACK of written bytes | NACK on a non-final byte halts the SM | ACK bit returned for every byte |
 | Clock stretching | `wait 1 pin, 1`, no limit | every SCL release waits with a timeout (R3, default 2000 ticks) |
 | What the timeouts cost | — | 20 instructions: `ldi r3` + `jmp t` at each of the 6 SCL-release WAITs, plus an 8-instruction handler |
+| SDA read back where the master releases it | — | 19 instructions (71 to 90, `fault-fixes`): before START, after STOP, each written bit, a READ's NACK; a low read-back replies 0x200 and sets F1 ([fault-testing.md](fault-testing.md), finding 2) |
 
-The 71 instructions would not fit in a PIO block. That is the point of 256
+The 90 instructions would not fit in a PIO block. That is the point of 256
 private words: this I2C master and the 129-instruction USB device both need
 more than 32.
 
@@ -219,8 +224,8 @@ START. Both engines run against the same target model at 100 kHz.
 
 | | PIO: FIFO writes / reads / control writes | protoemu: FIFO writes / reads | PIO bus time | protoemu bus time |
 |---|---|---|---|---|
-| Register write | 13 / 0 / 2 | 7 / 5 | 463 µs | 519 µs |
-| Register read | 19 / 3 / 3 | 8 / 5 | 478 µs | 560 µs |
+| Register write | 13 / 0 / 2 | 7 / 5 | 463 µs | 575 µs (519 before the SDA read-back) |
+| Register read | 19 / 3 / 3 | 8 / 5 | 478 µs | 601 µs (560 before) |
 
 * **Host accesses.** protoemu needs about half as many host FIFO accesses and
   no control-register writes. pio_i2c toggles autopush and clears FDEBUG.
@@ -230,7 +235,8 @@ START. Both engines run against the same target model at 100 kHz.
   claim is fewer host interactions and no instruction-level choreography by the
   CPU, not less data.
 * **Bus time.** PIO is faster on the bus: 287 SM clocks (89.7 µs) per byte
-  against protoemu's 84 ticks (105 µs). protoemu decodes a command word before
+  against protoemu's 89 ticks (111 µs; 84 and 105 before `fault-fixes` added
+  the SDA read-back, which costs a WRITE 9 ticks and a READ 3). protoemu decodes a command word before
   each byte (`pull`, `mov`, `and`, compares), and that costs about 1.5 bit
   times.
 * **SCL timing.** Measured inside the transfers: protoemu holds SCL 5.00 µs
@@ -291,9 +297,12 @@ of a register write.
 * PIO's behaviour is the safer default. On protoemu the host must check a
   reply before queuing more bytes, or accept that bytes go to an absent target.
 
-**SDA held low.** Both engines read the stuck line as ACK. pico-examples
-returns success; protoemu replies ACK and data 0x00. Neither firmware checks
-SDA after releasing it, so neither detects arbitration loss or a stuck line.
+**SDA held low.** pico-examples reads the stuck line as ACK and returns
+success. protoemu did the same (ACK, data 0x00) until `fault-fixes`; it now
+reads SDA back wherever it releases it and replies 0x200 with F1 set
+([fault-testing.md](fault-testing.md), finding 2). It compares a written byte
+after the ACK, so it reports a lost arbitration but does not stop early on
+one: it is still not a multi-master.
 On both, the host can clear a target stuck mid-read the standard way, by
 clocking 9 bits with SDA released and then STOP (protoemu: READ with NACK;
 pio_i2c: a 0xFF read word with NAK set). That was not measured here.
@@ -401,7 +410,7 @@ benchmarked against PRU code.
      the engine. Pico-PIO-USB does these on the CPU with timing-critical busy
      waits.
 3. **Room for the program that does this.** 256 private words per core: the
-   71-instruction I2C master and the 129-instruction USB device each exceed a
+   90-instruction I2C master and the 129-instruction USB device each exceed a
    PIO block's 32 shared slots.
 
 A smaller, measured point: protoemu's UART receiver takes back-to-back frames

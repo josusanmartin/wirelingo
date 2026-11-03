@@ -644,7 +644,8 @@ gl_sdf_test (standard): all cases as required        (14 min wall, load average 
 One case is `flow/gl_sdf_test.sh <run> CORNER CLK_NS [fail|report]`
 (`report` prints the result without requiring either); `TESTS=` picks
 other tests and `MODULE=test_sigrok` the sigrok oracle (sigrok_uart_tx,
-sigrok_spi_master and sigrok_i2c_master pass at typ, 50 MHz). Most of a
+sigrok_spi_master and sigrok_i2c_master pass at typ, 50 MHz, with the
+firmware of that run). Most of a
 case's ~4 minutes is Icarus reading the SDF; the simulation itself runs at
 roughly 2 µs of chip time per second.
 

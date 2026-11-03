@@ -45,7 +45,10 @@ DMX512, LIN, NEC infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI,
 Modbus RTU, MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0,
 SMBus with PEC and RC-5 infrared. Most of it (not SWD or the two-core USB
 device) has also run on an FPGA build of the RTL (Kria KV260) against
-pins-only device models. None of it has run on silicon yet.
+pins-only device models. Four of those programs (UART RX, I2C master, CAN RX
+and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
+need an FPGA rerun before those results apply to them. None of it has run on
+silicon yet.
 The hardened netlist is formally proved equivalent to the RTL: functionally,
 for every input and state, under the assumptions listed in
 `docs/equivalence.md`. Timing is checked separately, by STA.
@@ -127,12 +130,16 @@ derived from the specifications, not yet validated on silicon):
   3.3 V. Call `bringup.usb_enum(pe, speed)`, then connect the cable; the chip
   answers the PC's enumeration by itself (vendor ID 0x1209, product 0x5634,
   one configuration, no data endpoint), and `bringup.usb_enum_state(pe)` reads
-  the address and Configured state afterwards. Tested in RTL and
-  timing-annotated gate-level simulation, and on the KV260 FPGA build of the
-  RTL against a host model's waveform replayed on its pins (no PHY). On that
-  FPGA build, wired to the board's own USB port, Linux enumerated and
-  configured it at low and full speed (2026-10-30). Signalling through the
-  chip's pads is unmeasured.
+  the address and Configured state afterwards. The firmware it loads today
+  (253 words, since `fault-fixes`: a bus reset is seen wherever it starts) is
+  tested in RTL simulation and on the cycle model only. The 246-word firmware
+  before it was also tested in timing-annotated gate-level simulation, and on
+  the KV260 FPGA build of the RTL against a host model's waveform replayed on
+  its pins (no PHY); on that FPGA build, wired to the board's own USB port,
+  Linux enumerated and configured it at low and full speed (2026-10-30).
+  Those results are for the earlier firmware: the current one needs a
+  gate-level and an FPGA rerun before they apply to it. Signalling through
+  the chip's pads is unmeasured.
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two
   nominal pins swing ±3.3 V differentially. The proposed 15–20 Ω series

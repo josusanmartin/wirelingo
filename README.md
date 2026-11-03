@@ -27,8 +27,8 @@ describes how, and what it caught.
 | Level | What has been shown | Limit |
 |---|---|---|
 | **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
-| **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved |
-| **FPGA against our own far ends** | Every firmware except SWD and the two-core USB pairs: UART across real pins, quad host port at 193.6 Mbit/s, all three post-freeze protocol rounds, with results equal to the cycle model | The far end is a model or a replayed waveform, not a real device |
+| **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
+| **FPGA against our own far ends** | Every firmware except SWD and the two-core USB pairs: UART across real pins, quad host port at 193.6 Mbit/s, all three post-freeze protocol rounds, with results equal to the cycle model | The far end is a model or a replayed waveform, not a real device. `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](docs/fault-testing.md)) and need a rerun |
 | **Signed-off layout (run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
 | **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
 
@@ -37,7 +37,10 @@ describes how, and what it caught.
 * **Real USB host (2026-10-30):** on the KV260, Linux enumerated and configured
   the autonomous USB firmware at both speeds with no host software on the chip's
   side after loading: 32 of 32 attaches, 66,000 of 66,000 control transfers and
-  188 of 188 bus resets. With `usb_fs_dev` and Python on the SPI port, a Linux
+  188 of 188 bus resets. (That was the 246-word `usb_enum`; the 253-word one
+  from `fault-fixes`, which sees a reset wherever it starts, has not run on the
+  FPGA, and these results apply to it only after a rerun there.) With
+  `usb_fs_dev` and Python on the SPI port, a Linux
   process then wrote random data through USB and read it back, 350 of 350 round
   trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. Details and
   limits: [fpga/kv260/README.md](fpga/kv260/README.md).
@@ -69,7 +72,9 @@ describes how, and what it caught.
   At 48 MHz the autonomous USB device enumerates, at low and full speed,
   against a host model's waveform replayed on its pads by the FPGA's pattern
   generator, with every device edge at the clock the cycle model gives when
-  the model samples the pads the way the FPGA drives them.
+  the model samples the pads the way the FPGA drives them. (That was the
+  2026-10-14 replay with the 246-word `usb_enum` from before `fault-fixes`;
+  the 253-word one needs a KV260 rerun before it applies.)
 * A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
   handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
   gate-level simulation of the signed-off netlist
@@ -161,21 +166,21 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 
 | Firmware | What it does | Limits | Verified on |
 |---|---|---|---|
-| `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error | RTL; ±3 % and back-to-back on the model; KV260 (loopback and real PMOD pins) |
+| `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error; RX drops a start bit that is high again at mid-bit (a glitch) | RTL; ±3 % and back-to-back on the model; KV260 (loopback and real PMOD pins) with `uart_rx` before `fault-fixes`, which added the mid-bit check: not rerun there since |
 | `spi_master` | mode 0, MSB first, 8-bit frames, f_SCK = f_tick / 4 | chip select by the host or a wrapper | RTL; KV260 against pe_lab's SPI device (DELAY sweeps at CLKDIV 1-3) |
 | `spi_master_fast` (v2) | the same at 4 clocks per SCK (12.5 MHz at 50 MHz): MISO's pad in `SYNC_BYPASS` (one synchroniser flop), sampled at the SCK rise | the device must answer within 2 clocks of SCK falling, pad and board delays included | RTL against a device model; delay sweep on the model; KV260 (DELAY table with and without the bypass) |
-| `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released) | 4 + 4 ticks per SCL period | RTL; stuck-SCL in every phase on the model; KV260 (against `i2c_device`, beside `i2c_sniff`) |
+| `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released); **SDA read back** where it is released (a low read-back: F1, reply 0x200) | 4 + 4 ticks per SCL period; a WRITE command takes 9 ticks more than before the read-back, a READ 3 | RTL; stuck-SCL in every phase and stuck-SDA on the model; stuck SDA on the RTL; KV260 (against `i2c_device`, beside `i2c_sniff`) with the firmware before `fault-fixes`, not rerun there since |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit; KV260: enumeration against a replayed host, every pad edge equal to the model's |
 | `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter tolerance about 31 ns edge to edge, 12 ns past the spec's 18.5 (g4: about 21 ns) | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 10.5 clocks (spec 8–26; g4 11.5), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model; KV260 at 48 MHz against a replayed host, every pad edge equal to the model's |
-| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 246 of 256 words; full speed at exactly 48 MHz | model (both speeds: offsets, jitter, faults, resets, STALLs) and RTL with the host port idle; sigrok decodes every packet; KV260 at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator: every device pad edge at the model's clock (no PC, no PHY) |
+| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 253 of 256 words; full speed at exactly 48 MHz | model (both speeds: offsets, jitter, faults, resets, STALLs; since `fault-fixes`, a bus reset starting at any clock of a control read) and RTL with the host port idle; sigrok decodes every packet; KV260 at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator and against Linux, with the 246-word firmware before `fault-fixes`: the 253-word one needs a rerun on the KV260 before those results apply to it |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender; KV260: generator frames (sync and 45.93 MHz clock) and from eth10_tx |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model; KV260 at 50 MHz (CLKDIV 1.25), sampled every clock |
 | `eth10_tx_cs` | `eth10_tx` plus **carrier sense**: holds a frame until RXP has been quiet for 96 bit times, decided on the core, so the chip doesn't transmit into an arriving frame ([docs/eth10-network.md](docs/eth10-network.md)) | half duplex, no collision handling | model; RTL; gate level (fo6, functional) |
 | `pps_capture` | **pulse timestamps**: a free-running 48-bit count of chip clocks stamped at each edge of one input; `pe.pps` reports interval and drift against the chip's own clock ([docs/pps-capture.md](docs/pps-capture.md)) | no UTC, local clock only; 3 ticks in 65536 are blind, and the record says so; the FIFO holds 4 edges between host reads | model; RTL (70000-clock train, one 1 s interval) |
 | `eth10_match` | **10BASE-T cut-through match**: EtherType, then a 16-bit field against a threshold; a pin rises 200-220 ns after the field's last mid-bit edge, about 38 us before a 64-byte frame ends ([docs/eth10-cut-through.md](docs/eth10-cut-through.md)) | decides before the FCS; one field, one threshold | model; KV260 (generator frames) |
 | `eth10_reply` (**1 core**, line unit) | **10BASE-T match, then answer** with no host: `eth10_match`'s compare, then after the frame and 96 quiet bit times a fixed 64-byte reply frame (built into the program, FCS computed on the PC) through the line unit; the first edge comes 0-1 clock after the 96-bit gap from the far end's last edge ([docs/eth10-reaction.md](docs/eth10-reaction.md)) | fixed reply; no link pulses; no collision handling; it decides before the FCS, so a corrupted frame can be answered | model; RTL |
-| `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent) | frames, not a full controller (no error counters or bus-off) | model, incl. a TX→RX link between the two cores; KV260 (both cores on a wired-AND line; generator frames and pre-timed nodes); sigrok `can` |
+| `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent); RX confirms the SOF at its sample point (an idle-bus glitch is ignored) | frames, not a full controller (no error counters or bus-off, no form check) | model, incl. a TX→RX link between the two cores; KV260 (both cores on a wired-AND line; generator frames and pre-timed nodes) with `can_rx` before `fault-fixes`, not rerun there since; sigrok `can` |
 | `swd_probe` | ARM SWD engine: request parity, ACK, DPIDR, register writes | | model |
 | `jtag` | IEEE 1149.1 shift engine (IDCODE via Shift-DR) | | model; KV260 (pre-timed TAP: IDCODE, BYPASS); sigrok `jtag` |
 | `onewire` | 1-Wire master: reset/presence via WAIT timeout, READ ROM | | model; KV260 (pre-timed slave); sigrok `onewire_network` |
@@ -282,7 +287,9 @@ make -C formal                                                   # proofs
   compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
-  delays. The GDS passes Tiny Tapeout's precheck. Outside the release gate,
+  delays. (These receipts ran software `7685aba`, with the firmware of that
+  time; `uart_rx`, `i2c_master`, `can_rx` and the 253-word `usb_enum` changed
+  by `fault-fixes` need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,
   hash-bound receipt). With SDF at the typical corner all 16 pass
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)).
