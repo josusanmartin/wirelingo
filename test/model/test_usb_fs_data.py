@@ -101,6 +101,8 @@ class SpiBridge:
     def __init__(self, h, sw, poll=480, sck=2, overhead=48):
         self.chip = sw.mh.chip
         self.sw = sw
+        self.hold = None            # hold(op, previous op): True keeps the software waiting
+        self.held = False
         self.ops, self.results, self.go = queue.Queue(), queue.Queue(), queue.Queue()
         sw.mh = self
         h.idle = lambda mh: None
@@ -149,6 +151,7 @@ class SpiBridge:
 
     # -- the SPI side (runs inside FsHost's clock loop)
     def _program(self, bus):
+        prev = None
         while True:
             self.go.put(True)
             while True:
@@ -157,6 +160,10 @@ class SpiBridge:
                     break
                 if op[0] == "error":
                     raise op[1]
+                while self.hold is not None and self.hold(op, prev):    # descheduled here
+                    self.held = True
+                    yield 4
+                self.held, prev = False, op
                 if op[0] == "read":
                     v = (yield from bus.read(op[1]))[0]
                 elif op[0] == "write":
@@ -254,3 +261,68 @@ def test_round_trips_with_software_running_concurrently(concurrent, size):
         h.wait_bits(gap)
         assert checked_read(h, 5, size, f"read {k}") == data
         h.wait_bits(gap)
+
+
+@pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
+def test_no_restage_after_a_setup(concurrent, resume):
+    """The host takes the last DATA of a read but its ACK is lost, so the
+    device must re-stage it 100 us on (the host retries, or ACKs and drops
+    the old toggle). The host has moved on, though: OUT status, then the next
+    request's SETUP, which clears F_GOTACK and flushes the TX FIFO. The
+    software is descheduled just before it reads the flags to decide, and
+    resumes once the SETUP is on the bus (all of it, or only its token, while
+    its DATA follows). Re-staging then would leave the old DATA in the TX
+    FIFO, ahead of SET_CONFIGURATION's status reply, which the status IN would
+    get instead of a zero-length DATA1."""
+    h, sw = enumerated()
+    b = concurrent(h, sw)
+    data = bytes(range(0xB0, 0xB8))
+    checked_write(h, 5, data, "8-byte write")
+    h.setup(5, read_req(8))
+    assert h.data_in(5, 0, ack=False) == (usb.pid_byte(usb.PID_DATA1), data)     # ACK lost
+    h.data_out(5, 0, usb.PID_DATA1, b"")
+    fset = ("read", sim.A_FSET)
+    go = {"on": False}
+    b.hold = lambda op, prev: (not go["on"] and op == fset and prev and prev[0] == "pop_all" and sw.unacked is not None
+                               and sw.sent_at is not None and b.now_us() - sw.sent_at >= 100)
+    for _ in range(5000):
+        if b.held:
+            break
+        h.wait_bits(8)
+    assert b.held, "the software never reached its re-stage decision"
+    req = bytes([0, 9, 1, 0, 0, 0, 0, 0])               # SET_CONFIGURATION(1)
+    if resume == "after the SETUP":
+        h.setup(5, req)
+        go["on"] = True
+    else:
+        t = h.send(usb.token(usb.PID_SETUP, 5, 0))
+        go["on"] = True
+        t = h.send(usb.data_packet(usb.PID_DATA0, req), t, h.ipd)
+        assert h.listen(t) == usb.handshake(usb.PID_ACK)
+    status_in(h, 5, "SET_CONFIGURATION")
+    checked_write(h, 5, data[::-1], "8-byte write after")
+    assert checked_read(h, 5, 8, "8-byte read after") == data[::-1]
+
+
+@pytest.mark.parametrize("wlength", [8, 16])
+def test_descriptor_ending_at_wlength_has_no_zlp(concurrent, wlength):
+    """GET_DESCRIPTOR whose wLength is a multiple of 8 and shorter than the
+    descriptor: the data stage ends at wLength, so no zero-length packet
+    follows (USB 2.0 §5.5.3). A ZLP staged anyway waits in the TX FIFO for a
+    SETUP to flush it, and when the next SETUP races the software it is
+    stale: here a zero-length write follows at every gap of the sweep."""
+    h, sw = enumerated()
+    concurrent(h, sw)
+    req = bytes([0x80, 6, 0, 1, 0, 0, wlength, 0])
+    for k, gap in enumerate(GAPS):
+        h.setup(5, req)
+        out, toggle = b"", 1
+        while len(out) < wlength:
+            pid, payload = h.data_in(5, 0)
+            assert pid == usb.pid_byte(usb.PID_DATA1 if toggle else usb.PID_DATA0)
+            toggle ^= 1
+            out += payload
+        h.data_out(5, 0, usb.PID_DATA1, b"")
+        assert out == usbdev.DEVICE_DESC[:wlength]
+        h.wait_bits(gap)
+        checked_write(h, 5, b"", f"zero-length write {k}, after GET_DESCRIPTOR(device, {wlength})")
