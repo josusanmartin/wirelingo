@@ -7,3 +7,14 @@
  (libraries base stdio hardcaml hardcaml_waveterm wirelingo_rtl)
  (preprocess
   (pps ppx_jane)))
+
+; A raised [%test_result] promoted with --auto-promote lands in the source as an
+; exception record, and the test would then pass. This rule refuses any such record.
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files test_*.ml))
+ (action
+  (system
+   "! grep -n -e uncaught_exn -e 'expect[.]unreachable' test_*.ml")))
