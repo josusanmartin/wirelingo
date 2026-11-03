@@ -1361,8 +1361,21 @@ zero-length read had the opposite bug: no status ZLP at all. Both are fixed in
 (`test/model/test_usb_fs_data.py`, with the device software running over SPI
 concurrently with the bus). There the stale ZLP, a DATA0, answers a later
 request's status stage, or that request's INs go unanswered; the model does
-not show where Linux's `-32` came from. Zero-length requests have not been
-rerun on the board.
+not show where Linux's `-32` came from. On the board (RTL in FPGA fabric),
+with the write fix patched into the software at run time, 300 of 300
+zero-length writes on a configured device passed (median 0.74 ms, max
+1.90 ms, orchestrator run, 2026-11-03). Without it, a timed-out zero-length
+write's cancel took the Kria's xHCI controller down ("HC died"), with the hub
+and every device on it: a device that leaves INs unanswered can wedge this
+host. Zero-length reads have not been run on the board.
+
+Two more `pe.usbdev` races of the same kind, fixed 2026-11-03, evidence model
+only (`test_usb_fs_data.py`): GET_DESCRIPTOR staged a ZLP after a data stage
+that had already reached wLength (8 or 16: not in the sequence usbmon recorded
+on the board, but Linux's old enumeration scheme reads 8), and the 100 us re-stage after a lost ACK could run
+after the host had moved on to the next SETUP, putting the old DATA in the
+TX FIFO behind that SETUP's flush. Both left stale words for the next
+request's status stage.
 
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,

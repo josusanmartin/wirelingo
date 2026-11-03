@@ -168,7 +168,12 @@ class DeviceSoftware:
                 if self.sent_at is None:
                     self.sent_at = now
                 elapsed = mh.elapsed_us(now, self.sent_at) if hasattr(mh, "elapsed_us") else now - self.sent_at
-                if elapsed >= 100:
+                # Not if a SETUP came after the records were read: it cleared
+                # F_GOTACK and flushed the TX FIFO, so a packet staged now would
+                # be a stale one waiting there. F_SETUP marks its token up to the
+                # end of its DATA, and from then on its record is in the RX FIFO.
+                if (elapsed >= 100 and not flags & F_SETUP
+                        and not mh.read(sim.CORE_BASE + sim.CORE_STRIDE * self.rx + sim.C_STATUS) & 0xF0):
                     self.stage(*self.unacked)
                     self.restaged += 1
         if not self.unacked and self.pending:
@@ -221,8 +226,9 @@ class DeviceSoftware:
         if bm == 0x80 and breq == 6:           # GET_DESCRIPTOR
             desc = self.descriptors.get(wval >> 8, b"")[:wlen]
             self.pending = [desc[i:i + 8] for i in range(0, len(desc), 8)]
-            if len(desc) % 8 == 0:
-                self.pending.append(b"")       # terminate with a zero-length packet
+            if len(desc) % 8 == 0 and (len(desc) < wlen or not wlen):
+                self.pending.append(b"")       # short of wLength: end with a zero-length packet
+                                               # (wLength 0: the status stage is an IN)
         elif bm == 0x00 and breq == 5:         # SET_ADDRESS (status stage is a zero-length IN)
             self.new_address = wval
             self.pending = [b""]
