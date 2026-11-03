@@ -11,17 +11,16 @@ itself. Its use is narrower: anything already established for `src/` at RTL leve
 over to the generated Verilog through the proof, and the OCaml tools can stand in for the
 Python ones where they were compared.
 
-All numbers are from runs on runner1 on 2026-11-02, base commit 61af9b2. Commit 0027302
-for Stage 1, the Cyclesim run and Stage 4; commit eff2b0f for the assembler parity and the
-model suite. The two differ only in `ocaml/test/`. The generated tapeout Verilog has sha256
-`3b9a573559b1a1c1…`.
+All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 2dddff7,
+base 61af9b2, except the repeat of the model suite noted in Stage 3. The commit after it only
+changes this file and `ocaml/README.md`. The generated tapeout Verilog has sha256 `3b9a573559b1a1c1…`.
 
 | stage | gate | result |
 |---|---|---|
 | 1 | cocotb `test`, `test_post_freeze`, CI tapeout lockstep on generated Verilog | 25/25, 16/16, 6/6 |
 | 1 | formal equivalence with `src/`, tapeout build | proved: 7444 of 7444 points by `equiv_simple`, ABC `&cec` equivalent |
 | 2 | assembler, every firmware but `swd_probe` | 57 files byte-identical, no disagreement in 6202 cases |
-| 3 | cycle model against `sim.py` and RTL | no difference in 102,738 + 227,254 cycles three-way, nor in 63.9 million cycles of the model suite |
+| 3 | cycle model against `sim.py` and RTL | no difference in 102,738 + 227,254 cycles three-way, nor in about 63.7 million cycles of the model suite |
 | 4 | host tools | `host`, `profile`, `export`, `disasm`, `listing`, `modelhost` ported, parity holds |
 
 ## Stage 1: RTL
@@ -87,7 +86,7 @@ yosys (`proc`, `flatten`). Then:
    input, and yosys `equiv_simple` per point in parallel shards.
 5. Planted bugs in the generated Verilog must each be caught.
 
-Result for the tapeout build, yosys 0.69+158, 14 min 37 s with `-j 4` on a shared runner1:
+Result for the tapeout build, yosys 0.69+158, 664 s with `-j 4` on runner1:
 
 | check | count |
 |---|---|
@@ -118,7 +117,8 @@ Limits of the claim:
 * It is about the generated Verilog, for the tapeout configuration. The OCaml source reaches
   it through Hardcaml's generator, which needs no trust for this claim, since the Verilog is
   what was compared. The `flop4` build and `PE_FIFO_NO_CG` are not proved: `flop4` has the
-  lockstep result above, and the `PE_FIFO_NO_CG` option has no run at all.
+  lockstep result above, and `PE_FIFO_NO_CG` runs only in the waveform tests below, at
+  `pe_fifo` and `pe_fifos` level.
 * yosys elaborates both sides. A front-end misreading common to both would not show here;
   the cocotb runs read both with Icarus.
 * The proof is combinational at cut points, so the two designs are sequentially equivalent
@@ -155,9 +155,9 @@ were compared. The error row of the firmware set is mostly arbitrary define valu
 not fit a field. That is a test of the errors: the working define sets are in the other
 column and in the corpus, which holds the tests' real defines.
 
-`test/self_check.sh` plants bugs to show the check can fail: 4 in the assembler (a
-field shift, an error message, truncating division, a greedy quantifier made lazy), all
-caught.
+`test/self_check.sh`, part of `evidence.sh`, plants bugs to show the check can fail: 4 in the
+assembler (a field shift, an error message, truncating division, a greedy quantifier made
+lazy), all caught.
 
 ## Stage 3: cycle model
 
@@ -185,19 +185,54 @@ Three comparisons, each at a stated level:
 | RTL = `sim.py` = OCaml, generated Verilog | seeds 1000-1039, plus the directed lockstep tests | 102,738 | 7/7 tests, 0 mismatches |
 | RTL = `sim.py` = OCaml, `src/` itself | the same | 102,738 | 7/7, 0 mismatches |
 | RTL = `sim.py` = OCaml, generated Verilog | seeds 5000-5099, plus the directed tests | 227,254 | 7/7, 0 mismatches |
-| `sim.py` = OCaml | model suite: 1394 tests passed, 23 skipped, 1263 chips | 63,876,142 | see below |
+| `sim.py` = OCaml | model suite: 1394 tests passed, 23 skipped, 1262 chips | 63,680,211 | see below |
 | `Pe_line` under Cyclesim = OCaml `Line` | seed 7, random traffic | 2,000,000 | 0 mismatches |
 
-In the model suite the state was compared 998,520 times, plus pins and bus read every
-cycle. Three tests showed a state difference. At stride 1 all of them are the test writing
+In the model suite the state was compared 995,897 times, plus pins and bus read every
+cycle.
+
+The figure varies by run: treat it as about 63.7M. Two runs at this commit gave 63,680,211
+and 63,723,807, and earlier runs 63.74M to 63.90M. One cause is found:
+`test_usb_uart_pairs.py` keeps runs in a per-process `lru_cache`, so under plain `-n 8` a run
+repeats in each worker that needs it. That file alone gives 408,741 cycles serially and
+573,340 at `-n 8`. The script now uses `--dist loadfile`, which gives 408,741 and held the chip
+count at 1262 in four runs. About 0.1% of variation remains, with the
+same chip count and different coverage counts, so some test's run length differs between
+runs. Its cause is not found. Cycles on chips that hit a mismatch (28,218) are not counted.
+
+Three tests showed a state difference. At stride 1 all of them are the test writing
 into a chip: `test_lr_survives_restart` sets `lr` by hand, and the two `test_capture_*` tests
 drain `core.rxf` directly. Those 10 chips are compared only up to that write, with 0
 mismatches at stride 1. 12 deep copies of chips, made by USB and SPI tests, are not compared after the copy.
 `test_swd.py` is excluded. The 23 skips were not itemised; `remote_test.sh` documents that
 sigrok tests skip on runner1, and the firmware test files carry that `skipif`.
 
-`test/self_check.sh` planted 5 bugs in the model (a saturation limit, a delay, the link
-value, a loop gain, a coverage counter's name), all caught.
+`test/self_check.sh` plants 5 bugs in the model (a saturation limit, a delay, the link
+value, a loop gain, a coverage counter's name), all caught. The verifier found the last one
+missed by the first version of the script, whose test files never touched that counter;
+`test_i2c_timeout.py` does.
+
+### Waveform tests
+
+`ocaml/wave_test/` holds Hardcaml expect tests: a block runs under Cyclesim, its waveform is
+printed into the source with `[%expect]`, and `dune test` fails if it changes. Each test also
+asserts the behaviour with `[%test_result]`, on values worked out from docs/isa.md rather than
+copied from a run, so a promoted waveform cannot bless a wrong result.
+
+| block | what is asserted |
+|---|---|
+| `pe_fifo` | full and empty judged on start-of-cycle state: push at full dropped even with a pop, pop at empty ignored, push kept at empty, clear beats push |
+| `pe_fifos`, join | TXF to RXF to core, 8 words in order, the ninth dropped |
+| `pe_line` TX | NRZ bit by bit, then release; Manchester halves and the END symbol; equal-bit stuffing, where the stuff bit starts the next run |
+| `pe_line` RX | Manchester bits and the frame end; an edge's position in the clock moves the frame end by one clock, 13 against 14 |
+
+Cyclesim runs one clock and cannot open a blackbox. So the FIFOs run in the `PE_FIFO_NO_CG`
+form, with enable flops in place of the latches and clock gates that the proved build uses.
+`pe_line` is the proved logic as it stands. `pe_core` has clock-gated registers and
+`pe_hostport` has four clock domains, so neither has a waveform test.
+
+`self_check.sh` plants 5 RTL bugs for these tests, all caught. The first run missed one, a
+swap of the two edge ages; the frame-end test above was added for it.
 
 ## Stage 4: host tools
 
@@ -207,12 +242,17 @@ and `wl_run`, which goes from source to pin changes with no Python.
 
 | check | compared | disagree |
 |---|---|---|
-| `wl_export` against `python -m pe.export`, success | 408 runs | 0 |
-| the same, both fail with the same message | 166 runs | 0 |
-| `load_program` writes | 82 programs | 0 |
-| `Program.listing` | 82 programs | 0 |
+| `wl_export` against `python -m pe.export`, success | 685 runs | 0 |
+| the same, both fail with the same message | 330 runs | 0 |
+| `load_program` writes | 145 programs | 0 |
+| `Program.listing` | 145 programs | 0 |
 | `isa.disasm` | 200,000 words | 0 |
 | `wl_run` against the same run through `pe.modelhost` | 8 firmware, 3714 lines of pin changes | 0 |
+
+`host_parity.py` covers all 57 firmware files. An earlier figure here was smaller: a change to
+the define sets in `asm_parity.py` had silently cut this check's coverage by more than half,
+with 0 disagreements. It now takes up to three define sets per file that really assemble, and
+the parity scripts, the model suite and lockstep fail below floors on their counts.
 
 ## Reproduce
 
@@ -224,22 +264,21 @@ export OPAMROOT=$HOME/.opam PATH=$HOME/.local/bin:$HOME/tools/oss-cad-suite/bin:
        LIBRARY_PATH=$HOME/protoemu-flow/ocaml-port/sysroot/usr/lib/x86_64-linux-gnu
 eval "$(opam env --switch=wl --set-switch)"
 cd ocaml && dune build
-scripts/evidence.sh OUT         # every gate above, about an hour; OUT/summary.txt
-test/self_check.sh WORK         # planted bugs in the assembler and model
+scripts/evidence.sh OUT         # every gate above, including self_check.sh; OUT/summary.txt
 ```
 
-`evidence.sh` has not yet run in one piece at the final commit: the numbers above come from
-its run at 0027302, and the model and assembler steps again at eff2b0f, after two harness
-fixes those steps found. One gate at a time: `formal/equiv_port.sh -j 4 --mutants OUT`,
+`evidence.sh` took 66 minutes at the commit above with runner1 busy (load 20 to 50); the verifier timed under 25 minutes on a quiet box, before `self_check.sh` was added to it. One gate at a time:
+`formal/equiv_port.sh -j 4 --mutants OUT`,
 `scripts/run_cocotb.sh WORK test test_post_freeze lockstep`,
 `scripts/stage3_model_suite.sh OUT`, `python3 test/asm_parity.py --fuzz 5000`.
 
-Toolchain: OCaml 5.3.0, dune 3.24.2, hardcaml v0.17.1 from opam, Yosys 0.69+158, Icarus and
+Toolchain: OCaml 5.3.0, dune 3.24.2, hardcaml and hardcaml_waveterm v0.17 from opam, Yosys 0.69+158, Icarus and
 cocotb from OSS CAD Suite. No sudo: runner1 lacks libgmp-dev, which zarith needs, so
-`setup_runner.sh` unpacks it under a private sysroot. The switch takes 1.4 GB in `~/.opam`, after `opam clean`.
+`setup_runner.sh` unpacks it under a private sysroot. The switch takes 1.6 GB in `~/.opam`.
 
 ## Not done
 
+* `pe_core` and `pe_hostport` have no waveform test, for the reason above.
 * `hardcaml_verify` is not used. The proof runs in yosys on the generated Verilog, as gate (b)
   asked. No Hardcaml-level proof exists.
 * The `ifdef FORMAL` assertions are not ported; they remain proved on `src/`.

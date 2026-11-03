@@ -16,6 +16,7 @@ proved, how, and what is not done.
 | `bin/wl_asm`, `wl_export`, `wl_run` | assemble; export for MicroPython; run on the model |
 | `bin/wl_simcheck` | the OCaml model driven by a stimulus stream, compared every cycle |
 | `test/` | parity and lockstep harnesses against the Python tools and the RTL |
+| `wave_test/` | Hardcaml waveform expect tests with assertions (`dune test`) |
 | `scripts/` | toolchain setup, cocotb runner, `evidence.sh` (all gates) |
 
 ## Build
