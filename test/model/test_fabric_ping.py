@@ -513,9 +513,11 @@ def test_compare_sees_the_link_pulse(model_probe, tmp_path):
     assert tap.compare(str(p), str(q)) == 1
 
 
-def test_the_probe_fails_on_a_wrong_link_pulse(monkeypatch):
+@pytest.mark.parametrize("rig", ["fake board", "model"])
+def test_the_probe_fails_on_a_wrong_link_pulse(monkeypatch, rig):
+    """On a board the probe sends each reply once; on the model once per divider phase."""
     tap = load_bridge()
-    backend = tap.FpgaBackend.model(CHIP_IP)
+    backend = tap.FpgaBackend.model(CHIP_IP) if rig == "model" else tap.FpgaBackend(CHIP_IP, rig=fake_board()[0])
     real = backend.fab.transmit
 
     def two_pulses(raw, phase=0):
