@@ -211,7 +211,9 @@ payload files, runner1 `~/protoemu-flow/` and `[home directory redacted]/`) has 
 contents as the f1cb7c9 record's: every hashed input and result, the job
 logs, the verdict, the source bundle, ci7's candidate files and the
 reproduction comparison. Extracted into an empty directory, its own
-`release_check.py` re-verifies all seven receipts and passes.
+`release_check.py` re-verifies all seven receipts and passes. The archive
+(about 55 MB) is not in git: it is to be attached as a release asset when the
+repository is published.
 
 Supplementary, outside the release gate: `test_post_freeze` (16 tests) on
 the same netlist with `flow/gl_module_test.py`, validation `beddbe2`

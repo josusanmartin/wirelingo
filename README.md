@@ -46,6 +46,15 @@ describes how, and what it caught.
   HD44780 fits in 99 words; ATA PIO does not fit as specified, and an 8-bit
   subset does. Model and RTL simulation only; the draw's list was written by
   an agent and its fixing in advance cannot be proved.
+* [evidence/verifier/](evidence/verifier/README.md): every item and report of
+  the independent verifier agent, 15 PASS and 15 FAIL, verbatim.
+
+**Raw evidence in the repository:** [evidence/](evidence/README.md) holds the
+verifier's reports, the kernel and step logs of the 2026-10-30 real-host USB
+runs, and the 2026-11-03 fabric ping (pending verification). The release
+receipts' archive, `wirelingo-release-evidence-7685aba-fo6.tar.gz` (about
+55 MB, sha256 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`), is not in git: it is to be attached as a release asset
+when the repository is published ([docs/release-evidence.md](docs/release-evidence.md)).
 
 **Where it stands:**
 
@@ -58,7 +67,9 @@ describes how, and what it caught.
   `usb_fs_dev` and Python on the SPI port, a Linux
   process then wrote random data through USB and read it back, 350 of 350 round
   trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. Details and
-  limits: [fpga/kv260/README.md](fpga/kv260/README.md).
+  limits: [fpga/kv260/README.md](fpga/kv260/README.md); the kernel and step logs
+  of the enumeration runs, which hold part of these counts, are in
+  [evidence/kv260-usb-20261030/](evidence/kv260-usb-20261030/README.md).
 * **Release candidate: run fo6**, passing the strict release gate with no
   waiver. The certified software is **`7685aba`** (2026-10-14): `main`
   `a1561d6`'s firmware, tools and tests, so the third post-freeze round and

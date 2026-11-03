@@ -44,12 +44,12 @@ Each item was written or approved by an agent, then caught by something else.
 
 | What went wrong | Caught by | Reference |
 |---|---|---|
-| **`eth10_match` had a timing number with no test behind it.** See below | Independent verifier agent, by mutation | Report 000; commit `61af9b2` |
-| **The fix then stated a new false number.** See below | The same verifier, on re-attack | Report 001 |
-| **The next fix added an "exact" check that could not fail.** See below | The same verifier, by mutation | Report 004 |
-| A study's 71-clock host stall budget held for one host and phase only. The verdict's own host survives 59 | The same verifier | Report 002; branch `rmii-study` at `d811228` |
-| A network stack's 16 us and 24 us software budgets were measured on 300-byte frames and do not hold on long ones | The same verifier | Report 003; commit `e71ab1c` |
-| A Hardcaml port's doc said all planted bugs were caught, while its `self_check.sh` exited 1. Its equality proof to `src/` held | The same verifier | Report 006; commit `03edc75` |
+| **`eth10_match` had a timing number with no test behind it.** See below | Independent verifier agent, by mutation | [Report 000](../evidence/verifier/000-eth10-match.report.md); commit `61af9b2` |
+| **The fix then stated a new false number.** See below | The same verifier, on re-attack | [Report 001](../evidence/verifier/001-eth10-match-fix.report.md) |
+| **The next fix added an "exact" check that could not fail.** See below | The same verifier, by mutation | [Report 004](../evidence/verifier/004-eth10-match-fix2.report.md) |
+| A study's 71-clock host stall budget held for one host and phase only. The verdict's own host survives 59 | The same verifier | [Report 002](../evidence/verifier/002-rmii-study.report.md); branch `rmii-study` at `d811228` |
+| A network stack's 16 us and 24 us software budgets were measured on 300-byte frames and do not hold on long ones | The same verifier | [Report 003](../evidence/verifier/003-eth-stack.report.md); commit `e71ab1c` |
+| A Hardcaml port's doc said all planted bugs were caught, while its `self_check.sh` exited 1. Its equality proof to `src/` held | The same verifier | [Report 006](../evidence/verifier/006-ocaml-port.report.md); commit `03edc75` |
 | An agent described the FPGA as running "exactly" and "at full speed" before measuring | A second review; then measured | [methodology.md](methodology.md) line 110 |
 | Codex's signoff gate demanded timing Tiny Tapeout does not require, so no run could pass | Claude reviewing the review | [methodology.md](methodology.md) line 107 |
 | Codex's reset fix was correct but congested routing | About a dozen place-and-route runs | [review.md](review.md) R3 |
@@ -75,7 +75,7 @@ Each item was written or approved by an agent, then caught by something else.
 | The model used a host write one clock early in FIFO join | Lockstep, on a random mid-run write | [verification.md](verification.md) line 392 |
 | Two more model bugs in the line unit | Lockstep, only in seed windows outside the regression's | `a32684f`; [verification.md](verification.md) lines 398-399 |
 | A malformed ACK could advance a USB transfer | Later review | [review.md](review.md) follow-up |
-| Wire faults: `uart_rx` took a glitch for a start bit, `i2c_master` read a stuck SDA as ACK, `can_rx` sent an error flag for an idle glitch, `usb_enum` missed a bus reset starting in an EOP or a turnaround (then could not be enumerated) | Seeded fault sweep and directed cases; the verifier extended the USB one to 10 ms resets | [fault-testing.md](fault-testing.md); report 014; fixed on `fault-fixes`, model and RTL only |
+| Wire faults: `uart_rx` took a glitch for a start bit, `i2c_master` read a stuck SDA as ACK, `can_rx` sent an error flag for an idle glitch, `usb_enum` missed a bus reset starting in an EOP or a turnaround (then could not be enumerated) | Seeded fault sweep and directed cases; the verifier extended the USB one to 10 ms resets | [fault-testing.md](fault-testing.md); [report 014](../evidence/verifier/014-faults-pulse.report.md); fixed on `fault-fixes`, model and RTL only |
 
 ### The `eth10_match` failure, in detail
 
@@ -92,17 +92,17 @@ On 2026-11-02 an independent verifier agent failed the `eth10_match` work.
   and no jitter margin at 40 MHz.
 * The match decisions themselves were right in every case at 50 MHz.
 
-Reports are numbered by inbox item. They are the project's local verifier records
-and are not published with this repository.
+Reports are numbered by inbox item. Every item and report, FAILs included, is
+in [evidence/verifier/](../evidence/verifier/README.md), verbatim.
 
 **Status of the fixes: passed at `0bdcbe5`, on the third fix.** All of them are
 on the local branch `improve-2026-11`, not on `main`.
 
 | Commits | Review | Result |
 |---|---|---|
-| `7d9377c`, `aedf991` | Report 001 | FAIL. All nine findings were addressed, and delay mutations of N ≥ 1 fail at both clocks. But the new range of 38.2-38.6 us was false for frames ending in a 0 bit: 38.184-38.204 us at 50 MHz. The same fault again: a sample's range stated as a bound |
-| `1fddeef` | Report 004 | FAIL. The new "exact" assertion cancelled the rise time out of its own equation, so it passed with the pin 2 us late (N = 100). The doc's ranges held, because the reaction tests guard them |
-| `0bdcbe5` | Report 009 | PASS. The rise is bounded directly against the sender's geometry; delay mutations N = 1, 3 and 100 fail, the unmodified firmware passes. The verifier counts the fixes for reports 000, 001 and 004 complete at this commit |
+| `7d9377c`, `aedf991` | [Report 001](../evidence/verifier/001-eth10-match-fix.report.md) | FAIL. All nine findings were addressed, and delay mutations of N ≥ 1 fail at both clocks. But the new range of 38.2-38.6 us was false for frames ending in a 0 bit: 38.184-38.204 us at 50 MHz. The same fault again: a sample's range stated as a bound |
+| `1fddeef` | [Report 004](../evidence/verifier/004-eth10-match-fix2.report.md) | FAIL. The new "exact" assertion cancelled the rise time out of its own equation, so it passed with the pin 2 us late (N = 100). The doc's ranges held, because the reaction tests guard them |
+| `0bdcbe5` | [Report 009](../evidence/verifier/009-eth10-match-fix3.report.md) | PASS. The rise is bounded directly against the sender's geometry; delay mutations N = 1, 3 and 100 fail, the unmodified firmware passes. The verifier counts the fixes for reports 000, 001 and 004 complete at this commit |
 
 The `eth10_match` numbers on `improve-2026-11` are the ones report 009 passed.
 `main` still carries the failed commit's doc and test.

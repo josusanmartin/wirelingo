@@ -325,7 +325,7 @@ bits dropped, 92 before, and never a bit of the host's).
   late; each of the four SDA read-backs removed, the read-back replaced by
   zeros, the byte compared against the wrong bit order; `got_in`'s timeout
   removed or the WAIT made untimed; `handshake`'s timeout removed; the echo
-  check removed. And, from report 023, nine more: `J_LATE 0` (low-speed
+  check removed. And, from [report 023](../evidence/verifier/023-fault-fixes.report.md), nine more: `J_LATE 0` (low-speed
   answers 1 or 2 clocks early: caught by the pinned turnarounds); the
   `got_in`, `handshake` and `echo` timeouts lowered (to 40, 40 and 1 ticks:
   caught by `test_usb_enum_short_se0_is_not_a_reset`, a 2.4 us SE0 at each of

@@ -1261,6 +1261,9 @@ and the clock; `device not accepting address`; `can't set config`).
 
 ### Result against Linux (low speed, 2026-10-30)
 
+Raw kernel and step logs of these runs (low and full speed), with what they
+hold and what they do not: [evidence/kv260-usb-20261030/](../../evidence/kv260-usb-20261030/README.md).
+
 The first real host for this firmware, on the first attempt: the wiring above
 on a breadboard with the parts at hand (each data line 3 x 10 ohm = 30 ohm
 instead of 27, the pull-up 1 kohm + 1 kohm || 1 kohm = 1.5 kohm), port 1-1.4 of
