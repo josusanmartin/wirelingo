@@ -58,6 +58,11 @@ jobs:
           # bench_sigrok_available is skipped (SKIP=1) to say so. These 5 must pass.
           python3 check_results.py bench_fw.xml 5 bench_mdio_master_and_phy bench_mdio_master_phy_model \
             bench_mdio_phy_sta_model bench_qsfp bench_pmbus
+      - name: Pulse timestamps through the SPI port
+        run: |
+          cd test
+          make COCOTB_TEST_MODULES=test_pps SIM_BUILD=sim_build/pps COCOTB_RESULTS_FILE=pps.xml
+          python3 check_results.py pps.xml 4 pps_record_paths pps_rollover_phases pps_train pps_fifo_full   # pps_one_second: PPS_LONG only
 
       - name: Packed SPI framing through a serialized host
         run: |
@@ -111,6 +116,7 @@ jobs:
             test/pio.xml
             test/eth_service.xml
             test/post_freeze.xml
+            test/pps.xml
             test/spi_packed_host.xml
             test/spi_preloaded_host.xml
             test/uart_capture_host.xml

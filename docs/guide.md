@@ -84,6 +84,9 @@ board measurements still need their own evidence.
 | The RTL runs on hardware | The RTL built for a Kria KV260 FPGA at 50 MHz (48 MHz for USB): firmware loading, UART across real pins, quad host port at 193.6 Mbit/s, most firmware including all post-freeze protocols against the other core or the FPGA's pattern generator, autonomous USB enumeration against a replayed host waveform. FPGA fabric, not the IHP netlist or its pads | [fpga/kv260](../fpga/kv260/README.md) (needs the board) |
 | Protocols added with the RTL frozen | 14 protocols in firmware after the freeze tag: static timing checker, pins-only models, sigrok decoders, RTL through the SPI port; the same 16 tests on fo6's gate-level netlist (functional 16/16; with SDF at typ 16/16, two after a 1 ns tolerance for sub-ns pad skew), KV260 | [post-freeze-protocols.md](post-freeze-protocols.md); `make -C test COCOTB_TEST_MODULES=test_post_freeze`; `flow/gl_module_test.py run <run> --validation-root .` |
 
+| Pulse timestamps to the clock, intervals and drift against the chip's own clock | Every path of the firmware, every phase of both rollovers, known offset, jitter and drift, a missed pulse and a runt, on the model and on the RTL through the SPI port. RTL train at 70000 clocks, plus one 1 s interval run once (`PPS_LONG=1`); no UTC reference | [pps-capture.md](pps-capture.md); `pytest test/model/test_pps.py`; `make -C test COCOTB_TEST_MODULES=test_pps` |
+| Existing firmware under wire faults | 576 seeded cases on the model, firmware unchanged: no hang, six findings pinned with minimal cases | [fault-testing.md](fault-testing.md); `pytest test/model/test_faults.py` |
+
 (`pytest` = `PYTHONPATH=tools python -m pytest -q` from the repo root.)
 
 ## Known limits
