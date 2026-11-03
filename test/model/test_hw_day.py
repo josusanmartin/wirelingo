@@ -9,6 +9,8 @@ import re
 import signal
 import struct
 import sys
+import time
+import types
 
 import pytest
 
@@ -111,8 +113,10 @@ class Run:
                                proc=str(self.tmp / "proc"), lock=str(self.tmp / "lock"))
 
     def confirm(self, *names):
+        """These steps and all they depend on, just now."""
         s = json.loads(self.state.read_text()) if self.state.exists() else {}
-        s.update({n: "t" for n in names})
+        for n in names:
+            s.update({x: time.time() for x in (n, *hw_day.closure(hw_day.BY_NAME[n]))})
         self.state.write_text(json.dumps(s))
 
     def confirmed(self):
@@ -129,12 +133,7 @@ def run(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- the order of the day
 
 def closure(name):
-    out, todo = set(), [name]
-    while todo:
-        for n in hw_day.BY_NAME[todo.pop()].needs:
-            out.add(n)
-            todo.append(n)
-    return out
+    return hw_day.closure(hw_day.BY_NAME[name])
 
 
 def test_every_prerequisite_comes_earlier():
@@ -149,8 +148,18 @@ def test_the_usb_wiring_comes_off_before_any_wire_goes_on_j2():
         if s.pins or any("J2" in a for a, _ in s.wires):
             assert "usb-off" in closure(s.name), s.name
     removed = " ".join(hw_day.BY_NAME["usb-off"].remove)
-    for needle in ("USB plug out", "silkscreen 1 to a30", "silkscreen 3 to a20", "silkscreen 11 to i3"):
+    for needle in ("USB plug out first", "silkscreen 1 to a30", "silkscreen 3 to a20", "silkscreen 11 to i3",
+                   "silkscreen 9 to b24", "black wire"):
         assert needle in removed
+
+
+def test_step_16_takes_step_15s_wiring_off_plug_first():
+    remove = hw_day.BY_NAME["rx"].remove
+    assert remove[0].startswith("USB plug out")
+    text = " ".join(remove)
+    for needle in ("black wire", "silkscreen 1 to a30", "silkscreen 3 to a20", "silkscreen 11 to i3", "silkscreen 9 to b24"):
+        assert needle in text
+    assert any("USB plug" in x for x in hw_day.BY_NAME["rx"].off)
 
 
 def test_the_isolated_cable_comes_before_the_switch():
@@ -163,7 +172,7 @@ def test_every_enabled_pin_is_a_signal_pin_in_the_wiring(step):
     text = " ".join(a for a, _ in step.wires)
     for p in step.pins:
         assert hw_day.SILK[p] <= 8                                   # 9-12 are rails: never mapped
-        if step.name not in ("cut", "ping") and not (step.name == "usb-pi" and p > 1):
+        if not (step.name == "usb-pi" and p > 1):
             assert f"J2 silkscreen {hw_day.SILK[p]} " in text, (step.name, p)
 
 
@@ -191,6 +200,48 @@ def test_i2c_part_is_on_the_bench_when_the_chip_answers():
         s = hw_day.BY_NAME[n]
         assert not any(a.startswith("Part") for a, _ in s.wires)
         assert any("I2C part" in x for x in s.off)
+
+
+def test_no_two_parts_lie_along_one_row():
+    """Bare leads in a row can touch: a part may share a row only beside another."""
+    extra = (("220 ohm", "d2 to d6"), ("220 ohm", "d12 to d16"))              # the second pair, on any transmit step
+    for s in hw_day.STEPS:
+        spans = {}
+        wires = s.wires + (extra if s.wires == hw_day.RX_WIRES or s.wires[:6] == hw_day.TX_WIRES else ())
+        for _, b in wires:
+            m = re.fullmatch(r"([a-j])(\d+) to ([a-j])(\d+)", b)
+            if m and m[1] == m[3]:
+                spans.setdefault(m[1], []).append(sorted((int(m[2]), int(m[4]))))
+        for row, parts in spans.items():
+            parts.sort()
+            for p, q in zip(parts, parts[1:]):
+                assert p[1] <= q[0], (s.name, row, p, q)
+
+
+def test_no_hole_is_used_twice_or_on_the_usb_columns():
+    for s in hw_day.STEPS:
+        if s.name == "usb-pi":
+            continue
+        holes = [h for a, b in s.wires for h in re.findall(r"\b([a-e]\d+)\b", b)]
+        assert len(holes) == len(set(holes)), s.name
+        assert not any(h[1:] in ("20", "30") for h in holes), s.name
+
+
+def test_rx_divider_nets():
+    """Columns: 3.3 V 17, pad 21, the pair's + 25, GND 29: the circuit the runbook draws."""
+    wires = hw_day.RX_WIRES
+    assert ("J2 silkscreen 11 (3.3 V)", "a17") in wires and ("J2 silkscreen 7 (RX in)", "a21") in wires
+    assert ("RJ45 pin 1", "a25") in wires and ("RJ45 pin 2", "c29") in wires and ("J2 silkscreen 9 (GND)", "a29") in wires
+    parts = [(a, tuple(sorted(int(x) for x in re.findall(r"\d+", b)))) for a, b in wires if a in ("220 ohm", "1 kohm")]
+    assert parts.count(("1 kohm", (17, 21))) == parts.count(("1 kohm", (21, 25))) == parts.count(("1 kohm", (21, 29))) == 1
+    assert parts.count(("220 ohm", (25, 29))) == 2
+
+
+def test_nothing_moves_the_kria_cable():
+    s = hw_day.BY_NAME["pi-net"]
+    assert not any("Kria" in a + b for a, b in s.wires) and any("Kria's network cable" in x for x in s.off)
+    assert "switch" not in hw_day.BY_NAME
+    assert hw_day.BY_NAME["tx-switch"].needs == ("tx-pi",)
 
 
 def test_rx_divider_estimate_stays_inside_the_rails():
@@ -228,11 +279,123 @@ def test_a_step_confirmed_unlocks_the_next_and_only_then(run):
     assert run("preflight") == 0
     run.typed = ["maybe"]
     assert run("usb-off") == hw_day.EXIT_FAILED
+    assert "usb-off" not in run.confirmed()
     with pytest.raises(hw_day.Refused):
         run("rails")
     run.typed = ["passed usb-off"]
     assert run("usb-off") == 0
     assert run.confirmed() == {"recover", "preflight", "usb-off"}
+
+
+def test_the_whole_chain_is_checked_not_just_the_direct_need(run):
+    run.state.write_text(json.dumps({n: time.time() for n in ("tx-bench", "pi-prep")}))
+    with pytest.raises(hw_day.Refused, match="recover"):
+        run("tx-pi")
+    run.state.write_text(json.dumps({"tx-pi": time.time()}))
+    with pytest.raises(hw_day.Refused):
+        run("rx")
+    assert run.rigs == []
+
+
+@pytest.mark.parametrize("step", [s for s in hw_day.STEPS if s.pins], ids=lambda s: s.name)
+def test_forgetting_usb_off_stops_every_step_with_pins(run, step):
+    run.confirm(*step.needs)
+    assert hw_day.main(["--state", str(run.state), "forget", "usb-off"]) == 0
+    with pytest.raises(hw_day.Refused, match="usb-off"):
+        run(step.name)
+    assert run.rigs == []
+
+
+def test_forget_takes_back_only_that_step(run):
+    run.confirm("usb-off")
+    assert hw_day.main(["--state", str(run.state), "forget", "preflight"]) == 0
+    assert run.confirmed() == {"recover", "usb-off"}
+
+
+@pytest.mark.parametrize("age", [hw_day.MAX_AGE_S + 1, -3600])
+def test_a_confirmation_expires(run, age):
+    run.confirm("usb-off")
+    s = json.loads(run.state.read_text())
+    s["recover"] = time.time() - age
+    run.state.write_text(json.dumps(s))
+    with pytest.raises(hw_day.Refused, match="recover"):
+        run("rails")
+
+
+def test_an_old_state_format_confirms_nothing(run):
+    run.state.write_text(json.dumps({"recover": "2026-11-03 10:00:00 UTC"}))
+    with pytest.raises(hw_day.Refused, match="recover"):
+        run("preflight")
+
+
+@pytest.mark.parametrize("junk", ["{not json", "[1, 2]", '"recover"'])
+def test_a_corrupt_state_file_refuses_in_words(run, junk):
+    run.state.write_text(junk)
+    with pytest.raises(hw_day.Refused, match="confirmations file"):
+        run("preflight")
+
+
+def test_list_shows_only_what_still_counts(run, capsys):
+    run.confirm("recover")
+    assert hw_day.main(["--state", str(run.state), "list"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "confirmed" in lines[0] and "confirmed" not in lines[1]
+
+
+def usb_board(rig):
+    class Pe:
+        def write(self, *a, **k):
+            pass
+
+        def stop(self, *a):
+            pass
+    rig.ident = dict(FakeRig.ident, clk_div=25)
+    rig.board = type("B", (), {"reset": lambda s: None, "pins": lambda s: (0, 0, 0, 0)})()
+    rig.pe = Pe()
+    rig.spim.pad = 1
+
+
+USB_APP = "  protoemu48 XRT_FLAT protoemu48 XRT_FLAT (0+0) 0,"
+
+
+def test_usb_pi_takes_back_usb_off_and_rx_then_refuses(run):
+    run.confirm("usb-pi", "tx-pi")
+    run.board = usb_board
+    run.typed = ["vbus taped wired usb-pi", "", "passed usb-pi"]
+    assert run("usb-pi", apps=USB_APP) == 0
+    assert "usb-off" not in run.confirmed() and "usb-pi" in run.confirmed()
+    with pytest.raises(hw_day.Refused, match="usb-off"):
+        run("rx")
+    run.typed = ["passed usb-off"]
+    assert run("usb-off") == 0
+    run.typed = []
+    with pytest.raises(hw_day.Refused, match="nothing was enabled"):
+        run("rx")                                                    # past the prerequisites, at the phrase
+
+
+def test_usb_off_is_taken_back_even_if_usb_pi_fails(run, monkeypatch):
+    run.confirm("usb-pi")
+    monkeypatch.setattr(hw_day, "act_usb_pi", lambda ctx: hw_day.need(False, "no"))
+    run.board = usb_board
+    run.typed = ["vbus taped wired usb-pi"]
+    assert run("usb-pi", apps=USB_APP) == hw_day.EXIT_FAILED
+    assert "usb-off" not in run.confirmed()
+
+
+def test_a_wrong_phrase_on_usb_pi_keeps_usb_off(run):
+    run.confirm("usb-pi")
+    run.typed = ["no"]
+    with pytest.raises(hw_day.Refused):
+        run("usb-pi", apps=USB_APP)
+    assert "usb-off" in run.confirmed()
+
+
+@pytest.mark.parametrize("name", ["cut", "ping", "rx"])
+def test_every_pin_step_prints_its_wiring(name):
+    lines = []
+    hw_day.describe(hw_day.BY_NAME[name], lines.append)
+    text = "\n".join(lines)
+    assert "J2 silkscreen 7 (RX in)  ->  a21" in text and "Same as" not in text and "As step" not in text
 
 
 @pytest.mark.parametrize("typed", [[], [""], ["wired"], ["WIRED TX-BENCH"], ["wired tx-pi"]])
@@ -254,7 +417,7 @@ def test_wiring_is_printed_before_the_phrase_is_asked(run):
 
 
 def test_tx_switch_needs_the_poe_phrase(run):
-    run.confirm("preflight", "usb-off", "rails", "tx-bench", "switch", "pi-prep", "tx-pi")
+    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-net", "pi-prep", "tx-pi")
     run.typed = ["wired tx-switch"]
     with pytest.raises(hw_day.Refused):
         run("tx-switch")
@@ -310,7 +473,7 @@ def test_a_second_launcher_refuses(run):
 
 @pytest.mark.parametrize("name,needs", [("budget", ("preflight",)), ("ping", ("rx", "budget"))])
 def test_a_step_on_eth_stack_refuses_in_a_tree_without_it(run, monkeypatch, name, needs):
-    monkeypatch.setattr(hw_day, "ROOT", run.tmp)
+    monkeypatch.setattr(hw_day, "root", lambda: run.tmp)
     run.confirm(*needs)
     with pytest.raises(hw_day.Refused, match="eth-stack"):
         run(name)
@@ -329,6 +492,82 @@ def at(column):
         rig.column = column
         return ""
     return answer
+
+
+def logged_pmod(rig):
+    real = rig.spim.pmod
+    rig.spim.pmod = lambda m: (rig.log.append(("pmod", dict(m))), real(m))[1]
+
+
+def test_tx_bench_sets_the_chip_up_before_enabling_pins(run):
+    run.confirm("rails")
+
+    def board(rig):
+        bench(rig)
+        logged_pmod(rig)
+    run.board = board
+    run.typed = ["wired tx-bench", at(8), at(9), "passed tx-bench"]
+    assert run("tx-bench") == 0
+    log = run.rigs[0].log
+    first = next(i for i, e in enumerate(log) if e[0] == "pmod" and e[1])
+    assert (sim.A_CTRL, 0b11 << 16) in log[:first] and (sim.A_POUT, 0) in log[:first]
+
+
+def test_a_signal_during_the_turning_off_doesnt_interrupt_it(run):
+    run.confirm("rails")
+
+    def board(rig):
+        bench(rig)
+        real = rig.spim.pmod
+
+        def pmod(m):
+            if not m:
+                os.kill(os.getpid(), signal.SIGTERM)
+            real(m)
+        rig.spim.pmod = pmod
+    run.board = board
+    run.typed = ["wired tx-bench", at(8), at(9), "passed tx-bench"]
+    assert run("tx-bench") == 0
+    rig = run.rigs[0]
+    assert rig.spim.calls[-1] == {} and rig.closed == 1
+
+
+class OffSpim:
+    calls = []
+
+    def pmod(self, m):
+        self.calls.append(m)
+
+
+def test_off_writes_the_pins_off(monkeypatch, capsys):
+    monkeypatch.setattr(OffSpim, "calls", [])
+    monkeypatch.setattr("pe_spim.Spim", OffSpim)
+    hw_day.turn_off(lambda: LISTAPPS)
+    assert OffSpim.calls == [{}] and "every PMOD pin is off" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("table", [LISTAPPS.replace("  0,", " -1"), "garbled"])
+def test_off_never_claims_what_it_didnt_do(monkeypatch, table):
+    monkeypatch.setattr(OffSpim, "calls", [])
+    monkeypatch.setattr("pe_spim.Spim", OffSpim)
+    with pytest.raises(hw_day.Refused, match="NOTHING WAS WRITTEN.*--active-app"):
+        hw_day.turn_off(lambda: table)
+    assert OffSpim.calls == []
+
+
+def test_off_takes_a_persons_reading_of_an_unreadable_table(monkeypatch):
+    monkeypatch.setattr(OffSpim, "calls", [])
+    monkeypatch.setattr("pe_spim.Spim", OffSpim)
+    hw_day.turn_off(lambda: "garbled", told="protoemu")
+    assert OffSpim.calls == [{}]
+
+
+def test_active_app_flag_cant_beat_a_table(run):
+    run.confirm("rails")
+    run.typed = ["wired tx-bench"]
+    with pytest.raises(hw_day.Refused, match="shows k26-starter-kits active"):
+        run("tx-bench", apps="  k26-starter-kits XRT_FLAT k XRT_FLAT (0+0) 0,", told="protoemu40")
+    assert run.rigs == []
 
 
 def test_pins_on_after_the_phrase_and_off_at_the_end(run):
@@ -363,7 +602,7 @@ def test_guard_refuses_a_pin_the_step_did_not_name_and_turns_all_off():
 
 
 def test_refused_inside_a_step_turns_the_pins_off(run, monkeypatch):
-    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "switch")
+    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "pi-net")
     run.typed = ["wired tx-pi", "passed tx-pi"]
     monkeypatch.setattr(hw_day.BY_NAME["tx-pi"], "pins", {0: {hw_day.UO0}})         # one pin short
     assert run("tx-pi") == hw_day.EXIT_REFUSED
@@ -372,7 +611,7 @@ def test_refused_inside_a_step_turns_the_pins_off(run, monkeypatch):
 
 @pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM, signal.SIGHUP])
 def test_a_signal_turns_the_pins_off(run, monkeypatch, sig):
-    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "switch")
+    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "pi-net")
     run.typed = ["wired tx-pi", "passed tx-pi"]
     before = signal.getsignal(sig)
 
@@ -383,10 +622,11 @@ def test_a_signal_turns_the_pins_off(run, monkeypatch, sig):
     assert run("tx-pi") == hw_day.EXIT_FAILED
     rig = run.rigs[0]
     assert rig.spim.calls[-1] == {} and rig.closed == 1 and signal.getsignal(sig) == before
+    assert any("stopped by signal" in x for x in run.out)            # the handler, not the AssertionError
 
 
 def test_an_unexpected_error_turns_the_pins_off(run, monkeypatch):
-    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "switch")
+    run.confirm("preflight", "usb-off", "rails", "tx-bench", "pi-prep", "pi-net")
     run.typed = ["wired tx-pi", "passed tx-pi"]
     monkeypatch.setattr(hw_day, "tx_send", lambda *a: {}["no such thing"])
     assert run("tx-pi") == hw_day.EXIT_FAILED
@@ -471,6 +711,9 @@ def test_the_whole_day_walks_through_in_order(run, monkeypatch):
             monkeypatch.setattr(hw_day, "act_" + s.action, lambda ctx: None)
         monkeypatch.setattr(s, "files", ())
     for s in hw_day.STEPS:
+        if s.name == "rx":                                           # usb-pi took it back
+            run.typed = ["passed usb-off"]
+            assert run("usb-off") == 0
         run.typed = ([s.typed()] if s.pins else []) + [f"passed {s.name}"]
         app = s.apps[0] if s.apps else "none"
         if s.apps:
@@ -523,27 +766,15 @@ def test_i2c_capture_saves_an_image_the_clone_can_load(run, monkeypatch):
     assert run("i2c-capture") == 0
     assert json.loads(image.read_text()) == {"80": {"16": 0xCA}}
     assert any("write to 0x50: 10 CA" in x for x in run.out)
+    assert not any(e[0] in (sim.A_POE, sim.A_OD) and e[1] for e in run.rigs[0].log)   # it only listens
 
 
 def test_usb_step_stays_inside_its_pins_through_the_real_usb_demo(run):
     """usb_demo.prepare and detach, unchanged, behind the guard: full-speed wiring, pull-up on silkscreen 1."""
     run.confirm("rails", "pi-prep")
-
-    class Pe:
-        def write(self, *a, **k):
-            pass
-
-        def stop(self, *a):
-            pass
-
-    def board(rig):
-        rig.ident = dict(FakeRig.ident, clk_div=25)
-        rig.board = type("B", (), {"reset": lambda s: None, "pins": lambda s: (0, 0, 0, 0)})()
-        rig.pe = Pe()
-        rig.spim.pad = 1
-    run.board = board
+    run.board = usb_board
     run.typed = ["vbus taped wired usb-pi", "", "passed usb-pi"]
-    assert run("usb-pi", apps="  protoemu48 XRT_FLAT protoemu48 XRT_FLAT (0+0) 0,") == 0
+    assert run("usb-pi", apps=USB_APP) == 0
     calls = run.rigs[0].spim.calls
     assert {1: hw_day.UIO0, 0: hw_day.UIO1} in calls and calls[-1] == {}
 
@@ -845,7 +1076,7 @@ def test_a_refused_load_says_stop():
 
 def test_turn_off_opens_nothing_without_an_app(monkeypatch):
     monkeypatch.setattr("os.open", lambda *a, **k: pytest.fail("opened"))
-    with pytest.raises(hw_day.Refused, match="no app"):
+    with pytest.raises(hw_day.Refused, match="NOTHING WAS WRITTEN"):
         hw_day.turn_off(lambda: LISTAPPS.replace("  0,", " -1"))
 
 
@@ -859,6 +1090,39 @@ def test_source_never_reboots_or_touches_the_network_or_runs_pmod_test():
     assert len(runs) == 1 and "tcpdump" in runs[0]                   # xmutil only through fabric_guard
     for word in ("shutdown", "poweroff", "swd", "SWD", "systemctl", "ethtool", "ifconfig", "os.system"):
         assert word not in SOURCE, word
+
+
+def load_at(path):
+    """hw_day's source as if installed at `path`: the Pi's copy has no tree around it."""
+    mod = types.ModuleType("hw_day_on_the_pi")
+    mod.__file__ = path
+    sys.modules[mod.__name__] = mod
+    try:
+        exec(compile(SOURCE, path, "exec"), mod.__dict__)
+    except BaseException:
+        del sys.modules[mod.__name__]
+        raise
+    return mod
+
+
+@pytest.mark.parametrize("path", ["/home/pi/hw_day.py", "/root/hw_day.py", "/hw_day.py"])
+def test_it_loads_and_runs_from_a_short_path(tmp_path, capsys, path):
+    mod = load_at(path)
+    try:
+        assert mod.main(["--state", str(tmp_path / "s.json"), "list"]) == 0
+        assert mod.main(["--state", str(tmp_path / "s.json"), "show", "rx"]) == 0
+        assert mod.main(["pi-send", "--iface", "nothing"]) == mod.EXIT_REFUSED      # off a Pi: refused, not a crash
+        assert mod.main(["pi-watch", "--iface", "nothing"]) == mod.EXIT_REFUSED
+    finally:
+        del sys.modules[mod.__name__]
+    assert "IndexError" not in capsys.readouterr().err
+
+
+def test_a_pi_copy_imports_nothing_from_the_board():
+    tree = ast.parse(SOURCE)
+    top = {a.name for n in tree.body if isinstance(n, ast.Import) for a in n.names}
+    top |= {n.module for n in tree.body if isinstance(n, ast.ImportFrom)}
+    assert top <= set(sys.stdlib_module_names)
 
 
 def test_list_and_show_touch_nothing(tmp_path, capsys):
@@ -892,6 +1156,27 @@ def test_runbook_has_every_step_in_order_with_this_wiring():
             assert c in text, (s.name, c)
         for word in ("Must stay disconnected", "Success", "Failure", "Risk"):
             assert word in text, (s.name, word)
+
+
+def test_the_hard_rules_have_no_exceptions():
+    doc = DOC.read_text()
+    five = re.search(r"^5\. (.*?)^6\. ", doc, re.M | re.S)[1]
+    six = re.search(r"^6\. (.*?)^7\. ", doc, re.M | re.S)[1]
+    assert five.startswith("**Never run `pmod_test.py`.**") and six.startswith("**Never touch eth0 on the Kria.**")
+    for rule in (five, six):
+        assert "exception" not in rule.replace("No exceptions", "") and " unless " not in rule and " but " not in rule
+    assert "far end" not in doc and "Move the Kria" not in doc
+
+
+def test_setup_makes_the_directory_before_rsync_needs_it():
+    doc = DOC.read_text()
+    setup = doc[doc.index("## Setting up"):doc.index("### The fabric guard")]
+    assert setup.index("mkdir -p hwday/fpga/kv260") < setup.index("rsync")
+
+
+def test_step_15_sends_you_back_to_usb_off():
+    doc = DOC.read_text()
+    assert "`hd run usb-off`" in doc[doc.index("(`usb-pi`)"):doc.index("(`rx`)")]
 
 
 def test_runbook_states_the_rules():

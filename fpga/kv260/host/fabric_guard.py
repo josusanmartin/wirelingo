@@ -26,7 +26,8 @@ What is read, and how we know it doesn't touch the fabric:
 expected, not seen on this board, so an absent file is no evidence either way and
 only (1) decides. The table's format is from memory of dfx-mgr. A table this can't
 parse refuses, unless a person who read it sets PE_ACTIVE_APP=<app>; a table it can
-parse is never overruled, and (2) and (3) still apply.
+parse is never overruled, a person who disagrees with it is refused, and (2) and (3)
+still apply.
 """
 import os
 import pathlib
@@ -81,6 +82,9 @@ def check(read=listapps, state=FPGA_STATE, firmware=FIRMWARE_NAME, env=os.enviro
     """The active protoemu app's name, or NoActiveApp. Touches no fabric address."""
     text = read()
     app, understood = parse(text)
+    told = env.get(OVERRIDE)
+    if app is not None and told and told != app:
+        raise NoActiveApp(f"you said {told}, and `xmutil listapps` shows {app} active. {STOP}")
     if app is None and understood:
         raise NoActiveApp(f"`xmutil listapps` shows no active app. {STOP}")
     if app is None:

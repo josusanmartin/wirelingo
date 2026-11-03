@@ -25,7 +25,10 @@ What it enforces, and tests in test/model/test_hw_day.py check:
 * /dev/mem is not opened until fabric_guard.py shows a protoemu app active: reading
   the fabric's addresses with no app loaded can hang the board. On 2026-11-03 it
   probably did. A failed `xmutil loadapp` means stop: docs/hardware-day.md, step 0.
-* One process: a lock, and a refusal if another board script is running.
+* One process: a lock, and a refusal if another board script is running. `hd off`
+  takes no lock: it is the emergency stop, and writes only PMOD0 and PMOD1.
+* A step needs its whole chain of prerequisites confirmed, each within MAX_AGE_S.
+  Confirming usb-pi's wiring takes back usb-off: the USB wiring is on J2 again.
 
 This file never reboots anything, never runs a command on the Kria's eth0,
 never runs or imports pmod_test.py. pi-* subcommands refuse to run off a Pi.
@@ -47,7 +50,6 @@ import time
 from dataclasses import dataclass, field
 
 HERE = pathlib.Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
 STATE = "/var/tmp/hw_day_state.json"
 LOCK = "/var/tmp/hw_day.lock"
 I2C_IMAGE = "/var/tmp/hw_day_i2c.json"
@@ -59,6 +61,7 @@ OTHER_BOARD_SCRIPTS = ("bringup_kria.py", "pmod_test.py", "spim_test.py", "usb_d
                        "postfreeze_demo.py", "postfreeze2_demo.py", "postfreeze3_demo.py",
                        "spi_uart_demo.py", "eth_tap.py")
 
+MAX_AGE_S = 12 * 3600             # a confirmation is of wiring on a bench: it doesn't outlast the day
 EXIT_OK, EXIT_FAILED, EXIT_REFUSED = 0, 1, 2
 
 # TT pin numbers in pe_spim.Spim.pmod(): 0-7 uio, 8-14 uo0-6, 16-20 ui0-4
@@ -75,6 +78,11 @@ LINECFG_ETH = 0x4005              # EN | CODE Manchester | RX_EN
 ETHERTYPE = 0x88B5                # local experimental, as eth10_match expects
 FIELD = 2000                      # the field pi-send puts in its frames
 MATCH_LAST_BIT = 64 + 8 * 16 - 1  # eth10_cut: the field's last bit, counted from the first preamble bit
+
+
+def root():
+    """The checkout, on the Kria. Only there: the Pi's copy may live at /home/pi/hw_day.py."""
+    return HERE.parents[2]
 
 
 class Refused(Exception):
@@ -97,7 +105,8 @@ class Step:
     apps: tuple = ()                  # apps that may be loaded; () means this step has no board action
     action: str = ""                  # act_<action>
     phrase: str = ""                  # default "wired <name>"; only asked when pins is not empty
-    files: tuple = ()                 # paths under ROOT the step needs: on eth-stack, not in this tree
+    files: tuple = ()                 # paths under root() the step needs: on eth-stack, not in this tree
+    clears: tuple = ()                # confirmations this step's wiring takes back
     pi: tuple = ()                    # commands for the Pi, printed
     kria: tuple = ()                  # read-only commands for the Kria, printed; none of them maps anything
     ok: str = ""
@@ -107,13 +116,23 @@ class Step:
         return self.phrase or f"wired {self.name}"
 
 
-ETH_STACK = ("tools/pe/ethhost.py", "tools/pe/eth.py", "firmware/eth10_tx_cs.pasm", "fpga/kv260/host/eth_tap.py")
+ETH_STACK = ("tools/pe/ethhost.py", "tools/pe/eth.py", "tools/pe/ethsim.py", "firmware/eth10_tx_cs.pasm",
+             "fpga/kv260/host/eth_tap.py")
 NO_POE = ("Every other switch, router or wall network socket: this wiring may only ever touch the "
           "Tenda SG105 or the Pi. Any of them could carry 48 V PoE",)
 NO_RAILS = ("No wire between the Kria's 3.3 V (J2 silkscreen 11, 12) and anything on the Pi",
             "Pi pins 2 and 4 (5 V): nothing on them, ever",)
 TX_WIRES = (("J2 silkscreen 1 (TD+)", "a2"), ("220 ohm", "b2 to b6"), ("100 nF", "c6 to c8"),
             ("J2 silkscreen 3 (TD-)", "a12"), ("220 ohm", "b12 to b16"), ("100 nF", "c16 to c18"))
+RX_WIRES = TX_WIRES + (("RJ45 pin 3", "a8"), ("RJ45 pin 6", "a18"),
+                       ("J2 silkscreen 9 (GND)", "a29"), ("220 ohm", "d25 to d29"), ("220 ohm", "e25 to e29"),
+                       ("1 kohm", "c21 to c25"), ("1 kohm", "b21 to b29"), ("1 kohm", "d17 to d21"),
+                       ("J2 silkscreen 11 (3.3 V)", "a17"), ("J2 silkscreen 7 (RX in)", "a21"),
+                       ("RJ45 pin 2", "c29"), ("RJ45 pin 1", "a25"),
+                       ("Patch cable: breakout to Pi eth0, last", "not to the switch"))
+RX_OFF = ("The switch and every other network port: the 220 ohm termination is sized for the Pi's pair",
+          "RJ45 pins 4, 5, 7, 8", "The USB plug, in any port",
+          "Any GND wire to the Pi: RJ45 pin 2 ties the Pi's isolated pair to the Kria's GND here")
 PI_GROUND = (("J2 silkscreen 9 (GND)", "a24"), ("Pi pin 6 (GND), first of the Pi wires", "b24"))
 
 STEPS = [
@@ -131,9 +150,10 @@ STEPS = [
          ok="active app named, chip ID read, PMOD0 and PMOD1 both 00000000",
          fail="no protoemu app active: run the xmutil line it prints. PMOD not zero: `hd off`, run again"),
     Step("usb-off", "Take the USB wiring off the Kria", needs=("preflight",),
-         remove=("USB plug out of the Kria's USB port (and leave it out)",
+         remove=("USB plug out first, of whichever port holds it, the Kria's or the Pi's (and leave it out)",
                  "Jumper J2 silkscreen 1 to a30: remove both ends", "Jumper J2 silkscreen 3 to a20: remove both ends",
-                 "Jumper J2 silkscreen 11 to i3: remove both ends"),
+                 "Jumper J2 silkscreen 11 to i3: remove both ends",
+                 "After usb-pi: jumper J2 silkscreen 9 to b24, both ends, and the black wire out of a24 and taped"),
          off=("J2 empty: not one wire in it", "USB plug in no port; red VBUS and black GND still taped"),
          ok="J2 is empty and the USB plug is lying loose; the breadboard's parts stay where they are",
          fail="`hd off`, then finish removing the wires"),
@@ -143,14 +163,14 @@ STEPS = [
          off=("J2: only those two wires", "The Pi", "Every network cable"),
          ok="1.00, 0.00, 1.00: silkscreen 11 pulls the pad high and silkscreen 9 pulls it low",
          fail="any other reading: stop, no Pi ground wire goes on J2 until it is understood"),
-    Step("switch", "Move the Kria to the switch; check it comes back", needs=("preflight",),
-         wires=(("Router or LAN cable", "Tenda SG105 port 1"), ("Tenda SG105 power", "its own adapter"),
-                ("The far end of the Kria's existing network cable", "Tenda SG105 port 2"),
-                ("Pi eth0", "Tenda SG105 port 3")),
-         off=("The Kria end of its cable: leave it plugged in", "J2: no chip wiring near the switch yet") + NO_POE,
-         ok="`ssh ubuntu@kria.[tailnet domain redacted] uptime` answers, from another machine, and the uptime kept counting",
-         fail="wait 2 minutes, then put the cable back where it was. Never reboot, and run no network command on the Kria"),
-    Step("pi-prep", "Prepare the Pi while it has a network", needs=("switch",),
+    Step("pi-net", "Give the Pi a network; the Kria's cable stays", needs=("preflight",),
+         wires=(("Tenda SG105 power", "its own adapter"),
+                ("A free router port, only if one exists", "Tenda SG105 port 1"), ("Pi eth0", "Tenda SG105 port 2")),
+         off=("The Kria's network cable, both ends: it stays where it is, all day",
+              "The Kria and the switch: nothing joins them", "J2: no chip wiring near the switch yet") + NO_POE,
+         ok="the Pi reaches your network, over the switch or its own Wi-Fi; or you are at it with a keyboard and screen",
+         fail="no free router port: use the Pi's Wi-Fi, or a keyboard and screen. Never unplug anything to make room"),
+    Step("pi-prep", "Prepare the Pi while it has a network", needs=("pi-net",),
          pi=("cat /proc/device-tree/model; echo", "pinout",
              "sudo apt-get update && sudo apt-get install -y tcpdump i2c-tools python3-spidev python3-gpiozero",
              "sudo raspi-config nonint do_spi 0",
@@ -180,12 +200,14 @@ STEPS = [
          pi=("sudo nohup python3 hw_day.py pi-watch --seconds 600 > watch.out 2>&1 &",),
          ok="watch.log: carrier 1, speed 10, half duplex, then tcpdump shows ethertype 0x88b5 frames, FCS good",
          fail="carrier stays 0: add the second 220 ohm on each line (d2 to d6, d12 to d16), then swap RJ45 pins 3 and 6"),
-    Step("tx-switch", "Transmit into the switch, seen by tcpdump", needs=("tx-pi", "switch"), apps=("protoemu40",),
+    Step("tx-switch", "Transmit into the switch, seen by tcpdump", needs=("tx-pi",), apps=("protoemu40",),
          action="tx", pins={0: {UO0}, 1: {UO1}}, phrase="not poe wired tx-switch",
+         remove=("Any cable from a router in Tenda port 1: this test wants no network on the switch",),
          wires=TX_WIRES + (("RJ45 pin 1", "a8"), ("RJ45 pin 2", "a18"),
+                           ("Pi eth0", "Tenda SG105 port 2"),
                            ("Patch cable: breakout to Tenda SG105 port 4, last", "the Tenda, no other"),),
          off=("RJ45 pins 3, 4, 5, 6, 7, 8", "J2 silkscreen 5, 7, 9, 11") + NO_POE,
-         pi=("sudo python3 hw_day.py pi-watch --seconds 120 --filter",),
+         pi=("sudo nohup python3 hw_day.py pi-watch --seconds 600 --filter > watch.out 2>&1 &",),
          ok="the Pi, on the switch, sees broadcast frames from 02:57:4c:00:00:02 with ethertype 0x88b5",
          fail="port LED dark: the switch's receiver didn't take the link. No frames but LED on: a bad FCS is dropped silently here"),
     Step("uart", "UART both ways with the Pi", needs=("rails", "pi-prep"), apps=ANY_APP, action="uart",
@@ -236,6 +258,7 @@ STEPS = [
          fail="as i2c-clone"),
     Step("usb-pi", "USB with the Pi as a second host", needs=("rails", "pi-prep"), apps=("protoemu48",), action="usb_pi",
          pins={0: {UO0, UIO1}, 1: {UO0, UIO0}, 2: {UO0}, 3: {UO0}}, phrase="vbus taped wired usb-pi",
+         clears=("usb-off",),
          wires=(("USB cable black wire, untaped (GND)", "a24"), ("J2 silkscreen 9 (GND)", "b24"),
                 ("J2 silkscreen 1 (D+)", "a30"), ("J2 silkscreen 3 (D-)", "a20"), ("J2 silkscreen 11 (3.3 V)", "i3"),
                 ("USB plug, last, Pi powered off", "any USB-A port on the Pi")),
@@ -246,29 +269,24 @@ STEPS = [
          fail="no pull-up found: the jumper f11-f22 or the 1 kohm legs. device descriptor read/64 errors: D+/D-, or GND"),
     Step("rx", "Receive with resistors alone", needs=("tx-pi",), apps=("protoemu40", "protoemu"), action="rx",
          pins={0: {UO0}, 1: {UO1}, 3: {UI0}}, phrase="pin risk accepted wired rx",
-         remove=("The three 1 kohm from the USB wiring (j3-j7, i7-i11, g7-g11): keep them; photograph first",),
-         wires=TX_WIRES + (("RJ45 pin 3", "a8"), ("RJ45 pin 6", "a18"),
-                           ("J2 silkscreen 9 (GND)", "a29"), ("220 ohm", "c21 to c29"), ("220 ohm", "e21 to e29"),
-                           ("1 kohm", "d21 to d25"), ("1 kohm", "b25 to d29"), ("1 kohm", "e19 to e25"),
-                           ("J2 silkscreen 11 (3.3 V)", "a19"), ("J2 silkscreen 7 (RX in)", "a25"),
-                           ("RJ45 pin 2", "b29"), ("RJ45 pin 1", "a21"),
-                           ("Patch cable: breakout to Pi eth0, last", "not to the switch")),
-         off=("The switch and every other network port: the 220 ohm termination is sized for the Pi's pair",
-              "RJ45 pins 4, 5, 7, 8", "Any GND wire to the Pi: RJ45 pin 2 ties the Pi's isolated pair to the Kria's GND here") + NO_POE,
+         remove=("USB plug out of the Pi first, before anything else here", "USB cable's black wire out of a24, and taped",
+                 "Jumper J2 silkscreen 1 to a30: remove both ends", "Jumper J2 silkscreen 3 to a20: remove both ends",
+                 "Jumper J2 silkscreen 11 to i3: remove both ends", "Jumper J2 silkscreen 9 to b24: remove both ends",
+                 "Every UART, SPI and I2C wire and part",
+                 "The three 1 kohm from the USB wiring (j3-j7, i7-i11, g7-g11): keep them; photograph first"),
+         wires=RX_WIRES, off=RX_OFF + NO_POE,
          pi=("sudo python3 hw_day.py pi-send --seconds 120 --gap-us 1000",),
          ok="good frames counted, FCS checked, at least 10",
          fail="idle reads high, or all short records: stop. This attempt is allowed to fail; docs/eth10-receiver.md's front end is the real answer"),
     Step("cut", "Mid-frame reaction on live traffic", needs=("rx",), apps=("protoemu", "protoemu40"), action="cut",
          pins={0: {UO0}, 1: {UO1}, 3: {UIO0}}, phrase="pin risk accepted wired cut",
-         wires=(("Same as step rx", "nothing moves"),),
-         off=("As step rx",),
+         wires=RX_WIRES, off=RX_OFF + NO_POE,
          pi=("sudo python3 hw_day.py pi-send --seconds 120 --gap-us 200",),
          ok="threshold 1000: HIT on whole frames, reaction near 10 clocks; threshold 3000: no HIT",
          fail="no HIT at threshold 1000, with rx passing: note it; the FPGA demo with the generator remains the evidence"),
     Step("ping", "Real ping", needs=("rx", "budget"), apps=("protoemu40", "protoemu"), action="ping",
          pins={0: {UO0}, 1: {UO1}, 3: {UI0}}, phrase="pin risk accepted wired ping", files=ETH_STACK,
-         wires=(("Same as step rx", "nothing moves"),),
-         off=("As step rx",),
+         wires=RX_WIRES, off=RX_OFF + NO_POE,
          pi=(f"sudo ip addr add {PI_IP}/24 dev eth0", f"ping -c 5 -W 2 {CHIP_IP}", f"sudo ip addr del {PI_IP}/24 dev eth0"),
          ok="ping replies; the launcher counts ARP and echo answers",
          fail="ARP unanswered: see its counters. Overflow counted: Python too slow, which `budget` warned of"),
@@ -280,9 +298,14 @@ BY_NAME = {s.name: s for s in STEPS}
 
 def load_state(path):
     try:
-        return json.loads(pathlib.Path(path).read_text())
+        state = json.loads(pathlib.Path(path).read_text())
     except FileNotFoundError:
         return {}
+    except ValueError:
+        state = None
+    if not isinstance(state, dict):
+        raise Refused(f"{path} is not a confirmations file. Delete it, and confirm the steps again")
+    return state
 
 
 def save_state(path, state):
@@ -292,8 +315,25 @@ def save_state(path, state):
     tmp.replace(p)
 
 
+def closure(step):
+    """Every step this one depends on, directly or not, in the day's order."""
+    seen, todo = set(), list(step.needs)
+    while todo:
+        n = todo.pop()
+        if n not in seen:
+            seen.add(n)
+            todo += BY_NAME[n].needs
+    return [s.name for s in STEPS if s.name in seen]
+
+
+def fresh(state, name):
+    """Confirmed, within MAX_AGE_S. /var/tmp outlives the day; the wiring may not have."""
+    t = state.get(name)
+    return isinstance(t, (int, float)) and 0 <= time.time() - t < MAX_AGE_S
+
+
 def missing_prereqs(step, state):
-    return [n for n in step.needs if n not in state]
+    return [n for n in closure(step) if not fresh(state, n)]
 
 
 # ---------------------------------------------------------------- printing
@@ -606,7 +646,7 @@ def drain(rig, k, core, seconds, each=None):
 
 
 def la_load(rig, k, mask):
-    prog = k.asm.assemble((ROOT / "firmware" / "la_capture.pasm").read_text(), {"MASK": mask})
+    prog = k.asm.assemble((root() / "firmware" / "la_capture.pasm").read_text(), {"MASK": mask})
     k.pfd.load(rig, 0, prog, in_pins=0, clkdiv=1 << 8)
 
 
@@ -811,7 +851,7 @@ def act_cut(ctx):
     clock-by-clock sampler, because the chip has no third core. The link needs a pulse
     only every 50 to 150 ms (from memory of 802.3, docs/eth10-network.md)."""
     rig, k = ctx.rig, t()
-    text = (ROOT / "firmware" / "eth10_match.pasm").read_text().replace(".define HIT 8", ".define HIT 1")
+    text = (root() / "firmware" / "eth10_match.pasm").read_text().replace(".define HIT 8", ".define HIT 1")
     prog = k.asm.assemble(text)
     samp = k.asm.assemble((HERE / "usb_sampler.pasm").read_text(), {"TRIG": 2})
     p = line_period(rig.f_clk)
@@ -874,7 +914,7 @@ def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapp
     left = missing_prereqs(step, state)
     if left:
         raise Refused(f"{step.name} needs {', '.join(left)} confirmed first (hd run {left[0]})")
-    absent = [f for f in step.files if not (ROOT / f).exists()]
+    absent = [f for f in step.files if not (root() / f).exists()]
     if absent:
         raise Refused(f"{step.name} needs {', '.join(absent)}: they are on branch eth-stack, not in this tree")
     with Lock(lock):
@@ -887,6 +927,12 @@ def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapp
                 "Anything else stops here, with no pin enabled.")
             if prompt(read, "> ") != step.typed():
                 raise Refused("not confirmed: nothing was enabled")
+            if step.clears:                 # the wiring is on now, whatever happens next
+                state = load_state(state_path)
+                for n in step.clears:
+                    state.pop(n, None)
+                save_state(state_path, state)
+                out(f"{', '.join(step.clears)} is no longer confirmed: run it again before the next step")
         if step.action:
             app = check_app(step, listapps_fn, told)
             rig = make_rig()
@@ -895,7 +941,7 @@ def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapp
                 raise Refused(f"{app} should have clk_div {APPS[app]}, the fabric says {rig.ident['clk_div']}")
             ctx = Ctx(step, rig, lambda m: prompt(read, m + " > "), out, app)
             status = EXIT_OK
-            with Signals():
+            with Signals() as sig:
                 try:
                     globals()["act_" + step.action](ctx)
                 except Refused as e:
@@ -908,6 +954,7 @@ def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapp
                     out(f"FAILED: {e!r}")
                     status = EXIT_FAILED
                 finally:
+                    sig.live = False             # nothing interrupts the turning off
                     try:
                         rig.spim.pmod({})
                     finally:
@@ -921,7 +968,7 @@ def run_step(step, state_path, make_rig=real_rig, read=input, out=print, listapp
             out("not confirmed")
             return EXIT_FAILED
     state = load_state(state_path)
-    state[step.name] = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    state[step.name] = time.time()
     save_state(state_path, state)
     out(f"{step.name} confirmed")
     return EXIT_OK
@@ -940,7 +987,8 @@ def turn_off(listapps_fn=None, told=None):
     try:
         fabric_guard.check(listapps_fn or listapps, env={fabric_guard.OVERRIDE: told} if told else {})
     except fabric_guard.NoActiveApp as e:
-        raise Refused(f"PMOD can't be reached, and with no app there are no PMOD pins on. {e}")
+        raise Refused("NOTHING WAS WRITTEN: don't assume the pins are off. Pull the wires from J2. If the table "
+                      f"shows a protoemu app active, run `hd off --active-app NAME`. {e}")
     from pe_spim import Spim
     Spim().pmod({})
     print("every PMOD pin is off")
@@ -1059,8 +1107,9 @@ def main(argv=None):
     try:
         if a.cmd == "list":
             state = load_state(a.state)
-            for i, st in enumerate(STEPS, 1):
-                print(f"{i:2} {st.name:12} {'confirmed ' + state[st.name] if st.name in state else '-':34} {st.title}")
+            for i, st in enumerate(STEPS):
+                when = time.strftime("confirmed %H:%M UTC", time.gmtime(state[st.name])) if fresh(state, st.name) else "-"
+                print(f"{i:2} {st.name:12} {when:24} {st.title}")
         elif a.cmd == "show":
             describe(BY_NAME[a.step])
         elif a.cmd == "forget":

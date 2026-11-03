@@ -72,8 +72,11 @@ def test_a_person_can_only_settle_an_unreadable_table(tmp_path):
     assert check("garbled table", tmp_path, env=env) == "protoemu40"
     with pytest.raises(fg.NoActiveApp, match="no active app"):
         check(INACTIVE, tmp_path, env=env)                           # a readable table isn't overruled
-    with pytest.raises(fg.NoActiveApp, match="not a protoemu app"):
+    with pytest.raises(fg.NoActiveApp, match="shows k26-starter-kits active"):
         check(OTHER, tmp_path, env=env)
+    with pytest.raises(fg.NoActiveApp, match="shows protoemu40 active"):
+        check(ACTIVE, tmp_path, env={fg.OVERRIDE: "protoemu"})
+    assert check(ACTIVE, tmp_path, env=env) == "protoemu40"
     with pytest.raises(fg.NoActiveApp, match="not a protoemu app"):
         check("garbled table", tmp_path, env={fg.OVERRIDE: "k26-starter-kits"})
     with pytest.raises(fg.NoActiveApp, match="a load failed"):

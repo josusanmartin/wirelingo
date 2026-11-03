@@ -38,21 +38,22 @@ the board.
    in J2, wire by wire. An enabled pin into the wrong place is how a pin dies. The
    launcher prints the wiring and waits for a typed phrase; the phrase means you
    looked. Every pin is off unless a step has it on. `hd off` turns them all off.
-5. **Never run `pmod_test.py` with any wiring in J2 but its own loopback jumpers.** It
-   drives the top-row pins. With the USB wiring on, it would drive the USB lines. The
-   launcher never runs it, and refuses to start if it sees it running.
-6. **Never touch eth0 on the Kria.** Moving the far end of its cable is the one
-   exception today. No `ip`, `ifconfig`, `ethtool`, `tcpdump`, `dhclient` or netplan
-   there. It is the way in; `tcpdump` belongs on the Pi.
+5. **Never run `pmod_test.py`.** It drives the top-row pins, and with the USB wiring on
+   it would drive the USB lines. No exceptions. The launcher never runs it, and refuses
+   to start if it sees it running.
+6. **Never touch eth0 on the Kria.** No exceptions: no `ip`, `ifconfig`, `ethtool`,
+   `tcpdump`, `dhclient` or netplan there, and its cable stays where it is, both ends. It
+   is the way in; `tcpdump` belongs on the Pi.
 7. **One process on the Kria at a time.** Two programs on the board's registers break
    each other. The launcher takes a lock and looks for the other board scripts, but
    it can't see a hand-typed one-liner.
 8. **Never reboot the Kria or power it off,** with one exception: step 0, by you, by
    hand. The Pi may restart and shut down; check your prompt before you type. If the
    Kria stops answering later, the board work is over until you decide to repeat step 0.
-9. **Take the USB wiring off before any Ethernet wiring goes on.** Step 2, in full:
-   USB plug out, then the three J2 jumpers out. D+ and D- are on J2 silkscreen 1 and
-   3, the pins Ethernet uses, and there is a 1.5 kohm pull-up to 3.3 V on one of them.
+9. **Take the USB wiring off before any Ethernet wiring goes on.** Step 2, in full, and
+   again after `usb-pi`: USB plug out first, then the J2 jumpers. D+ and D- are on J2
+   silkscreen 1 and 3, the pins Ethernet uses, and there is a 1.5 kohm pull-up to 3.3 V on
+   one of them. The launcher takes back `usb-off` when you confirm `usb-pi`'s wiring.
 10. **VBUS stays taped.** The USB cable's red wire has 5 V on it whenever its plug is
     in a powered port. It connects to nothing, today or ever.
 11. **Wire with the pins off, and the Pi off.** The Kria stays on, so you wire it live.
@@ -81,8 +82,8 @@ From the USB breadboard: 3 x 1 kohm (only `rx` borrows them), 6 x 10 ohm, jumper
 
 * Female-to-male jumper wires, at least 8: the Pi's header has pins, and J2 and the
   breadboard want male ends. `uart`, `spi`, the I2C steps need them.
-* An Ethernet patch cable from the breakout to the Pi or the switch, and one for the
-  switch's uplink.
+* An Ethernet patch cable from the breakout to the Pi or the switch, and one from the Pi to
+  the switch.
 
 **Worth adding if you can.**
 
@@ -111,6 +112,7 @@ Once, from your checkout of this branch. This puts one copy of the software in
 `~/hwday` on the Kria, away from the app directories, and adds the alias `hd`.
 
 ```
+ssh ubuntu@kria.[tailnet domain redacted] mkdir -p hwday/fpga/kv260
 rsync -a --exclude __pycache__ tools firmware ubuntu@kria.[tailnet domain redacted]:hwday/
 rsync -a --exclude __pycache__ fpga/kv260/host ubuntu@kria.[tailnet domain redacted]:hwday/fpga/kv260/
 ssh ubuntu@kria.[tailnet domain redacted] "echo \"alias hd='sudo python3 -B ~/hwday/fpga/kv260/host/hw_day.py'\" >> ~/.bashrc"
@@ -125,12 +127,12 @@ Then, on the Kria:
 | `hd list` | The steps in order, and which are confirmed |
 | `hd show NAME` | A step's wiring and checks. Touches no hardware |
 | `hd off` | Disables every PMOD pin. Use it freely |
-| `hd forget NAME` | Takes back a confirmation, when wiring changed |
+| `hd forget NAME` | Takes back a confirmation, when wiring changed. Every step that depends on it then refuses |
 
 `hd run NAME` prints the wiring, asks for a typed phrase before enabling any pin,
 runs, turns the pins off on any exit, then asks whether you saw success. It refuses a
-step whose prerequisite you haven't confirmed. Confirmations are in
-`/var/tmp/hw_day_state.json`. If a step asks for another app, it prints the line to
+step unless everything it depends on, all the way back, is confirmed. A confirmation
+lasts 12 hours. Confirmations are in `/var/tmp/hw_day_state.json`. If a step asks for another app, it prints the line to
 run; run that with no other program going, read what it printed, then run the step
 again. Rule 13 applies to every load.
 
@@ -214,6 +216,7 @@ Each group adds one new kind of risk:
 
 | Steps | New risk |
 |---|---|
+| 0 | Recovery: the one power cycle, by you |
 | 1 to 6 | None to the pins. No pin is enabled |
 | 7 to 9 | Chip outputs, through resistors and capacitors, into a transformer |
 | 10 to 15 | A shared ground and direct logic connections to the Pi, then USB's 5 V nearby |
@@ -236,12 +239,12 @@ safer first option for four reasons:
 
 * **No 48 V can be present.** A Pi's Ethernet port doesn't source PoE. With a switch you
   rely on the label on the box and on picking the right socket.
-* **The Kria's own link is not on it.** The Tenda carries the Kria's only way in. On the
-  isolated cable, nothing the chip does can reach that network.
+* **Nothing else is on it.** On the isolated cable, nothing the chip does can reach any
+  network. The Kria's own link is on neither path, whichever you run.
 * **You can see what happened.** The Pi reports link state, speed, and error counters. A
   switch shows one LED and silently drops a bad frame.
 * **A wiring slip costs less.** If the wrong wire lands on the Pi, the worst case is one Pi
-  port, not the network the board depends on.
+  port.
 
 The cost is that the Pi leaves the network while it runs. The file-writing watch
 handles that.
@@ -312,7 +315,7 @@ The pad sits at 1.1 V with no signal, and moves one third of the differential vo
 | +-2.2 V | 0.37 V | 1.83 V |
 | +-2.5 V | 0.27 V | 1.93 V |
 | +-2.8 V | 0.17 V | 2.03 V |
-| +-5 V, if the termination falls out | -0.57 V | 2.77 V |
+| +-5 V, if the termination falls out | -0.57 V, past the -0.55 V absolute minimum | 2.77 V |
 
 Why not simply a series resistor? A pad taken to -2.5 V through a resistor conducts
 through its input diode for half of every bit. DS925's AC limits allow -0.30 V all of
@@ -427,14 +430,15 @@ hd run preflight
 
 Time: 5 min (estimate). App: any. Needs: `preflight`.
 
-**Risk.** This step removes one. The USB wiring puts a 1.5 kohm pull-up to 3.3 V, and a live USB host's drivers, on J2 silkscreen 1 and 3. Those are the pins Ethernet is about to use. With both connected, the chip's outputs would fight the host and the pull-up, and the USB hub would see a device appear and vanish. Take it off first, every time, before any Ethernet wire goes near J2.
+**Risk.** This step removes one, and comes again after `usb-pi`. The USB wiring puts a 1.5 kohm pull-up to 3.3 V, and a live USB host's drivers, on J2 silkscreen 1 and 3. Those are the pins Ethernet is about to use. With both connected, the chip's outputs would fight the host and the pull-up, and the USB hub would see a device appear and vanish. Take it off first, every time, before any Ethernet wire goes near J2.
 
 **Remove first:**
 
-* USB plug out of the Kria's USB port (and leave it out)
+* USB plug out first, of whichever port holds it, the Kria's or the Pi's (and leave it out)
 * Jumper J2 silkscreen 1 to a30: remove both ends
 * Jumper J2 silkscreen 3 to a20: remove both ends
 * Jumper J2 silkscreen 11 to i3: remove both ends
+* After usb-pi: jumper J2 silkscreen 9 to b24, both ends, and the black wire out of a24 and taped
 
 **Before you start.** `hd off` first if anything was running. Do this by hand with the board on; the pins are off, so nothing is driven. Leave every part in the breadboard: the resistors stay in rows f to j, and `usb-pi` needs them. The lower half (rows a to e) is what the next steps use, and columns 20 and 30 of it stay empty because the 10 ohm resistors end there.
 
@@ -495,48 +499,47 @@ hd run rails
 
 * Any other reading: stop. Don't put a ground wire on J2. Check that the resistor and jumpers sit in the holes the table says; the columns of a breadboard join only a to e and f to j. If it still reads wrong, get a meter or read the KV260 carrier schematic.
 
-### Step 4: Move the Kria to the switch; check it comes back (`switch`)
+### Step 4: Give the Pi a network; the Kria's cable stays (`pi-net`)
 
 Time: 15 min (estimate). App: any. Needs: `preflight`.
 
-**Risk.** The danger is losing your way in to the Kria, not damage. Its network link is how you reach it, and you must not reboot it or change its network settings. The Kria stays powered. The only physical move is the far end of its existing cable. No chip wiring goes anywhere near the switch in this step.
+**Risk.** None to the Kria, because this step doesn't touch it. Its cable stays exactly where it is, at both ends, all day: nothing here needs it moved, and moving a board's only link is a risk nobody should take with it. The switch never joins the Kria. No chip wiring goes near the switch in this step.
 
-**Before you start.** Check the box and the label: `SG105`, no PoE marking. Reseller listings give it as non-PoE, 10/100/1000 with auto MDI/MDIX; Tenda's own datasheet was not found, so the label is the check (`CHECK BEFORE WIRING`). Note the current uptime: `ssh ubuntu@kria.[tailnet domain redacted] uptime`. Power the switch, connect the uplink and confirm the switch reaches your network (the Pi can show that) before you touch the Kria's cable. Then leave the Kria's RJ45 end alone, and move only the other end of that cable.
+**Before you start.** Check the box and the label: `SG105`, no PoE marking. Reseller listings give it as non-PoE, 10/100/1000 with auto MDI/MDIX; Tenda's own datasheet was not found, so the label is the check (`CHECK BEFORE WIRING`). The Pi needs a network for the next step. If your router has a free port, connect the switch to it: that is your call, and you make it. If it has none, don't unplug anything to make room: use the Pi's own Wi-Fi, or a keyboard and screen. With a keyboard and screen and no network at all, `tcpdump`, `i2c-tools` and `python3-spidev` must already be on the Pi, and `hw_day.py` goes over on a USB stick.
 
 **Wiring, in this order:**
 
 | From | To |
 |---|---|
-| Router or LAN cable | Tenda SG105 port 1 |
 | Tenda SG105 power | its own adapter |
-| The far end of the Kria's existing network cable | Tenda SG105 port 2 |
-| Pi eth0 | Tenda SG105 port 3 |
+| A free router port, only if one exists | Tenda SG105 port 1 |
+| Pi eth0 | Tenda SG105 port 2 |
 
 **Must stay disconnected:**
 
-* The Kria end of its cable: leave it plugged in
+* The Kria's network cable, both ends: it stays where it is, all day
+* The Kria and the switch: nothing joins them
 * J2: no chip wiring near the switch yet
 * Every other switch, router or wall network socket: this wiring may only ever touch the Tenda SG105 or the Pi. Any of them could carry 48 V PoE
 
 **Command, on the Kria:**
 
 ```
-hd run switch
+hd run pi-net
 ```
 
 **Success:**
 
-* Within about two minutes (estimate), from another machine: `ssh ubuntu@kria.[tailnet domain redacted] uptime` answers, and the uptime is more than before, so it did not restart.
-* The Pi has an address and can reach the internet. Then on the Kria run `hd run switch` and type `passed switch`. (That line is this step's command: it records the move, and does nothing to the board.)
+* The Pi reaches your network, or you are at it with a keyboard and screen. On the Kria, `hd run pi-net` and type `passed pi-net`.
 
 **Failure, and what to try:**
 
-* No answer after two minutes: put the cable's far end back where it was and wait again. If it answers, the switch or its uplink is the fault: check its power and uplink, try another port.
-* Never run `ip`, `ifconfig`, `ethtool`, `tcpdump`, `dhclient` or `netplan` on the Kria to help. Never reboot it.
+* No link LED on the switch: its power, then the cable. Leave the Kria alone.
+* No free router port and no Wi-Fi: a keyboard and screen, as above.
 
 ### Step 5: Prepare the Pi while it has a network (`pi-prep`)
 
-Time: 20 min (estimate). App: any. Needs: `switch`.
+Time: 20 min (estimate). App: any. Needs: `pi-net`.
 
 **Risk.** Low. No wire joins the boards yet. Changing the Pi's settings can lose you the Pi, but not the Kria. The restart at the end is the Pi's: look at your prompt before you type it.
 
@@ -649,9 +652,9 @@ Time: 30 min (estimate). App: protoemu40. Needs: `tx-bench`, `pi-prep`.
 
 **Risk.** Low. This is why it comes before the switch: see Why the isolated cable first. Current is limited by the resistors, to about 6 mA (estimate), and the capacitors block DC. The Pi's Ethernet port is transformer-coupled, so no GND wire joins the boards here, and none should.
 
-**Before you start.** The Pi has one Ethernet port, and this step takes it off the network. So start the watch first; it writes to files and doesn't need you. On the Pi, while it is still on the switch, run the command below. Then take the Pi's cable out of the switch, and connect the breakout to the Pi's Ethernet port with a plain patch cable, last. Then, on the Kria, run the launcher.
+**Before you start.** The Pi has one Ethernet port, and this step takes it off the network. So start the watch first; it writes to files and doesn't need you. On the Pi, while you can still reach it, run the command below. Then take any cable out of the Pi's Ethernet port, and connect the breakout to the Pi's Ethernet port with a plain patch cable, last. Then, on the Kria, run the launcher.
 
-The chip sends on RJ45 pins 3 and 6 here because those are the pair a station like the Pi listens on, 802.3's normal wiring for two stations with no crossover. The Pi's Auto-MDIX could swap pairs on its own (LAN9514's listing has it; `CHECK BEFORE WIRING` for a 3 B+). Its transmit pulses could then reach the chip's pins through 220 ohm and 100 nF, about 10 mA for a fraction of a microsecond (estimate). That is harmless to the Pi, and the pins are driven at the time.
+The chip sends on RJ45 pins 3 and 6 here because those are the pair a station like the Pi listens on, 802.3's normal wiring for two stations with no crossover. The Pi's Auto-MDIX could swap pairs on its own (LAN9514's listing has it; `CHECK BEFORE WIRING` for a 3 B+). Its transmit pulses could then reach the chip's pins through 220 ohm and 100 nF, and it is likeliest to hunt like that with no link, so with our pins disabled, before and after the launcher runs. Worked out for that case (estimate, unmeasured): the pads float, and the pair can push them only until one input's upper diode and the other's lower diode conduct, about 4.5 V apart. A pulse of up to 5 V open-circuit then drives about 1 mA through 540 ohm for under 100 ns, 2 mA with the second pair of resistors. Those are short, rare pulses, well inside DS925's undershoot allowance, and small against the 20 mA pad figure. With the pins driven the worst case is about 9 mA for the same time (5 V through 540 ohm).
 
 **Wiring, in this order:**
 
@@ -691,7 +694,7 @@ Type at its prompt: `wired tx-pi`. It enables only: silkscreen 1, silkscreen 3.
 **Success:**
 
 * The launcher finishes: `600 frames sent` after two minutes.
-* Put the Pi's cable back in the switch, log in, and look at `watch.log`: `carrier 1 speed 10 duplex half` while the chip ran. That alone says the Pi's receiver accepted the link pulses.
+* Put the Pi back on its network, log in, and look at `watch.log`: `carrier 1 speed 10 duplex half` while the chip ran. That alone says the Pi's receiver accepted the link pulses.
 * `for f in watch.pcap.*; do sudo tcpdump -r $f -e -n -x | head -n 40; done` shows `02:57:4c:00:00:02 > ff:ff:ff:ff:ff:ff, ethertype Unknown (0x88b5), length 60` with `WIRELINGO HW DAY` in the bytes. tcpdump's exact wording may differ. Keep both files. Type `passed tx-pi`.
 
 **Failure, and what to try:**
@@ -703,15 +706,21 @@ Type at its prompt: `wired tx-pi`. It enables only: silkscreen 1, silkscreen 3.
 
 ### Step 9: Transmit into the switch, seen by tcpdump (`tx-switch`)
 
-Time: 20 min (estimate). App: protoemu40. Needs: `tx-pi`, `switch`.
+Time: 20 min (estimate). App: protoemu40. Needs: `tx-pi`.
 
 **Risk.** This is the step PoE can hurt. Plugged into a PoE port, 48 V can destroy the FPGA pins, and the resistors and capacitors won't save them. A compliant PoE port applies 48 V only after it detects a powered device, but a passive injector applies it always. You are safe only because this switch has no PoE and this cable goes nowhere else. The launcher asks for a longer phrase here for that reason.
 
-**Before you start.** Move two wires only: RJ45 pin 3 becomes pin 1 at `a8`, and pin 6 becomes pin 2 at `a18`. A switch port listens on pins 1 and 2. If `tx-pi` needed the second 220 ohm on each line, keep them here (`d2` to `d6`, `d12` to `d16`).
+**Remove first:**
 
-Read the patch cable's other end with your hand on it, into the Tenda, and only the Tenda. Don't use a wall socket, whose far end you can't see.
+* Any cable from a router in Tenda port 1: this test wants no network on the switch
 
-The switch forwards frames that pass its FCS check and drops the rest silently, and an unmanaged switch has no port mirror. So a broadcast is the frame to use. It reaches every device on the LAN, the Kria's eth0 included, at 5 frames/s for 2 minutes; the ethertype is one nothing listens to. That is harmless, and it's why tcpdump runs on the Pi: the rule against touching the Kria's eth0 covers tcpdump too.
+**Before you start.** Take any router cable out of the Tenda first: this test wants only the chip and the Pi on the switch, so no frame leaves it. Start the watch on the Pi while you can still reach it, then put the Pi on Tenda port 2.
+
+Move two wires only: RJ45 pin 3 becomes pin 1 at `a8`, and pin 6 becomes pin 2 at `a18`. A switch port listens on pins 1 and 2. If `tx-pi` needed the second 220 ohm on each line, keep them here (`d2` to `d6`, `d12` to `d16`).
+
+Follow the patch cable with your hand, into the Tenda, and only the Tenda. Don't use a wall socket, whose other end you can't see.
+
+The switch forwards frames that pass its FCS check and drops the rest silently, and an unmanaged switch has no port mirror. So a broadcast is the frame to use, and it reaches the Pi. tcpdump runs on the Pi: the rule against touching the Kria's eth0 covers tcpdump too.
 
 **Wiring, in this order:**
 
@@ -725,6 +734,7 @@ The switch forwards frames that pass its FCS check and drops the rest silently, 
 | 100 nF | c16 to c18 |
 | RJ45 pin 1 | a8 |
 | RJ45 pin 2 | a18 |
+| Pi eth0 | Tenda SG105 port 2 |
 | Patch cable: breakout to Tenda SG105 port 4, last | the Tenda, no other |
 
 **Must stay disconnected:**
@@ -736,7 +746,7 @@ The switch forwards frames that pass its FCS check and drops the rest silently, 
 **On the Pi:**
 
 ```
-sudo python3 hw_day.py pi-watch --seconds 120 --filter
+sudo nohup python3 hw_day.py pi-watch --seconds 600 --filter > watch.out 2>&1 &
 ```
 
 **Command, on the Kria:**
@@ -749,7 +759,7 @@ Type at its prompt: `not poe wired tx-switch`. It enables only: silkscreen 1, si
 
 **Success:**
 
-* The Pi, back on the switch, prints the `0x88b5` broadcast from `02:57:4c:00:00:02`: `for f in watch.pcap.*; do sudo tcpdump -r $f -e -n -x | head -n 40; done` after the watch ends.
+* After the watch ends, with the Pi reachable again: `for f in watch.pcap.*; do sudo tcpdump -r $f -e -n -x | head -n 40; done` shows the `0x88b5` broadcast from `02:57:4c:00:00:02`.
 * A frame through the switch says something a Pi capture can't: another vendor's receiver took the waveform, and its FCS was good. Type `passed tx-switch`.
 
 **Failure, and what to try:**
@@ -763,7 +773,7 @@ Time: 30 min (estimate). App: protoemu or protoemu40 or protoemu48. Needs: `rail
 
 **Risk.** Medium: the first wire that shares ground between boards, and the first time a Pi GPIO meets a chip pin. Two outputs fighting are limited by 220 ohm to about 15 mA (3.3 V / 220 ohm, estimate), inside the Pi's 16 mA per pin. Pins 2 and 4 of the Pi are 5 V, next to pin 6: a wire one pin off puts 5 V on the wrong net, so the Pi is off and unplugged while you wire, and you count pins from pin 1.
 
-**Before you start.** Take the J2 wires, the breakout and the 100 nF off. The 220 ohm at `b2`-`b6` and `b12`-`b16` stay; remove any second pair at `d2`-`d6`, `d12`-`d16`. On the Pi: `sudo shutdown -h now`, wait for the green LED to stop, unplug its power. Plug both boards' supplies into one power strip. Wire the ground first, in the order below. Plug the Pi's power back in, and log in over the switch; it should have gone back to the switch.
+**Before you start.** Take the J2 wires, the breakout and the 100 nF off. The 220 ohm at `b2`-`b6` and `b12`-`b16` stay; remove any second pair at `d2`-`d6`, `d12`-`d16`. On the Pi: `sudo shutdown -h now`, wait for the green LED to stop, unplug its power. Plug both boards' supplies into one power strip. Wire the ground first, in the order below. Put the Pi back on its network, plug its power back in, and log in.
 
 The launcher only enables chip TX and RX. If the Pi's console is still on the UART, its login prompt will appear in what the chip hears: run `sudo raspi-config nonint do_serial_cons 1` and restart the Pi.
 
@@ -1072,7 +1082,7 @@ Type at its prompt: `vbus taped wired usb-pi`. It enables only: silkscreen 1, si
 **Success:**
 
 * With `hd run usb-pi` waiting at its prompt, on the Pi: `lsusb -d 1209:5634` lists the device and `dmesg` says `new full-speed USB device`. A second host, a second hub, through the Pi's own USB chip. Type Enter at the launcher to detach, then `passed usb-pi`.
-* Tape the black wire again before anything else.
+* Now, before anything else: USB plug out of the Pi, and `hd run usb-off`. Typing this step's phrase took back `usb-off`, so no later step runs until you have repeated it, because the USB wiring is on J2 again.
 
 **Failure, and what to try:**
 
@@ -1084,13 +1094,20 @@ Type at its prompt: `vbus taped wired usb-pi`. It enables only: silkscreen 1, si
 
 Time: 45 min (estimate). App: protoemu40 or protoemu. Needs: `tx-pi`.
 
-**Risk.** The riskiest step on the pins, which is why it is late. A real 10BASE-T signal swings about +-2.5 V, and it goes below ground: an FPGA pin takes -0.3 V at most all the time. The divider below keeps the pad at about 0.27 to 1.93 V (estimate, unmeasured, no scope). If the termination falls out, the swing can double and the pad could reach about -0.6 V (estimate). `docs/eth10-receiver.md` says to scope these conditions first; you can't. That is why this is an attempt the launcher makes you accept in words, and why it may be skipped. It is an FPGA pin at stake here, on a SOM, not a loose part.
+**Risk.** The riskiest step on the pins, which is why it is late. A real 10BASE-T signal swings about +-2.5 V, and it goes below ground: an FPGA pin takes -0.3 V at most all the time. The divider below keeps the pad at about 0.27 to 1.93 V (estimate, unmeasured, no scope). If the termination falls out, the swing can double and the pad could reach about -0.57 V (estimate), past the -0.55 V absolute minimum, so the termination goes in before the cable and stays. `docs/eth10-receiver.md` says to scope these conditions first; you can't. That is why this is an attempt the launcher makes you accept in words, and why it may be skipped. It is an FPGA pin at stake here, on a SOM, not a loose part.
 
 **Remove first:**
 
+* USB plug out of the Pi first, before anything else here
+* USB cable's black wire out of a24, and taped
+* Jumper J2 silkscreen 1 to a30: remove both ends
+* Jumper J2 silkscreen 3 to a20: remove both ends
+* Jumper J2 silkscreen 11 to i3: remove both ends
+* Jumper J2 silkscreen 9 to b24: remove both ends
+* Every UART, SPI and I2C wire and part
 * The three 1 kohm from the USB wiring (j3-j7, i7-i11, g7-g11): keep them; photograph first
 
-**Before you start.** Read Receive: what the resistor-only attempt is, first. Pi off for the rewiring. Take off the UART, SPI and I2C wires, then build the table in order. All four 220 ohm are used: two on TX, two as termination. That only works if `tx-pi` passed with one 220 ohm per line. If it needed two per line, this step needs two more 220 ohm, which are not on the order. Stop and get them.
+**Before you start.** Read Receive: what the resistor-only attempt is, first. Pi off for the rewiring. Everything under Remove first comes off in that order, USB plug first: transmit uses the pins that were D+ and D-. If `usb-pi` was run, the launcher refuses this step until `hd run usb-off` is repeated. Then build the table in order. All four 220 ohm are used: two on TX, two as termination. That only works if `tx-pi` passed with one 220 ohm per line. If it needed two per line, this step needs two more 220 ohm, which are not on the order. Stop and get them.
 
 The transmit side must stay on: the Pi's Ethernet won't send without link pulses from the chip. Load `protoemu40` first. On the Pi, start `pi-send` after the launcher says the pulses are on; it refuses unless the Pi has link, and refuses on a network. If you have no Wi-Fi on the Pi, run it with a delay before you move the cable: `sudo nohup sh -c 'sleep 90; python3 hw_day.py pi-send --seconds 120 --gap-us 1000' &`.
 
@@ -1107,21 +1124,22 @@ The transmit side must stay on: the Pi's Ethernet won't send without link pulses
 | RJ45 pin 3 | a8 |
 | RJ45 pin 6 | a18 |
 | J2 silkscreen 9 (GND) | a29 |
-| 220 ohm | c21 to c29 |
-| 220 ohm | e21 to e29 |
-| 1 kohm | d21 to d25 |
-| 1 kohm | b25 to d29 |
-| 1 kohm | e19 to e25 |
-| J2 silkscreen 11 (3.3 V) | a19 |
-| J2 silkscreen 7 (RX in) | a25 |
-| RJ45 pin 2 | b29 |
-| RJ45 pin 1 | a21 |
+| 220 ohm | d25 to d29 |
+| 220 ohm | e25 to e29 |
+| 1 kohm | c21 to c25 |
+| 1 kohm | b21 to b29 |
+| 1 kohm | d17 to d21 |
+| J2 silkscreen 11 (3.3 V) | a17 |
+| J2 silkscreen 7 (RX in) | a21 |
+| RJ45 pin 2 | c29 |
+| RJ45 pin 1 | a25 |
 | Patch cable: breakout to Pi eth0, last | not to the switch |
 
 **Must stay disconnected:**
 
 * The switch and every other network port: the 220 ohm termination is sized for the Pi's pair
 * RJ45 pins 4, 5, 7, 8
+* The USB plug, in any port
 * Any GND wire to the Pi: RJ45 pin 2 ties the Pi's isolated pair to the Kria's GND here
 * Every other switch, router or wall network socket: this wiring may only ever touch the Tenda SG105 or the Pi. Any of them could carry 48 V PoE
 
@@ -1157,17 +1175,39 @@ Time: 20 min (estimate). App: protoemu or protoemu40. Needs: `rx`.
 
 **Risk.** As `rx`: same wiring and the same pad levels. The HIT pin stays inside the chip; it is sampled, not mapped to a pad.
 
-**Before you start.** Nothing moves. The sampling trick: the chip has two cores, and this needs three jobs (match, link pulses, sampler). So core 1 sends link pulses for 3 s, then becomes the sampler for one 0.8 ms burst, then the launcher reloads it. The Pi's link should hold through that gap: receivers are usually quoted at 50 to 150 ms before dropping link (from memory of 802.3, as docs/eth10-network.md says). On the Pi, frames every 200 us, so whole ones land in the window. Prefer `protoemu` (50 MHz), where the receive margin is, if `rx` passed there.
+**Before you start.** Nothing moves: this is step `rx`'s wiring, listed again so you check it. The sampling trick: the chip has two cores, and this needs three jobs (match, link pulses, sampler). So core 1 sends link pulses for 3 s, then becomes the sampler for one 0.8 ms burst, then the launcher reloads it. The Pi's link should hold through that gap: receivers are usually quoted at 50 to 150 ms before dropping link (from memory of 802.3, as docs/eth10-network.md says). On the Pi, frames every 200 us, so whole ones land in the window. Prefer `protoemu` (50 MHz), where the receive margin is, if `rx` passed there.
 
 **Wiring, in this order:**
 
 | From | To |
 |---|---|
-| Same as step rx | nothing moves |
+| J2 silkscreen 1 (TD+) | a2 |
+| 220 ohm | b2 to b6 |
+| 100 nF | c6 to c8 |
+| J2 silkscreen 3 (TD-) | a12 |
+| 220 ohm | b12 to b16 |
+| 100 nF | c16 to c18 |
+| RJ45 pin 3 | a8 |
+| RJ45 pin 6 | a18 |
+| J2 silkscreen 9 (GND) | a29 |
+| 220 ohm | d25 to d29 |
+| 220 ohm | e25 to e29 |
+| 1 kohm | c21 to c25 |
+| 1 kohm | b21 to b29 |
+| 1 kohm | d17 to d21 |
+| J2 silkscreen 11 (3.3 V) | a17 |
+| J2 silkscreen 7 (RX in) | a21 |
+| RJ45 pin 2 | c29 |
+| RJ45 pin 1 | a25 |
+| Patch cable: breakout to Pi eth0, last | not to the switch |
 
 **Must stay disconnected:**
 
-* As step rx
+* The switch and every other network port: the 220 ohm termination is sized for the Pi's pair
+* RJ45 pins 4, 5, 7, 8
+* The USB plug, in any port
+* Any GND wire to the Pi: RJ45 pin 2 ties the Pi's isolated pair to the Kria's GND here
+* Every other switch, router or wall network socket: this wiring may only ever touch the Tenda SG105 or the Pi. Any of them could carry 48 V PoE
 
 **On the Pi:**
 
@@ -1199,7 +1239,7 @@ Time: 30 min (estimate). App: protoemu40 or protoemu. Needs: `rx`, `budget`.
 
 **Risk.** As `rx`. Also: these commands give the Pi's eth0 an address, so run them only on the isolated cable, and take the address off after.
 
-**Before you start.** Nothing moves. This needs `budget` passed, the `eth-stack` files, and a clock: `protoemu40` has exact transmit half cells and the stronger pins, but its receive has no margin against 802.3's jitter (a ping passed at +-12 ns on one model seed), and `protoemu` is the reverse (40/60 ns transmit half cells, 4 mA). docs/eth10-network.md: neither clock gets both ends right. Use whichever `rx` passed on.
+**Before you start.** Nothing moves: this is step `rx`'s wiring, listed again so you check it. This needs `budget` passed, the `eth-stack` files, and a clock: `protoemu40` has exact transmit half cells and the stronger pins, but its receive has no margin against 802.3's jitter (a ping passed at +-12 ns on one model seed), and `protoemu` is the reverse (40/60 ns transmit half cells, 4 mA). docs/eth10-network.md: neither clock gets both ends right. Use whichever `rx` passed on.
 
 Start the launcher, then the Pi's commands. With no Wi-Fi on the Pi, put them in a delayed script as `rx` does, sending ping's output to a file.
 
@@ -1207,11 +1247,33 @@ Start the launcher, then the Pi's commands. With no Wi-Fi on the Pi, put them in
 
 | From | To |
 |---|---|
-| Same as step rx | nothing moves |
+| J2 silkscreen 1 (TD+) | a2 |
+| 220 ohm | b2 to b6 |
+| 100 nF | c6 to c8 |
+| J2 silkscreen 3 (TD-) | a12 |
+| 220 ohm | b12 to b16 |
+| 100 nF | c16 to c18 |
+| RJ45 pin 3 | a8 |
+| RJ45 pin 6 | a18 |
+| J2 silkscreen 9 (GND) | a29 |
+| 220 ohm | d25 to d29 |
+| 220 ohm | e25 to e29 |
+| 1 kohm | c21 to c25 |
+| 1 kohm | b21 to b29 |
+| 1 kohm | d17 to d21 |
+| J2 silkscreen 11 (3.3 V) | a17 |
+| J2 silkscreen 7 (RX in) | a21 |
+| RJ45 pin 2 | c29 |
+| RJ45 pin 1 | a25 |
+| Patch cable: breakout to Pi eth0, last | not to the switch |
 
 **Must stay disconnected:**
 
-* As step rx
+* The switch and every other network port: the 220 ohm termination is sized for the Pi's pair
+* RJ45 pins 4, 5, 7, 8
+* The USB plug, in any port
+* Any GND wire to the Pi: RJ45 pin 2 ties the Pi's isolated pair to the Kria's GND here
+* Every other switch, router or wall network socket: this wiring may only ever touch the Tenda SG105 or the Pi. Any of them could carry 48 V PoE
 
 **On the Pi:**
 
@@ -1241,12 +1303,14 @@ Type at its prompt: `pin risk accepted wired ping`. It enables only: silkscreen 
 * Carrier sense never lets it send: if RX sits high at idle the core waits; the `20 ms` limit in docs/eth10-network.md applies.
 ## End of the day
 
-1. `hd off`, then pull every wire from J2.
-2. Back to the 50 MHz app: `sudo xmutil unloadapp; sudo xmutil loadapp protoemu`.
-3. To restore the USB wiring: the three 1 kohm go back at `j3`-`j7`, `i7`-`i11`, `g7`-`g11`, the
+1. The patch cable out of the breakout first: with J2 11 out and J2 7 still in, the bias
+   is gone and the pad would follow the pair through 1 kohm.
+2. `hd off`. Then the J2 wires, signal pins first, 9 and 11 last.
+3. Back to the 50 MHz app: `sudo xmutil unloadapp; sudo xmutil loadapp protoemu`.
+4. To restore the USB wiring: the three 1 kohm go back at `j3`-`j7`, `i7`-`i11`, `g7`-`g11`, the
    jumper `f11`-`f22` stays, then J2 silkscreen 1 to `a30`, 3 to `a20`, 11 to `i3`. Tape the black
    wire. The USB plug goes back in the Kria.
-4. Keep `watch.log`, the `watch.pcap.*` files and what each `hd run` printed. Results go into
+5. Keep `watch.log`, the `watch.pcap.*` files and what each `hd run` printed. Results go into
    `fpga/kv260/README.md` with their logs. Say FPGA, say what was and wasn't measured, and
    give the failures too.
 

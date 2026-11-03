@@ -4,8 +4,10 @@ firmware program or the assembler, paired with the test that must catch it.
 Each runs in a scratch copy of the tracked files; the working tree is never
 touched. Exit status 1 if any mutant survives.
 
-    python3 test/mutants.py [name ...]      # from the repo root (needs the test env)
+    python3 test/mutants.py [name or pattern ...]      # from the repo root (needs the test env)
+    python3 test/mutants.py 'hw-*'                     # the hardware-day launcher and fabric guard
 """
+import fnmatch
 import os
 import pathlib
 import shutil
@@ -29,6 +31,8 @@ def top(test):
 def pytest(spec):
     return f"PYTHONPATH=tools python -m pytest -q -x -p no:cacheprovider --junitxml=m.xml {spec} > m.log 2>&1"
 
+
+HW_TESTS = pytest("test/model/test_hw_day.py test/model/test_fabric_guard.py")
 
 # name: (file, original text, mutated text, test command)
 MUTANTS = {
@@ -167,6 +171,118 @@ MUTANTS = {
                          pytest("test/model/test_pmbus.py -k through_the_firmware")),
     "fw-smbus-pec-not-checked": ("firmware/smbus_host.pasm", "    ldi r1, 0x8200\n", "    ldi r1, 0x8100\n",
                                  pytest("test/model/test_pmbus.py -k every_single_bit")),
+    "hw-no-prereq-check": ("fpga/kv260/host/hw_day.py", '    if left:\n',
+        '    if False:\n', HW_TESTS),
+    "hw-direct-needs-only": ("fpga/kv260/host/hw_day.py", '    return [n for n in closure(step) if not fresh(state, n)]',
+        '    return [n for n in step.needs if not fresh(state, n)]', HW_TESTS),
+    "hw-never-expires": ("fpga/kv260/host/hw_day.py", '0 <= time.time() - t < MAX_AGE_S',
+        't >= 0', HW_TESTS),
+    "hw-future-time-counts": ("fpga/kv260/host/hw_day.py", '0 <= time.time() - t < MAX_AGE_S',
+        'time.time() - t < MAX_AGE_S', HW_TESTS),
+    "hw-usb-pi-keeps-usb-off": ("fpga/kv260/host/hw_day.py", '         clears=("usb-off",),\n',
+        '', HW_TESTS),
+    "hw-clear-only-at-pass": ("fpga/kv260/host/hw_day.py", '            if step.clears:                 # the wiring is on now, whatever happens next',
+        '            if False:', HW_TESTS),
+    "hw-rx-no-usb-removal": ("fpga/kv260/host/hw_day.py", '         remove=("USB plug out of the Pi first, before anything else here", "USB cable\'s black wire out of a24, and taped",\n',
+        '         remove=(\n', HW_TESTS),
+    "hw-root-at-import": ("fpga/kv260/host/hw_day.py", 'STATE = "/var/tmp/hw_day_state.json"',
+        'ROOT = HERE.parents[2]\nSTATE = "/var/tmp/hw_day_state.json"', HW_TESTS),
+    "hw-phrase-ignored": ("fpga/kv260/host/hw_day.py", 'if prompt(read, "> ") != step.typed():',
+        'if prompt(read, "> ") == "never":', HW_TESTS),
+    "hw-pins-not-turned-off": ("fpga/kv260/host/hw_day.py", '                        rig.spim.pmod({})\n                    finally:',
+        '                        pass\n                    finally:', HW_TESTS),
+    "hw-close-skipped": ("fpga/kv260/host/hw_day.py", '                    finally:\n                        rig.close()',
+        '                    finally:\n                        pass', HW_TESTS),
+    "hw-signal-interrupts-off": ("fpga/kv260/host/hw_day.py", '                    sig.live = False             # nothing interrupts the turning off\n',
+        '', HW_TESTS),
+    "hw-sighup-not-caught": ("fpga/kv260/host/hw_day.py", 'NAMES = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)',
+        'NAMES = (signal.SIGINT, signal.SIGTERM)', HW_TESTS),
+    "hw-off-writes-nothing": ("fpga/kv260/host/hw_day.py", '    Spim().pmod({})\n',
+        '    Spim()\n', HW_TESTS),
+    "hw-off-always-refuses": ("fpga/kv260/host/hw_day.py", '        fabric_guard.check(listapps_fn or listapps, env={fabric_guard.OVERRIDE: told} if told else {})\n    except fabric_guard.NoActiveApp as e:\n        raise Refused("NOTHING',
+        '        raise fabric_guard.NoActiveApp("x")\n    except fabric_guard.NoActiveApp as e:\n        raise Refused("NOTHING', HW_TESTS),
+    "hw-off-false-reassurance": ("fpga/kv260/host/hw_day.py", '"NOTHING WAS WRITTEN: don\'t assume the pins are off. Pull the wires from J2. If the table "',
+        '"every pin is off "', HW_TESTS),
+    "hw-forget-does-nothing": ("fpga/kv260/host/hw_day.py", '            state.pop(a.step, None)\n',
+        '', HW_TESTS),
+    "hw-i2c-capture-drives": ("fpga/kv260/host/hw_day.py", '    k.pfd.setup(rig)\n    la_load(rig, k, 0b11)\n',
+        '    k.pfd.setup(rig, poe=0b11)\n    la_load(rig, k, 0b11)\n', HW_TESTS),
+    "hw-tx-bench-pins-first": ("fpga/kv260/host/hw_day.py", '    k.pfd.setup(rig)\n    ctx.spim.pmod({0: UO0, 1: UO1})\n    for column',
+        '    ctx.spim.pmod({0: UO0, 1: UO1})\n    k.pfd.setup(rig)\n    for column', HW_TESTS),
+    "hw-i2c-lines-not-released": ("fpga/kv260/host/hw_day.py", 'owners={UIO0: 1, UIO1: 1}, od=0b11, pout=0b11',
+        'owners={UIO0: 1, UIO1: 1}, od=0, pout=0', HW_TESTS),
+    "hw-pi-send-on-a-network": ("fpga/kv260/host/hw_day.py", '    if default_route_on(iface, route):\n',
+        '    if False:\n', HW_TESTS),
+    "hw-pi-send-off-a-pi": ("fpga/kv260/host/hw_day.py", '    if not is_pi(model):\n        raise Refused("pi-send',
+        '    if False:\n        raise Refused("pi-send', HW_TESTS),
+    "hw-pi-send-no-link": ("fpga/kv260/host/hw_day.py", '    if "carrier 1 " not in link_line(iface, net):',
+        '    if False:', HW_TESTS),
+    "hw-pi-watch-off-a-pi": ("fpga/kv260/host/hw_day.py", '    if not is_pi(model):\n        raise Refused("pi-watch',
+        '    if False:\n        raise Refused("pi-watch', HW_TESTS),
+    "hw-no-app-check": ("fpga/kv260/host/hw_day.py", 'app = check_app(step, listapps_fn, told)',
+        'app = told or "protoemu40"', HW_TESTS),
+    "hw-wrong-app": ("fpga/kv260/host/hw_day.py", '    if app not in step.apps:\n',
+        '    if False:\n', HW_TESTS),
+    "hw-guard-open": ("fpga/kv260/host/hw_day.py", 'if tt is not None and tt not in self._allowed.get(pin, ()):',
+        'if False:', HW_TESTS),
+    "hw-other-scripts-ignored": ("fpga/kv260/host/hw_day.py", '        if others:\n',
+        '        if False:\n', HW_TESTS),
+    "hw-lock-open": ("fpga/kv260/host/hw_day.py", 'fcntl.flock(self.f, fcntl.LOCK_EX | fcntl.LOCK_NB)',
+        'pass', HW_TESTS),
+    "hw-pass-not-asked": ("fpga/kv260/host/hw_day.py", 'if prompt(read, "> ") != phrase:',
+        'if False:', HW_TESTS),
+    "hw-usb-off-not-needed": ("fpga/kv260/host/hw_day.py", 'Step("rails", "Find GND and 3.3 V on J2 without a meter", needs=("usb-off",)',
+        'Step("rails", "Find GND and 3.3 V on J2 without a meter", needs=("preflight",)', HW_TESTS),
+    "hw-isolated-cable-not-needed": ("fpga/kv260/host/hw_day.py", 'needs=("tx-pi",), apps=("protoemu40",),\n         action="tx", pins={0: {UO0}, 1: {UO1}}, phrase="not poe',
+        'needs=("rails",), apps=("protoemu40",),\n         action="tx", pins={0: {UO0}, 1: {UO1}}, phrase="not poe', HW_TESTS),
+    "hw-poe-phrase-gone": ("fpga/kv260/host/hw_day.py", 'phrase="not poe wired tx-switch",',
+        '', HW_TESTS),
+    "hw-read-pin": ("fpga/kv260/host/hw_day.py", 'READ_PIN = 3 ',
+        'READ_PIN = 2 ', HW_TESTS),
+    "hw-tx-divider": ("fpga/kv260/host/hw_day.py", '{40e6: 1 << 8, 50e6: 320}',
+        '{40e6: 320, 50e6: 320}', HW_TESTS),
+    "hw-rails-one-read": ("fpga/kv260/host/hw_day.py", 'need(reads == [1, 0, 1]',
+        'need(reads[0] == 1', HW_TESTS),
+    "hw-clk-div-unchecked": ("fpga/kv260/host/hw_day.py", 'if rig.ident["clk_div"] != APPS[app]:',
+        'if False:', HW_TESTS),
+    "hw-stuck-pad-ignored": ("fpga/kv260/host/hw_day.py", 'need(high < 0.5,',
+        'need(True,', HW_TESTS),
+    "hw-eth-stack-unchecked": ("fpga/kv260/host/hw_day.py", '    if absent:\n        raise Refused(f"{step.name} needs',
+        '    if False:\n        raise Refused(f"{step.name} needs', HW_TESTS),
+    "hw-ethsim-unlisted": ("fpga/kv260/host/hw_day.py", '"tools/pe/eth.py", "tools/pe/ethsim.py", "firmware',
+        '"tools/pe/eth.py", "firmware', HW_TESTS),
+    "hw-hit-below-threshold": ("fpga/kv260/host/hw_day.py", 'need(not any(r[0] is not None for r in results[3000])',
+        'need(True or any(r[0] is not None for r in results[3000])', HW_TESTS),
+    "hw-sampler-too-short": ("fpga/kv260/host/hw_day.py", 'rig.burst(1, 4096, 1, True)[9:]',
+        'rig.burst(1, 16, 1, True)[9:]', HW_TESTS),
+    "hw-hit-pin-wrong": ("fpga/kv260/host/hw_day.py", '.replace(".define HIT 8", ".define HIT 1")',
+        '.replace(".define HIT 8", ".define HIT 3")', HW_TESTS),
+    "hw-mitm-wrong-register": ("fpga/kv260/host/hw_day.py", 'reg = min(mem)',
+        'reg = max(mem)', HW_TESTS),
+    "hw-rx-parts-overlap": ("fpga/kv260/host/hw_day.py", '("1 kohm", "d17 to d21"),',
+        '("1 kohm", "d17 to d27"),', HW_TESTS),
+    "hw-cut-no-wiring": ("fpga/kv260/host/hw_day.py", 'phrase="pin risk accepted wired cut",\n         wires=RX_WIRES,',
+        'phrase="pin risk accepted wired cut",\n         wires=(("Same as step rx", "nothing moves"),),', HW_TESTS),
+    "hw-corrupt-state-crashes": ("fpga/kv260/host/hw_day.py", '    except ValueError:\n        state = None\n',
+        '', HW_TESTS),
+    "hw-spim-unguarded": ("fpga/kv260/host/pe_spim.py", '        fabric_guard.require_app()',
+        '        pass', HW_TESTS),
+    "hw-kria-unguarded": ("fpga/kv260/host/pe_kria.py", '        fabric_guard.require_app()',
+        '        pass', HW_TESTS),
+    "hw-lab-unguarded": ("fpga/kv260/host/pe_lab.py", '        fabric_guard.require_app()',
+        '        pass', HW_TESTS),
+    "hw-guard-state-ignored": ("fpga/kv260/host/fabric_guard.py", 'if s is not None and s != "operating":',
+        'if False:', HW_TESTS),
+    "hw-guard-firmware-ignored": ("fpga/kv260/host/fabric_guard.py", 'if f is not None and f != app + ".bit.bin":',
+        'if False:', HW_TESTS),
+    "hw-guard-other-app": ("fpga/kv260/host/fabric_guard.py", 'if not app.startswith(APP_PREFIX):',
+        'if False:', HW_TESTS),
+    "hw-guard-override-beats-table": ("fpga/kv260/host/fabric_guard.py", 'if app is None and understood:',
+        'if False:', HW_TESTS),
+    "hw-guard-disagreement-allowed": ("fpga/kv260/host/fabric_guard.py", 'if app is not None and told and told != app:',
+        'if False:', HW_TESTS),
+    "hw-guard-xmutil-status": ("fpga/kv260/host/fabric_guard.py", 'if r.returncode:',
+        'if False:', HW_TESTS),
 }
 
 
@@ -239,7 +355,19 @@ def run(name, scratch, baselines, candidate, files):
     return f"{'SURVIVED' if status == 'pass' else status} ({time.time() - t:.0f} s)"
 
 
-def main(names):
+def select(patterns):
+    """Mutant names for shell-style patterns; a pattern that matches none is an error."""
+    names = []
+    for pattern in patterns:
+        hit = fnmatch.filter(MUTANTS, pattern)
+        if not hit:
+            sys.exit(f"no mutant matches {pattern!r}")
+        names += hit
+    return names
+
+
+def main(patterns):
+    names = select(patterns)
     scratch = tempfile.mkdtemp(prefix="protoemu-mutants-")
     bad = 0
     baselines = {}
