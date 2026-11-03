@@ -17,12 +17,12 @@ import pe_lab                                  # noqa: E402
 import pe_spim                                 # noqa: E402
 
 HEADER = "Accelerator  Accel_type  Base  Pid  Base_type  #slots(RPU+PL+AIE)  slot->handle"
-# The header and each row's last two fields are as read on the board; the middle fields
-# (type, base, Pid, base type) were not quoted, so these values stand in for them.
+# Rows as the board printed them on 2026-11-03 (listapps-20261103.txt, the whole table:
+# test_the_boards_whole_table_on_2026_11_03), spacing aside.
 
 
 def row(name, active=False):
-    return f"  {name}  XRT_FLAT  {name}  0  XRT_FLAT  (0+0+0)  {'0->0,' if active else '-1'}"
+    return f"  {name}  XRT_FLAT  {name}  id_ok  XRT_FLAT  (0+0+0)  {'0->0,' if active else '-1'}"
 
 
 def table(active=None, names=("k26-starter-kits", "protoemu", "protoemu40", "protoemu48")):
@@ -69,7 +69,10 @@ def test_the_incident_refuses(kernel):
     (HEADER + "\n", "didn't print its table"),
     (table("protoemu40").replace(HEADER, ""), "didn't print its table"),
     (HEADER + "\n" + table("protoemu40"), "2 headers"),
-    (table("protoemu40").replace("0  XRT_FLAT  (0+0+0)  0->0,", "XRT_FLAT  (0+0+0)  0->0,"), "isn't a row"),
+    (table("protoemu40").replace("id_ok  XRT_FLAT  (0+0+0)  0->0,", "XRT_FLAT  (0+0+0)  0->0,"), "isn't a row"),
+    (table("protoemu40").replace("protoemu40  id_ok", "protoemu40  extra  id_ok"), "isn't a row"),
+    (table("protoemu40").replace("protoemu40  id_ok  XRT_FLAT  (0+0+0)  0->0,", "protoemu40  0  XRT_FLAT  (0+0+0)  0->0,"),
+     "isn't a row"),
     (table("protoemu40").replace("(0+0+0)  0->0,", "(0+0+0)  0->0,  extra"), "isn't a row"),
     (table("protoemu40").replace("(0+0+0)  0->0,", "(0+0)  0->0,"), "isn't a row"),
     (table("protoemu40").replace("0->0,", "0,"), "isn't a row"),
@@ -290,3 +293,61 @@ def test_require_app_expect_still_needs_every_check(monkeypatch, kernel):
 def test_app_names_for_the_clocks():
     assert fg.APP_FOR_MHZ == {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}
     assert set(fg.APP_FOR_MHZ.values()) == set(fg.KNOWN)
+
+
+# ---------------------------------------------------------------- the board's whole table, verbatim
+BOARD_TABLE = (pathlib.Path(__file__).parent / "listapps-20261103.txt").read_text()
+MERGED = "kv260-q5-full-pq5-g32d128_gbpd-150"           # a name that fills Base's column
+
+
+@pytest.fixture
+def protoemu_kernel(kernel):
+    kernel["firmware"].write_bytes(b"protoemu.bit.bin\0")
+    return kernel
+
+
+def test_the_boards_whole_table_on_2026_11_03(protoemu_kernel):
+    """`sudo xmutil listapps` on the Kria after the separate unload/load/listapps
+    sequence, 58 lines as printed, rows with Accel_type and Base run together
+    included. Refused before the merged rows were read (the 2026-11-03 runbook stop)."""
+    lines = BOARD_TABLE.splitlines()
+    assert len(lines) == 58 and sum(line.endswith("-1") for line in lines) == 56
+    assert f"XRT_FLAT{MERGED}" in BOARD_TABLE
+    r = fg.rows(BOARD_TABLE)
+    assert len(r) == 57 and (MERGED, "-1") in r and ("protoemu", "0->0,") in r
+    assert sum(n.startswith("kv260-") for n, _ in r) == 52
+    assert sum(len(line.split()) == 6 for line in lines) == 42     # the merged rows
+    assert check(BOARD_TABLE, protoemu_kernel) == "protoemu"
+
+
+@pytest.mark.parametrize("spoil,why", [
+    (lambda t: t.replace("0->0,", "-1"), "no active app"),
+    (lambda t: t.replace("protoemu40  id_ok    XRT_FLAT             (0+0+0)              -1",
+                         "protoemu40  id_ok    XRT_FLAT             (0+0+0)           0->0,"), "2 active rows"),
+    (lambda t: t + "protoemu: Load Error: -1\n", "isn't a row"),
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}", f"XRT_FLAT{MERGED[:-1]}"), "isn't a row"),       # Base isn't the name
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}", MERGED), "isn't a row"),                       # no type before it
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}", f"xrt_flat{MERGED}"), "isn't a row"),          # not a type
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}  id_ok", f"XRT_FLAT{MERGED}  1234"), "isn't a row"),
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}  id_ok    XRT_FLAT", f"XRT_FLAT{MERGED}  id_ok    XRT_FULL"),
+     "isn't a row"),
+    (lambda t: t.replace(f"XRT_FLAT{MERGED}", f"XRT_FLAT {MERGED} extra"), "isn't a row"),
+    (lambda t: t.replace("(0+0+0)           0->0,", "(0+0+0)           0->0"), "isn't a row"),
+    (lambda t: t + t.splitlines()[1] + "\n", "lists an app twice"),
+    (lambda t: "\n".join(t.splitlines()[1:]), "didn't print its table"),
+])
+def test_the_boards_table_spoiled_one_way_at_a_time_refuses(protoemu_kernel, spoil, why):
+    text = spoil(BOARD_TABLE)
+    assert text != BOARD_TABLE
+    with pytest.raises(fg.NoActiveApp, match=why):
+        check(text, protoemu_kernel)
+
+
+def test_a_merged_row_is_read_only_as_type_then_its_own_name():
+    assert fg.row(f"{MERGED}    XRT_FLAT{MERGED}  id_ok    XRT_FLAT   (0+0+0)   -1") == (MERGED, "-1")
+    assert fg.row("ab    XRT_FLATab  id_ok    XRT_FLAT   (0+0+0)   0->0,") == ("ab", "0->0,")
+    for bad in ("ab    XRT_FLATxab  id_ok    XRT_FLAT   (0+0+0)   -1",       # the type would be XRT_FLATx
+                "ab    ab  id_ok    XRT_FLAT   (0+0+0)   -1",
+                "ab    XRT_FLATab  id_ok    XRT_FLAT   (0+0+0)",
+                "-ab    XRT_FLAT-ab  id_ok    XRT_FLAT   (0+0+0)   -1"):
+        assert fg.row(bad) is None

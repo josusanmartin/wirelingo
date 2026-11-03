@@ -520,7 +520,8 @@ def need(cond, msg):
 def act_preflight(ctx):
     sys.path.insert(0, str(HERE))
     from pe_spim import PMOD0, PMOD1
-    apps = listapps()
+    import fabric_guard
+    apps = [name for name, _ in fabric_guard.rows(listapps())]      # rows, not text: protoemu is in protoemu40
     absent = [a for a in APPS if a not in apps]
     ctx.say(f"installed apps checked: {'all three' if not absent else 'MISSING ' + ', '.join(absent)}")
     i = ctx.rig.ident

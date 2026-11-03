@@ -17,10 +17,14 @@ memory or on disk, never a fabric address, and this module maps nothing
 (test_fabric_guard.py proves it doesn't open /dev/mem):
 
 1. `xmutil listapps` (a subprocess), in exactly the table's format as read on the board
-   on 2026-11-03: its header, seven columns a row, the slot count as `(n+n+n)`, the
-   slot field `-1` or `n->n,`, exactly one active row, and that row's name one of
-   KNOWN. Any other line, an error message included, refuses. xmutil asks the dfx-mgr
-   daemon for its bookkeeping: from its documented design, not its source.
+   on 2026-11-03 (all 58 lines: test/model/listapps-20261103.txt): its header, then rows
+   of name, Accel_type, Base (= the name), Pid `id_ok`, Base_type (= Accel_type), the
+   slot count as `(n+n+n)`, the slot field `-1` or `n->n,`. When a name fills Base's
+   column, xmutil prints Accel_type and Base with no space between (`XRT_FLATkv260-q5-...`):
+   a six-field row is read as that, and only when the merged field is a type followed by
+   exactly the row's name. Exactly one active row, its name one of KNOWN. Any other line,
+   an error message included, refuses. xmutil asks the dfx-mgr daemon for its
+   bookkeeping: from its documented design, not its source.
 2. /proc/device-tree/fpga-region/firmware-name must be "<app>.bit.bin". The overlay
    (protoemu.dtsi, renamed per app by install.sh) sets it, and the board's boot log names
    that path (`OF: overlay: WARNING: memory leak will occur if overlay removed, property:
@@ -47,6 +51,9 @@ APP_FOR_MHZ = {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}   # install.s
 HEADER = ["Accelerator", "Accel_type", "Base", "Pid", "Base_type", "#slots(RPU+PL+AIE)", "slot->handle"]
 SLOTS = re.compile(r"\(\d+\+\d+\+\d+\)")
 ACTIVE = re.compile(r"\d+->\d+,")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+TYPE = re.compile(r"[A-Z][A-Z0-9_]*")            # XRT_FLAT on every row on 2026-11-03
+PID = "id_ok"                                      # the Pid field of every row on 2026-11-03
 FPGA_STATE = "/sys/class/fpga_manager/fpga0/state"
 FIRMWARE_NAME = "/proc/device-tree/fpga-region/firmware-name"
 FIRMWARE_DIR = "/lib/firmware/xilinx"
@@ -61,10 +68,30 @@ class NoActiveApp(RuntimeError):
     """Nothing was mapped: the fabric can't be shown to hold our app."""
 
 
-def parse(text):
-    """The one active row's name, or None when every row is inactive. Anything that
-    isn't this table, exactly, raises."""
-    rows, headers = [], 0
+def row(line):
+    """(name, slot field) of one table row, or None if the line isn't one. The last
+    four fields and the first never run into others; Accel_type and Base can."""
+    t = line.split()
+    if len(t) == len(HEADER):
+        name, kind, base = t[0], t[1], t[2]
+    elif len(t) == len(HEADER) - 1:                   # Accel_type and Base run together
+        name, merged = t[0], t[1]
+        if len(merged) <= len(name) or not merged.endswith(name):
+            return None
+        kind, base = merged[:-len(name)], name
+    else:
+        return None
+    pid, base_type, slots, slot = t[-4:]
+    if (not NAME.fullmatch(name) or base != name or not TYPE.fullmatch(kind) or pid != PID
+            or base_type != kind or not SLOTS.fullmatch(slots) or not (slot == "-1" or ACTIVE.fullmatch(slot))):
+        return None
+    return name, slot
+
+
+def rows(text):
+    """Every row of the table, [(name, slot field)]. Anything that isn't this table,
+    exactly, raises."""
+    out, headers = [], 0
     for line in text.splitlines():
         t = line.split()
         if not t:
@@ -72,12 +99,22 @@ def parse(text):
         if t == HEADER:
             headers += 1
             continue
-        if len(t) != len(HEADER) or not SLOTS.fullmatch(t[5]) or not (t[6] == "-1" or ACTIVE.fullmatch(t[6])):
+        r = row(line)
+        if r is None:
             raise NoActiveApp(f"`xmutil listapps` printed a line that isn't a row of its table: {line.strip()!r}. {STOP}")
-        rows.append(t)
-    if headers != 1 or not rows:
-        raise NoActiveApp(f"`xmutil listapps` didn't print its table ({headers} headers, {len(rows)} rows). {STOP}")
-    active = [t[0] for t in rows if t[6] != "-1"]
+        out.append(r)
+    if headers != 1 or not out:
+        raise NoActiveApp(f"`xmutil listapps` didn't print its table ({headers} headers, {len(out)} rows). {STOP}")
+    names = [n for n, _ in out]
+    if len(set(names)) != len(names):
+        raise NoActiveApp(f"`xmutil listapps` lists an app twice. {STOP}")
+    return out
+
+
+def parse(text):
+    """The one active row's name, or None when every row is inactive. Anything that
+    isn't this table, exactly, raises."""
+    active = [n for n, slot in rows(text) if slot != "-1"]
     if len(active) > 1:
         raise NoActiveApp(f"`xmutil listapps` shows {len(active)} active rows, {active}: one slot holds one. {STOP}")
     return active[0] if active else None

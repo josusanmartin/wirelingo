@@ -1,0 +1,58 @@
+                   Accelerator  Accel_type                    Base    Pid   Base_type  #slots(RPU+PL+AIE)    slot->handle
+              kv260-tmma-mmult    XRT_FLAT        kv260-tmma-mmult  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g32d128_gbpd-150    XRT_FLATkv260-q5-full-pq5-g32d128_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g64d128_gb2p-150    XRT_FLATkv260-q5-full-pq5-g64d128_gb2p-150  id_ok    XRT_FLAT             (0+0+0)              -1
+       kv260-q4-gemv-4lane-200    XRT_FLAT kv260-q4-gemv-4lane-200  id_ok    XRT_FLAT             (0+0+0)              -1
+   kv260-q3-k-ffn-fused-r8-100    XRT_FLATkv260-q3-k-ffn-fused-r8-100  id_ok    XRT_FLAT             (0+0+0)              -1
+                    protoemu40    XRT_FLAT              protoemu40  id_ok    XRT_FLAT             (0+0+0)              -1
+  kv260-q5-full-g16d8_wdg2-150    XRT_FLATkv260-q5-full-g16d8_wdg2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q4-gemv-8lane-burst18-200    XRT_FLATkv260-q4-gemv-8lane-burst18-200  id_ok    XRT_FLAT             (0+0+0)              -1
+       kv260-q3-k-ffn-gate-125    XRT_FLAT kv260-q3-k-ffn-gate-125  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q8-0-gemma-lmhead-q8act-pair-170    XRT_FLATkv260-q8-0-gemma-lmhead-q8act-pair-170  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q4-gemv-8lane-burst18-alignedargs-200    XRT_FLATkv260-q4-gemv-8lane-burst18-alignedargs-200  id_ok    XRT_FLAT             (0+0+0)              -1
+             kv260-q4-gemv-200    XRT_FLAT       kv260-q4-gemv-200  id_ok    XRT_FLAT             (0+0+0)              -1
+                    protoemu48    XRT_FLAT              protoemu48  id_ok    XRT_FLAT             (0+0+0)              -1
+     kv260-q4-gemv-cacheq8-210    XRT_FLATkv260-q4-gemv-cacheq8-210  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g8d8_wd2k2-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2k2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+           kv260-q8-0-gemv-173    XRT_FLAT     kv260-q8-0-gemv-173  id_ok    XRT_FLAT             (0+0+0)              -1
+      kv260-q3-k-ffn-fused-100    XRT_FLATkv260-q3-k-ffn-fused-100  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r8-balign-l4-100    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-100  id_ok    XRT_FLAT             (0+0+0)              -1
+              kv260-mem-bw-165    XRT_FLAT        kv260-mem-bw-165  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g64d64_gbpd-150    XRT_FLATkv260-q5-full-pq5-g64d64_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q4-gemv-8lane-burst18-guardless-200    XRT_FLATkv260-q4-gemv-8lane-burst18-guardless-200  id_ok    XRT_FLAT             (0+0+0)              -1
+    kv260-q5-full-pq5-g4d4-150    XRT_FLATkv260-q5-full-pq5-g4d4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+              kv260-vadd-smoke    XRT_FLAT        kv260-vadd-smoke  id_ok    XRT_FLAT             (0+0+0)              -1
+   kv260-q3-k-ffn-gate-r16-125    XRT_FLATkv260-q3-k-ffn-gate-r16-125  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g8d32_bm32-150    XRT_FLATkv260-q5-full-pq5-g8d32_bm32-150  id_ok    XRT_FLAT             (0+0+0)              -1
+    kv260-q5-full-pq5-g1d4-150    XRT_FLATkv260-q5-full-pq5-g1d4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r8-fastscale-100    XRT_FLATkv260-q3-k-ffn-fused-r8-fastscale-100  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q4-gemv-8lane-burst18-alignedargs-200-hpc    XRT_FLATkv260-q4-gemv-8lane-burst18-alignedargs-200-hpc  id_ok    XRT_FLAT             (0+0+0)              -1
+        kv260-q6-k-lm-head-125    XRT_FLAT  kv260-q6-k-lm-head-125  id_ok    XRT_FLAT             (0+0+0)              -1
+ kv260-q5-0-gemma-ffn-gate-170    XRT_FLATkv260-q5-0-gemma-ffn-gate-170  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g64d128_pdf-150    XRT_FLATkv260-q5-full-pq5-g64d128_pdf-150  id_ok    XRT_FLAT             (0+0+0)              -1
+     kv260-q4-gemv-cacheq8-200    XRT_FLATkv260-q4-gemv-cacheq8-200  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r8-balign-l4-150    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+              k24-starter-kits    XRT_FLAT        k24-starter-kits  id_ok    XRT_FLAT             (0+0+0)              -1
+                      protoemu    XRT_FLAT                protoemu  id_ok    XRT_FLAT             (0+0+0)           0->0,
+kv260-q4-gemv-8lane-intacc-200    XRT_FLATkv260-q4-gemv-8lane-intacc-200  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-0-gemma-ffn-gateup-q8pack-brow-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-brow-165  id_ok    XRT_FLAT             (0+0+0)              -1
+         kv260-benchmark-b4096    XRT_FLAT   kv260-benchmark-b4096  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g4d16_wd2k2np-150    XRT_FLATkv260-q5-full-pq5-g4d16_wd2k2np-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g8d8_wd2k2np-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2k2np-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g32d64_gbpd-150    XRT_FLATkv260-q5-full-pq5-g32d64_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r16-balign-l4-dgu-150    XRT_FLATkv260-q3-k-ffn-fused-r16-balign-l4-dgu-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r8-balign-l4-125    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-125  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-0-gemma-ffn-gate-q8pack-170    XRT_FLATkv260-q5-0-gemma-ffn-gate-q8pack-170  id_ok    XRT_FLAT             (0+0+0)              -1
+    kv260-q3-k-ffn-gate-r8-125    XRT_FLATkv260-q3-k-ffn-gate-r8-125  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g64d128_gbso-150    XRT_FLATkv260-q5-full-pq5-g64d128_gbso-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-0-gemma-ffn-gateup-q8pack-r48s8-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-r48s8-165  id_ok    XRT_FLAT             (0+0+0)              -1
+           kv260-q8-0-gemv-170    XRT_FLAT     kv260-q8-0-gemv-170  id_ok    XRT_FLAT             (0+0+0)              -1
+              k26-starter-kits    XRT_FLAT        k26-starter-kits  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g32d32_gb-150    XRT_FLATkv260-q5-full-pq5-g32d32_gb-150  id_ok    XRT_FLAT             (0+0+0)              -1
+ kv260-rnn34-int8-pingpong-232    XRT_FLATkv260-rnn34-int8-pingpong-232  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r16-balign-l4-150    XRT_FLATkv260-q3-k-ffn-fused-r16-balign-l4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-0-gemma-ffn-gateup-q8pack-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-165  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q3-k-ffn-fused-r8-fastscale-l2-100    XRT_FLATkv260-q3-k-ffn-fused-r8-fastscale-l2-100  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g32d64_gb-150    XRT_FLATkv260-q5-full-pq5-g32d64_gb-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g8d8_r64lut-150    XRT_FLATkv260-q5-full-pq5-g8d8_r64lut-150  id_ok    XRT_FLAT             (0+0+0)              -1
+kv260-q5-full-pq5-g8d8_wd2-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2-150  id_ok    XRT_FLAT             (0+0+0)              -1
