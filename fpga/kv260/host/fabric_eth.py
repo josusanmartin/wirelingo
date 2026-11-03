@@ -45,6 +45,7 @@ the app for this clock is the one active row. Nothing here loads an app.
 """
 import math
 import pathlib
+import signal
 import sys
 import time
 
@@ -52,6 +53,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import fabric_guard  # noqa: E402
+import pe_spim  # noqa: E402
 import postfreeze_demo as pfd  # noqa: E402  (sets up sys.path for tools/)
 import postfreeze2_demo as p2d  # noqa: E402
 import usb_replay_demo as urd  # noqa: E402  (imported here: a first import inside a capture takes ms on the Kria)
@@ -327,14 +329,64 @@ class FabricEth:
         self.rig.close()
 
 
-def board_rig(clock_hz):
+def board_parts():
+    """pe_kria.Board, pe_spim.Spim, pe_lab.Lab on /dev/mem. Building them reads
+    VERSION and MAGIC and drives the GPIO path's idle levels; it moves no select."""
+    from pe_kria import Board
+    from pe_lab import Lab
+    from pe_spim import Spim
+    return Board(), Spim(), Lab()
+
+
+def give_back(board, spim, lab):
+    """What HwRig.close does, for a rig that may be half built: quad off while the
+    host port is still on the fabric master, PMOD pins disabled, pe_lab in GPIO
+    mode, the host port back on the GPIO path. Every step is tried; no signal can
+    cut it short (they are ignored meanwhile). The first error is raised after."""
+    names = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    old = [signal.signal(n, signal.SIG_IGN) for n in names]
+    errors = []
+
+    def step(fn):
+        try:
+            fn()
+        except Exception as e:                   # noqa: BLE001 - every step must still run
+            errors.append(e)
+    try:
+        if spim.mem.rd(pe_spim.SEL) & 1:
+            spim.quad = False
+            step(lambda: spim.write(0x80B, 0))   # HOSTCFG: QUAD_EN off, a 1-bit write
+        step(lambda: lab.mode(pfd.GPIO))
+        step(lambda: board.set_inputs(uio=0xFF))
+        step(lambda: spim.pmod({}))
+        step(lambda: spim.select(fabric=False))
+    finally:
+        for n, h in zip(names, old):
+            signal.signal(n, h)
+    if errors:
+        raise errors[0]
+
+
+def board_rig(clock_hz, parts=None):
     """The KV260, after fabric_guard: the app for this clock must be the one active
-    row, or nothing maps the fabric. Never loads an app."""
+    row, or nothing maps the fabric. Never loads an app. What v2_demo.Hw and HwRig do
+    to the board while they are built (host port to the fabric master, ID read,
+    quad on, 2 s of clock measurement) is given back if that ends in any way but a
+    rig: an exception, Ctrl-C, or a signal eth_tap.run_closing turned into one."""
     if clock_hz not in (40e6, 50e6):
         raise ValueError("10BASE-T needs 40 or 50 MHz")
     fabric_guard.require_app(expect=fabric_guard.APP_FOR_MHZ[round(clock_hz / 1e6)])
-    rig = pfd.HwRig()
-    if rig.f_clk != clock_hz:
-        rig.close()
-        raise RuntimeError(f"the board's clock is {rig.f_meas / 1e6:.5f} MHz, not {clock_hz / 1e6:g}")
+    from v2_demo import Hw
+    board, spim, lab = (parts or board_parts)()
+    try:
+        board.reset()                            # what Hw() does when it builds its own board
+        rig = pfd.HwRig(hw=Hw(board=board, spim=spim, lab=lab))
+        if rig.f_clk != clock_hz:
+            raise RuntimeError(f"the board's clock is {rig.f_meas / 1e6:.5f} MHz, not {clock_hz / 1e6:g}")
+    except BaseException:
+        try:
+            give_back(board, spim, lab)
+        except Exception as e:                   # noqa: BLE001 - the first failure is the one to report
+            print(f"giving the board back failed too: {e!r}", file=sys.stderr)
+        raise
     return rig

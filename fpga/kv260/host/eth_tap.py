@@ -38,11 +38,13 @@ import os
 import pathlib
 import re
 import select
+import shutil
 import signal
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -438,15 +440,27 @@ def udp_echo(bridge, target, port, data, wait_s):
     return got[0] if got else None
 
 
+def said(f, keep=600):
+    """The end of what a subprocess wrote to the temporary file f."""
+    f.seek(0)
+    return f.read().decode(errors="replace").strip()[-keep:]
+
+
 def selftest(a, bridge):
     """Real ping and a real UDP socket. Exit status 0 only if every answer came
     and every frame that should go unanswered did."""
-    pcap = None
-    if a.pcap:
-        pcap = subprocess.Popen(["tcpdump", "-Z", "root", "-U", "-i", a.tap, "-w", a.pcap],
-                                stderr=subprocess.DEVNULL)
-        time.sleep(0.5)
-    res = {}
+    res, pcap, pcap_err = {}, None, None
+    if a.pcap:                                 # reported, never part of the pass: a capture is only a record
+        if shutil.which("tcpdump") is None:
+            res["pcap"] = "not taken: tcpdump is not on PATH"
+        else:
+            pcap_err = tempfile.TemporaryFile()
+            pcap = subprocess.Popen(["tcpdump", "-Z", "root", "-U", "-i", a.tap, "-w", a.pcap],
+                                    stdout=subprocess.DEVNULL, stderr=pcap_err)
+            time.sleep(0.5)
+            if pcap.poll() is not None:
+                res["pcap"] = dict(path=a.pcap, tcpdump_status=pcap.returncode, tcpdump_said=said(pcap_err))
+                pcap = None
     fabric = a.backend in FABRIC
     size = FABRIC_PING if fabric else 56
     n, rtt, text = ping(bridge, a.chip_ip, a.count, size, a.wait)
@@ -481,7 +495,12 @@ def selftest(a, bridge):
     if pcap:
         time.sleep(0.5)
         pcap.terminate()
-        pcap.wait()
+        status = pcap.wait()
+        size = os.path.getsize(a.pcap) if os.path.exists(a.pcap) else None
+        res["pcap"] = dict(path=a.pcap, bytes=size, tcpdump_status=status, tcpdump_said=said(pcap_err))
+        if not size:
+            print(f"--pcap: {a.pcap} is {'missing' if size is None else 'empty'}; tcpdump said: "
+                  f"{res['pcap']['tcpdump_said']!r}", file=sys.stderr)
     res["frames_to_chip"], res["frames_from_chip"] = bridge.to_chip, bridge.from_chip
     res["backend"] = bridge.backend.report()
     ok = (res["ping"]["received"] == a.count and (fabric or res["ping_1500_byte_packet"]["received"] == 2)
@@ -532,13 +551,14 @@ def probe(backend, chip_ip, host_ip):
                      tx_pulses=tx["pulses"], tx_frame_start=fr.get("start"), tx_driven_runs=fr.get("driven_runs"),
                      tx_tp_idl_ns=fr.get("tp_idl_ns"), tx_edges=fr.get("edges"), tx_both_high=tx["both_high"],
                      tx_f_go_cleared=tx["f_go_cleared"], tx_wall_ms=tx["wall_ms"], tx_why=tx.get("why"))
-            good = good and f == replies[0] and eth.fcs_ok(f)
+            good = good and f == replies[0] and eth.fcs_ok(f) and link_pulse_ok(tx, fab.clk_ns)
             if fab.rig.model:                  # every phase core 1's divider can have at the trigger
-                r["tx_edges_phases"] = [r["tx_edges"]]
+                r["tx_phases"] = [td_record(r)]
                 for k in range(1, backend.fe.TX_PHASES):
                     f2, tx2 = fab.transmit(replies[0], phase=k)
-                    good = good and f2 == replies[0]
-                    r["tx_edges_phases"].append(tx2["frames"][0]["edges"] if len(tx2["frames"]) == 1 else None)
+                    good = good and f2 == replies[0] and link_pulse_ok(tx2, fab.clk_ns)
+                    r["tx_phases"].append(dict(pulses=[list(p) for p in tx2["pulses"]],
+                                               edges=tx2["frames"][0]["edges"] if len(tx2["frames"]) == 1 else None))
         r["pass"] = good
         ok = ok and good
         out.append(r)
@@ -554,21 +574,40 @@ def probe(backend, chip_ip, host_ip):
 DETERMINISTIC = ("sent", "received_same", "rx_records", "rx_fifo_words", "replies", "reply", "td_same")
 
 
+def link_pulse_ok(tx, clk_ns):
+    """eth10_tx_cs starts with one 100 ns link pulse, before the frame's first edge."""
+    p, fr = tx["pulses"], tx["frames"]
+    return (len(p) == 1 and round(p[0][1] * clk_ns) == 100 and len(fr) == 1
+            and p[0][0] + p[0][1] < fr[0]["start"])
+
+
+def td_record(r):
+    """Everything seen on TD after the trigger, in clocks: the link pulses as (start,
+    width), then the frame burst's edges, from its first transition to the end of TP_IDL."""
+    return dict(pulses=[list(p) for p in r.get("tx_pulses") or []], edges=r.get("tx_edges"))
+
+
 def tx_timing(x, y):
-    """None if the TD edges agree to the clock, else why not. A model run carries the
-    edges for each phase of core 1's divider at the trigger (FabricEth.transmit),
-    and a board's run must be one of them."""
-    px, py = x.get("tx_edges_phases"), y.get("tx_edges_phases")
+    """None if TD agrees to the clock, link pulses and the frame's edges both, else
+    why not. A model run carries both for each phase of core 1's divider at the
+    trigger (FabricEth.transmit), and a board's run must be one of them."""
+    if any("tx_edges_phases" in r and "tx_phases" not in r for r in (x, y)):
+        return "a model file without link pulses per phase: run --backend fpga-model --probe again with this eth_tap"
+    px, py = x.get("tx_phases"), y.get("tx_phases")
     if px and py:
         return None if px == py else "the models' phases differ"
     if px or py:
-        phases, edges = (px, y.get("tx_edges")) if px else (py, x.get("tx_edges"))
-        if edges in phases:
-            print(f"  TD edges: {len(edges or [])} of them, equal to the model's at divider phase {phases.index(edges)}")
+        phases, seen = (px, td_record(y)) if px else (py, td_record(x))
+        if seen in phases:
+            print(f"  TD: link pulses {seen['pulses']} and {len(seen['edges'] or [])} frame edges, equal to the "
+                  f"model's at divider phase {phases.index(seen)}")
             return None
-        best = min(range(len(phases)), key=lambda k: sum(p != q for p, q in zip(phases[k] or [], edges or [])))
-        return f"TD edges equal to none of the model's {len(phases)} phases (closest: phase {best})"
-    return None if x.get("tx_edges") == y.get("tx_edges") else "TD edges differ"
+        best = min(range(len(phases)), key=lambda k: sum(p != q for p, q in zip(phases[k]["edges"] or [],
+                                                                                  seen["edges"] or [])))
+        pulses = "same" if phases[best]["pulses"] == seen["pulses"] else f"{phases[best]['pulses']} / {seen['pulses']}"
+        return (f"TD equal to none of the model's {len(phases)} phases (closest by frame edges: phase {best}; "
+                f"link pulses there {pulses})")
+    return None if td_record(x) == td_record(y) else "TD differs"
 
 
 def compare(path_a, path_b):
@@ -598,10 +637,14 @@ def compare(path_a, path_b):
     return 0 if same else 1
 
 
-def run_closing(backend, body):
-    """body(), then backend.close() whatever happens. SIGTERM and SIGHUP (a dropped
-    ssh session) raise SessionSignal; once the close has begun no signal, SIGINT
-    included, can cut it short. Returns body's status, or 128 + the signal."""
+def run_closing(make, body):
+    """backend = make(), body(backend), then backend.close() whatever happens. The
+    handlers are in place before make() starts: SIGTERM and SIGHUP (a dropped ssh
+    session) raise SessionSignal there too, and a backend that fails or is stopped
+    while it is being built gives back what it had touched itself
+    (fabric_eth.board_rig). Once the close has begun no signal, SIGINT included, can
+    cut it short. Returns body's status, or 128 + the signal; a refusal by the guard
+    returns 2."""
     live = [True]
 
     def stop(signum, frame):
@@ -612,16 +655,23 @@ def run_closing(backend, body):
     signals = (signal.SIGTERM, signal.SIGHUP)
     old = [signal.signal(n, stop) for n in signals]
     old_int = signal.getsignal(signal.SIGINT)
+    backend = None
     try:
-        return body()
+        backend = make()
+        return body(backend)
     except SessionSignal as e:
-        print(f"stopped by {e}; giving the board back", file=sys.stderr)
+        print(f"stopped by {e}; {'giving the board back' if backend else 'nothing was left on the board'}",
+              file=sys.stderr)
         return 128 + e.signum
+    except fabric_guard.NoActiveApp as e:
+        print(f"refusing to run: {e}", file=sys.stderr)
+        return 2
     finally:
         live[0] = False
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            backend.close()
+            if backend is not None:
+                backend.close()
         finally:
             signal.signal(signal.SIGINT, old_int)
             for n, handler in zip(signals, old):
@@ -678,13 +728,7 @@ def main(argv=None):
     def make():
         return BACKENDS[a.backend](eth.ip(a.chip_ip), clock_hz=a.clock * 1e6, quad=not a.single, sck_div=a.sck_div)
     if a.probe:                                # no interface is created: no namespace needed
-        try:
-            backend = make()
-        except fabric_guard.NoActiveApp as e:
-            print(f"refusing to run: {e}", file=sys.stderr)
-            return 2
-
-        def run_probe():
+        def run_probe(backend):
             rep = backend.report()
             meas = f", {rep['f_meas_mhz']} MHz measured" if rep["f_meas_mhz"] else ""
             print(f"{rep['rig']} at {rep['clock_mhz']:g} MHz{meas}, RTL revision {rep['ident'].get('rtl_rev', '?')[:12]}, "
@@ -696,19 +740,14 @@ def main(argv=None):
                                                                 results=results), indent=1))
             print("probe PASS" if ok else "probe FAIL")
             return 0 if ok else 1
-        return run_closing(backend, run_probe)
+        return run_closing(make, run_probe)
     try:
         require_dedicated_netns()
     except NetnsError as e:
         print(f"refusing to run: {e}", file=sys.stderr)
         return 2
-    try:
-        backend = make()                       # before the TAP: a refusal leaves nothing behind
-    except fabric_guard.NoActiveApp as e:
-        print(f"refusing to run: {e}", file=sys.stderr)
-        return 2
 
-    def run_bridge():
+    def run_bridge(backend):                   # built before the TAP: a refusal leaves nothing behind
         tap = Tap(a.tap)
         tap.up(f"{a.host_ip}/24", mac=HOST_MAC_TEXT if fabric else None, ipv6=not fabric)
         sysctl(f"net/ipv4/neigh/{a.tap}/retrans_time_ms", 15000)     # this namespace only
@@ -723,7 +762,7 @@ def main(argv=None):
         except KeyboardInterrupt:
             print(json.dumps(backend.report(), indent=1))
         return 0
-    return run_closing(backend, run_bridge)
+    return run_closing(make, run_bridge)
 
 
 if __name__ == "__main__":

@@ -309,7 +309,12 @@ So the backend takes one frame at a time, in two phases, with the cores loaded f
    place in the burst: `restore_rx` puts the zero words back by that cadence (Linux's
    ARP request has 6 of them), takes the word before each trailer as the record's last
    word, and refuses a record that doesn't fit. The record's bit count and the FCS
-   check the result.
+   check the frame. What this cannot see: a blind read of an empty FIFO and a read of
+   an all-zero data word both give 0, so whether the chip pushed its all-zero words
+   (or one too many) is not observed. Those words are put back from the bit count,
+   and the frame is right either way; the FCS and the byte comparison show the frame
+   is right, not that those words came out of the FIFO. That is 6 of the ARP
+   request's 24 data words, and 2 in each other probe frame.
 2. **pe.eth.Station** answers, the stack's host side. `Eth10Host` is not used: it
    services the FIFOs with passes, and here bursts do.
 3. **TX.** `eth10_tx_cs` on core 1 as the stack loads it, behind a trigger, with the
@@ -344,15 +349,32 @@ Commands (the runbook the orchestrator uses starts with `sudo xmutil listapps`):
 
 `--probe` creates no interface. It sends an ARP request, a ping, a UDP datagram and two
 frames that must go unanswered (bad FCS, another MAC), and passes only if the chip
-recorded each frame as sent and each reply read off TD is the Station's, FCS good.
-`--compare` passes only if the RX FIFO words, records, replies and decoded frames are
-equal and the board's TD edges, in clocks after the trigger, are one of the model's
-divider phases. `--backend fpga` maps nothing until fabric_guard shows the app for
-`--clock` (protoemu at 50 MHz, protoemu40 at 40) as the one active row; another of our
-apps active refuses too (`require_app(expect=...)`, used by `--measure-spim` now as
-well). It loads no app. On any end (normal, exception, Ctrl-C, SIGTERM, SIGHUP) the board
-is given back: cores stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host
-port on the GPIO path; a second signal can't cut that short.
+recorded each frame as sent, each reply read off TD is the Station's, FCS good, and
+TD carried one 100 ns link pulse before it. `--compare` passes only if the RX FIFO
+words, records, replies and decoded frames are equal and everything on TD after the
+trigger, in clocks, equals the model's at one divider phase: the link pulses (how many,
+where, how wide) and the frame's edges from its first transition to the end of TP_IDL.
+The burst is sized to end `TAIL_S` (40 us, `fabric_eth.py`) after the frame's expected
+end, so nothing on TD later than that is seen. `--backend fpga` maps
+nothing until fabric_guard shows the app for `--clock` (protoemu at 50 MHz, protoemu40
+at 40) as the one active row; another of our apps active refuses too
+(`require_app(expect=...)`, used by `--measure-spim` now as well). It loads no app.
+
+The board is given back on any end (normal, exception, Ctrl-C, SIGTERM, SIGHUP): cores
+stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPIO path,
+and a second signal can't cut that short. That includes an end while the rig is being
+built, when `v2_demo.Hw` has moved the host port to the fabric master and read the ID
+and HwRig has turned quad on and is measuring the clock (2 s): the signal handlers are
+in place before the build starts, and `fabric_eth.board_rig` gives back what it had
+touched (`test_a_rig_stopped_while_it_is_built_gives_the_board_back`: an exception, a
+wrong ID, Ctrl-C, SIGTERM and SIGHUP, on the fake KV260). Until verifier report 029
+found it, a run stopped in that window left the host port on the fabric master with
+quad on. The board run of `da82a51` went through that window without a fault.
+
+`--pcap` takes a tcpdump of the TAP, for the record only; it is never part of the pass.
+On the board's selftest of `da82a51` the file came out empty, and that version kept
+tcpdump's errors and exit status out of sight. Since then the result reports the file's
+size, tcpdump's exit status and what it printed. No pcap from the board is claimed here.
 
 | Run, model only | 50 MHz | 40 MHz |
 |---|---|---|
@@ -365,10 +387,9 @@ port on the GPIO path; a second signal can't cut that short.
 The fake board's PMOD registers are only ever written 0, and its host-port select ends
 on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
 Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
-15 of 15 killed. The runs in the table and the mutants ran on runner1 from a clean clone
-of `07fef6e`, whose code is the same as this commit's (logs: `selftest-50.log`,
-`selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
-`runner1:~/protoemu-flow/agent-runs/fabric-ping/logs/07fef6e`); the fake board is a test.
+FABCOUNT. The runs in the table ran on runner1 from a clean clone of RUNSHA (logs:
+`selftest-50.log`, `selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
+`runner1:~/protoemu-flow/agent-runs/fabric-ping/logs/RUNSHA`); the fake board is a test.
 
 With a real cable none of this applies and the bridge isn't needed: Linux on the other
 end of the cable is the test.

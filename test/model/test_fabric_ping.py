@@ -329,7 +329,13 @@ class FakeDevMem:
 
 
 class FakeBoard(pe_kria.Board):
+    fault, calls = None, 0
+
     def clk_hz(self, interval=0.5):
+        self.calls += 1
+        if self.fault and self.calls == 2:
+            self.quad_at_fault = self.regs.fm.chip.hostcfg & 1      # HOSTCFG is write-only: the model's own state
+            self.fault()
         return 50e6 if self.f is None else self.f
 
 
@@ -368,6 +374,8 @@ class FakeSpimMem:
             if cmd & 1:
                 fm.step(per - 3)
                 self.buf[i] = fm.read(a, pop=True)
+                if a == sim.A_ID and getattr(self, "bad_id", False):
+                    self.buf[i] = 0
             else:
                 fm.step(per - 1)
                 fm.write(a, self.buf[i])
@@ -456,7 +464,7 @@ def test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock
     assert all(v == 0 for off, v in log if off != pe_spim.SEL)
     assert log[-1] == (pe_spim.SEL, 0) and (pe_spim.SEL, 1) in log
     assert rig.lab.mem.modes[-1] == pfd.GPIO and fm.chip.enable == 0
-    assert fm.chip.read(sim.A_HOSTCFG) & 1 == 0
+    assert fm.chip.hostcfg == 0                       # QUAD_EN off (write-only on the bus: the model's state)
 
 
 def as_board(d, phase=0):
@@ -464,19 +472,62 @@ def as_board(d, phase=0):
     d = json.loads(json.dumps(d))
     d["rig"] = "KV260"
     for r in d["results"]:
-        if "tx_edges_phases" in r:
-            r["tx_edges"] = r.pop("tx_edges_phases")[phase]
+        if "tx_phases" in r:
+            ph = r.pop("tx_phases")[phase]
+            r["tx_edges"], r["tx_pulses"] = ph["edges"], ph["pulses"]
     return d
 
 
 def test_the_model_gives_four_distinct_divider_phases(model_probe):
     """Five trigger arrivals over the 5-clock pattern, four ticks in it: two arrivals
-    meet the same tick, so four different waveforms after the trigger."""
+    meet the same tick, so four different waveforms after the trigger, link pulse
+    included: one 100 ns pulse (5 clocks) before each frame."""
     for r in json.loads(model_probe.read_text())["results"]:
         if r["replies"]:
-            ph = r["tx_edges_phases"]
-            assert len(ph) == 5 and all(ph) and len({json.dumps(p) for p in ph}) == 4
-            assert ph[0] == r["tx_edges"]
+            ph = r["tx_phases"]
+            assert len(ph) == 5 and all(p["edges"] for p in ph) and len({json.dumps(p) for p in ph}) == 4
+            assert ph[0] == dict(pulses=r["tx_pulses"], edges=r["tx_edges"])
+            assert all(len(p["pulses"]) == 1 and p["pulses"][0][1] == 5 for p in ph)
+
+
+def test_compare_sees_the_link_pulse(model_probe, tmp_path):
+    """Verifier report 029, finding 2: two extra link pulses, or one a clock late,
+    are DIFFERENT; so is a model file from before the pulses were kept per phase."""
+    tap = load_bridge()
+    d = json.loads(model_probe.read_text())
+    p = tmp_path / "x.json"
+    for spoil in (lambda r: r["tx_pulses"].extend([[2000, 5], [4000, 5]]),
+                  lambda r: r["tx_pulses"][0].__setitem__(0, r["tx_pulses"][0][0] + 1),
+                  lambda r: r["tx_pulses"].clear()):
+        b = as_board(d, 2)
+        spoil(next(r for r in b["results"] if r["name"] == "arp"))
+        p.write_text(json.dumps(b))
+        assert tap.compare(str(p), str(model_probe)) == 1
+    old = json.loads(json.dumps(d))
+    for r in old["results"]:
+        if "tx_phases" in r:
+            r["tx_edges_phases"] = [x["edges"] for x in r.pop("tx_phases")]
+    q = tmp_path / "old.json"
+    q.write_text(json.dumps(old))
+    p.write_text(json.dumps(as_board(d, 2)))
+    assert tap.compare(str(p), str(q)) == 1
+
+
+def test_the_probe_fails_on_a_wrong_link_pulse(monkeypatch):
+    tap = load_bridge()
+    backend = tap.FpgaBackend.model(CHIP_IP)
+    real = backend.fab.transmit
+
+    def two_pulses(raw, phase=0):
+        f, info = real(raw, phase)
+        info["pulses"] = info["pulses"] + [(info["frames"][0]["end"] + 100, 5)]
+        return f, info
+    monkeypatch.setattr(backend.fab, "transmit", two_pulses)
+    ok, results = tap.probe(backend, "10.77.0.2", "10.77.0.1")
+    assert not ok and [r["pass"] for r in results] == [False, False, False, True, True]
+    assert tap.link_pulse_ok(dict(pulses=[(5, 5)], frames=[dict(start=535)]), 20.0)
+    assert not tap.link_pulse_ok(dict(pulses=[(5, 4)], frames=[dict(start=535)]), 20.0)
+    assert not tap.link_pulse_ok(dict(pulses=[(600, 5)], frames=[dict(start=535)]), 20.0)
 
 
 def test_compare_sees_one_clock(model_probe, tmp_path):
@@ -577,16 +628,17 @@ def test_run_closing_gives_the_board_back_on_a_signal(signum, sentinels):
     tap = load_bridge()
     b = Closing(on_close=lambda: [os.kill(os.getpid(), n) for n in (signum, signal.SIGINT)])
 
-    def body():
+    def body(backend):
+        assert backend is b
         os.kill(os.getpid(), signum)
         return 0
     if signum == signal.SIGINT:
         signal.signal(signal.SIGINT, signal.default_int_handler)
         with pytest.raises(KeyboardInterrupt):
-            tap.run_closing(b, body)
+            tap.run_closing(lambda: b, body)
         assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
     else:
-        assert tap.run_closing(b, body) == 128 + signum
+        assert tap.run_closing(lambda: b, body) == 128 + signum
         assert sentinels()
     assert b.closed == 1
 
@@ -595,9 +647,84 @@ def test_run_closing_gives_the_board_back_on_an_exception_and_a_normal_end():
     tap = load_bridge()
     b = Closing()
 
-    def boom():
+    def boom(backend):
         raise KeyboardInterrupt
     with pytest.raises(KeyboardInterrupt):
-        tap.run_closing(b, boom)
-    assert tap.run_closing(b, lambda: 7) == 7
+        tap.run_closing(lambda: b, boom)
+    assert tap.run_closing(lambda: b, lambda backend: 7) == 7
     assert b.closed == 2
+
+
+def test_run_closing_handles_signals_while_the_backend_is_built(sentinels):
+    """A signal during make() is the session's, not the default kill; nothing was built,
+    so nothing is closed (board_rig gave back what it had touched)."""
+    tap = load_bridge()
+
+    def make():
+        os.kill(os.getpid(), signal.SIGHUP)
+        raise AssertionError("the signal should have stopped make()")
+    assert tap.run_closing(make, lambda backend: 0) == 128 + signal.SIGHUP
+    assert sentinels()
+
+
+# ---------------------------------------------------------------- a rig stopped while it is being built
+def fake_parts(fault=None, bad_id=False):
+    """Board, Spim and Lab of a fake KV260; fault() runs inside HwRig's 2 s clock
+    measurement (the second clk_hz call: after the select and quad), bad_id makes
+    the chip's ID read wrong (as a wrong bitstream would)."""
+    fm = pfd.ModelRig(50e6).mh
+    board = FakeBoard(regs=FakeDevMem(fm))
+    board.f, board.fault, board.calls, board.quad_at_fault = None, fault, 0, None
+    mem = FakeSpimMem(fm)
+    mem.bad_id = bad_id
+    return fm, (board, pe_spim.Spim(mem=mem), pe_lab.Lab(mem=FakeLabMem(fm)))
+
+
+def raise_(e):
+    raise e
+
+
+FAULTS = {
+    "exception": (lambda: raise_(OSError("a read failed")), OSError),
+    "ctrl-c": (lambda: raise_(KeyboardInterrupt()), KeyboardInterrupt),
+    "sigterm": (lambda: os.kill(os.getpid(), signal.SIGTERM), 128 + signal.SIGTERM),
+    "sighup": (lambda: os.kill(os.getpid(), signal.SIGHUP), 128 + signal.SIGHUP),
+    "wrong id": (None, AssertionError),
+}
+
+
+@pytest.mark.parametrize("fault", sorted(FAULTS))
+def test_a_rig_stopped_while_it_is_built_gives_the_board_back(monkeypatch, sentinels, fault):
+    """Verifier report 029, finding 1: through eth_tap.main as on the board. v2_demo.Hw
+    has moved the host port to pe_spim and HwRig has turned quad on when the fault
+    comes; after it, SEL is back on the GPIO path, quad is off, pe_lab is in GPIO
+    mode, and no PMOD register was written anything but 0."""
+    action, outcome = FAULTS[fault]
+    monkeypatch.setattr(fg, "_checked", None)
+    monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
+    fm, parts = fake_parts(fault=action, bad_id=fault == "wrong id")
+    board, spim, lab = parts
+    monkeypatch.setattr(fe, "board_parts", lambda: parts)
+    tap = load_bridge()
+    if isinstance(outcome, int):
+        assert tap.main(["--backend", "fpga", "--probe"]) == outcome
+    else:
+        with pytest.raises(outcome):
+            tap.main(["--backend", "fpga", "--probe"])
+    log = spim.mem.log
+    assert (pe_spim.SEL, 1) in log and log[-1] == (pe_spim.SEL, 0)
+    assert all(v == 0 for off, v in log if off != pe_spim.SEL)
+    if action:
+        assert board.quad_at_fault == 1                     # the window was open
+    assert fm.chip.hostcfg == 0
+    assert lab.mem.modes[-1] == pfd.GPIO
+    assert sentinels()
+
+
+def test_give_back_runs_every_step_and_reports_the_first_failure():
+    fm, (board, spim, lab) = fake_parts()
+    spim.select(fabric=True)
+    board.set_inputs = lambda **kw: raise_(OSError("gpio"))
+    with pytest.raises(OSError, match="gpio"):
+        fe.give_back(board, spim, lab)
+    assert spim.mem.log[-1] == (pe_spim.SEL, 0) and lab.mem.modes[-1] == pfd.GPIO
