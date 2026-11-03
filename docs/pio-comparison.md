@@ -72,7 +72,7 @@ protoemu 8 ticks per bit at 800 kHz.
 
 | | RP2040 PIO (pico-examples) | protoemu (firmware/) | Better |
 |---|---|---|---|
-| **Clock, process** | 133 MHz max (200 MHz at 1.15 V), 40 nm (datasheet) | 50 MHz typ, about 44 MHz slow corner; IHP 130 nm ([physical.md](physical.md)) | PIO |
+| **Clock, process** | 133 MHz max (200 MHz at 1.15 V), 40 nm (datasheet) | 50 MHz at all three corners (run fo6; earlier runs reached about 44-46 MHz at the slow corner); IHP 130 nm ([physical.md](physical.md)) | PIO |
 | **Engines** | 2 blocks × 4 SMs, 32 instruction slots per block, shared by its 4 SMs | 2 cores, 256-word private bank each | PIO on engine count; protoemu on per-engine program space |
 | **UART TX** program | 4 instr = 8 B | 4 instr = 16 B | PIO (bytes) |
 | UART TX timing | 8 SM clocks per bit; max 16.6 Mbaud at 133 MHz | 8 ticks per bit; max 6.25 Mbaud at 50 MHz | equal per cycle; PIO in absolute rate |
@@ -101,7 +101,7 @@ Same algorithm, same length. protoemu's `uart_tx.pasm` is a transliteration of
 |---|---|---|
 | Instructions / bytes | 4 / 8 | 4 / 16 |
 | Ticks per bit, per byte (measured, back to back) | 8, 80 | 8, 80 |
-| Max baud (program-limited, divider = 1) | 125/8 = 15.6 M; 133/8 = 16.6 M | 50/8 = 6.25 M (44 MHz corner: 5.5 M) |
+| Max baud (program-limited, divider = 1) | 125/8 = 15.6 M; 133/8 = 16.6 M | 50/8 = 6.25 M (fo6 meets 50 MHz at every corner) |
 | Divider | 16.8 fractional (§3.5.5) | 16.8 fractional ([isa.md §4.1](isa.md)) |
 | Edge resolution with a fractional divider | 1 system clock: 7.5 ns at 133 MHz | 1 clock: 20 ns |
 
@@ -391,8 +391,9 @@ benchmarked against PRU code.
    of delivering it, and I2C stops by itself on an unexpected NACK.
 8. **No false timeouts.** PIO waits out any legal clock stretch. protoemu's
    default 2.5 ms limit is shorter than SMBus's 25 ms.
-9. **Scope and maturity.** Full-speed USB (Pico-PIO-USB) and shipping silicon.
-   protoemu is low-speed only and not yet on silicon.
+9. **Scope and maturity.** Shipping silicon, and full-speed USB on it
+   (Pico-PIO-USB). protoemu's full-speed USB device (`usb_fs_dev`, `usb_enum`)
+   runs in RTL and gate-level simulation and in FPGA fabric, not on silicon.
 
 ## Defensible claims for protoemu
 
