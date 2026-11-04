@@ -189,6 +189,31 @@ def nth_access(n):
     return hold_at
 
 
+OVERHEADS = (48, 2400)   # host-software clocks per SPI transaction: 1 us, and tens of us as on the board
+
+
+@pytest.mark.parametrize("overhead", OVERHEADS)
+@pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
+@pytest.mark.parametrize("n", range(26))
+def test_restage_held_at_every_access_ls(n, resume, overhead):
+    """restage_race_ls held at the n-th SPI access from the re-stage decision,
+    the low-speed counterpart of test_usb_fs_data's
+    test_restage_held_at_every_access. Every case must end right: one
+    zero-length DATA1 after NAKs only, no unanswered IN in it or in the whole
+    descriptor read after, and no F_STAGED left over an empty TX FIFO. Before
+    usb_ls_tx's SETUP flush and guard (dc51cc8), at 2400 clocks per access,
+    n = 8 (token first) and n = 9 (both) sent the old DATA instead."""
+    gen = bridges(overhead)
+    make = next(gen)
+    try:
+        outcome, d = restage_race_ls(make, resume, nth_access(n))
+    finally:
+        for _ in gen:
+            pass
+    assert outcome == "right", f"access {n}, {resume}, {overhead} clocks per access: {outcome} {d}"
+    assert not (d["staged"] and not d["tx_fifo"]), f"F_STAGED over an empty TX FIFO: {d}"
+
+
 def table(n_max=26, resumes=("after the SETUP", "after its token")):
     """Every access from the re-stage decision, both resumes: (resume, n, outcome, details)."""
     rows = []

@@ -163,6 +163,23 @@ def run(speed, resume, n, overhead=48):
             pass
 
 
+@pytest.mark.parametrize("overhead", (48, 2400))      # clocks per SPI transaction: 1 us, and the board's tens of us
+@pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
+@pytest.mark.parametrize("n", range(16))
+@pytest.mark.parametrize("speed", ["full", "low"])
+def test_stage_abort_held_at_every_access(speed, n, resume, overhead):
+    """The reply's stage held at its n-th access (n = 0: its FCLR; then the four
+    pushes, the check, the FSET, the check after and the service loops) while
+    the host abandons the transfer with SET_CONFIGURATION. Every case must end
+    right: one zero-length DATA1 after NAKs only, then a whole descriptor read.
+    Before pe.usbdev checked every stage and usb_ls_tx dropped its FIFO on a
+    SETUP (dc51cc8): full speed sent the old reply (n = 0-1) or a partial
+    packet (n = 2-4, F_UNDERRUN); low speed, at 2400 clocks, the old reply
+    (n = 0-5)."""
+    outcome, d = run(speed, resume, n, overhead)
+    assert outcome == "right", f"{speed} speed, access {n}, {resume}, {overhead} clocks: {outcome} {d}"
+
+
 if __name__ == "__main__":        # one case: <speed> <resume index> <n> [overhead]
     import sys
     speed, ri, n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])

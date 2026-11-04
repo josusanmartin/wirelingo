@@ -27,3 +27,43 @@ def test_in_with_f_staged_over_an_empty_fifo_is_naked(variant):
     mh.write(sim.A_FCLR, usbdev.F_STAGED)
     software.stage(usb.PID_DATA1, b"\x12\x34")
     assert poll(peer) == usb.data_packet(usb.PID_DATA1, b"\x12\x34")
+
+
+# ---------------------------------------------------------------- the two-core device (usb_ls_rx + usb_ls_tx)
+
+def two_core():
+    from test_usb_enum import device
+    from pe.usbhost import UsbHost
+    mh, sw = device("two-core")
+    return mh, sw, UsbHost(mh)
+
+
+def test_two_core_in_with_f_staged_over_an_empty_fifo_is_naked():
+    """usb_ls_tx's guard: an IN that finds F_STAGED over an empty TX FIFO
+    (core 1's) is NAKed; without it the TX core waits in `pull block`."""
+    mh, sw, h = two_core()
+    assert not mh.chip.cores[1].txf
+    mh.write(sim.A_FSET, usbdev.F_STAGED)
+    for i in range(3):
+        h._send(usb.token(usb.PID_IN, 0, 0))
+        assert h._listen(120 * h.bit) == usb.handshake(usb.PID_NAK), f"IN {i}: no NAK"
+        h._gap(8)
+    mh.write(sim.A_FCLR, usbdev.F_STAGED)
+    sw.stage(usb.PID_DATA1, b"\x12\x34")
+    h._send(usb.token(usb.PID_IN, 0, 0))
+    assert h._listen(120 * h.bit) == usb.data_packet(usb.PID_DATA1, b"\x12\x34")
+
+
+def test_two_core_setup_drops_what_was_staged():
+    """usb_ls_tx's SETUP flush: words pushed for a transfer the host abandons
+    with a SETUP leave core 1's TX FIFO while that SETUP arrives (usb_ls_rx
+    clears F_STAGED, and nothing else would drop them before the next IN)."""
+    mh, sw, h = two_core()
+    for w in usbdev.stage_words(usb.PID_DATA1, b"stale!!!"):
+        mh.push(1, w)
+    assert len(mh.chip.cores[1].txf) == 4
+    h._send(usb.token(usb.PID_SETUP, 0, 0))
+    h._gap(2)
+    h._send(usb.data_packet(usb.PID_DATA0, bytes([0, 9, 1, 0, 0, 0, 0, 0])))
+    assert h._listen(20 * h.bit) == usb.handshake(usb.PID_ACK)
+    assert not mh.chip.cores[1].txf, "the abandoned transfer's words are still in the TX FIFO"
