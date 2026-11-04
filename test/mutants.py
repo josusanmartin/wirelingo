@@ -229,6 +229,19 @@ MUTANTS = {
                                      '    LIVE["client"] = child\n    signal.pthread_sigmask(signal.SIG_SETMASK, old)\n',
                                      '    signal.pthread_sigmask(signal.SIG_SETMASK, old)\n    LIVE["client"] = child\n',
                                      pytest('test/model/test_usb_fs_data_demo_board.py -k "fork_unblock"')),
+    "hw-demo-client-exception-escapes": ("fpga/kv260/host/usb_fs_data_demo.py",
+                                         "        try:\n"
+                                         "            for s in STOP_SIGNALS:\n"
+                                         "                signal.signal(s, signal.SIG_DFL)\n"
+                                         "            signal.pthread_sigmask(signal.SIG_SETMASK, old)\n"
+                                         "            os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))\n"
+                                         "        finally:\n"
+                                         "            os._exit(1)\n",
+                                         "        for s in STOP_SIGNALS:\n"
+                                         "            signal.signal(s, signal.SIG_DFL)\n"
+                                         "        signal.pthread_sigmask(signal.SIG_SETMASK, old)\n"
+                                         "        os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))\n",
+                                         pytest('test/model/test_usb_fs_data_demo_board.py -k "client_that_raises"')),
     "hw-guard-run-raw-buffer-size": ("fpga/kv260/host/usb_guard_run.py",
                                      "        if size.isdigit():\n            put(\"buffer_size_kb\", size + \"\\n\")",
                                      "        if True:\n            put(\"buffer_size_kb\", self.saved[\"buffer_size_kb\"])",
