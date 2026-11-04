@@ -56,12 +56,14 @@ def two_core():
     return mh, usbdev.DeviceSoftware(mh, rx, usbdev.DESCRIPTORS, RX, TX)
 
 
-def bridges():
-    """make(mh, sw) -> SpiBridge, every bridge closed when the generator ends."""
+def bridges(overhead=48):
+    """make(mh, sw) -> SpiBridge, every bridge closed when the generator ends.
+    overhead: host-software clocks per SPI transaction (48 = 1 us; the board's
+    Python loop takes tens of us)."""
     made = []
 
     def make(mh, sw):
-        made.append(SpiBridge(mh, sw))
+        made.append(SpiBridge(mh, sw, overhead=overhead))
         return made[-1]
     yield make
     for b in made:
@@ -134,7 +136,7 @@ def restage_race_ls(concurrent, resume, hold_at):
         h._send(usb.data_packet(usb.PID_DATA0, SET_CONFIG))
         assert h._listen(20 * h.bit) == usb.handshake(usb.PID_ACK)
     r, naks, silent = in_until_answer(h, 0)
-    d = {"naks": naks, "silent": silent, "tx_fifo": len(mh.chip.cores[TX].txf),
+    d = {"held": ctx.get("held_op"), "naks": naks, "silent": silent, "tx_fifo": len(mh.chip.cores[TX].txf),
          "staged": bool(mh.chip.flags & usbdev.F_STAGED)}
     if r[1:-2] == usbdev.DEVICE_DESC[:8]:
         return "stale", d
@@ -181,6 +183,8 @@ def nth_access(n):
         elif op is not seen["last"]:
             seen["n"] += 1
             seen["last"] = op
+        if seen["n"] == n:
+            ctx["held_op"] = op
         return seen["n"] == n
     return hold_at
 
