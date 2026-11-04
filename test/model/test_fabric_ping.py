@@ -983,11 +983,12 @@ def test_the_window_point_count(capsys):
 
 
 # ---------------------------------------------------------------- run_closing's own way out (verifier report 037, note 1)
-def finally_run(tap, end, at):
+def finally_run(tap, end, at, sig=signal.SIGTERM):
     """run_closing with a holder whose closer counts, the body ending as `end` says,
-    and a real SIGTERM sent at opcode event number `at` (None: count them) of
-    run_closing's frame, from the body's last statement until Held.close
-    is called: the rest of the try, the except taken, and the finally up to the close.
+    and a real signal `sig` sent at opcode event number `at` (None: count them) of
+    run_closing's frame, from the body's last statement until Held.close is called:
+    the rest of the try, the except taken, and the finally up to the close. End
+    "signal": a SIGTERM inside the body ends it first, so `sig` is a second signal.
     Returns (events, outcome, closes)."""
     rc_code, close_code = tap.run_closing.__code__, board_hold.Held.close.__code__
     closes, st = [], dict(armed=False, n=0, done=False, fired=False)
@@ -1001,16 +1002,16 @@ def finally_run(tap, end, at):
                 st["done"] = True
                 sys.settrace(None)
                 return None
-            if code is rc_code or (code.co_name == "block" and code.co_filename == rc_code.co_filename):
+            if code is rc_code:
                 frame.f_trace_opcodes = True
-                sys.settrace(tracer)
+                sys.settrace(tracer)                    # 3.12: the flag takes effect on a re-arm
                 return tracer
             return None
         if event == "opcode" and st["armed"]:
             if at is not None and st["n"] == at:
                 st["fired"], st["done"] = True, True
                 sys.settrace(None)
-                os.kill(os.getpid(), signal.SIGTERM)
+                os.kill(os.getpid(), sig)
                 return None
             st["n"] += 1
         return tracer
@@ -1025,6 +1026,9 @@ def finally_run(tap, end, at):
             raise OSError("the body failed")
         if end == "ctrl-c":
             raise KeyboardInterrupt
+        if end == "signal":
+            os.kill(os.getpid(), signal.SIGTERM)        # run_closing's stop raises here
+            raise AssertionError("SIGTERM should have ended the body")
         return 7
     sys.settrace(tracer)
     try:
@@ -1038,25 +1042,43 @@ def finally_run(tap, end, at):
     return st["n"], outcome, len(closes)
 
 
-FINAL_ENDS = {"return": (7,), "exception": ("OSError",), "ctrl-c": ("KeyboardInterrupt",)}
+SIGS = {"SIGTERM": signal.SIGTERM, "SIGHUP": signal.SIGHUP, "SIGINT": signal.SIGINT}
 
 
-@pytest.mark.parametrize("end", sorted(FINAL_ENDS))
-def test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close(sentinels, end, capsys):
-    """A SIGTERM at every opcode from the body's last statement to the call of
-    Held.close, after a normal end, an exception and a Ctrl-C in the body. The close
-    happens once every time, and the run ends as the body did or as the signal says
-    (143), never with the signal escaping past the close."""
+def way_out_outcomes(end, sig):
+    """Every way a run may end with `sig` at some opcode on the way out, and nothing
+    else. A first signal raises once, where it is handled: as 128 + n if that is still
+    inside the try (or KeyboardInterrupt for SIGINT), or replacing the body's exception
+    if it is in the except taken. A second signal (end "signal") is ignored."""
+    stop = "KeyboardInterrupt" if sig == signal.SIGINT else 128 + sig
+    replaced = "KeyboardInterrupt" if sig == signal.SIGINT else "RunStopped"
+    return {"return": {7, stop},
+            "exception": {"OSError", replaced},
+            "ctrl-c": {"KeyboardInterrupt", replaced},
+            "signal": {128 + signal.SIGTERM}}[end]
+
+
+WAY_OUT_ENDS = {"return": 7, "exception": "OSError", "ctrl-c": "KeyboardInterrupt", "signal": 128 + signal.SIGTERM}
+
+
+@pytest.mark.parametrize("sig", sorted(SIGS))
+@pytest.mark.parametrize("end", sorted(WAY_OUT_ENDS))
+def test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close(sentinels, end, sig, capsys):
+    """A real SIGTERM, SIGHUP or SIGINT at every opcode from the body's last statement
+    to the call of Held.close, after a normal end, an exception, a Ctrl-C and a SIGTERM
+    in the body (the last makes it a second signal, which must be ignored: verifier
+    report 039, note 3). The close happens once every time, and the run ends only in
+    one of way_out_outcomes(), never with a signal escaping past the close."""
     tap = load_bridge()
-    n, outcome, closes = finally_run(tap, end, None)
-    assert outcome in FINAL_ENDS[end] and closes == 1
+    n, outcome, closes = finally_run(tap, end, None, SIGS[sig])
+    assert outcome == WAY_OUT_ENDS[end] and closes == 1
     assert n >= 10
+    allowed, seen = way_out_outcomes(end, SIGS[sig]), set()
     for at in range(n):
-        _, outcome, closes = finally_run(tap, end, at)
-        assert closes == 1, f"opcode {at}: closed {closes} times, outcome {outcome}"
-        # 143: the signal ended the run in the try; RunStopped: it arrived while an
-        # exception from the body was on its way out, and replaced it. Either way after the close.
-        assert outcome in FINAL_ENDS[end] + (128 + signal.SIGTERM, "RunStopped"), f"opcode {at}: {outcome}"
+        _, outcome, closes = finally_run(tap, end, at, SIGS[sig])
+        assert closes == 1, f"{sig} at opcode {at}: closed {closes} times, outcome {outcome}"
+        assert outcome in allowed, f"{sig} at opcode {at}: {outcome}, not one of {allowed}"
+        seen.add(outcome)
     assert sentinels()
     with capsys.disabled():
-        print(f"\nrun_closing way out after {end}: {n} opcode events")
+        print(f"\nrun_closing way out after {end}, {sig}: {n} opcode events, outcomes {sorted(map(str, seen))}")

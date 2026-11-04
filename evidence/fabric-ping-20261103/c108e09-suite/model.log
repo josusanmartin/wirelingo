@@ -1,0 +1,395 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  8%]
+........................................................................ [ 11%]
+FFF..................................................................... [ 14%]
+........................................................................ [ 16%]
+.........................................s.............................. [ 19%]
+....................................................s...............s... [ 22%]
+........................................................................ [ 25%]
+.....sss........s.............s.................s....................... [ 28%]
+........................................................................ [ 31%]
+......s...................................s............................. [ 33%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+.s...................................................................... [ 47%]
+....................................s................................... [ 50%]
+.........................................ss......s...................... [ 53%]
+s....................................................................... [ 56%]
+........................................................................ [ 59%]
+........................................................................ [ 62%]
+...............s........................................................ [ 64%]
+.....................................................s.................. [ 67%]
+...............................................ss..s.................... [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+.................ss..................................................... [ 90%]
+.............................................................s.......... [ 93%]
+..................................................s........s............ [ 95%]
+.s..............................................s....................... [ 98%]
+...............................                                          [100%]
+=================================== FAILURES ===================================
+______ test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close[ctrl-c] ______
+[gw9] linux -- Python 3.12.3 /home/runner1/protoemu-flow/test-venv/bin/python
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+sentinels = <function sentinels.<locals>.<lambda> at 0x7fb7a5902f20>
+end = 'ctrl-c'
+capsys = <_pytest.capture.CaptureFixture object at 0x7fb7a5b71b50>
+
+    @pytest.mark.parametrize("end", sorted(FINAL_ENDS))
+    def test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close(sentinels, end, capsys):
+        """A SIGTERM at every opcode from the body's last statement to the call of
+        Held.close, after a normal end, an exception and a Ctrl-C in the body. The close
+        happens once every time, and the run ends as the body did or as the signal says
+        (143), never with the signal escaping past the close."""
+        tap = load_bridge()
+        n, outcome, closes = finally_run(tap, end, None)
+        assert outcome in FINAL_ENDS[end] and closes == 1
+        assert n >= 10
+        for at in range(n):
+            _, outcome, closes = finally_run(tap, end, at)
+>           assert closes == 1, f"opcode {at}: closed {closes} times, outcome {outcome}"
+E           AssertionError: opcode 31: closed 0 times, outcome RunStopped
+E           assert 0 == 1
+
+test/model/test_fabric_ping.py:1056: AssertionError
+____ test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close[exception] _____
+[gw9] linux -- Python 3.12.3 /home/runner1/protoemu-flow/test-venv/bin/python
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+sentinels = <function sentinels.<locals>.<lambda> at 0x7fb7a603bc40>
+end = 'exception'
+capsys = <_pytest.capture.CaptureFixture object at 0x7fb7a604cf50>
+
+    @pytest.mark.parametrize("end", sorted(FINAL_ENDS))
+    def test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close(sentinels, end, capsys):
+        """A SIGTERM at every opcode from the body's last statement to the call of
+        Held.close, after a normal end, an exception and a Ctrl-C in the body. The close
+        happens once every time, and the run ends as the body did or as the signal says
+        (143), never with the signal escaping past the close."""
+        tap = load_bridge()
+        n, outcome, closes = finally_run(tap, end, None)
+        assert outcome in FINAL_ENDS[end] and closes == 1
+        assert n >= 10
+        for at in range(n):
+            _, outcome, closes = finally_run(tap, end, at)
+>           assert closes == 1, f"opcode {at}: closed {closes} times, outcome {outcome}"
+E           AssertionError: opcode 31: closed 0 times, outcome RunStopped
+E           assert 0 == 1
+
+test/model/test_fabric_ping.py:1056: AssertionError
+______ test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close[return] ______
+[gw9] linux -- Python 3.12.3 /home/runner1/protoemu-flow/test-venv/bin/python
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+>           raise KeyboardInterrupt
+E           KeyboardInterrupt
+
+test/model/test_fabric_ping.py:1027: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+backend = 'backend'
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+>           raise OSError("the body failed")
+E           OSError: the body failed
+
+test/model/test_fabric_ping.py:1025: OSError
+
+During handling of the above exception, another exception occurred:
+
+sentinels = <function sentinels.<locals>.<lambda> at 0x7fb7a603b4c0>
+end = 'return'
+capsys = <_pytest.capture.CaptureFixture object at 0x7fb7a59cc7a0>
+
+    @pytest.mark.parametrize("end", sorted(FINAL_ENDS))
+    def test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close(sentinels, end, capsys):
+        """A SIGTERM at every opcode from the body's last statement to the call of
+        Held.close, after a normal end, an exception and a Ctrl-C in the body. The close
+        happens once every time, and the run ends as the body did or as the signal says
+        (143), never with the signal escaping past the close."""
+        tap = load_bridge()
+        n, outcome, closes = finally_run(tap, end, None)
+        assert outcome in FINAL_ENDS[end] and closes == 1
+        assert n >= 10
+        for at in range(n):
+            _, outcome, closes = finally_run(tap, end, at)
+>           assert closes == 1, f"opcode {at}: closed {closes} times, outcome {outcome}"
+E           AssertionError: opcode 14: closed 0 times, outcome RunStopped
+E           assert 0 == 1
+
+test/model/test_fabric_ping.py:1056: AssertionError
+----------------------------- Captured stderr call -----------------------------
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+stopped by signal 15; giving the board back
+SIGROK CHECKS SKIPPED: 28 tests: a pass here says nothing about them (set SIGROK_CLI, flow/install_sigrok.sh)
+=========================== short test summary info ============================
+FAILED test/model/test_fabric_ping.py::test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close[ctrl-c]
+FAILED test/model/test_fabric_ping.py::test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close[exception]
+FAILED test/model/test_fabric_ping.py::test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close[return]
+3 failed, 2519 passed, 29 skipped in 1522.42s (0:25:22)

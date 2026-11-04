@@ -60,6 +60,8 @@ board of `test/model/test_fabric_ping.py` only.
 | `archive.sha256` | The sha256 of `git archive da82a51 tools firmware fpga/kv260/host`, the code copied to the board on 2026-11-03 |
 | `smoke-1b3ff6b/fabric-ping-b.json` | The 2026-11-04 board probe of `1b3ff6b` |
 | `smoke-1b3ff6b/archive.sha256` | The sha256 of `git archive 1b3ff6b tools firmware fpga/kv260/host`, checked on both ends |
+| `kria-python-os.txt` | The board's `python3 -VV`, `/etc/os-release` and kernel release, read by the orchestrator at 2026-11-04 06:35:29Z: Python 3.12.3 (GCC 13.3.0), Ubuntu 24.04.2 LTS, 6.8.0-1036-xilinx. Verbatim copy of `~/dev/protoemu-verify-reports/evidence/039/kria-python-os.txt`; sha256 `b966db0afc022d2107fe71d09779a5c30cfebde46bad3f505d9358715a1e2c97` |
+| `c108e09-suite/model.log` | Not a board record: the model suite's log at `c108e09` on runner1 (`remote_test.sh model`, 2026-11-04), in which the way-out test failed in its three cases with a `pthread_sigmask` design that was then replaced. Verbatim copy of `runner1:~/protoemu-flow/agent-runs/agent-afe09457da93fe81d-c108e09-1550601/model.log`; sha256 `f5d30a1494d1e1d9a2069fefd51de35e40fdedfa1a03c7822358206488bd3053` |
 
 The 2026-11-03 files are verbatim copies of
 `~/dev/protoemu-verify-reports/evidence/029/`, and the smoke files of
@@ -69,4 +71,7 @@ file without link pulses per phase. The redaction search (tailnet hostnames and
 addresses, 192.168 addresses, email addresses, the provider hostname,
 credentials, MAC addresses) found nothing. The address `10.77.0.2` in
 `selftest.log` belongs to the test's own network namespace, not to any real
-network, and is kept.
+network, and is kept. The same search on `kria-python-os.txt` and
+`c108e09-suite/model.log` (added 2026-11-04) found nothing either; its only hits were
+`@pytest.mark.parametrize` lines in the log, which are code, not addresses. Paths under
+`~/protoemu-flow` and the runner's name are kept, as everywhere in evidence/.
