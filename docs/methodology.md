@@ -34,7 +34,18 @@ If it can, the larger implication is much more interesting than this particular 
 
 ## How it was built
 
-The author worked with Claude Opus 5.5 and Astra. The rest of this page is the record behind the
+The author worked with Claude Opus 5.5 and Astra. That sentence was written
+on 2026-10-06, before the team below existed, and the records do not say what
+it referred to then. The project's records name `gpt-6-astra`, an OpenAI model
+run through the Codex CLI: from 2026-10-11 to 2026-10-14 it directed a team of
+Codex agents, five workers on `gpt-6.1-sol` (Lean proofs, protocol
+firmware, flow tooling and release tests, documentation, and an expansion
+study), each in its own worktree. The 17 commits of
+theirs accepted for integration are on `main`. When that team stopped on
+2026-10-14 the work moved to Claude Code and its subagents. The independent
+reviewer named "Codex" in the table below and in [review.md](review.md) was
+earlier Codex sessions, in the first week of October; the records kept here
+do not name the model those sessions used. The rest of this page is the record behind the
 statement above: what the agents did, what the author did, and the evidence
 that stands between an agent's claim and the GDS.
 
@@ -141,8 +152,11 @@ flow) and [review.md](review.md) (the independent review).
 * The agents made every engineering decision below the level of goals and
   scope. The verification is broad, but it checks the spec as the agents
   wrote it; it can't catch a spec that asks for the wrong thing.
-* Nothing formally proves that synthesis preserved the RTL's behaviour;
-  the gate-level tests cover the exercised cases.
+* Synthesis preserving the RTL's behaviour is proved for run fo6's netlist
+  ([equivalence.md](equivalence.md)): functionally, at zero delay, with the
+  PDK's cell models, under the assumptions listed there. The inside of the
+  cells is not checked; timing is left to STA and the timing-annotated
+  gate-level tests.
 * The FPGA validates the logic at speed, not the IHP silicon: pads, real
   timing and the latch FIFOs are only covered by static timing analysis,
   timing-annotated gate-level simulation of the exercised paths and,

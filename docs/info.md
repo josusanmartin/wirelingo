@@ -39,13 +39,20 @@ The firmware verified in simulation covers UART TX/RX, SPI master, I2C master
 (with clock stretching), USB devices at low and full speed (48 MHz), including
 one that enumerates on its own with no host traffic after the load, a
 10BASE-T transmitter (at 40 MHz, with link pulses) and receiver, CAN 2.0A
-TX/RX, an SWD debug probe, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
+TX/RX, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
 an 8-channel logic analyzer and an I2C target for reverse engineering,
 DMX512, LIN, NEC infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI,
 Modbus RTU, MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0,
-SMBus with PEC and RC-5 infrared. Most of it (not SWD or the two-core USB
-device) has also run on an FPGA build of the RTL (Kria KV260) against
-pins-only device models. Four of those programs (UART RX, I2C master, CAN RX
+SMBus with PEC and RC-5 infrared. The level differs by program, and the
+README's firmware table gives it for each: most run through the SPI port in
+RTL simulation, while CAN, JTAG, 1-Wire, PS/2, WS2812 and the I2C sniffer are
+checked on the cycle model, which is lockstep-checked against the RTL. An SWD
+debug probe exists on the model only, and is parked.
+Most of these programs have also run on an FPGA build of the RTL (Kria KV260)
+against pins-only device models or the other core: not SWD, the two-core USB
+device or the UART-over-USB pairs, and none of the bench firmware (MDIO,
+QSFP-style, PMBus), `pps_capture`, `eth10_reply` or the blind-test firmware.
+Four of those programs (UART RX, I2C master, CAN RX
 and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
 need an FPGA rerun before those results apply to them. None of it has run on
 silicon yet.
@@ -60,8 +67,21 @@ The full specification is in `docs/isa.md` in the repository.
 The host talks to the chip over SPI mode 0:
 
 * `ui[7]` = CS_n, `ui[6]` = SCK, `ui[5]` = MOSI, `uo[7]` = MISO.
-* SCK up to the project clock (about 50 Mbit/s); an optional quad mode moves
-  4 bits per SCK (about 200 Mbit/s) on ui[5:2] / uo[7:4] (docs/isa.md §6.1).
+* SCK up to the project clock: 1 bit per SCK (50 Mbit/s at 50 MHz), or in an
+  optional quad mode 4 bits per SCK (200 Mbit/s on the wire) on ui[5:2] /
+  uo[7:4] (docs/isa.md §6.1). These rates are shown in RTL simulation (a
+  quad burst moves 193 Mbit/s of payload) and in FPGA fabric, where
+  the KV260's own fabric SPI master runs on the chip's 50 MHz clock: 199.9
+  Mbit/s for 4096-word quad bursts, 193.6 Mbit/s for a 64-word write, and
+  183.6 Mbit/s from a separate 45.93 MHz clock (`fpga/kv260/README.md`).
+  Through the Tiny Tapeout pads and the demo board they are unmeasured; at
+  SCK = clk the host has half a clock period, less pad and board delays, to
+  sample MISO. The default demo-board
+  driver (`tools/micropython/protoemu.py`) bit-bangs the port from MicroPython
+  and is far slower than either figure (an estimate: it has not been
+  measured). The optional PIO/DMA transport it points to (`quad_spi.py`,
+  docs/board-transport.md) defaults to SCK at half the project clock, at most
+  96 Mbit/s on the wire at 48 MHz, and has not run on a board.
   Reads have 8 dummy SCK (one byte) after the address.
 * Transaction: `cmd addr[15:0] data…`. The commands are 0x02 write, 0x03 read,
   0x0A write-fixed and 0x0B read-fixed. Data is 32-bit big-endian words.

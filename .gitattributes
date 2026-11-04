@@ -1,0 +1,2 @@
+# Verbatim records: no end-of-line conversion, ever (a kernel log line ends in \r\n).
+evidence/** -text

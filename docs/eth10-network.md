@@ -48,7 +48,7 @@ L to H flip passes through both-high inside one timestep: 15,497 of them in thos
 that. TD is now read at mid-clock, where it was never both high, and the
 test requires every transient to settle on H. A verifier's STA on fo6 has `uo_out[0]`
 arriving before `uo_out[1]` at both corners it read (finding 3 of
-`protoemu-verify-reports/inbox/003-eth-stack.report.md`; arrivals at the macro's edge,
+[verifier report 003](../evidence/verifier/003-eth-stack.report.md); arrivals at the macro's edge,
 not a measured overlap), which suggests TD+ rises first on silicon too, and so a short
 both-high on each L to H flip there. How long it lasts at the pads is a question for SDF
 or a scope. One tick of both-high injected into the firmware does trip the monitor, at this
@@ -96,7 +96,7 @@ within a clock (`test_cs_firmware_sends_the_same_waveform_as_eth10_tx`).
   (`test_carrier_sense_defers_to_an_arriving_frame`, 9800 ns at 50 MHz and 9825 ns at
   40 MHz, asserted exactly) starts the far end on a clock edge, so it measures one
   phase only. A 200-byte case on RTL and at gate level measures 9810 ns: the same 9800,
-  read at the next mid-clock (`test_carrier_sense_rtl`). Verifier report 025 shifted the
+  read at the next mid-clock (`test_carrier_sense_rtl`). [Verifier report 025](../evidence/verifier/025-reaction.report.md) shifted the
   far end by 4 to 16 ns on RTL and got 9804 to 9816 ns. At those phases the model's
   `pe.ethsim.Wire` stamps our edge one clock late; at the aligned phase it doesn't, so
   subtracting `WIRE_STAMP` here would be wrong. 40 MHz off-grid phases were not run on RTL.
