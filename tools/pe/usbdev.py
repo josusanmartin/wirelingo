@@ -111,20 +111,46 @@ class DeviceSoftware:
         self.out_toggle = 1
         self.out_records = []
         self.sent_at = None
+        self.dirty = 0         # 1: the TX FIFO may hold words a SETUP's flush missed; 2: and a core in `pull block`
+        self.tx_clears = 0
 
     def records(self):
         self.words += self.mh.pop_all(self.rx)
         recs, self.words = parse_records(self.words)
         return [r for r in recs if r.ok]       # bad packets were not ACKed: the host retries
 
-    def stage(self, pid, payload):
+    def setup_since(self, flags):
+        """A SETUP since the records were read: F_SETUP (`flags`, read first)
+        marks its token up to the end of its DATA; from then on its record is
+        in the RX FIFO. A SETUP whose token came after `flags` was read flushes
+        every word pushed before."""
+        rx_level = self.mh.read(sim.CORE_BASE + sim.CORE_STRIDE * self.rx + sim.C_STATUS) >> 4 & 15
+        return bool(flags & F_SETUP or rx_level)
+
+    def stage(self, pid, payload, racing=False):
+        """racing: the host may have moved on to a new SETUP (a re-stage), so
+        F_STAGED is set only if no SETUP came while the words went in; one that
+        came leaves the TX FIFO dirty, emptied before the next stage."""
         mh = self.mh
+        if self.dirty:                             # the host waits for this packet: no record is due
+            self.tx_clears += 1
+            if self.rx == self.tx:
+                self.words += mh.pop_all(self.rx)  # the clear empties both FIFOs: keep the records
+            restart = 1 << (8 + self.tx) if self.dirty == 2 else 0   # free a core in `pull block`
+            mh.write(sim.A_CTRL, mh.read(sim.A_CTRL) & 15 | restart | 1 << (16 + self.tx))
+            self.dirty = 0
         mh.write(sim.A_FCLR, F_GOTACK)
         for w in stage_words(pid, payload):
             mh.push(self.tx, w)
-        mh.write(sim.A_FSET, F_STAGED)
         self.unacked = (pid, payload)
         self.sent_at = None
+        if racing and self.setup_since(mh.read(sim.A_FSET)):
+            self.dirty = 1                         # not staged: the words may follow its flush
+            return
+        mh.write(sim.A_FSET, F_STAGED)
+        if racing and self.setup_since(mh.read(sim.A_FSET)):
+            mh.write(sim.A_FCLR, F_STAGED)         # its flush may have emptied the FIFO first, and
+            self.dirty = 2                         # an IN since then left the core in `pull block`
 
     def set_address(self, addr):
         """Move the RX token filter (its core briefly disabled: docs/isa.md §3)."""
@@ -166,8 +192,11 @@ class DeviceSoftware:
                 if self.sent_at is None:
                     self.sent_at = now
                 elapsed = mh.elapsed_us(now, self.sent_at) if hasattr(mh, "elapsed_us") else now - self.sent_at
-                if elapsed >= 100:
-                    self.stage(*self.unacked)
+                # Not if a SETUP came after the records were read: it cleared
+                # F_GOTACK and flushed the TX FIFO, so a packet staged now would
+                # be a stale one waiting there. stage() checks again around FSET.
+                if elapsed >= 100 and not self.setup_since(flags):
+                    self.stage(*self.unacked, racing=True)
                     self.restaged += 1
         if not self.unacked and self.pending:
             chunk = self.pending.pop(0)
@@ -191,6 +220,7 @@ class DeviceSoftware:
             mh.write(*filter_write(self.rx_prog, self.rx_base, 0))
             mh.write(sim.A_FCLR, 0x3F)
             self.words, self.pending = [], []
+            self.dirty = 0                     # the FIFOs were just cleared
             self.unacked = self.new_address = None
             self.sent_at = None
             self.address = 0
@@ -219,8 +249,9 @@ class DeviceSoftware:
         if bm == 0x80 and breq == 6:           # GET_DESCRIPTOR
             desc = self.descriptors.get(wval >> 8, b"")[:wlen]
             self.pending = [desc[i:i + 8] for i in range(0, len(desc), 8)]
-            if len(desc) % 8 == 0:
-                self.pending.append(b"")       # terminate with a zero-length packet
+            if len(desc) % 8 == 0 and (len(desc) < wlen or not wlen):
+                self.pending.append(b"")       # short of wLength: end with a zero-length packet
+                                               # (wLength 0: the status stage is an IN)
         elif bm == 0x00 and breq == 5:         # SET_ADDRESS (status stage is a zero-length IN)
             self.new_address = wval
             self.pending = [b""]

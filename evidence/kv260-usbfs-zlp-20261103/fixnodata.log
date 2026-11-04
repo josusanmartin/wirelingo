@@ -1,0 +1,12 @@
+[identity] RTL revision 60b06926cb1d, clock 47.9985 MHz
+[wiring]
+  pins pulsed low then read (of 5): pmod[0] 5, pmod[1] 0, pmod[2] 0, pmod[3] 0
+  pull-up found on pmod[0] = silkscreen 1: columns normal, it is D+ (full-speed wiring)
+  loaded usb_fs_dev (141 words), attached, core 0 started
+[service] answering over the SPI port until Linux has configured the device
+  configured after 0.32 s, 6 requests, address 90
+[data] Linux client, random bytes out and back
+  NODATA 1000 sent: 1000 ok, 0 timed out, other {}; latency ms min 0.69 median 0.85 max 1.87
+      8 B x 1: 1 of 1 equal, 5.5 kB/s both ways together
+[device software] attach 1: 1008 requests, 0 packets re-staged; detached
+PASS

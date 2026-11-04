@@ -1,0 +1,9 @@
+[identity] RTL revision 60b06926cb1d, clock 47.9984 MHz
+[wiring]
+  pins pulsed low then read (of 5): pmod[0] 5, pmod[1] 0, pmod[2] 0, pmod[3] 0
+  pull-up found on pmod[0] = silkscreen 1: columns normal, it is D+ (full-speed wiring)
+  loaded usb_fs_dev (141 words), attached, core 0 started
+[service] answering over the SPI port until Linux has configured the device
+  attach 1 of 1: not configured after 7 s; requests seen: ['8006000200000900', '8006000200001200', '0009010000000000']; F_SET 0x10; core 0 TX FIFO 2 words, RX FIFO 0, PC 4; software staged (11, b''), pending []
+[device software] attach 1: 6 requests, 0 packets re-staged; detached
+FAIL

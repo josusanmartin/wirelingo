@@ -169,8 +169,11 @@ def main():
         status, _, sw = run(board, spim, pe, prog, a, sizes)
         if status is not None:
             break
+        st = pe.read(sim.core_reg(0, sim.C_STATUS))     # reads only: TX/RX FIFO levels, PC
         print(f"  attach {attempt} of {a.attaches}: not configured after {a.timeout:.0f} s; "
-              f"requests seen: {sw.requests[-3:]}; F_SET 0x{pe.read(sim.A_FSET):02X}")
+              f"requests seen: {sw.requests[-3:]}; F_SET 0x{pe.read(sim.A_FSET):02X}; "
+              f"core 0 TX FIFO {st & 15} words, RX FIFO {(st >> 4) & 15}, PC {pe.read(sim.core_reg(0, sim.C_PC))}; "
+              f"software staged {sw.unacked}, pending {sw.pending}")
         if attempt < a.attaches:
             prog, order = attach(board, spim, pe)
     usb_demo.detach(board, spim, pe, "full", order)

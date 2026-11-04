@@ -1373,6 +1373,67 @@ simulated figures in docs/usb-full-speed.md (1 MB/s) assume a far faster SPI
 host and have not been measured here. Data stays on endpoint 0, because the
 firmware's token filter matches one address and endpoint.
 
+**Zero-length requests (2026-11-03).** The demo above never sends wLength 0. A
+run of zero-length vendor writes on the board found a device-software bug:
+`pe.usbfsdata` staged the status-stage ZLP of a zero-length write twice. In
+that run Linux got `-32` on request 1 and a timeout on request 3, and the
+timed-out request's cancel took the Kria's xHCI controller down ("not
+responding to stop endpoint command ... HC died"), with the hub and every
+device on it (`evidence/kv260-usbfs-zlp-20261103/nodata1000.log`,
+`kernel-19h05-19h25.txt`): a device that leaves INs unanswered can wedge this
+host. A zero-length read had the opposite bug: no status ZLP at all. Both
+are fixed in `pe.usbfsdata`. In the model (`test/model/test_usb_fs_data.py`,
+the device software running over SPI concurrently with the bus) the stale
+ZLP, a DATA0, answers a later request's status stage, or that request's INs
+go unanswered; the model does not show where Linux's `-32` came from.
+
+On the board with the fixed software (branch `usbfs-zlp` at 6dc8c93; RTL in
+FPGA fabric: KV260, protoemu48 RTL 60b0692, one host (the ZynqMP's xHCI),
+one hub (USB5744); orchestrator runs, 2026-11-03; logs and sha256s in
+`evidence/kv260-usbfs-zlp-20261103/`):
+
+| run | result | log |
+|---|---|---|
+| 1000 zero-length writes (0x40, 0x10), 1 s timeout each, on a configured device | 1000 ok; median 0.85 ms, max 1.87 ms | `fixnodata.log` |
+| zero-length reads (0xC0, 0x11), 10 then 200 | 10 ok (median 0.81 ms); 200 ok (median 0.74 ms, max 1.46 ms) | `fixread10.log`, `fixread200.log` |
+| 200 attaches (`--sizes 8 --rounds 1 --attaches 1`) | 6 stalled at `SET_CONFIGURATION` (below) | `fix200.log`, `stalls/` |
+
+The read logs do not print the direction; the orchestrator recorded that the
+reads ran with `NODATA_RT=0xC0 NODATA_RQ=0x11`. (Before the fix, with the
+double ZLP patched out at run time: 300 of 300 writes, median 0.74 ms, max
+1.90 ms, `nodata300.log`.)
+
+Two more `pe.usbdev` races of the same kind, evidence model only
+(`test_usb_fs_data.py`):
+
+* **Fixed:** GET_DESCRIPTOR staged a ZLP after a data stage that had
+  already reached wLength (8 or 16: not in the sequence usbmon recorded on
+  the board, but Linux's old enumeration scheme reads 8).
+* **Narrowed, not closed:** the 100 us re-stage after a lost ACK can race
+  the host's next SETUP, whose token clears F_GOTACK and flushes the TX FIFO.
+  The software checks for a SETUP (F_SETUP, then the RX FIFO level) before
+  it re-stages, again before it sets F_STAGED, and again after; when one
+  came, it does not set F_STAGED, or clears it, and empties the FIFOs (and
+  restarts the core) before it stages the reply to that SETUP. In the model
+  the old DATA is never sent, wherever the software is descheduled (six
+  points, `test_no_restage_after_a_setup`). What software cannot close: the
+  window runs from the check's flags read to the FSET, that is the RX-level
+  read and the FSET write. A SETUP whose token lands in it (its DATA not yet
+  in the RX FIFO at the RX-level read, or the whole SETUP before the FSET
+  write) has flushed the FIFO, and the FSET then sets F_STAGED over it until
+  the check after the FSET (two reads and a write) clears it. An IN in that
+  gap parks the core in `pull block`, answering nothing until the next
+  `service()` stages the reply. In the model that is 2 unanswered INs (the
+  token inside the check) and 8 (the whole SETUP at the FSET); the restart
+  that frees the core can also cut one IN short (1, a SETUP just after the
+  FSET). A real host may not sit through that: an xHCI control endpoint
+  gives up after 3 errors in a row (its CErr count; from the xHCI spec, not
+  tested here), and on this board a cancelled control transfer once took the
+  controller down (`nodata1000.log`). This needs a lost ACK first; the
+  board's stalled runs re-staged nothing. A one-word firmware guard (NAK an IN
+  when F_STAGED is set over an empty TX FIFO) would close it; it is not
+  applied.
+
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,
 so the demo tries up to three times and prints each retry. In the two stalls
@@ -1383,6 +1444,40 @@ would give Linux `-71`, not a timeout. The stall was not seen in any data
 transfer, nor with `usb_enum`, which answers without the software's delay. The
 cause is not proved: nothing here sees the bus between the xHCI controller, the
 hub's transaction translator and the device.
+
+With the fixed software (6dc8c93; RTL in FPGA fabric, the setup above;
+`evidence/kv260-usbfs-zlp-20261103/`): 6 of 200 attaches stalled
+(`fix200.log`), about the rate before, and 2 of 200 with the usbcore quirk
+`1209:5634:m` (`quirkm200.log`), not a significant difference. All 8 stalls
+look the same (`stalls/`): the software saw GET_DESCRIPTOR(config, 9), (config,
+18) and SET_CONFIGURATION(1), re-staged nothing, and had staged the status ZLP:
+`F_SET 0x10`, core 0's TX FIFO 2 words (that packet), RX FIFO 0, PC 4 (the idle
+`wait 0 pin DM`). The reply was ready and the core idle with nothing received.
+That fits the host or hub side (no status IN reaching the device) and is the
+likely explanation, but it is not proved: there is no D+/D- capture of a stall.
+
+What the model says (2026-11-03, rerun 2026-11-04 with the committed script
+`test/model/usb_fs_enum_sweep.py`; outputs and sha256s in
+`evidence/model-usb-fs-enum-sweep-20261104/`; evidence model only). The Linux sequence
+usbmon recorded in a stalled run (device descriptor read with a 64-byte
+buffer, ended by the first 8-byte packet; port reset; SET_ADDRESS; device
+descriptor; configuration 9 and 18 bytes, 95 and 27 us apart;
+SET_CONFIGURATION 569 us later), against `pe.usbfsdata` running over a
+modelled SPI port concurrently with the bus at 20 to 100 us per transaction,
+with pauses of 0.2 to 2 ms in the service loop: SET_CONFIGURATION's status
+stage was answered with one zero-length DATA1 in all 160 enumerations with
+the software before the fixes above (c184dd6), and all 160 with them, at
+8c71177 and again with the re-stage checks of 64b59c2 (the `usbdev.py` of
+this branch's head). (At 200 us per transaction, 6 of 40 failed earlier, at
+SET_ADDRESS, the same 6 runs at all three commits: the model's host sent it
+0.1 to 3 ms after the port reset, before software that slow had restarted
+the core; Linux took 64 ms there.) The races fixed above leave
+words or F_STAGED behind only when the software stages for a transfer the
+host has left; in the stalled runs the software saw one SET_CONFIGURATION
+and re-staged nothing, so none of them was in play there. The model's host
+always sends the status IN; the board's core saw no IN at all, which the
+model cannot produce. The device software is not ruled out by this, but it
+has no known path to the stall.
 
 ### Build and staging (2026-10-07, branch `kv260-usb`)
 

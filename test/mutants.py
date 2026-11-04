@@ -48,6 +48,8 @@ def REPLY(selection):
 
 REPLY50 = REPLY("match_then_reply_timing and 50000000.0")
 
+FSDATA = "test/model/test_usb_fs_data.py -k"   # full-speed data over endpoint 0
+
 # name: (file, original text, mutated text, test command)
 MUTANTS = {
     "model-alu-borrow": ("tools/pe/sim.py", "c = int(a < s)", "c = int(a <= s)", LOCKSTEP),
@@ -185,6 +187,33 @@ MUTANTS = {
                          pytest("test/model/test_pmbus.py -k through_the_firmware")),
     "fw-smbus-pec-not-checked": ("firmware/smbus_host.pasm", "    ldi r1, 0x8200\n", "    ldi r1, 0x8100\n",
                                  pytest("test/model/test_pmbus.py -k every_single_bit")),
+    # full-speed data over endpoint 0 (pe.usbfsdata; KV260 bug of 2026-11-03)
+    "usbfs-zlp-staged-twice": ("tools/pe/usbfsdata.py",
+                               "            self.incoming, self.expected = bytearray(), wlen   # service() stages the status ZLP once\n",
+                               "            self.incoming, self.expected = bytearray(), wlen\n"
+                               "            if not wlen:\n                self.pending = [b\"\"]\n",
+                               pytest("test/model/test_usb_fs_data.py -k zero_length_writes_with_software")),
+    "usbfs-read0-no-status": ("tools/pe/usbfsdata.py", " % 8 == 0 or not wlen:", " % 8 == 0:",
+                              pytest('test/model/test_usb_fs_data.py -k "round_trips and 0"')),
+    "usbdev-zlp-at-wlength": ("tools/pe/usbdev.py", "if len(desc) % 8 == 0 and (len(desc) < wlen or not wlen):",
+                              "if len(desc) % 8 == 0:", pytest("test/model/test_usb_fs_data.py -k descriptor_ending")),
+    "usbdev-restage-in-setup": ("tools/pe/usbdev.py", "return bool(flags & F_SETUP or rx_level)", "return bool(rx_level)",
+                                pytest(f'{FSDATA} "no_restage and token"')),
+    "usbdev-restage-after-setup": ("tools/pe/usbdev.py", "return bool(flags & F_SETUP or rx_level)",
+                                   "return bool(flags & F_SETUP)", pytest(f'{FSDATA} "no_restage and not token"')),
+    "usbdev-restage-unchecked": ("tools/pe/usbdev.py", "if elapsed >= 100 and not self.setup_since(flags):",
+                                 "if elapsed >= 100:", pytest(f'{FSDATA} "no_restage and decision"')),
+    "usbdev-fset-unchecked-before": ("tools/pe/usbdev.py",
+                                     "        if racing and self.setup_since(mh.read(sim.A_FSET)):\n            self.dirty = 1",
+                                     "        if False:\n            self.dirty = 1", pytest(f'{FSDATA} "no_restage and first"')),
+    "usbdev-fset-unchecked-after": ("tools/pe/usbdev.py",
+                                    "        if racing and self.setup_since(mh.read(sim.A_FSET)):\n            mh.write(sim.A_FCLR, F_STAGED)",
+                                    "        if False:\n            mh.write(sim.A_FCLR, F_STAGED)", pytest(f'{FSDATA} "no_restage and FSET"')),
+    "usbdev-dirty-no-restart": ("tools/pe/usbdev.py", "restart = 1 << (8 + self.tx) if self.dirty == 2 else 0",
+                                "restart = 0", pytest(f'{FSDATA} "no_restage and FSET"')),
+    "usbdev-dirty-not-cleared": ("tools/pe/usbdev.py", "        if self.dirty:                             # the host waits",
+                                 "        if False:                                  # the host waits",
+                                 pytest(f'{FSDATA} "no_restage and first"')),
     # the 10BASE-T stack (`python3 test/mutants.py 'eth-*'`)
     "eth-fw-no-window": ("firmware/eth10_tx_cs.pasm", "    jmp t, frame              side 0       ; quiet all the way",
                          "    jmp frame                 side 0       ; quiet all the way", ETH("carrier_sense_defers")),
