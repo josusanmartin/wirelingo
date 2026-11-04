@@ -46,7 +46,7 @@ ssh "$kria" "set -e; cd $app-app
 if [ "${LOAD:-1}" = 1 ]; then
   ssh "$kria" "set -e; sudo xmutil unloadapp || true
     sudo xmutil loadapp $app
-    sudo xmutil listapps | grep -E \"$app|Accelerator\""
+    sudo xmutil listapps | grep -E \"^ *($app|Accelerator) |rror\""
   # xmutil can print "Load Error" and still exit 0, so this never says the load worked
   echo "load attempted. Run nothing unless the table above shows $app as its one active row and no line says error."
   echo "Then test with: ssh $kria sudo python3 $app/fpga/kv260/host/bringup_kria.py"

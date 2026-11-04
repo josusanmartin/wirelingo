@@ -1293,3 +1293,18 @@ def test_runbook_states_the_rules():
     for needle in ("48 v", "pmod_test.py", "check before wiring", "eth0", "one process", "reboot", "shared ground",
                    "estimate", "squelch", "no swd", "vbus", "load error", "no tool"):
         assert needle in doc, needle
+
+
+def test_preflight_reads_the_installed_apps_as_rows(monkeypatch):
+    """protoemu is a substring of protoemu40: only the table's rows say it is installed.
+    The board's whole table (2026-11-03) has all three."""
+    from test_fabric_guard import BOARD_TABLE
+    said = []
+    ctx = types.SimpleNamespace(rig=FakeRig(), spim=FakeSpim(), say=said.append)
+    monkeypatch.setattr(hw_day, "listapps", lambda: listing("protoemu40", names=("k26-starter-kits", "protoemu40",
+                                                                                    "protoemu48")))
+    with pytest.raises(RuntimeError, match=r"\['protoemu'\] not installed"):
+        hw_day.act_preflight(ctx)
+    monkeypatch.setattr(hw_day, "listapps", lambda: BOARD_TABLE)
+    hw_day.act_preflight(ctx)
+    assert "installed apps checked: all three" in said

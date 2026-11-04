@@ -14,7 +14,8 @@ Nothing here has run on an FPGA or on silicon, and no cable has been involved.
 | Receive firmware, unchanged | `firmware/eth10_rx.pasm` |
 | Timed host port, wire model, pcap writer | `tools/pe/ethsim.py` |
 | Bridge from a Linux TAP to the chip | `fpga/kv260/host/eth_tap.py` |
-| Tests | `test/model/test_eth_stack.py`, `test/test_eth_stack_rtl.py` |
+| The bridge's KV260 backend: generator in, sampler out | `fpga/kv260/host/fabric_eth.py` |
+| Tests | `test/model/test_eth_stack.py`, `test/test_eth_stack_rtl.py`, `test/model/test_fabric_ping.py` |
 
 Pins: TD+ = uo0, TD- = uo1, RXP = ui0, as `eth10-receiver.md` draws it (positive
 differential high, idle low). Core 0 runs `eth10_rx`, core 1 `eth10_tx_cs`. 50 MHz
@@ -29,6 +30,7 @@ The MAC is `02:57:4c:00:00:02`, locally administered.
 | The same, through the real host-port pins: quad SPI, jitter, 1518-byte ping, no reply to a bad FCS or another MAC | RTL simulation | `test_ping_rtl_50mhz`, `test_ping_rtl_40mhz` (ARP and ping, no jitter) |
 | The same 50 MHz session, the 40 MHz ping and carrier sense, on run fo6's netlist (a94a948b): 3 of 3 | gate level, functional, no SDF | `flow/gl_module_test.py`, command below |
 | Linux's own stack ARPs and pings the chip | real kernel in a namespace, against the cycle model | `eth_tap.py --model --selftest` |
+| The same through the KV260 backend's code, one 64-byte frame at a time | real kernel against the cycle model; that code on a fake KV260 register map; not yet on the board | `eth_tap.py --backend fpga-model --selftest`, `test_fabric_ping.py`; "The FPGA backend" below |
 | tcpdump and scapy accept the frames; each flags a broken checksum | cycle model | `test_tcpdump_reads_the_session`, `test_scapy_validates_the_session` |
 | No reply to a bad FCS, another MAC, another IP, a bit flipped on the line | cycle model at the pads; bad FCS and another MAC on RTL; all but the flipped bit from real Linux | `test_no_reply_at_the_pads`, `test_bit_flipped_on_the_line_gets_no_reply` |
 | 23 kinds of bad frame dropped, each for the stated reason; 6000 random or damaged frames raise nothing | Python, the Station alone | `test_station_rejects`, `test_station_never_raises_and_never_answers_garbage` |
@@ -276,17 +278,139 @@ To drive it by hand: run the same command without `--selftest`, and ping
 
 ### The FPGA backend
 
-`eth_tap.py` takes a backend with `send`, `poll` and `busy`. `ModelBackend` is one;
-`FpgaBackend` is a stub that exits. To fill it in:
+**Evidence level: model.** `FpgaBackend` is written and has run on the cycle model and
+on a fake KV260, not on the board. Until the orchestrator reports a board run, nothing
+in this section has run in FPGA fabric.
 
-1. `--measure-spim` first. `Eth10Host` then runs over `pe_spim.Spim` unchanged.
-2. A way into RXP: the pattern generator (`pe_lab`) can play a frame, as
-   `legacy_demo.py eth10_rx_gen` does, but its table holds 1024 entries, enough for
-   a 64-byte frame and not a 1518-byte one.
-3. A way out of TD: no core is free to sample it, since this stack takes both.
-   That needs a fabric capture or a wire.
+`eth_tap.py` takes a backend with `send`, `poll` and `busy`. `FpgaBackend`
+(`fpga/kv260/host/fabric_eth.py`) puts Linux's frames through the chip RTL in the
+KV260's fabric with no cable and no PMOD pin. It is a smaller thing than the stack on
+a cable, because of what the loaded bitstream has. That is the `protoemu` app, RTL
+revision d1aa46f; read from that commit's `fpga/kv260/kv260_top.v`, `pe_lab.v` and
+`pe_spim.v`, which are unchanged since, and whose chip RTL in `src/` differs from today's
+only in `config.json` and the SDC files:
 
-With a real cable none of that applies and the bridge isn't needed: Linux on the other
+* pe_lab's pattern generator: 1024 entries of (value, delay) on the protoemu clock,
+  on the uio pads protoemu doesn't drive. It can't reach ui0, the stack's RXP: ui0 comes
+  from the PS's GPIO bit or a PMOD pin only.
+* No capture block and no logic analyser. pe_lab's SPI device keeps the last 128 MOSI
+  bits, and the AXI GPIO reads `uo_out` when Linux asks: neither follows 50 ns cells.
+* pe_spim does one transaction at a time, up to 4096 words, quad at SCK = clk, one word
+  every 8 clocks. While a burst runs nothing else reaches the chip.
+
+So the backend takes one frame at a time, in two phases, with the cores loaded for each:
+
+1. **RX.** The stack's own load (`ethhost.load_writes`), with RXP on uio0 and TD on
+   uio3/uio4 instead of ui0 and uo0/uo1. The generator plays the frame's Manchester
+   edges into uio0 at clock times (each bit 5 clocks, half cells 3 and 2, at 50 MHz;
+   exact at 40), and one blind quad burst drains core 0's RX FIFO. A blind burst reads
+   an empty FIFO as 0, and a data word of 24 zero bits is 0 too. But the burst reads
+   every 8 clocks and the line unit fills a word every 120, so each data word has its
+   place in the burst: `restore_rx` puts the zero words back by that cadence (Linux's
+   ARP request has 6 of them), takes the word before each trailer as the record's last
+   word, and refuses a record that doesn't fit. The record's bit count and the FCS
+   check the frame. What this cannot see: a blind read of an empty FIFO and a read of
+   an all-zero data word both give 0, so whether the chip pushed its all-zero words
+   (or one too many) is not observed. Those words are put back from the bit count,
+   and the frame is right either way; the FCS and the byte comparison show the frame
+   is right, not that those words came out of the FIFO. That is 6 of the ARP
+   request's 24 data words, and 2 in each other probe frame.
+2. **pe.eth.Station** answers, the stack's host side. `Eth10Host` is not used: it
+   services the FIFOs with passes, and here bursts do.
+3. **TX.** `eth10_tx_cs` on core 1 as the stack loads it, behind a trigger, with the
+   reply preloaded in its FIFOs and F_GO set. `usb_sampler` on core 0 reads uio2..uio4
+   every clock (uio2 is a marker the generator holds high, so no sample word is 0); the
+   generator raises the trigger and one burst drains the samples. The frame is read off
+   them by `pe.ethsim.manchester_decode`, the model tests' far end. TD is read inside
+   the FPGA, where `kv260_top` loops `uio_out` back to `uio_in`, not off a pin.
+
+What that leaves out, against the stack on a cable:
+
+* Frames up to 64 bytes each way: Linux's frame must need at most 1024 generator
+  entries (the 64-byte frames of the selftest do; ping's default 102-byte frame needs
+  more than 1024), and the TX FIFOs hold 16 words. So `ping -s 18`, and
+  no 1472-byte ping. A frame that doesn't fit is counted (`rx_too_big`) and not played.
+  For the fpga backends the TAP's MAC is fixed at `02:57:4c:55:55:01`, for which Linux's
+  ARP request is 974 entries, and IPv6 is off on the TAP, in its namespace only
+  (`test_linux_frames_fit_the_generator_and_bigger_ones_are_refused`).
+* RX and TX never overlap. Carrier sense is exercised against a quiet line only.
+* The host port runs in bursts, so this says nothing about a host that services the
+  FIFOs in passes: `--measure-spim` is still the number for that.
+* Where TD's edges fall after the trigger depends on the phase of core 1's
+  CLKDIV 1.25 divider then (4 ticks in 5 clocks), which the host's timing since the
+  core's restart sets. The model gives 4 different waveforms over the 5 phases.
+
+Commands (the runbook the orchestrator uses starts with `sudo xmutil listapps`):
+
+    python3 -B fpga/kv260/host/eth_tap.py --backend fpga-model --probe --save m.json     # the model, no root
+    sudo python3 -B fpga/kv260/host/eth_tap.py --backend fpga --probe --save b.json      # the board, no network
+    python3 -B fpga/kv260/host/eth_tap.py --compare b.json m.json
+    sudo unshare --net -- python3 -B fpga/kv260/host/eth_tap.py --backend fpga --selftest
+
+`--probe` creates no interface. It sends an ARP request, a ping, a UDP datagram and two
+frames that must go unanswered (bad FCS, another MAC), and passes only if the chip
+recorded each frame as sent, each reply read off TD is the Station's, FCS good, and
+TD carried one 100 ns link pulse before it. `--compare` passes only if the RX FIFO
+words, records, replies and decoded frames are equal and everything on TD after the
+trigger, in clocks, equals the model's at one divider phase: the link pulses (how many,
+where, how wide) and the frame's edges from its first transition to the end of TP_IDL.
+The burst is sized to end `TAIL_S` (40 us, `fabric_eth.py`) after the frame's expected
+end, so nothing on TD later than that is seen. `--backend fpga` maps
+nothing until fabric_guard shows the app for `--clock` (protoemu at 50 MHz, protoemu40
+at 40) as the one active row; another of our apps active refuses too
+(`require_app(expect=...)`, used by `--measure-spim` now as well). It loads no app.
+
+What is guaranteed about giving the board back, and from which point. `run_closing`
+installs its SIGINT, SIGTERM and SIGHUP handlers, then makes a holder
+(`board_hold.Held`) and only then builds the backend. `fabric_eth.board_rig` hands the
+holder the board's closer as soon as it has the board's three objects, before its first
+write that changes anything: the chip's reset, then `v2_demo.Hw`'s move of the host port
+to the fabric master (the first SEL write), the ID read, quad, the clock measurement,
+`FabricEth`, the Station. From that point on, any end (a return, an exception, Ctrl-C,
+SIGTERM, SIGHUP, at any statement) runs the closer in `run_closing`'s finally: cores
+stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPIO path.
+The first signal ends the run and every later one is ignored, so nothing cuts the close
+short. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
+reads pe_spim's VERSION and pe_lab's MAGIC, and writes the GPIO path's idle levels,
+which are what the board is given back to anyway. So there is no first SEL write a
+signal could land inside without a holder: the holder is set first. SIGKILL can't be
+caught, and nothing here can help a process that is killed.
+
+The test of it is exhaustive over the code that runs in between:
+`test_every_point_in_the_window_gives_the_board_back` injects a Ctrl-C, and separately a
+real SIGTERM, at every line event of the board code (`fpga/kv260/host`,
+`tools/micropython`; not the cycle model, the assembler or the test's fakes) from the
+call of `Board.reset` until `run_closing` holds the backend, 621 points, each run
+through `eth_tap.main` on the fake KV260, and checks the end state above after each.
+Verifier report 034's own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or
+`eth.Station` call after `FabricEth`) are tests too. Verifier reports 029, 031 and 034
+found three such windows in turn, each a statement past the last fix; the board runs
+went through all of them without a fault.
+
+`--pcap` takes a tcpdump of the TAP, for the record only; it is never part of the pass.
+On the board's selftest of `da82a51` the file came out empty, and that version kept
+tcpdump's errors and exit status out of sight. Since then the result reports the file's
+size, tcpdump's exit status and what it printed. No pcap from the board is claimed here.
+
+| Run, model only | 50 MHz | 40 MHz |
+|---|---|---|
+| `--probe` on the cycle model: 5 frames, replies off TD | 5 of 5 | 5 of 5 |
+| The same on a fake KV260 (pe_spim and pe_lab register maps driving the model): HwRig, `pe_spim.Spim`, `pe_lab.Lab` and the burst's register writes, as on the board | 5 of 5, `--compare` SAME with the model | - |
+| Real Linux in a namespace, `--backend fpga-model --selftest`: ARP, `ping -s 18` 5 of 5, UDP echo, the four no-reply cases, answers again | pass | pass |
+| Linux's ARP request: generator entries, zero words restored | 974, 6 | 974, 6 |
+| TD at the model's phase 0: link pulse, half cells, TP_IDL as sampled every clock | 100 ns; 40/60 ns; 290 ns | 100 ns; 50 ns; 275 ns |
+
+The fake board's PMOD registers are only ever written 0, and its host-port select ends
+on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
+Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
+24 of 24 killed, and with the 79 `hw-*` (the guard and hardware-day) 103 of 103.
+`fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the exhaustive
+test alone (16 of 16 of its runs fail on each). The runs in the table and the mutants
+ran on runner1 from a clean clone of `b24511c`, whose code is this commit's (logs:
+`selftest-50.log`, `selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
+`runner1:~/protoemu-flow/agent-runs/fabric-ping/logs/b24511c`); the fake board is a test.
+
+With a real cable none of this applies and the bridge isn't needed: Linux on the other
 end of the cable is the test.
 
 ## What remains for hardware

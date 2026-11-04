@@ -1348,7 +1348,7 @@ on one, it says so.
 | Pin 1 of the Pi's header, physically | Official documentation gives pin numbers; its position here is by description | `pinout` on the Pi |
 | RJ45 colours on a cut cable | T568A or T568B, unknown | Use the breakout |
 | The I2C part's pins, voltage, address width | Not chosen yet | Its datasheet |
-| `xmutil listapps` rows' middle columns | The header and each row's last two fields were read on the board on 2026-11-03; a row's type, base and Pid values were not quoted. A row without a Pid value would refuse | Step `recover`, first run |
+| `xmutil listapps` rows' middle columns | Settled: the whole 58-line table was read on the board on 2026-11-03 (`test/model/listapps-20261103.txt`). Every row's type and base type are `XRT_FLAT`, its Pid `id_ok`, its base its name; for names that fill Base's column xmutil prints Accel_type and Base with no space (`XRT_FLATkv260-q5-...`). The guard first refused that table on those rows; it now reads them, and still refuses anything else (`test_the_boards_whole_table_on_2026_11_03`) | - |
 | `xmutil listapps` doesn't touch the fabric | From dfx-mgr's design; source not read | dfx-mgr's source |
 | `/sys/class/fpga_manager/fpga0/state` exists here | Expected, not seen. The guard refuses if absent | Step `recover`, first run |
 | An overlay's removal takes `/fpga-region/firmware-name` away | From memory of how overlays work. The path itself is in the board's boot log | Step `recover`, first run |
