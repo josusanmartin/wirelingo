@@ -282,6 +282,18 @@ HOLDS = {   # where the software is descheduled: (access, the access before it)
 UNANSWERED = {("at FSET", "after the SETUP"): 16, ("after FSET", "after the SETUP"): 2}
 
 
+def staged_over_empty(h, b, what):
+    """The device's own state, read from the model once the software has
+    caught up. F_STAGED set over an empty TX FIFO: the next IN finds no packet
+    and parks the core in `pull block`. F_UNDERRUN (flag 0, sticky): a core
+    freed from `pull block` by a later push started that packet unasked and cut
+    it short, leaving the rest of the words out of step in the FIFO."""
+    h.wait_bits(400)
+    chip = b.chip
+    assert not (chip.flags & usbdev.F_STAGED and not chip.cores[0].txf), f"{what}: F_STAGED over an empty TX FIFO"
+    assert not chip.flags & 1 << usbdev.FLAGS["F_IN"], f"{what}: F_UNDERRUN, a packet sent unasked and cut short"
+
+
 @pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
 @pytest.mark.parametrize("where", list(HOLDS))
 def test_no_restage_after_a_setup(concurrent, where, resume):
@@ -330,8 +342,10 @@ def test_no_restage_after_a_setup(concurrent, where, resume):
         t = h.send(usb.data_packet(usb.PID_DATA0, req), t, h.ipd)
         assert h.listen(t) == usb.handshake(usb.PID_ACK)
     status_in(h, 5, "SET_CONFIGURATION", UNANSWERED.get((where, resume), 0))
+    staged_over_empty(h, b, "after SET_CONFIGURATION")
     checked_write(h, 5, data[::-1], "8-byte write after")
     assert checked_read(h, 5, 8, "8-byte read after") == data[::-1]
+    staged_over_empty(h, b, "after the round trip")
     if where == "at the decision":
         assert sw.tx_clears == 0, "the first check should have kept the old DATA out of the TX FIFO"
 
