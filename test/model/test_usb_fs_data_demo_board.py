@@ -115,8 +115,38 @@ if os.environ.get("FORK_SIGNAL"):          # a SIGTERM that lands between the fo
             os.kill(os.getpid(), signal.SIGTERM)     # blocked here: pending until fork_client unblocks
         return pid
     os.fork = fork
+reap = os.environ.get("REAP_STOP")         # "done" or "limit", ":signal" or ":raise": a SIGINT just after run()
+if reap or os.environ.get("SERVICE_RAISES"):   # reaps the client (verifier 054); every reap and kill logged
+    real_waitpid, real_kill = os.waitpid, os.kill
+    hit = []
+    def waitpid(pid, flags):
+        got, st = real_waitpid(pid, flags)
+        if got:
+            note(f"client reaped {got}")
+        if reap and got and not hit and (flags == os.WNOHANG) == reap.startswith("done"):
+            hit.append(1)                  # the first reap on that path only
+            if reap.endswith(":signal"):   # a real one, as from a group Ctrl-C: Stop where Python handles it
+                real_kill(os.getpid(), signal.SIGINT)
+            else:                          # a Stop raised right there, whatever the mask
+                raise d.Stop("SIGINT", signal.SIGINT)
+        return got, st
+    def kill(pid, sig):
+        if os.environ.get("SERVICE_RAISES") and sig == 9:  # a SIGINT just before kill_client's kill
+            real_kill(os.getpid(), signal.SIGINT)
+        note(f"client kill {pid} {sig}")
+        return real_kill(pid, sig)
+    os.waitpid, os.kill = waitpid, kill
+if reap and reap.startswith("done"):       # the client ends at once, so run()'s poll reaps it
+    d.client = lambda *a: 0
+if os.environ.get("SERVICE_RAISES"):       # run() fails (an SPI error, say) while the client runs
+    real_service = d.usbfsdata.LoopbackDevice.service
+    def service(self, *a):
+        if d.LIVE["client"]:
+            raise RuntimeError("the SPI port failed")
+        return real_service(self, *a)
+    d.usbfsdata.LoopbackDevice.service = service
 sys.argv = ["usb_fs_data_demo.py", "--sizes", "8", "--rounds", "1", "--attaches", os.environ.get("ATTACHES", "1"),
-            "--timeout", os.environ.get("TIMEOUT", "30")]
+            "--timeout", os.environ.get("TIMEOUT", "30"), "--limit", os.environ.get("LIMIT", "300")]
 d.main()
 '''
 
@@ -267,3 +297,67 @@ def test_a_client_that_raises_exits_1_and_leaves_the_board_alone(tmp_path, how):
     assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
     assert [op for _, op in board][-3:] == DETACH, board[-5:]
     assert "[device software] attach 1: 0 requests, 0 packets re-staged; detached" in out, out
+
+
+def signalled_after_reaping(log):
+    """(pid, signal) for each kill the demo sent to a client it had already reaped."""
+    reaped, late = set(), []
+    for _, op in ops(log):
+        word = op.split()
+        if word[:2] == ["client", "reaped"]:
+            reaped.add(word[2])
+        elif word[:2] == ["client", "kill"] and word[2] in reaped:
+            late.append((word[2], word[3]))
+    return late
+
+
+@pytest.mark.parametrize("path", ["done", "limit"])
+@pytest.mark.parametrize("how", ["signal", "raise"])
+def test_a_stop_just_after_the_client_is_reaped(tmp_path, path, how):
+    """A SIGINT just after run() reaps the client (verifier 054), on either
+    reap: the client's own end (run()'s poll) or the --limit kill. Before, the
+    Stop left the reaped pid recorded and kill_client's os.kill raised
+    ProcessLookupError in its place: rc 1, a traceback, no detach. "signal"
+    is a real SIGINT, as from a group Ctrl-C that killed the client at the
+    same moment: held off until the pid is cleared, so the reaped pid is never
+    signalled (a reused one would be some other process). "raise" is a Stop
+    raised right there whatever the mask: kill_client takes the client as
+    gone. Either way STOPPED, 130, the normal detach last, and only the demo's
+    pid on the board."""
+    p, log = start(tmp_path, {"REAP_STOP": f"{path}:{how}", "LIMIT": "1"})
+    out, _ = p.communicate(timeout=120)
+    assert p.returncode == 130 and "STOPPED" in out and "Traceback" not in out, out
+    assert "[stop] SIGINT: stopping" in out and "the Linux client killed" not in out, out
+    assert "client still running" not in out, out                  # the Stop came first
+    assert "[device software] attach 1: 0 requests, 0 packets re-staged; detached" in out, out
+    reaped = [pid for pid, op in ops(log) if op.startswith("client reaped")]
+    assert reaped == [str(p.pid)], ops(log)                         # one reap, by the demo
+    if how == "signal":
+        assert signalled_after_reaping(log) == [], ops(log)
+    board = [(pid, op) for pid, op in ops(log) if not op.startswith("client")]
+    assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
+    assert [op for _, op in board][-3:] == DETACH, board[-5:]
+
+
+def test_a_stop_inside_kill_client_still_kills_the_client(tmp_path):
+    """run() failing while the client runs (an exception other than Stop), then
+    a SIGINT inside kill_client between its clearing the pid and its kill:
+    kill_client is one step with the signals held (verifier 054), so the
+    client is still killed and reaped; unheld, it was left running with no pid
+    left for main() to kill. The Stop then ends the demo: STOPPED, 130, the
+    normal detach."""
+    p, log = start(tmp_path, {"SERVICE_RAISES": "1"})
+    try:
+        out, _ = p.communicate(timeout=120)
+    finally:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)   # a client left running
+        except ProcessLookupError:
+            pass
+    assert p.returncode == 130 and "STOPPED" in out and "Traceback" not in out, out
+    assert "the Linux client killed" in out, out
+    kills = [op.split()[2] for _, op in ops(log) if op.startswith("client kill")]
+    assert len(kills) == 1 and f"client reaped {kills[0]}" in [op for _, op in ops(log)], ops(log)
+    board = [(pid, op) for pid, op in ops(log) if not op.startswith("client")]
+    assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
+    assert [op for _, op in board][-3:] == DETACH, board[-5:]
