@@ -53,7 +53,7 @@ occupancy, not a speed comparison:
 | Demonstration | Instructions / cores | Evidence |
 |---|---|---|
 | UART over virtual pin 24 | TX 4 + RX 14 / two cores | Generated bundle loaded via RTL SPI; 53 bytes in 4.639 ms simulated, including a 187.5-us service stall (RTL, `test.py::test_generated_uart_virtual_loopback` with the 14-word RX: `evidence/model-usb-guard-20261104/rtl-test-module-c4003a2.log`) |
-| USB without line unit | RX 143 + TX 55 / two cores | Concurrent SPI service, descriptors, errors, retries and bus reset |
+| USB without line unit | RX 143 + TX 56 / two cores | Concurrent SPI service, descriptors, errors, retries and bus reset |
 | USB with line unit | 130 / core 0 | Same software service and end-to-end RTL checks; core 1 remains available |
 | I2C master | 90 / one core | Device-model transactions and stuck-clock recovery |
 

@@ -7,7 +7,9 @@
 ;   F_ACK : a DATA packet after SETUP/OUT arrived -> send ACK
 ;   F_SETUP: a SETUP is arriving (set by usb_ls_rx from its token to the end of its
 ;           DATA) -> empty the TX FIFO: the transfer it aborts may have words staged
-;           or being pushed, which nothing else would drop before the next IN
+;           or being pushed, which nothing else would drop before the next IN;
+;           and drop an IN token that came inside the SETUP (F_IN would stay set,
+;           and that IN be answered after the SETUP's ACK, unasked)
 ; An IN that finds F_STAGED over an empty TX FIFO (a stage whose words that flush
 ; dropped) is NAKed, never taken as a packet.
 ; Staging: the host pushes the packet into the TX FIFO, then sets F_STAGED (so a
@@ -86,8 +88,9 @@ reset_wait:
     wait 0 flag F_RESET
     jmp idle
 setup_flush:                       ; while F_SETUP (its token to the end of its DATA), words
-    jmp txne, setup_drop           ; the host software pushed for the abandoned transfer,
-    jmp idle                       ; before or as the SETUP came, are dropped
+    flag clr F_IN                  ; the host software pushed for the abandoned transfer,
+    jmp txne, setup_drop           ; before or as the SETUP came, are dropped, and so is an
+    jmp idle                       ; IN token inside it: answered after the SETUP's ACK, unasked
 setup_drop:
     pull block
     jmp setup_flush

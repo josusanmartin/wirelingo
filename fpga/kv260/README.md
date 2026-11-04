@@ -1485,7 +1485,13 @@ Two more `pe.usbdev` races of the same kind, evidence model only
   (16), both resumes, 1 and 50 us per access, ends right
   (`test_restage_held_at_every_access_ls`,
   `test_stage_abort_held_at_every_access`; tables in
-  `evidence/model-usb-ls-restage-20261104/`).
+  `evidence/model-usb-ls-restage-20261104/`). Branch `usb-in-setup` (model
+  tests only): an IN token between a SETUP token and its DATA left F_IN set
+  while `usb_ls_tx` sat in that flush, and was answered (a NAK) after the
+  SETUP's ACK, unasked; the flush now clears F_IN (55 → 56 words; the three
+  turnarounds still 2.312 bit times, `measure_ls_ta.py`;
+  `test_usb_in_setup.py`). The one-core firmware answers each IN as its
+  token ends, so it has no such pending IN.
 
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,
