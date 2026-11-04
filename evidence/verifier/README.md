@@ -1,9 +1,12 @@
 # Verifier reports
 
 Every report of the project's independent verifier, with the item it
-answered, from the first (2026-11-02) to item 041 (2026-11-04): 42 items, 42
-reports, 21 `VERDICT: PASS` and 21 `VERDICT: FAIL`. FAILs are kept: they are
-most of what the verifier caught.
+answered, from the first (2026-11-02) to item 050 (2026-11-04): 51 items, 51
+reports, 27 `VERDICT: PASS` and 24 `VERDICT: FAIL`. FAILs are kept: they are
+most of what the verifier caught. (Counted from the files, not from this
+text: 51 `NNN-name.md` files that are not `.report.md`, 51 `NNN-name.report.md`
+files, and `head -qn1 *.report.md | sort | uniq -c`, which gives 27 `VERDICT:
+PASS` and 24 `VERDICT: FAIL` and no other first line.)
 
 ## What the verifier is
 
@@ -33,10 +36,27 @@ For each number NNN:
   come numbered findings with file:line, how each was shown, and what the
   verifier ran.
 
-Commits named here are local commits of the project. All of them are in this
-branch's history except `a85fc57` (item 041): that was this folder's update to
-038 before it was rebased onto `bc98a97`, and the same change, with report
-041's finding fixed, is in this branch's history under other hashes.
+Commits named here are local commits of the project. Every hexadecimal string
+of 7 or more characters in the items and reports 000-050 was looked up with
+`git cat-file --batch-check` and, where it is a commit, against `git rev-list
+HEAD`. All the commits are in this branch's history except these, which name
+real commits of the repository that this branch does not contain:
+
+| Commit | Named in | What it is |
+|---|---|---|
+| `a85fc57` | item and report 041; item 042, report 042 | this folder's update to 038 before it was rebased onto `bc98a97`; the same change, with report 041's finding fixed, is in this branch's history as `763e0af` and `ead2d02` |
+| `e158fe0` | item and report 048; item 049, report 049 | the `usb-guard2` commit before it was rebased onto `9baebb7`; `git range-diff` gives it equal to `ac3e72e`, which is in this branch's history (report 049) |
+| `dc51cc8` | report 047 | the `usb-ls-restage` test commit before the rebase onto `edc9042`; the evidence README of `model-usb-ls-restage-20261104/` maps it to `c887e28`, in this branch's history |
+| `8fdda85` | report 047 | the `usb_ls_tx` fix before the same rebase; mapped to `699e430`, in this branch's history |
+| `60b0692` | items 032 and 036, reports 032, 036 and 038; item 042, report 042 | the RTL commit the KV260 app `protoemu48` was built from (2026-10-07, on the `kv260-usb` branch only), named as a bitstream's source, not as a commit under review |
+| `d1aa46f` | items 029, 031 and 037, reports 001, 029, 031 and 037 | the RTL commit of the KV260 `pe_lab` build (2026-10-06, on no branch), named in the same way |
+
+The other hexadecimal strings in 042-050 are not commits: sha256 prefixes of
+files (`2d1a8e27…`, `5a7b9b36…`, `69982302…`, `7d6a1459…`, `80aa7f1b…`,
+`8734c99b…`, `b966db0a…`, `f5d30a14…`, `f8293aa0…`), a builder agent's id
+and numeric suffix in the path of its checkout that report 043 quotes
+(`afe09457da93fe81d`, `1550601`), dates, and the numeric suffixes of the
+verifier's own checkouts.
 
 | # | Item | Commit | Verdict | | |
 |---|---|---|---|---|---|
@@ -82,6 +102,15 @@ branch's history except `a85fc57` (item 041): that was this folder's update to
 | 039 | `fabric-ping2` | `651513e` | PASS | [item](039-fabric-ping2.md) | [report](039-fabric-ping2.report.md) |
 | 040 | `usbfs-zlp-fix2` | `05f86ec` | PASS | [item](040-usbfs-zlp-fix2.md) | [report](040-usbfs-zlp-fix2.report.md) |
 | 041 | `verifier-reports2` | `a85fc57` | FAIL | [item](041-verifier-reports2.md) | [report](041-verifier-reports2.report.md) |
+| 042 | `verifier-reports2-fix` | `7d53740` | PASS | [item](042-verifier-reports2-fix.md) | [report](042-verifier-reports2-fix.report.md) |
+| 043 | `fabric-ping3` | `5d5eb04` | PASS | [item](043-fabric-ping3.md) | [report](043-fabric-ping3.report.md) |
+| 044 | `usb-guard` | `5554b88` | FAIL | [item](044-usb-guard.md) | [report](044-usb-guard.report.md) |
+| 045 | `usb-guard-fix` | `326de49` | FAIL | [item](045-usb-guard-fix.md) | [report](045-usb-guard-fix.report.md) |
+| 046 | `usb-guard-fix2` | `edc9042` | PASS | [item](046-usb-guard-fix2.md) | [report](046-usb-guard-fix2.report.md) |
+| 047 | `usb-ls-restage` | `6e1da04` | PASS | [item](047-usb-ls-restage.md) | [report](047-usb-ls-restage.report.md) |
+| 048 | `usb-guard2` | `e158fe0` | FAIL | [item](048-usb-guard2.md) | [report](048-usb-guard2.report.md) |
+| 049 | `usb-guard2-fix` | `0135ca2` | PASS | [item](049-usb-guard2-fix.md) | [report](049-usb-guard2-fix.report.md) |
+| 050 | `usb-in-setup` | `b665baf` | PASS | [item](050-usb-in-setup.md) | [report](050-usb-in-setup.report.md) |
 
 ## Verbatim, and the redactions
 
@@ -227,4 +256,81 @@ and as a verbatim record it is left so.
 To check: `sha256sum evidence/verifier/039-*.md evidence/verifier/04[01]-*.md`
 gives the right-hand column.
 
-Item 042 and later items and reports are not here.
+### 042-050
+
+The 18 files 042-050 were copied byte for byte from the verifier's inbox on
+2026-11-04 at about 15:40 UTC and checked equal to the source with `cmp`. As
+above, the time can't be checked from the repository; the sha256 columns
+below are what pin the content. They were searched for every class in the
+030-038 table, for the Kria's Ethernet MAC in any form (with colons, with
+dashes, bare, and its NIC half), for any IPv4 or IPv6 address, and with a
+case-insensitive `git grep` for the tailnet label, the build machine's
+provider hostname and the tailnet domain. The 18 files 042-050, as
+committed, pass that search. The tailnet label and the provider hostname are
+not written in this README; the bare tailnet domain is, but only as a class
+searched for, as in 030-041.
+
+Two replacements were made, on 2 lines of 2 files. Neither line names a host:
+both quote the bare tailnet domain as a class searched for. The same class
+mention is kept, unredacted, in the files 030 (item and report), 035 (item
+and report), 038 (report) and 041 (report), in three lines of this README
+(`:130` and `:157`, the 000-029 and 030-038 tables, as `*.` and the domain;
+`:235`, the 039-041 list, bare), and in one of `evidence/README.md` (`:24`,
+its redaction summary). The two lines here are
+redacted only because this update's rule is that the `git grep` above finds
+nothing in the added files; each replaces exactly the redacted
+string, inside its backticks, and nothing else on the line changed:
+
+| File | Line | What | Replaced with |
+|---|---|---|---|
+| `042-verifier-reports2-fix.report.md` | 42 | the tailnet domain, quoted as a class searched for | `[tailnet domain redacted]` |
+| `043-fabric-ping3.report.md` | 24 | the tailnet domain, quoted as a class searched for | `[tailnet domain redacted]` |
+
+Found and kept, as they name no host, address or person:
+
+* `100.64.0.0`, the tailnet range's base, quoted as a class searched for
+  (report 042 `:42`), as in 039-041;
+* the locally administered `02:00:de:ad:be:01` (report 042 `:41`);
+* `/home/ubuntu`, `/home/pi` and `/home/someone` quoted from earlier files
+  (item 042 `:6`, report 042 `:17`, `:43`, `:44`), and `/home/runner1/protoemu-flow/…` (report 043
+  `:22`), the compute runner's own home, kept like `~/protoemu-flow`;
+* `~/…` paths, and the words `[build host provider redacted]` and `fastmail` where report 042
+  (`:36`) gives the line numbers of 041's kept list;
+* `7.1.18.1` (report 047 `:35`), a USB 2.0 section number, and `10:18:26`
+  (report 043 `:69`), a build time.
+
+There are no email addresses (the `@` are `@pytest` decorators and
+`@point`/`@deadline` annotations), no other `/home/` paths, no MAC beyond the
+one above, no IP address other than that class, no SSID and nothing that
+looks like a credential: `psk` and `ssid` appear only as classes searched for,
+and "token" is a USB token.
+
+None of the 18 files has a Markdown link, so none was turned into plain text:
+the two `[…](…)` in report 042 (`:28`, `:76`) are inside code spans, quoting
+link syntax.
+
+| File | sha256 in the inbox | sha256 committed |
+|---|---|---|
+| `042-verifier-reports2-fix.md` | `d0590a46558ad85731065355fc916ecc6f9e5da2ed3aef4c04248366658ea394` | same |
+| `042-verifier-reports2-fix.report.md` | `6d4e347f500e74c5047cdd40afd0a84423b8b79373c567119bb3f254782db76e` | `566ac7179f886a7cec705d9f900de1cae9eaadafd8a1dd41815ebf6cab325de2` |
+| `043-fabric-ping3.md` | `46df90460f89cf62fbb8e0c1b37fcd597cfa664a1d02037c31e550f3929123e0` | same |
+| `043-fabric-ping3.report.md` | `a87661d767b734caf7871ee146aeb4bd99b4f9b1b721508df26f909cfeece6ee` | `9e40810a07e80a4f60dd2191de0939c541b00b58909217113dbe4055cba8503b` |
+| `044-usb-guard.md` | `bacfa96a3d8738cccab5849ac07bd5b28b8c02415d0ca4af3b3ecde32e794aab` | same |
+| `044-usb-guard.report.md` | `f6352412bd99d42440ed8bcc5ca31f212ad391375cd377947c610cac4834640a` | same |
+| `045-usb-guard-fix.md` | `fa3cc636aeda2b9eacf0144a667c9641ec683bee745910464e529c4daef61830` | same |
+| `045-usb-guard-fix.report.md` | `8c0e2411062458f6393f31e817f903bc4d840969448bfa3dd63d6f1feb9ad184` | same |
+| `046-usb-guard-fix2.md` | `27393cd4c75d2207455c8959e13d1e64d8ce888e55db08941951091e8b7dc4d6` | same |
+| `046-usb-guard-fix2.report.md` | `633d85ee0fd0899b3827885cec77b849d5e35bb0c63896e158495f66eaf9dc77` | same |
+| `047-usb-ls-restage.md` | `2f6fde0393fa14f806a4a0f178a7178a2fbfbef76acee16ef4def334212ae158` | same |
+| `047-usb-ls-restage.report.md` | `187b30e3305eb7d2cd410e48875bba5a36efeb79d4cc1adb564d28aede11aa3a` | same |
+| `048-usb-guard2.md` | `82785eb1f340fb135dd5aaf46c9fc0b686bd169132533ac62b7895a89aa93a60` | same |
+| `048-usb-guard2.report.md` | `56ee4d32aef12fb68cce7cdc8b6d92d608e1907fda6ff4e6a365de35a9d15e95` | same |
+| `049-usb-guard2-fix.md` | `ff52859d2fba4239eda0e4dc1550cffe0c57650821297a582ad4a4a1135aa9e8` | same |
+| `049-usb-guard2-fix.report.md` | `1231cb6b279a250921ee79e0f782819ee5d6d7edc9a659db186722c76965cdd8` | same |
+| `050-usb-in-setup.md` | `65af519efe282cd82c8595cb1eae9a4baf68a53a65e03557087dd47307205128` | same |
+| `050-usb-in-setup.report.md` | `abaad2bf5e660315431b42c35009c3eb87d3f20a15e0fd264d81ef21f2f0a58e` | same |
+
+To check: `sha256sum evidence/verifier/04[2-9]-*.md evidence/verifier/050-*.md`
+gives the right-hand column.
+
+Item 051 and later items and reports are not here.
