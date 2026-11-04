@@ -1,0 +1,155 @@
+rm -f test.xml
+"make" -f Makefile test.xml
+make[1]: Entering directory '<checkout c4003a2>/test'
+mkdir -p sim_build/test
+~/tools/oss-cad-suite/bin/iverilog -o sim_build/test/sim.vvp -s tb -g2012  -DPE_NCORES=2 -DPE_NBANKS=2 -DPE_FIFO_LOG2=3 -g2012 -I<checkout c4003a2>/test/../src -f sim_build/test/cmds.f  <checkout c4003a2>/test/../src/project.v <checkout c4003a2>/test/../src/pe_chip.sv <checkout c4003a2>/test/../src/pe_core.sv <checkout c4003a2>/test/../src/pe_line.sv <checkout c4003a2>/test/../src/pe_fifos.sv <checkout c4003a2>/test/../src/pe_fifo.sv <checkout c4003a2>/test/../src/pe_cg.sv <checkout c4003a2>/test/../src/pe_imem.sv <checkout c4003a2>/test/../src/pe_hostport.sv <checkout c4003a2>/test/sram_model.v <checkout c4003a2>/test/tb.v
+warning: Found both default and explicit timescale based delays. Use
+       : -Wtimescale to find the design element(s) with no explicit
+       : timescale.
+rm -f test.xml
+COCOTB_TEST_MODULES=test COCOTB_TESTCASE= COCOTB_TEST_FILTER= COCOTB_TOPLEVEL=tb TOPLEVEL_LANG=verilog \
+         ~/tools/oss-cad-suite/bin/vvp -M ~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs -m libcocotbvpi_icarus   sim_build/test/sim.vvp -fst  +DUMP_FILE=sim_build/test/wave.fst 
+     -.--ns INFO     gpi                                ../gpi/GpiCommon.cpp:216  in gpi_load_users                  Running entry func 'initialize' from loaded library '~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs/libcocotb.so'
+     -.--ns INFO     gpi                                ..mbed/gpi_embed.cpp:96   in initialize                      Using Python 3.11.6 interpreter at ~/tools/oss-cad-suite/bin/tabbypy3
+     0.00ns INFO     cocotb                             Running on Icarus Verilog version 14.0 (devel)
+     0.00ns INFO     cocotb                             Seeding Python random module with 1793775990
+     0.00ns INFO     cocotb                             Initialized cocotb v2.1.0.dev0+41564633 from ~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb
+     0.00ns INFO     cocotb                             Running tests
+     0.00ns INFO     cocotb.regression                  running test.test_generated_uart_virtual_loopback (1/27)
+                                                            Run the board's generated programs through SPI with two concurrent cores.
+4850613.55ns INFO     cocotb.tb                          generated UART loopback: 53 bytes, 4.639 ms simulated, TX/RX 4/14 words, 2 cores, 187.5 us service stall
+4850613.55ns INFO     cocotb.regression                  test.test_generated_uart_virtual_loopback passed
+4850613.55ns INFO     cocotb.regression                  running test.test_id (2/27)
+4921233.55ns INFO     cocotb.regression                  test.test_id passed
+4921233.55ns INFO     cocotb.regression                  running test.test_uart_tx (3/27)
+5144733.55ns INFO     cocotb.regression                  test.test_uart_tx passed
+5144733.55ns INFO     cocotb.regression                  running test.test_uart_rx (4/27)
+5453233.55ns INFO     cocotb.regression                  test.test_uart_rx passed
+5453233.55ns INFO     cocotb.regression                  running test.test_uart_rx_glitch (5/27)
+                                                            uart_rx rechecks the start bit at mid-bit (docs/fault-testing.md, finding
+5682493.55ns INFO     cocotb.regression                  test.test_uart_rx_glitch passed
+5682493.55ns INFO     cocotb.regression                  running test.test_spi_master (6/27)
+5910313.55ns INFO     cocotb.regression                  test.test_spi_master passed
+5910313.55ns INFO     cocotb.regression                  running test.test_spi_master_fast (7/27)
+                                                            SPI master at 4 clocks per SCK (12.5 MHz at 50 MHz) against the same
+6162693.55ns INFO     cocotb.tb                          spi_master_fast, CLKDIV 1, MISO in SYNC_BYPASS: 5 bytes at [4] clocks per SCK, read ['0xc3', '0x5a', '0x1', '0x80', '0xe7']
+6326133.55ns INFO     cocotb.tb                          spi_master_fast, CLKDIV 1, bypass 0: read ['0xe1', '0xad', '0x0', '0xc0', '0x73'] (one bit late)
+6484453.55ns INFO     cocotb.tb                          spi_master, CLKDIV 1, bypass 1: read ['0xe1', '0xad', '0x0', '0xc0', '0x73'] (one bit late)
+6493653.55ns INFO     cocotb.regression                  test.test_spi_master_fast passed
+6493653.55ns INFO     cocotb.regression                  running test.test_i2c_master (8/27)
+7243073.55ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42
+7587553.55ns INFO     cocotb.tb                          i2c log: S Aa0 W10 Wde Wad W42 P S Aa0 W10 S Aa1 Rde Rad R42 P S Nb0 P
+7587553.55ns INFO     cocotb.regression                  test.test_i2c_master passed
+7587553.55ns INFO     cocotb.regression                  running test.test_i2c_master_bus_fault (9/27)
+                                                            i2c_master reads SDA back where it releases it (docs/fault-testing.md,
+8539773.56ns INFO     cocotb.tb                          i2c log: S Aa0 W20 W5c P S Aa0 W20 S Aa1 R5c P S N00 P S Aa0 W20 S Aa1 R5c P
+8539773.56ns INFO     cocotb.regression                  test.test_i2c_master_bus_fault passed
+8539773.56ns INFO     cocotb.regression                  running test.test_reverse_engineering (10/27)
+                                                            Capture -> understand -> impersonate (docs/reverse-engineering.md), all
+10636853.56ns INFO     cocotb.tb                          captured 460 records over 2019 us:
+                                                          write to 0x50: 10
+                                                          read 8 bytes from 0x50: F1 3F A6 0D E6 28 1C 5F
+                                                          write to 0x50: 20 CA FE
+                                                          write to 0x50: 20
+                                                          read 2 bytes from 0x50: CA FE
+                                                          write to 0x51: address NACKed
+12876073.56ns INFO     cocotb.tb                          clone: same answers and transcript; SCL stretched 2936 clocks waiting for the host
+13971733.56ns INFO     cocotb.regression                  test.test_reverse_engineering passed
+13971733.56ns INFO     cocotb.regression                  running test.test_la_capture_rate (11/27)
+                                                            la_capture's sustained edge rate through the host port: 300 edges of a
+16269013.56ns INFO     cocotb.tb                          1-bit SPI, SCK = clk/2: gap-free down to an edge every 80 clocks (0.62 M edges/s at 50 MHz)
+16758413.56ns INFO     cocotb.tb                          quad SPI, SCK = clk: gap-free down to an edge every 12 clocks (4.17 M edges/s at 50 MHz)
+17127213.56ns INFO     cocotb.tb                          quad SPI, SCK = clk, 32-word bursts: gap-free down to an edge every 9 clocks (5.56 M edges/s at 50 MHz)
+17127213.56ns INFO     cocotb.regression                  test.test_la_capture_rate passed
+17127213.56ns INFO     cocotb.regression                  running test.test_la_capture_ticks (12/27)
+                                                            WAIT kind 7 (`wait pins != r0 mask m`) at 1-tick resolution, short and
+17324613.56ns INFO     cocotb.tb                          32 pin changes -> 27 edges, 2 pulses; edges (tick, state) relative to the first: [(0, 1), (7, 3), (15, 7), (24, 6), (36, 4), (43, 0), (73, 3), (1301, 2), (1308, 3), (1315, 2), (1322, 3), (1329, 2), (1336, 3), (1343, 2), (2606, 1), (2647, 0), (2654, 2), (2689, 3), (2696, 1), (3955, 0), (3962, 2), (3999, 3), (4006, 1), (4044, 0), (4051, 2), (5354, 6), (5361, 2)]; pulses [5313, 5396]
+17324613.56ns INFO     cocotb.regression                  test.test_la_capture_ticks passed
+17324613.56ns INFO     cocotb.regression                  running test.test_call_ret (13/27)
+                                                            CALL / RET at the top level, short and directed (for the SDF gate-level
+17587693.56ns INFO     cocotb.tb                          side-set pin: 14 edges, intervals [17, 5, 19, 5, 19, 5, 19, 5, 19, 5, 19, 5, 19]; pushed ['0x2060803', '0x50803', '0x2040803', '0x30803', '0x2020803', '0x10803', '0x2000803']
+17587693.56ns INFO     cocotb.regression                  test.test_call_ret passed
+17587693.56ns INFO     cocotb.regression                  running test.test_usb_ls_device (14/27)
+                                                            USB low-speed device side in firmware: SETUP+DATA0 -> ACK (and a good record),
+19183723.80ns INFO     cocotb.regression                  test.test_usb_ls_device passed
+19183723.80ns INFO     cocotb.regression                  running test.test_usb_autonomous (15/27)
+                                                            Autonomous USB low-speed enumeration (docs/usb-enumeration.md): the host
+25984087.24ns INFO     cocotb.tb                          autonomous USB (low speed): 47 transactions, 256640 cycles (5.3 ms), turnaround 2.16-2.16 bit times (the IN after a lost status ACK: 2.16), host port idle throughout; state {'address': 9, 'configured': True, 'pending_address': False, 'stalled': False}
+25984087.24ns INFO     cocotb.regression                  test.test_usb_autonomous passed
+25984087.24ns INFO     cocotb.regression                  running test.test_usb_autonomous_fs (16/27)
+                                                            test_usb_autonomous at full speed (12 Mbit/s, 4 clocks per bit): the
+29072811.07ns INFO     cocotb.tb                          autonomous USB (full speed): 47 transactions, 78487 cycles (1.6 ms), turnaround 3.25-4.75 bit times (the IN after a lost status ACK: 4.75), host port idle throughout; state {'address': 9, 'configured': True, 'pending_address': False, 'stalled': False}
+29072811.07ns INFO     cocotb.regression                  test.test_usb_autonomous_fs passed
+29072811.07ns INFO     cocotb.regression                  running test.test_usb_fs_device (17/27)
+                                                            USB FULL-SPEED device (docs/usb-full-speed.md): usb_fs_dev on core 0 with
+30057863.43ns INFO     cocotb.tb                          turnaround ACK: 2.64 bit times = 10.5 clocks (spec 2-6.5)
+30057863.43ns INFO     cocotb.tb                          turnaround NAK: 3.34 bit times = 13.4 clocks (spec 2-6.5)
+30057863.43ns INFO     cocotb.tb                          turnaround DATA1: 3.98 bit times = 15.9 clocks (spec 2-6.5)
+32391354.77ns INFO     cocotb.tb                          half-cycle NRZI sample point, clk 20.834 ns: DCD 9.25 ns (18.5 ns edge-to-edge): 24/24 ACKed; DCD 14.00 ns (28.0 ns): 24/24 ACKed
+32391354.77ns INFO     cocotb.regression                  test.test_usb_fs_device passed
+32391354.77ns INFO     cocotb.regression                  running test.test_eth10_tx (18/27)
+                                                            10BASE-T TX with FIFO join: a 64-byte frame from one 16-word FIFO burst.
+32801574.77ns INFO     cocotb.regression                  test.test_eth10_tx passed
+32801574.77ns INFO     cocotb.regression                  running test.test_eth10_rx_jitter (19/27)
+                                                            10BASE-T RX at 50 MHz with 802.3's +-13.5 ns of edge jitter (half the
+33269454.77ns INFO     cocotb.regression                  test.test_eth10_rx_jitter passed
+33269454.77ns INFO     cocotb.regression                  running test.test_fetch_to_pin (20/27)
+                                                            The last core writes uio5 every cycle, alternating the pin-writing
+33446944.77ns INFO     cocotb.regression                  test.test_fetch_to_pin passed
+33446944.77ns INFO     cocotb.regression                  running test.test_fifo_read_race (21/27)
+                                                            A word the core pushes while the host is reading an empty RXF must not be
+35802424.77ns INFO     cocotb.regression                  test.test_fifo_read_race passed
+35802424.77ns INFO     cocotb.regression                  running test.test_spi_port_timing (22/27)
+                                                            Host port contract (docs/isa.md §6.1): SCK period >= 8 clk with high and
+37753694.65ns INFO     cocotb.regression                  test.test_spi_port_timing passed
+37753694.65ns INFO     cocotb.regression                  running test.test_host_port_fast (23/27)
+                                                            The host port at SCK = clk and clk/2, 1-bit and quad, at random phases:
+37988254.65ns INFO     cocotb.tb                          quad write: 193 Mbit/s at SCK = clk (50 MHz)
+37988254.65ns INFO     cocotb.regression                  test.test_host_port_fast passed
+37988254.65ns INFO     cocotb.regression                  running test.test_host_reset_aborts_selected_transaction (24/27)
+                                                            Reset at every SPI parser phase, hold CS low through release, and prove
+38271414.65ns INFO     cocotb.regression                  test.test_host_reset_aborts_selected_transaction passed
+38271414.65ns INFO     cocotb.regression                  running test.test_eth10_rx_streaming (25/27)
+                                                            Legal 64..1518-byte frames including FCS, 96-bit IFG, concurrent quad
+40112774.65ns INFO     cocotb.regression                  test.test_eth10_rx_streaming passed
+40112774.65ns INFO     cocotb.regression                  running test.test_eth10_common_clock_loopback (26/27)
+                                                            Two cores at 50 MHz, TX divider 1.25 and RX period 5, full-frame SPI
+41590534.65ns INFO     cocotb.regression                  test.test_eth10_common_clock_loopback passed
+41590534.65ns INFO     cocotb.regression                  running test.test_usb_concurrent_service (27/27)
+                                                            Enumeration/error recovery with actual SPI service running concurrently
+88383261.14ns INFO     cocotb.regression                  test.test_usb_concurrent_service passed
+88383261.14ns INFO     cocotb.regression                  **********************************************************************************************************
+                                                        ** TEST                                              STATUS  SIM TIME (ns)  REAL TIME (s)  RATIO (ns/s) **
+                                                        **********************************************************************************************************
+                                                        ** test.test_generated_uart_virtual_loopback          PASS     4850613.55          12.30     394489.22  **
+                                                        ** test.test_id                                       PASS       70620.00           0.16     432671.55  **
+                                                        ** test.test_uart_tx                                  PASS      223500.00           0.77     289799.33  **
+                                                        ** test.test_uart_rx                                  PASS      308500.00           0.74     414390.82  **
+                                                        ** test.test_uart_rx_glitch                           PASS      229260.00           0.54     422071.52  **
+                                                        ** test.test_spi_master                               PASS      227820.00           0.66     343946.75  **
+                                                        ** test.test_spi_master_fast                          PASS      583340.00           1.62     360418.44  **
+                                                        ** test.test_i2c_master                               PASS     1093900.00           3.16     346059.52  **
+                                                        ** test.test_i2c_master_bus_fault                     PASS      952220.00           2.65     359491.75  **
+                                                        ** test.test_reverse_engineering                      PASS     5431960.00          20.68     262654.77  **
+                                                        ** test.test_la_capture_rate                          PASS     3155480.00          13.74     229727.44  **
+                                                        ** test.test_la_capture_ticks                         PASS      197400.00           0.73     271300.65  **
+                                                        ** test.test_call_ret                                 PASS      263080.00           0.68     384354.07  **
+                                                        ** test.test_usb_ls_device                            PASS     1596030.24           4.72     338461.72  **
+                                                        ** test.test_usb_autonomous                           PASS     6800363.44          18.46     368438.85  **
+                                                        ** test.test_usb_autonomous_fs                        PASS     3088723.84           8.53     361976.54  **
+                                                        ** test.test_usb_fs_device                            PASS     3318543.69          10.25     323646.47  **
+                                                        ** test.test_eth10_tx                                 PASS      410220.00           1.32     310111.57  **
+                                                        ** test.test_eth10_rx_jitter                          PASS      467880.00           1.25     373096.73  **
+                                                        ** test.test_fetch_to_pin                             PASS      177490.00           0.44     403188.16  **
+                                                        ** test.test_fifo_read_race                           PASS     2355480.00           5.59     421032.79  **
+                                                        ** test.test_spi_port_timing                          PASS     1951269.87           4.13     472010.35  **
+                                                        ** test.test_host_port_fast                           PASS      234560.00           0.68     342712.41  **
+                                                        ** test.test_host_reset_aborts_selected_transaction   PASS      283160.00           0.73     388957.23  **
+                                                        ** test.test_eth10_rx_streaming                       PASS     1841360.00          10.15     181424.55  **
+                                                        ** test.test_eth10_common_clock_loopback              PASS     1477760.00          15.91      92878.31  **
+                                                        ** test.test_usb_concurrent_service                   PASS    46792726.49         484.08      96662.55  **
+                                                        **********************************************************************************************************
+                                                        ** TESTS=27 PASS=27 FAIL=0 SKIP=0                             88383261.14         624.75     141470.13  **
+                                                        **********************************************************************************************************
+FST info: dumpfile sim_build/test/wave.fst opened for output.
+make[1]: Leaving directory '<checkout c4003a2>/test'

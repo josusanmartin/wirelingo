@@ -8,9 +8,9 @@ with a strict host. Not a pytest test: a sweep for fpga/kv260/README.md's
     PYTHONPATH=tools python test/model/usb_fs_enum_sweep.py [--tree DIR] [--runs 40] [--procs 6]
 
 --tree: a checkout (or `git archive` copy) whose tools/, firmware/ and
-test/model/test_usb_fs_data.py are used, default this one; the software
-under test is identified by the sha256 of its usbdev.py, usbfsdata.py and
-usb_fs_dev.pasm in the output.
+test/model/test_usb_fs_data.py are used, default this one; the output
+identifies the software under test (usbdev.py, usbfsdata.py, usb_fs_dev.pasm)
+and the harness (test_usb_fs_data.py, which SpiBridge comes from) by sha256.
 
 The host's sequence (usbmon, run 18): GET_DESCRIPTOR(device, 64) at address
 0, ended by the first 8-byte packet (the xHCI assumes a 64-byte MPS);
@@ -180,7 +180,8 @@ def main():
     a = ap.parse_args()
     tree = a.tree.resolve()
     combos = [tuple(int(x) for x in c.split(":")) for c in a.combos.split(",")]
-    for f in ("tools/pe/usbdev.py", "tools/pe/usbfsdata.py", "firmware/usb_fs_dev.pasm"):
+    for f in ("tools/pe/usbdev.py", "tools/pe/usbfsdata.py", "firmware/usb_fs_dev.pasm",
+              "test/model/test_usb_fs_data.py"):         # the last: the harness (SpiBridge, status_in)
         print(f"{hashlib.sha256((tree / f).read_bytes()).hexdigest()}  {f}", flush=True)
     print(f"runs {a.runs} per combination, procs {a.procs}", flush=True)
     jobs = [(c, k) for c in combos for k in range(a.runs)]

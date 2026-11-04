@@ -1,0 +1,3 @@
+usb_replay_demo dev plans, bc98a97 against c4003a2 (pe.usbdev.DeviceSoftware on usb_ls_dev / usb_fs_dev)
+ls-dev requests equal True restaged 1 1 wire packets equal True 74 pads equal False
+fs-dev requests equal True restaged 1 1 wire packets equal True 74 pads equal False

@@ -357,7 +357,8 @@ must equal the cycle model's), CALL/RET (test_call_ret, new: side-set edges,
 pushed links and registers must equal the model's) at 20 ns, and the
 full-speed USB device with the half-cycle NRZI sample point
 (test_usb_fs_device) at 48 MHz (20.834 ns), each at typ, slow and fast. Run
-fo6 passes all of it, and the release adds the autonomous USB enumeration
+fo6 passes all of it (test_usb_fs_device with `usb_fs_dev` before the got_in
+guard of 2026-11-04; not re-run at gate level with it), and the release adds the autonomous USB enumeration
 tests (low and full speed) with SDF at all three corners (receipts for
 software `7685aba`, with the 246-word `usb_enum` before `fault-fixes`; the
 253-word one needs a gate-level rerun). Historically v2c

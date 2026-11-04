@@ -20,7 +20,7 @@ RTL, and an interval the stimulus never produced is not covered by it.
 
 ```
 $ python -m pe.timing firmware/usb_fs_dev.pasm --defs pe.usbdev:defines
-usb_fs_dev: 141 words, CLKDIV 1+0/256 (1 tick = 1 clk)
+usb_fs_dev: 142 words, CLKDIV 1+0/256 (1 tick = 1 clk)
 deadline ack_ta (line 47): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
   bound: [5, 12] ticks = [5, 12] clk; with adjust +3..4: [8, 16] clk
   required: >= 8 and <= 26 clk  ->  PASS
@@ -266,17 +266,27 @@ the TX FIFO (the host sets F_STAGED after pushing it).
 | Response | Checker, pads (clk) | Bus, measured (clk) | Program, bound / measured (ticks) |
 |---|---|---|---|
 | DATA0/1 → ACK | 8–16 | 10.29–14.33 | 5–12 / 7–11 |
-| IN → NAK | 10–15 | 12.77–13.37 | 7–11 / 9–10 |
-| IN → staged DATA | 12–17 | 14.73–15.45 | 9–13 / 11–12 |
+| IN → NAK | 10–16 | 12.77–13.37 (before the guard; that path is unchanged) | 7–12 / 9–10 |
+| IN → staged DATA | 13–18 | 15.73–16.45 | 10–14 / 12–13 |
 | OUT without room → NAK | 9–10 | 9.25–9.70 | 6 / 6 |
 | DATA receive loop (per bit, ≤ 4) | 3 | | 3 |
 | DATA transmit loop (per byte, ≤ 32) | 3–4 | | 3–4 |
 
+With the got_in guard (branch `usb-guard`, 2026-11-04: an IN that finds
+F_STAGED over an empty TX FIFO is NAKed), re-derived on the model:
+`pe.timing` and `test_timing_check.py` at c4003a2 (logs:
+`evidence/model-usb-guard-20261104/`). The guard costs IN →
+staged DATA one clock (before it, at bc98a97: checker 12–17, bus
+14.73–15.45, program 9–13 / 11–12), and IN → NAK one clock in its bound's
+maximum only, on the new F_STAGED-over-empty path (checker 10–15, program
+7–11 before); the other rows are unchanged.
+
 Measured over 8 sessions (SETUP/DATA0 → ACK, IN → NAK, IN → DATA1, OUT →
 ACK, OUT → NAK) with host jitter up to ±9.25 ns and −2500 to +2500 ppm; the
 J window measured 3..4 ticks every time, and the bus-minus-program
-difference was always within 3..4 clocks. The maximum has at least 10
-clocks of margin. The minimum has none in the worst case: if J were
+difference was always within 3..4 clocks. The measured maximum has at least
+9.5 clocks of margin (IN → DATA, 16.45 of 26; 10.5 before the guard), the
+checker's at least 8. The minimum has none in the worst case: if J were
 visible 6 ticks after `dend`, a DATA0 would be ACKed exactly 8 clocks after
 the EOP; with the measured window it is 10 or more.
 

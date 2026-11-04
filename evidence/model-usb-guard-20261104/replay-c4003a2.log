@@ -1,0 +1,17 @@
+cycle model (pe.sim, FPGA-synchronous pads) with pe_lab's generator modelled, 48 MHz
+[ls-dev]
+  plan: 120459 clocks (2.51 ms at 48 MHz), 74 packets on the wire, 27 segments (generator entries 1..110)
+  27 segments, 49 host packets replayed, 25 device packets: bytes equal to the model's; 1022 device edges board - model 0..0 clocks, 1433 host edges 0..0
+  device turnaround on the pads 2.16..2.22 bit times
+  end state {'address': 5, 'requests': ['8006000100004000', '0005050000000000', '8006000100001200', '8006000200001200', '0009010000000000', '8006000100001200'], 'restaged': 1} = the model's
+  PASS (45.2 s)
+[fs-dev]
+  plan: 22272 clocks (0.46 ms at 48 MHz), 74 packets on the wire, 27 segments (generator entries 1..110)
+  27 segments, 49 host packets replayed, 25 device packets: bytes equal to the model's; 1022 device edges board - model 0..0 clocks, 1433 host edges 0..0
+  device turnaround on the pads 2.75..4.00 bit times
+  end state {'address': 5, 'requests': ['8006000100004000', '0005050000000000', '8006000100001200', '8006000200001200', '0009010000000000', '8006000100001200'], 'restaged': 1} = the model's
+  PASS (12.9 s)
+host-model runs: 0 made now, 2 reused from ~/protoemu-flow/usb-guard/measure/plans-c4003a2.json
+saved ~/protoemu-flow/usb-guard/measure/replay-c4003a2.json
+summary: ls-dev PASS, fs-dev PASS
+ALL PASS

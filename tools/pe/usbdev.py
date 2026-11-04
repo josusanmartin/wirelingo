@@ -111,7 +111,7 @@ class DeviceSoftware:
         self.out_toggle = 1
         self.out_records = []
         self.sent_at = None
-        self.dirty = 0         # 1: the TX FIFO may hold words a SETUP's flush missed; 2: and a core in `pull block`
+        self.dirty = False     # the TX FIFO may hold words a SETUP's flush missed
         self.tx_clears = 0
 
     def records(self):
@@ -136,21 +136,20 @@ class DeviceSoftware:
             self.tx_clears += 1
             if self.rx == self.tx:
                 self.words += mh.pop_all(self.rx)  # the clear empties both FIFOs: keep the records
-            restart = 1 << (8 + self.tx) if self.dirty == 2 else 0   # free a core in `pull block`
-            mh.write(sim.A_CTRL, mh.read(sim.A_CTRL) & 15 | restart | 1 << (16 + self.tx))
-            self.dirty = 0
+            mh.write(sim.A_CTRL, mh.read(sim.A_CTRL) & 15 | 1 << (16 + self.tx))
+            self.dirty = False
         mh.write(sim.A_FCLR, F_GOTACK)
         for w in stage_words(pid, payload):
             mh.push(self.tx, w)
         self.unacked = (pid, payload)
         self.sent_at = None
         if racing and self.setup_since(mh.read(sim.A_FSET)):
-            self.dirty = 1                         # not staged: the words may follow its flush
+            self.dirty = True                      # not staged: the words may follow its flush
             return
         mh.write(sim.A_FSET, F_STAGED)
         if racing and self.setup_since(mh.read(sim.A_FSET)):
-            mh.write(sim.A_FCLR, F_STAGED)         # its flush may have emptied the FIFO first, and
-            self.dirty = 2                         # an IN since then left the core in `pull block`
+            mh.write(sim.A_FCLR, F_STAGED)         # its flush may have emptied the FIFO first (an IN
+            self.dirty = True                      # meanwhile is NAKed: the firmware's got_in guard)
 
     def set_address(self, addr):
         """Move the RX token filter (its core briefly disabled: docs/isa.md §3)."""
@@ -220,7 +219,7 @@ class DeviceSoftware:
             mh.write(*filter_write(self.rx_prog, self.rx_base, 0))
             mh.write(sim.A_FCLR, 0x3F)
             self.words, self.pending = [], []
-            self.dirty = 0                     # the FIFOs were just cleared
+            self.dirty = False                 # the FIFOs were just cleared
             self.unacked = self.new_address = None
             self.sent_at = None
             self.address = 0

@@ -22,6 +22,23 @@ lists what the runs can't show.
 > 246-word `usb_enum` from before `fault-fixes`, and the 253-word one needs a
 > gate-level rerun before they apply to it.
 
+> **got_in guard update (branch `usb-guard`, 2026-11-04).** `usb_fs_dev` now
+> NAKs an IN that finds F_STAGED set over an empty TX FIFO, where it used to
+> wait in `pull block` (141 → 142 words). The only path it lengthens is IN →
+> staged DATA, by one instruction before `data_wait`. Re-derived (logs and
+> sha256s: [evidence/model-usb-guard-20261104/](../evidence/model-usb-guard-20261104/)):
+>
+> | Turnaround | before (bc98a97) | with the guard (c4003a2) | level |
+> |---|---|---|---|
+> | ACK / NAK / DATA1 | 10.5 / 13.4 / 14.9 clocks | 10.5 / 13.4 / **15.9** clocks (3.98 bit times; margin 10.1) | RTL, `test_usb_fs_device` |
+> | ACK / NAK / IN → DATA | 10.9 / 12.7 / 14.7 clocks | 10.9 / 12.7 / **15.7** clocks | model, `test_usb_fs.py` |
+> | enumeration, all responses | 2.60–3.84 bit times | 2.60–4.09 bit times | model, `test_usb_fs.py` |
+>
+> Every other figure in this report, the gate-level and SDF runs
+> ([physical.md](physical.md), [release-evidence.md](release-evidence.md))
+> and every board run ran the firmware before the guard; they have not been
+> re-run with it.
+
 ## Bottom line
 
 **The signed-off chip can do it with no RTL change, as far as digital
@@ -410,6 +427,8 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   `usb_fs_dev` carried data to and from Linux the same day, 350 round trips over
   endpoint 0 at 17.6 kB/s with Python on the SPI port; 5 of 116 attaches stalled at
   `SET_CONFIGURATION`, cause not proved ([fpga/kv260/README.md](../fpga/kv260/README.md)).
+  Those runs used `usb_fs_dev` before the got_in guard (141 words); not
+  re-measured on the board with it yet.
   Not covered: EHCI-companion timing,
   other hubs (FS traffic for other devices; PRE plus
   low-speed traffic, which the receiver should reject as stuffing errors but

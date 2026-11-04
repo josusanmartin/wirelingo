@@ -750,7 +750,8 @@ port on the GPIO path (pe_spim SEL 0).
 
 The autonomous USB device (`firmware/usb_enum.pasm`,
 [docs/usb-enumeration.md](../../docs/usb-enumeration.md)) and the one-core
-device firmwares `usb_ls_dev` / `usb_fs_dev`, run on the 48 MHz build
+device firmwares `usb_ls_dev` / `usb_fs_dev` (as they were before the got_in
+guard: see the note under the table), run on the 48 MHz build
 (`protoemu48`) against a USB host that pe_lab's pattern generator replays on
 the D+/D- pads. No PC, cable or PMOD pin is involved. What ran is the RTL on
 an FPGA with digital levels on fabric pads, not silicon and not a real host
@@ -836,6 +837,14 @@ scenario at the clock the model gives, `compare`: all 16 equal):
 | `stall`: 9 unsupported requests STALLed and cleared by the next SETUP; other addresses/endpoints, bad CRC5, bad CRC16 ignored; wLength 0-255 on both descriptors | PASS: 15 segments, 347/179 packets, 6292 edges 0 clocks | PASS: 348/179, 6292 edges 0 |
 | `addr`: SET_ADDRESS's status ACK lost, then a SETUP first; then an IN first to the new address | PASS: 33/17 packets, 587 edges 0 clocks; the IN-first answered 2.16 bit times after the EOP; address 78 Configured | PASS: the IN-first answered 4.75 bit times (19 clocks; limit 6.5 = 26) |
 | `dev`: `usb_ls_dev` / `usb_fs_dev` + DeviceSoftware: 64-byte read, SET_ADDRESS 5, descriptors, SET_CONFIGURATION, then a DATA1 not ACKed, re-staged after 100 us | PASS: 27 segments, 49/25 packets, 1022 edges 0 clocks, turnaround 2.16-2.22; requests and re-stage count = the model's | PASS: same, turnaround 2.75-3.75 |
+
+The `dev` row ran `usb_ls_dev` / `usb_fs_dev` from before the got_in guard
+(129 / 141 words, bc98a97 and earlier); not re-run on the board with it yet.
+On the model the `dev` replay with the guard (branch `usb-guard`, c4003a2)
+gives the same requests, re-stage count (1) and wire packets as at bc98a97,
+at both speeds; the pad timing moves (one clock more on IN → DATA), so a board
+replay with the guard needs fresh plans
+(`evidence/model-usb-guard-20261104/`).
 
 Off the board, sigrok's `usb_signalling` + `usb_packet` on the board's edges
 give exactly the plan's packets for every scenario, with no errors other than
@@ -1352,6 +1361,14 @@ own pads.
 
 ### Data at full speed (`host/usb_fs_data_demo.py`, 2026-10-30)
 
+> **Firmware.** Every board figure in this section (the throughput, the
+> zero-length runs, the attach and stall counts) was measured with the
+> firmware before the got_in guard (`usb_fs_dev` 141 words, bc98a97 and
+> earlier); not re-measured on the board yet. The guard (branch `usb-guard`,
+> 142 words) is tested on the model and the RTL only; the board run for it is
+> `host/usb_guard_run.py` (200 attaches, 1000 zero-length writes, 10 + 200
+> zero-length reads; proved on the model with `--model`).
+
 The same wiring with `firmware/usb_fs_dev.pasm`: the core handles the wire,
 tokens, CRC and handshakes, and `pe.usbfsdata` on the SPI port answers every
 request, so the chip is not autonomous here. A separate Linux process writes
@@ -1409,7 +1426,9 @@ Two more `pe.usbdev` races of the same kind, evidence model only
 * **Fixed:** GET_DESCRIPTOR staged a ZLP after a data stage that had
   already reached wLength (8 or 16: not in the sequence usbmon recorded on
   the board, but Linux's old enumeration scheme reads 8).
-* **Narrowed, not closed:** the 100 us re-stage after a lost ACK can race
+* **Closed with the firmware's got_in guard (branch `usb-guard`, evidence
+  model and RTL tests; not yet on the board).** Before it, narrowed only: the
+  100 us re-stage after a lost ACK can race
   the host's next SETUP, whose token clears F_GOTACK and flushes the TX FIFO.
   The software checks for a SETUP (F_SETUP, then the RX FIFO level) before
   it re-stages, again before it sets F_STAGED, and again after; when one
@@ -1430,9 +1449,14 @@ Two more `pe.usbdev` races of the same kind, evidence model only
   gives up after 3 errors in a row (its CErr count; from the xHCI spec, not
   tested here), and on this board a cancelled control transfer once took the
   controller down (`nodata1000.log`). This needs a lost ACK first; the
-  board's stalled runs re-staged nothing. A one-word firmware guard (NAK an IN
-  when F_STAGED is set over an empty TX FIFO) would close it; it is not
-  applied.
+  board's stalled runs re-staged nothing. The guard: `got_in` in
+  `usb_fs_dev` and `usb_ls_dev` NAKs an IN that finds F_STAGED set over an
+  empty TX FIFO (one word: 142 and 130 words); the software no longer
+  restarts the core. In the model every hold point and every one of the 26
+  SPI accesses from the re-stage decision, both resumes, gives 0 unanswered
+  INs (`test_no_restage_after_a_setup`, `test_restage_held_at_every_access`;
+  on bc98a97 the same tests give 2, 8 and 1 at accesses 8, 9 and 10), and
+  `test_usb_in_guard.py` checks the NAK at both speeds.
 
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,

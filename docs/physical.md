@@ -680,6 +680,10 @@ $ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c v2
 gl_sdf_test (v2): all cases as required        (31 min wall, load average ~28 on 16 cores)
 ```
 
+(`usb_fs_device` here ran `usb_fs_dev` from before the got_in guard of
+2026-11-04, branch `usb-guard`; not re-run at gate level with it. The guard
+adds one instruction on the IN → DATA path: docs/usb-full-speed.md.)
+
 The 80 MHz cases show the annotation is in effect for these tests too, not
 that they target the feature's own paths: at that clock much more breaks
 (test_call_ret never saw a side-set edge).
@@ -730,7 +734,8 @@ SDF (`tb.v`, `TB_EXT_DELAY`, a transport delay; RTL is unchanged with it:
 the v2 tests and test_reverse_engineering pass with the delay compiled in),
 and the test passes at typ and slow. No chip finding: the bypass itself (the
 positive check) passed either way, and test_usb_fs_device, whose host
-places edges at random phase, passed at typ without the delay as well.
+places edges at random phase, passed at typ without the delay as well
+(with `usb_fs_dev` before the got_in guard; not re-run at gate level with it).
 
 **Getting Icarus to annotate this netlist.** Out of the box, Icarus 14
 (devel) silently annotated only part of it: its SDF reader stops at the first

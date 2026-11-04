@@ -134,6 +134,11 @@ is 26 clocks).
 | usb_enum_ep1 `ep1_ta` (IN to endpoint 1) | — | 16–22 (measured 3.1–5.4 bit times) |
 | uart_tx, i2c_master | unchanged | unchanged |
 
+(These are the study's counts, from `main` when it was written. The
+programs have changed since: with the got_in guard, branch `usb-guard`
+2026-11-04, `usb_fs_dev` is 142 words and `usb_ls_dev` 130, and usb_fs_dev's
+`in_nak_ta` / `in_data_ta` are 10–16 / 13–18 clocks; `pe.timing`.)
+
 None of the deadlines changes status; every one already had margin. The
 cycle gains are real but buy nothing today.
 

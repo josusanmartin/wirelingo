@@ -11,6 +11,7 @@ source and the redactions made before it was committed.
 | [fabric-ping-20261103/](fabric-ping-20261103/README.md) | Board run of the ARP/ping/UDP stack through the KV260 build, one 64-byte frame at a time, no cable. Verified ([report 037](verifier/037-fabric-ping-fix3.report.md), after FAILs 029, 031 and 034) | RTL in FPGA fabric |
 | [kv260-usbfs-zlp-20261103/](kv260-usbfs-zlp-20261103/README.md) | Logs of the full-speed data device's zero-length transfers and 200-attach runs, before and after the `usbfs-zlp` software fixes, with the `SET_CONFIGURATION` stall still open | RTL in FPGA fabric (KV260, protoemu48 `60b0692`) |
 | [model-usb-fs-enum-sweep-20261104/](model-usb-fs-enum-sweep-20261104/README.md) | Output of `test/model/usb_fs_enum_sweep.py` at three commits of the device software: 40 enumerations at each of five SPI timings | Cycle model |
+| [model-usb-guard-20261104/](model-usb-guard-20261104/README.md) | The `got_in` guard in `usb_fs_dev` and `usb_ls_dev` before (`bc98a97`) and after (`c4003a2`): `pe.timing` turnarounds, the RTL test module's log, the replay comparison. Verified by verifier report 046, after FAILs 044 and 045 (reports after 041 are not yet copied into `verifier/`) | Cycle model and RTL simulation |
 
 Not in git: the release receipts' archive,
 `wirelingo-release-evidence-7685aba-fo6.tar.gz` (55,515,939 bytes, sha256

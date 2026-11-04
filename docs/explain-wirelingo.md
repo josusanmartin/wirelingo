@@ -539,7 +539,8 @@ These are the limits the repository records. None of them is ranked here.
 * The same agents wrote the spec, the model and the RTL.
 * With `usb_fs_dev`, 5 of 116 attaches stalled at `SET_CONFIGURATION`, the
   request that activates a device; the cause is not proved
-  (`fpga/kv260/README.md`, "Data at full speed").
+  (`fpga/kv260/README.md`, "Data at full speed"). That is the firmware before
+  the got_in guard (2026-11-04); not re-measured on the board with it yet.
 
 ### Questions a reader may ask
 
@@ -675,7 +676,9 @@ and configured the chip's RTL at both speeds: 32 of 32 attaches, 66,000 of
 `evidence/kv260-usb-20261030/`). That was the 246-word `usb_enum` from before
 `fault-fixes`. Limits: one host and hub, no oscilloscope to view the real
 signals, 3.3 V FPGA pins. With `usb_fs_dev` some attaches stall (above). The
-17.6 kB/s of the data demo is the Python loop's rate, not the chip's.
+17.6 kB/s of the data demo is the Python loop's rate, not the chip's. Both are
+from `usb_fs_dev` before the got_in guard (2026-11-04); not re-measured on the
+board with it yet.
 
 **What happens if the silicon fails?**
 Nothing here proves it will work. What survives: the RTL results, the FPGA
