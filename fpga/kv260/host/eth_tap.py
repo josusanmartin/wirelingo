@@ -29,7 +29,9 @@ with -s 18 at most. --backend fpga-model runs that same code on the cycle model.
 On the board nothing maps the fabric until fabric_guard shows the app for --clock
 (protoemu at 50 MHz) as the one active row; nothing here loads an app. The board
 is given back (cores stopped, pe_lab idle, host port on the GPIO path, quad off,
-PMOD disabled) on any end: normal, an exception, Ctrl-C, SIGTERM, SIGHUP.
+PMOD disabled) on any end (normal, an exception, Ctrl-C, SIGTERM, SIGHUP) from the
+moment run_closing's holder has it, which is before the first write that changes it:
+run_closing and board_hold.py say exactly what that covers.
 """
 import argparse
 import fcntl
@@ -52,6 +54,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import fabric_guard                            # noqa: E402
+from board_hold import Held                    # noqa: E402
 import pe_spim                                 # noqa: E402
 from pe import eth, ethsim                     # noqa: E402
 
@@ -227,15 +230,13 @@ class FpgaBackend(Backend):
     code. corrupt = n spoils the FCS of the next n IPv4 frames from Linux."""
     KEEP = 20                                  # exchanges kept for report()
 
-    def __init__(self, ipaddr, clock_hz=50e6, rig=None, **_):
+    def __init__(self, ipaddr, clock_hz=50e6, rig=None, hold=None, **_):
+        """rig None: the board, given to `hold` (run_closing's) before it is touched,
+        and from then on the holder's to give back. An injected rig is its caller's."""
         import fabric_eth
         self.fe = fabric_eth
-        rig = fabric_eth.board_rig(clock_hz) if rig is None else rig
-        try:
-            self.fab = fabric_eth.FabricEth(rig, clock_hz)
-        except BaseException:                  # Ctrl-C and run_closing's SessionSignal too
-            fabric_eth.shielded(rig.close)
-            raise
+        rig = fabric_eth.board_rig(clock_hz, hold) if rig is None else rig
+        self.fab = fabric_eth.FabricEth(rig, clock_hz)
         self.station = eth.Station(eth.mac(CHIP_MAC_TEXT), ipaddr)
         self.replies, self.log, self.stats = [], [], {}
         self.corrupt = 0
@@ -637,30 +638,43 @@ def compare(path_a, path_b):
     return 0 if same else 1
 
 
+class RunStopped(BaseException):
+    """SIGTERM or SIGHUP ended a run_closing run. A BaseException, as KeyboardInterrupt
+    is, so no `except Exception` on the way can swallow it."""
+
+    def __init__(self, signum):
+        super().__init__(f"signal {signum}")
+        self.signum = signum
+
+
 def run_closing(make, body):
-    """backend = make(), body(backend), then backend.close() whatever happens. The
-    handlers are in place before make() starts: SIGTERM and SIGHUP (a dropped ssh
-    session) raise SessionSignal there too, and a backend that fails or is stopped
-    while it is being built gives back what it had touched itself
-    (fabric_eth.board_rig). Once the close has begun no signal, SIGINT included, can
-    cut it short. Returns body's status, or 128 + the signal; a refusal by the guard
-    returns 2."""
+    """held = board_hold.Held(); backend = make(held); body(backend); then the
+    holder's closer, or backend.close() when nothing was held (the model backends).
+
+    What is guaranteed, and from where: the handlers are in place before make()
+    starts, and fabric_eth.board_rig gives the board's closer to the holder before
+    its first write that changes anything. From that point on, any end (return, an
+    exception, Ctrl-C, SIGTERM, SIGHUP; a dropped ssh session is SIGHUP), at any
+    statement, runs the closer, and once the finally has begun no signal can cut it
+    short. Before that point only board_parts has run, which leaves the board as it
+    is given back to (board_hold.py). SIGKILL can't be caught. Returns body's status,
+    or 128 + the signal; a refusal by the guard returns 2."""
     live = [True]
 
-    def stop(signum, frame):
+    def stop(signum, frame):                   # the first signal ends the run; the rest are ignored
         if live[0]:
             live[0] = False
-            raise SessionSignal(signum)
+            raise KeyboardInterrupt if signum == signal.SIGINT else RunStopped(signum)
 
-    signals = (signal.SIGTERM, signal.SIGHUP)
+    signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
     old = [signal.signal(n, stop) for n in signals]
-    old_int = signal.getsignal(signal.SIGINT)
+    held = Held()
     backend = None
     try:
-        backend = make()
+        backend = make(held)
         return body(backend)
-    except SessionSignal as e:
-        print(f"stopped by {e}; {'giving the board back' if backend else 'nothing was left on the board'}",
+    except (RunStopped, SessionSignal) as e:
+        print(f"stopped by {e}; {'giving the board back' if held.closer else 'nothing had touched the board'}",
               file=sys.stderr)
         return 128 + e.signum
     except fabric_guard.NoActiveApp as e:
@@ -668,12 +682,10 @@ def run_closing(make, body):
         return 2
     finally:
         live[0] = False
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            if backend is not None:
+            if not held.close() and backend is not None:
                 backend.close()
         finally:
-            signal.signal(signal.SIGINT, old_int)
             for n, handler in zip(signals, old):
                 signal.signal(n, handler)
 
@@ -725,8 +737,10 @@ def main(argv=None):
     if a.probe and not fabric:
         ap.error("--probe is for --backend fpga or fpga-model")
 
-    def make():
-        return BACKENDS[a.backend](eth.ip(a.chip_ip), clock_hz=a.clock * 1e6, quad=not a.single, sck_div=a.sck_div)
+    def make(held):
+        board = dict(hold=held.hold) if a.backend == "fpga" else {}
+        return BACKENDS[a.backend](eth.ip(a.chip_ip), clock_hz=a.clock * 1e6, quad=not a.single, sck_div=a.sck_div,
+                                   **board)
     if a.probe:                                # no interface is created: no namespace needed
         def run_probe(backend):
             rep = backend.report()

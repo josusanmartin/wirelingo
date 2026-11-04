@@ -5,6 +5,7 @@ board's code path, register writes included, runs here. No hardware: evidence
 level "model". Judges: zlib for the FCS and this file's own frame builders and
 checkers (test_eth_stack's far end), not pe.eth."""
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -591,7 +592,7 @@ def test_board_backend_refuses_before_touching_the_fabric(monkeypatch, no_devmem
 def test_board_backend_at_40mhz_needs_protoemu40(monkeypatch, no_devmem):
     monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
     with pytest.raises(fg.NoActiveApp, match="needs 'protoemu40'"):
-        fe.board_rig(40e6)
+        fe.board_rig(40e6, None)
 
 
 def test_measure_spim_needs_the_app_for_its_clock(monkeypatch, no_devmem, capsys):
@@ -639,10 +640,10 @@ def test_run_closing_gives_the_board_back_on_a_signal(signum, sentinels):
     if signum == signal.SIGINT:
         signal.signal(signal.SIGINT, signal.default_int_handler)
         with pytest.raises(KeyboardInterrupt):
-            tap.run_closing(lambda: b, body)
+            tap.run_closing(lambda held: b, body)
         assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
     else:
-        assert tap.run_closing(lambda: b, body) == 128 + signum
+        assert tap.run_closing(lambda held: b, body) == 128 + signum
         assert sentinels()
     assert b.closed == 1
 
@@ -654,17 +655,17 @@ def test_run_closing_gives_the_board_back_on_an_exception_and_a_normal_end():
     def boom(backend):
         raise KeyboardInterrupt
     with pytest.raises(KeyboardInterrupt):
-        tap.run_closing(lambda: b, boom)
-    assert tap.run_closing(lambda: b, lambda backend: 7) == 7
+        tap.run_closing(lambda held: b, boom)
+    assert tap.run_closing(lambda held: b, lambda backend: 7) == 7
     assert b.closed == 2
 
 
 def test_run_closing_handles_signals_while_the_backend_is_built(sentinels):
     """A signal during make() is the session's, not the default kill; nothing was built,
-    so nothing is closed (board_rig gave back what it had touched)."""
+    so nothing is closed."""
     tap = load_bridge()
 
-    def make():
+    def make(held):
         os.kill(os.getpid(), signal.SIGHUP)
         raise AssertionError("the signal should have stopped make()")
     assert tap.run_closing(make, lambda backend: 0) == 128 + signal.SIGHUP
@@ -789,3 +790,182 @@ def test_give_back_goes_on_when_the_select_cannot_be_read():
     with pytest.raises(OSError, match="SEL"):
         fe.give_back(board, spim, lab)
     assert spim.mem.log[-1] == (pe_spim.SEL, 0) and lab.mem.modes[-1] == pfd.GPIO
+
+
+# ---------------------------------------------------------------- the holder (verifier report 034)
+import board_hold                               # noqa: E402
+import pe.eth                                   # noqa: E402
+
+
+def test_the_closer_stops_the_cores_once_the_rig_exists():
+    """With a rig, the holder's closer is HwRig.close (cores stopped too); give_back
+    alone wouldn't stop them."""
+    fm, (board, spim, lab) = fake_parts()
+    closer = fe.BoardCloser(board, spim, lab)
+    closer.rig = pfd.HwRig(hw=v2_demo.Hw(board=board, spim=spim, lab=lab, f_clk=50e6))
+    closer.rig.write(sim.A_CTRL, 0b11)
+    fm.step(4)                                          # a bus write lands the next cycle
+    assert fm.chip.enable == 0b11 and fm.chip.hostcfg == 1
+    closer()
+    fm.step(4)
+    assert fm.chip.enable == 0 and fm.chip.hostcfg == 0 and spim.mem.log[-1] == (pe_spim.SEL, 0)
+
+
+def test_held_closes_once_and_says_whether_it_held_anything():
+    h, calls = board_hold.Held(), []
+    assert h.close() is False
+    h.hold(lambda: calls.append(1))
+    assert h.close() is True and h.close() is False and calls == [1]
+
+
+def test_board_rig_needs_a_holder(monkeypatch):
+    monkeypatch.setattr(fg, "_checked", None)
+    monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
+    monkeypatch.setattr(fe, "board_parts", lambda: pytest.fail("parts built without a holder"))
+    with pytest.raises(ValueError, match="holder"):
+        fe.board_rig(50e6, None)
+
+
+def board_end_state(fm, board, spim, lab):
+    """The board as run_closing must leave it: host port on the GPIO path (if it ever
+    left it), quad off, pe_lab in GPIO mode, cores stopped, PMOD never enabled."""
+    log = spim.mem.log
+    sel = [v for off, v in log if off == pe_spim.SEL]
+    assert not sel or sel[-1] == 0, f"SEL writes {sel}"
+    assert all(v == 0 for off, v in log if off != pe_spim.SEL)
+    assert fm.chip.hostcfg == 0, "quad on"
+    assert not lab.mem.modes or lab.mem.modes[-1] == pfd.GPIO
+    fm.step(4)                                          # a CTRL write lands the next cycle
+    assert fm.chip.enable == 0
+
+
+@pytest.mark.parametrize("call", ["mac", "Station"])
+@pytest.mark.parametrize("kind", ["ctrl-c", "sigterm"])
+def test_verifier_034_window_after_fabric_eth(monkeypatch, sentinels, capsys, call, kind):
+    """Report 034's test_v034_window.py cases: FabricEth.__init__ finishes, then the
+    first eth.mac or eth.Station call faults."""
+    monkeypatch.setattr(fg, "_checked", None)
+    monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
+    fm, parts = fake_parts()
+    monkeypatch.setattr(fe, "board_parts", lambda: parts)
+    real = getattr(pe.eth, call)
+    seen = []
+
+    def fault(*a, **kw):
+        if not seen:
+            seen.append(1)
+            assert fm.chip.hostcfg == 1                  # the rig is whole: quad on
+            if kind == "ctrl-c":
+                raise KeyboardInterrupt
+            os.kill(os.getpid(), signal.SIGTERM)
+        return real(*a, **kw)
+    monkeypatch.setattr(pe.eth, call, fault)
+    tap = load_bridge()
+    if kind == "ctrl-c":
+        with pytest.raises(KeyboardInterrupt):
+            tap.main(["--backend", "fpga", "--probe"])
+    else:
+        assert tap.main(["--backend", "fpga", "--probe"]) == 128 + signal.SIGTERM
+        assert "giving the board back" in capsys.readouterr().err
+    assert seen
+    board_end_state(fm, *parts)
+    assert sentinels()
+
+
+# ---------------------------------------------------------------- every line from the first write to run_closing's backend
+TRACED = (str(HOST), str(ROOT / "tools/micropython"))   # the board code; not the model, the assembler or these fakes
+
+
+def injected_run(monkeypatch, kind, at):
+    """eth_tap.main on the fake KV260 with a fault injected at line event number `at`
+    (None: count them). Counting starts at the call of Board.reset, the first write
+    after board_rig hands the holder its closer, so before the host port first moves
+    (SEL), and stops at the first line of run_closing that has the backend. Line
+    events are those of the board code (TRACED). Returns (events, outcome, stderr)."""
+    fm, parts = fake_parts()
+    board, spim, lab = parts
+    monkeypatch.setattr(fe, "board_parts", lambda: parts)
+    reset_code = pe_kria.Board.reset.__code__
+    st = dict(armed=False, n=0, fired=False, done=False)
+    tap = load_bridge()
+
+    def tracer(frame, event, arg):
+        if st["done"]:
+            return None
+        code = frame.f_code
+        if event == "call":
+            if code is reset_code:
+                st["armed"] = True
+            return tracer if code.co_filename.startswith(TRACED) else None
+        if event != "line" or not st["armed"]:
+            return tracer
+        if code.co_name == "run_closing" and frame.f_locals.get("backend") is not None:
+            st["done"] = True
+            sys.settrace(None)                          # the probe itself runs untraced
+            return None
+        if at is not None and st["n"] == at:
+            st["fired"], st["done"] = True, True
+            sys.settrace(None)
+            if kind == "ctrl-c":
+                raise KeyboardInterrupt
+            os.kill(os.getpid(), signal.SIGTERM)    # run_closing's handler raises at the next check
+            return None
+        st["n"] += 1
+        return tracer
+    err = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", err)
+    sys.settrace(tracer)
+    try:
+        outcome = tap.main(["--backend", "fpga", "--probe"])
+    except KeyboardInterrupt:
+        outcome = "KeyboardInterrupt"
+    finally:
+        sys.settrace(None)
+        monkeypatch.undo()                              # stderr and board_parts back
+    assert st["armed"]
+    if at is not None:
+        assert st["fired"], f"point {at} not reached"
+    board_end_state(fm, board, spim, lab)
+    return st["n"], outcome, err.getvalue()
+
+
+SHARDS = 8
+
+
+@pytest.fixture(scope="module")
+def window_points():
+    """How many line events the window has (one clean run)."""
+    mp = pytest.MonkeyPatch()
+    try:
+        mp.setattr(fg, "_checked", None)
+        mp.setattr(fg, "check", lambda **kw: "protoemu")
+        n, outcome, _ = injected_run(mp, None, None)
+    finally:
+        mp.undo()
+    assert outcome == 0
+    return n
+
+
+@pytest.mark.parametrize("shard", range(SHARDS))
+@pytest.mark.parametrize("kind", ["ctrl-c", "sigterm"])
+def test_every_point_in_the_window_gives_the_board_back(monkeypatch, sentinels, window_points, kind, shard):
+    """Verifier report 034, asked for structurally: a Ctrl-C, and separately a real
+    SIGTERM, at every line event of the board code from the call of Board.reset (just
+    after the holder has the board, before the first SEL write) until run_closing holds
+    the backend. Each run ends as run_closing promises, and the board is given back."""
+    assert window_points > 200
+    for at in range(shard, window_points, SHARDS):
+        monkeypatch.setattr(fg, "_checked", None)
+        monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
+        _, outcome, err = injected_run(monkeypatch, kind, at)
+        if kind == "ctrl-c":
+            assert outcome == "KeyboardInterrupt", f"point {at}: {outcome}"
+        else:
+            assert outcome == 128 + signal.SIGTERM, f"point {at}: {outcome}"
+            assert "giving the board back" in err, f"point {at}: {err}"
+    assert sentinels()
+
+
+def test_the_window_point_count(window_points, capsys):
+    with capsys.disabled():
+        print(f"\nfabric-ping window: {window_points} line events of the board code")

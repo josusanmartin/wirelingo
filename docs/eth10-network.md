@@ -360,21 +360,32 @@ nothing until fabric_guard shows the app for `--clock` (protoemu at 50 MHz, prot
 at 40) as the one active row; another of our apps active refuses too
 (`require_app(expect=...)`, used by `--measure-spim` now as well). It loads no app.
 
-The board is given back on any end (normal, exception, Ctrl-C, SIGTERM, SIGHUP): cores
-stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPIO path,
-and a second signal can't cut that short. That includes an end while the rig is being
-built, when `v2_demo.Hw` has moved the host port to the fabric master and read the ID
-and HwRig has turned quad on and is measuring the clock (2 s): the signal handlers are
-in place before the build starts, `fabric_eth.board_rig` gives back what it had
-touched, and `FpgaBackend` closes a whole rig if setting up `FabricEth` on it ends any
-way at all (`test_a_rig_stopped_while_it_is_built_gives_the_board_back`: an exception, a
-wrong ID, Ctrl-C, SIGTERM and SIGHUP during the clock measurement;
-`test_a_ctrl_c_at_the_id_read_gives_the_board_back`;
-`test_a_backend_stopped_while_fabric_eth_is_built_gives_the_board_back`; all on the fake
-KV260). Until verifier reports 029 and 031 found them, a run stopped in the rig's build
-left the host port on the fabric master with quad on, and so did a Ctrl-C while
-`FabricEth` was set up. The board runs so far went through both windows without a
-fault.
+What is guaranteed about giving the board back, and from which point. `run_closing`
+installs its SIGINT, SIGTERM and SIGHUP handlers, then makes a holder
+(`board_hold.Held`) and only then builds the backend. `fabric_eth.board_rig` hands the
+holder the board's closer as soon as it has the board's three objects, before its first
+write that changes anything: the chip's reset, then `v2_demo.Hw`'s move of the host port
+to the fabric master (the first SEL write), the ID read, quad, the clock measurement,
+`FabricEth`, the Station. From that point on, any end (a return, an exception, Ctrl-C,
+SIGTERM, SIGHUP, at any statement) runs the closer in `run_closing`'s finally: cores
+stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPIO path.
+The first signal ends the run and every later one is ignored, so nothing cuts the close
+short. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
+reads pe_spim's VERSION and pe_lab's MAGIC, and writes the GPIO path's idle levels,
+which are what the board is given back to anyway. So there is no first SEL write a
+signal could land inside without a holder: the holder is set first. SIGKILL can't be
+caught, and nothing here can help a process that is killed.
+
+The test of it is exhaustive over the code that runs in between:
+`test_every_point_in_the_window_gives_the_board_back` injects a Ctrl-C, and separately a
+real SIGTERM, at every line event of the board code (`fpga/kv260/host`,
+`tools/micropython`; not the cycle model, the assembler or the test's fakes) from the
+call of `Board.reset` until `run_closing` holds the backend, 621 points, each run
+through `eth_tap.main` on the fake KV260, and checks the end state above after each.
+Verifier report 034's own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or
+`eth.Station` call after `FabricEth`) are tests too. Verifier reports 029, 031 and 034
+found three such windows in turn, each a statement past the last fix; the board runs
+went through all of them without a fault.
 
 `--pcap` takes a tcpdump of the TAP, for the record only; it is never part of the pass.
 On the board's selftest of `da82a51` the file came out empty, and that version kept

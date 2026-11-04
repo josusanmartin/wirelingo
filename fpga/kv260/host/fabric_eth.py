@@ -45,7 +45,6 @@ the app for this clock is the one active row. Nothing here loads an app.
 """
 import math
 import pathlib
-import signal
 import sys
 import time
 
@@ -54,6 +53,7 @@ sys.path.insert(0, str(HERE))
 
 import fabric_guard  # noqa: E402
 import pe_spim  # noqa: E402
+from board_hold import shielded  # noqa: E402
 import postfreeze_demo as pfd  # noqa: E402  (sets up sys.path for tools/)
 import postfreeze2_demo as p2d  # noqa: E402
 import usb_replay_demo as urd  # noqa: E402  (imported here: a first import inside a capture takes ms on the Kria)
@@ -367,38 +367,41 @@ def give_back(board, spim, lab):
         raise errors[0]
 
 
-def shielded(fn):
-    """fn() with SIGINT, SIGTERM and SIGHUP ignored, so a second signal can't cut a
-    give-back short; the handlers are put back after."""
-    names = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-    old = [signal.signal(n, signal.SIG_IGN) for n in names]
-    try:
-        return fn()
-    finally:
-        for n, h in zip(names, old):
-            signal.signal(n, h)
+class BoardCloser:
+    """The closer board_rig hands to the holder: HwRig.close once the rig exists
+    (cores stopped too), give_back before that or if that fails. `rig` is set by one
+    assignment, so either way is complete."""
+
+    def __init__(self, board, spim, lab):
+        self.board, self.spim, self.lab, self.rig = board, spim, lab, None
+
+    def __call__(self):
+        if self.rig is not None:
+            try:
+                self.rig.close()
+                return
+            except Exception as e:               # noqa: BLE001 - fall back to the parts
+                print(f"HwRig.close failed ({e!r}); giving the parts back", file=sys.stderr)
+        give_back(self.board, self.spim, self.lab)
 
 
-def board_rig(clock_hz, parts=None):
+def board_rig(clock_hz, hold, parts=None):
     """The KV260, after fabric_guard: the app for this clock must be the one active
-    row, or nothing maps the fabric. Never loads an app. What v2_demo.Hw and HwRig do
-    to the board while they are built (host port to the fabric master, ID read,
-    quad on, 2 s of clock measurement) is given back if that ends in any way but a
-    rig: an exception, Ctrl-C, or a signal eth_tap.run_closing turned into one."""
+    row, or nothing maps the fabric. Never loads an app. hold (board_hold.Held.hold,
+    from eth_tap.run_closing) gets the board's closer before the first write that
+    changes anything, so whatever ends the run from there on, the holder gives it
+    back; nothing here catches anything."""
     if clock_hz not in (40e6, 50e6):
         raise ValueError("10BASE-T needs 40 or 50 MHz")
     fabric_guard.require_app(expect=fabric_guard.APP_FOR_MHZ[round(clock_hz / 1e6)])
+    if hold is None:
+        raise ValueError("the board needs a holder (eth_tap.run_closing's) before anything touches it")
     from v2_demo import Hw
     board, spim, lab = (parts or board_parts)()
-    try:
-        board.reset()                            # what Hw() does when it builds its own board
-        rig = pfd.HwRig(hw=Hw(board=board, spim=spim, lab=lab))
-        if rig.f_clk != clock_hz:
-            raise RuntimeError(f"the board's clock is {rig.f_meas / 1e6:.5f} MHz, not {clock_hz / 1e6:g}")
-    except BaseException:
-        try:
-            give_back(board, spim, lab)
-        except Exception as e:                   # noqa: BLE001 - the first failure is the one to report
-            print(f"giving the board back failed too: {e!r}", file=sys.stderr)
-        raise
-    return rig
+    closer = BoardCloser(board, spim, lab)
+    hold(closer)
+    board.reset()                                # what Hw() does when it builds its own board
+    closer.rig = pfd.HwRig(hw=Hw(board=board, spim=spim, lab=lab))
+    if closer.rig.f_clk != clock_hz:
+        raise RuntimeError(f"the board's clock is {closer.rig.f_meas / 1e6:.5f} MHz, not {clock_hz / 1e6:g}")
+    return closer.rig
