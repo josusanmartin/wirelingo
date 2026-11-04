@@ -101,19 +101,21 @@ itself, excluding Linux's buffer fill and register accesses.
 
 ## Build, install, test
 
-`<kria-host>`, here and in every command in this repository, stands for the
-board's ssh address: a LAN IP or a tailnet name. `install.sh` takes it, with
-the user, from the environment variable `WL_KRIA` (for example
-`WL_KRIA=ubuntu@kria.example`) and stops with a one-line message if it is unset.
+`<kria-host>` stands for the board's ssh address: a LAN IP or a tailnet name.
+Set `WL_KRIA` to it, with the user, once per terminal (the `export` line
+below, for example `export WL_KRIA=ubuntu@kria.example`). Every command in
+this repository that reaches the board from another machine uses
+`"$WL_KRIA"`, and `install.sh` reads it too, stopping with a one-line message
+if it is unset.
 
     fpga/kv260/build.sh              # stage, rsync to runner1, Vivado batch, bootgen; fetch to out/
     export WL_KRIA=ubuntu@<kria-host>
     fpga/kv260/install.sh            # copy to the Kria, dtc the overlay, xmutil loadapp protoemu
     fpga/kv260/build.sh 25 && APP=protoemu48 fpga/kv260/install.sh   # the 48 MHz build (USB) as a second app
-    ssh ubuntu@<kria-host> sudo python3 protoemu/fpga/kv260/host/bringup_kria.py
-    ssh ubuntu@<kria-host> sudo python3 protoemu/fpga/kv260/host/spim_test.py
-    ssh ubuntu@<kria-host> sudo python3 protoemu/fpga/kv260/host/v2_demo.py call la spi i2c --save la.json
-    scp ubuntu@<kria-host>:la.json /tmp/ && python3 fpga/kv260/host/v2_demo.py la-model /tmp/la.json  # off the board
+    ssh "$WL_KRIA" sudo python3 protoemu/fpga/kv260/host/bringup_kria.py
+    ssh "$WL_KRIA" sudo python3 protoemu/fpga/kv260/host/spim_test.py
+    ssh "$WL_KRIA" sudo python3 protoemu/fpga/kv260/host/v2_demo.py call la spi i2c --save la.json
+    scp "$WL_KRIA":la.json /tmp/ && python3 fpga/kv260/host/v2_demo.py la-model /tmp/la.json  # off the board
 
 `build.tcl` is a non-project batch flow (in-memory project for the block
 design): PS + AXI interconnect + 2 AXI GPIO, then synth/place/route of
@@ -291,11 +293,11 @@ Nothing left the FPGA: every line is a virtual pin (P24+) or a uio pad driven
 by pe_lab; no PMOD pin was enabled (the J2 wiring was not known, so no
 protocol went over real pins).
 
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu/fpga/kv260/host/postfreeze_demo.py --save pf50.json
+    ssh "$WL_KRIA" sudo python3 -u protoemu/fpga/kv260/host/postfreeze_demo.py --save pf50.json
     # 48 MHz (DShot): sudo xmutil unloadapp, then sudo xmutil loadapp protoemu48, then sudo xmutil listapps
     # (one at a time; run nothing unless protoemu48 is the one active row), then
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu48/fpga/kv260/host/postfreeze_demo.py dshot bidir --save pf48.json
-    scp ubuntu@<kria-host>:pf50.json /tmp/ && python3 fpga/kv260/host/postfreeze_demo.py sigrok /tmp/pf50.json
+    ssh "$WL_KRIA" sudo python3 -u protoemu48/fpga/kv260/host/postfreeze_demo.py dshot bidir --save pf48.json
+    scp "$WL_KRIA":pf50.json /tmp/ && python3 fpga/kv260/host/postfreeze_demo.py sigrok /tmp/pf50.json
     python3 fpga/kv260/host/postfreeze_demo.py --model          # the same runs on the cycle model (about 5 min)
 
 **Board state and builds.** Run 2026-10-13 19:14-19:17 UTC. The Kria had
@@ -371,9 +373,9 @@ run in simulation, on the same FPGA build of the chip RTL. What ran is the RTL
 on an FPGA (fabric timing, inferred RAM, no IHP pads), not silicon. Every line
 is a uio pad driven by a core or by pe_lab; no PMOD pin was enabled.
 
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu/fpga/kv260/host/spi_uart_demo.py --save su50.json
+    ssh "$WL_KRIA" sudo python3 -u protoemu/fpga/kv260/host/spi_uart_demo.py --save su50.json
     python3 fpga/kv260/host/spi_uart_demo.py --model --save m.json      # the same runs on the cycle model (about 4 min)
-    scp ubuntu@<kria-host>:su50.json /tmp/ && python3 fpga/kv260/host/spi_uart_demo.py compare /tmp/su50.json m.json
+    scp "$WL_KRIA":su50.json /tmp/ && python3 fpga/kv260/host/spi_uart_demo.py compare /tmp/su50.json m.json
 
 **Board state and build.** Run 2026-10-14 03:14-03:15 UTC (the three groups
 had also run separately at 03:10-03:12 with the same results). `protoemu`
@@ -466,8 +468,8 @@ virtual pin or a uio pad driven by a core or by pe_lab; no PMOD pin was
 enabled; no wiring was changed.
 
     python3 fpga/kv260/host/postfreeze2_demo.py --model --save m2.json --plans plans.json   # cycle model first (about 6 min)
-    scp plans.json ubuntu@<kria-host>:pf2_logs/
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu/fpga/kv260/host/postfreeze2_demo.py --save pf2.json --plans pf2_logs/plans.json
+    scp plans.json "$WL_KRIA":pf2_logs/
+    ssh "$WL_KRIA" sudo python3 -u protoemu/fpga/kv260/host/postfreeze2_demo.py --save pf2.json --plans pf2_logs/plans.json
     python3 fpga/kv260/host/postfreeze2_demo.py compare pf2.json m2.json
     python3 fpga/kv260/host/postfreeze2_demo.py sigrok pf2.json
 
@@ -594,8 +596,8 @@ silicon. Every line is a virtual pin or a uio pad driven by a core or by
 pe_lab. No PMOD pin was enabled and no wiring was changed.
 
     python3 fpga/kv260/host/postfreeze3_demo.py --model --save m3.json --plans plans3.json   # cycle model first (about 9 min)
-    scp plans3.json ubuntu@<kria-host>:pf3_logs/
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu/fpga/kv260/host/postfreeze3_demo.py --save pf3_logs/pf3.json --plans pf3_logs/plans3.json
+    scp plans3.json "$WL_KRIA":pf3_logs/
+    ssh "$WL_KRIA" sudo python3 -u protoemu/fpga/kv260/host/postfreeze3_demo.py --save pf3_logs/pf3.json --plans pf3_logs/plans3.json
     python3 fpga/kv260/host/postfreeze3_demo.py compare pf3.json m3.json
     python3 fpga/kv260/host/postfreeze3_demo.py sigrok pf3.json
 
@@ -755,8 +757,8 @@ an FPGA with digital levels on fabric pads, not silicon and not a real host
 controller.
 
     python3 fpga/kv260/host/usb_replay_demo.py --model --plans up.json --save m.json      # plans + replay on the model (~15 min)
-    scp up.json ubuntu@<kria-host>:usb_logs/
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu48/fpga/kv260/host/usb_replay_demo.py \
+    scp up.json "$WL_KRIA":usb_logs/
+    ssh "$WL_KRIA" sudo python3 -u protoemu48/fpga/kv260/host/usb_replay_demo.py \
         --expect 60b0692 --plans usb_logs/up.json --save usb_logs/hw.json
     python3 fpga/kv260/host/usb_replay_demo.py compare hw.json m.json
     python3 fpga/kv260/host/usb_replay_demo.py sigrok hw.json --plans up.json
@@ -860,8 +862,8 @@ is the RTL on an FPGA, not silicon; every line is a virtual pin or a uio pad
 driven by a core or pe_lab; no PMOD pin was enabled.
 
     python3 fpga/kv260/host/legacy_demo.py --model --save ml.json --plans pl.json     # ~10 min
-    scp pl.json ubuntu@<kria-host>:legacy_logs/
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu/fpga/kv260/host/legacy_demo.py \
+    scp pl.json "$WL_KRIA":legacy_logs/
+    ssh "$WL_KRIA" sudo python3 -u protoemu/fpga/kv260/host/legacy_demo.py \
         --save legacy_logs/hl.json --plans legacy_logs/pl.json
     python3 fpga/kv260/host/legacy_demo.py compare hl.json ml.json
     python3 fpga/kv260/host/legacy_demo.py sigrok hl.json

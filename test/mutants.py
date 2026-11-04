@@ -397,6 +397,9 @@ MUTANTS = {
     # the tailnet name back as install.sh's default (split so this file stays clean)
     "privacy-kria-default-host": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
         'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.tail' '[tailnet label redacted].ts.net}}', pytest("test/model/test_private_hosts.py")),
+    # any other default host: install.sh must still refuse with no host given
+    "privacy-kria-other-default": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.local}}', pytest("test/model/test_private_hosts.py -k install")),
 }
 
 

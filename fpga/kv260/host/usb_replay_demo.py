@@ -7,8 +7,8 @@ loaded. Nothing leaves the FPGA; no PMOD pin is enabled.
 
     python3 fpga/kv260/host/usb_replay_demo.py --plans up.json [scenarios]                  # 1. host model runs (workstation)
     python3 fpga/kv260/host/usb_replay_demo.py --model --plans up.json --save m.json        # 2. the replay on the cycle model
-    scp up.json ubuntu@<kria-host>:usb_logs/
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu48/fpga/kv260/host/usb_replay_demo.py \\
+    scp up.json "$WL_KRIA":usb_logs/
+    ssh "$WL_KRIA" sudo python3 -u protoemu48/fpga/kv260/host/usb_replay_demo.py \\
         --expect 60b0692 --plans usb_logs/up.json --save usb_logs/hw.json                   # 3. the board
     python3 fpga/kv260/host/usb_replay_demo.py compare hw.json m.json                       # 4. off the board
     python3 fpga/kv260/host/usb_replay_demo.py sigrok hw.json                               #    sigrok's USB decoders
