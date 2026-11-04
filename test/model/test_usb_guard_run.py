@@ -50,7 +50,7 @@ def test_tracer_puts_back_what_it_found(tmp_path):
         return Done()
 
     class Mon:
-        def __init__(self, cmd, stdout):
+        def __init__(self, cmd, stdout, **kw):
             stdout.write("usbmon text\n")
             stdout.close()
 

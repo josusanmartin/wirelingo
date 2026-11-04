@@ -36,6 +36,7 @@ import fcntl
 import os
 import pathlib
 import random
+import signal
 import sys
 import time
 
@@ -139,20 +140,36 @@ class Stop(Exception):
     """A SIGINT, SIGTERM or SIGHUP: stop, leaving the board as a normal end does."""
 
 
+# The live Linux client's pid and the current attach's device software, kept
+# here rather than in run()'s locals: a Stop can be raised in fork_client()
+# itself (Python runs a pending handler when the signals are unblocked, before
+# the pid reaches run()), and main() must still kill that client and report
+# that attach.
+LIVE = {"client": None, "sw": None}
+
+
+def kill_client():
+    """Kill and reap the Linux client if one is running."""
+    child, LIVE["client"] = LIVE["client"], None
+    if child:
+        os.kill(child, 9)
+        os.waitpid(child, 0)
+        print("  the Linux client killed", flush=True)
+
+
 def catch_signals():
     """The first SIGINT, SIGTERM or SIGHUP raises Stop wherever the demo is;
     later ones are ignored, so the cleanup (killing the client, detaching)
     runs to its end. Installed explicitly: a process started in the background
     from a non-interactive shell begins with SIGINT ignored, and Python then
     leaves it so (the 2026-11-04 board run did not stop on SIGINT)."""
-    import signal
     state = {"live": True}
 
     def handler(signum, frame):
         if state["live"]:
             state["live"] = False
             raise Stop(signal.Signals(signum).name, signum)
-    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    for s in STOP_SIGNALS:
         signal.signal(s, handler)
 
 
@@ -160,7 +177,7 @@ def run(board, spim, pe, prog, a, sizes):
     """Service the device until the client is done. Returns (status, order, software);
     status None: Linux never configured it. Any exception (Stop among them)
     kills the client first, so no process is left using the device."""
-    sw = usbfsdata.LoopbackDevice(pe, prog, usbdev.DESCRIPTORS, 0, 0)
+    sw = LIVE["sw"] = usbfsdata.LoopbackDevice(pe, prog, usbdev.DESCRIPTORS, 0, 0)
     t0 = time.monotonic()
     child = None
     polls = 0
@@ -178,28 +195,50 @@ def run(board, spim, pe, prog, a, sizes):
                     print(f"  configured after {now - t0:.2f} s, {len(sw.requests)} requests, address "
                           f"{sw.address}\n[data] Linux client, random bytes out and back", flush=True)
                     t0 = now
-                    child = os.fork()
-                    if child == 0:
-                        os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))
+                    child = fork_client(sizes, a)
                 elif now - t0 > a.timeout:
                     return None, None, sw
             else:
                 pid, st = os.waitpid(child, os.WNOHANG)
                 if pid:
-                    child = None
+                    child = LIVE["client"] = None
                     return os.waitstatus_to_exitcode(st), None, sw
                 if now - t0 > a.limit:
                     os.kill(child, 9)
                     os.waitpid(child, 0)
-                    child = None
+                    child = LIVE["client"] = None
                     print(f"  client still running after {a.limit:.0f} s: killed")
                     return 1, None, sw
     except BaseException:
-        if child:
-            os.kill(child, 9)
-            os.waitpid(child, 0)
-            print("  the Linux client killed", flush=True)
+        kill_client()
         raise
+
+
+STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+
+
+def fork_client(sizes, a):
+    """The Linux client in a child process, which must never run the demo's
+    cleanup on the board (verifier 048): it inherits the board's mapping and
+    catch_signals()'s handler, so a signal to the whole process group (a
+    terminal Ctrl-C, an ssh hangup) would raise Stop in it too. The signals
+    are blocked across the fork; the child puts them back to their defaults
+    before unblocking (it dies on one; the parent kills it anyway), and it can
+    leave only through os._exit. The parent records the pid before it
+    unblocks, so a Stop raised by that unblock still finds the client."""
+    old = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    child = os.fork()
+    if child == 0:
+        try:
+            for s in STOP_SIGNALS:
+                signal.signal(s, signal.SIG_DFL)
+            signal.pthread_sigmask(signal.SIG_SETMASK, old)
+            os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))
+        finally:
+            os._exit(1)
+    LIVE["client"] = child
+    signal.pthread_sigmask(signal.SIG_SETMASK, old)
+    return child
 
 
 # ------------------------------------------------------------------ --model
@@ -392,29 +431,29 @@ def main():
             print("STOPPED")
             sys.exit(128 + e.args[1])
 
-    from pe_kria import Board
-    from pe_lab import Lab
-    from pe_spim import Spim
-    lab = Lab()
-    ident = lab.identity()
-    lab.mode(Lab.GPIO)
-    if ident["clk_div"] != 25:
-        sys.exit("FAIL: this needs the 48 MHz build. Load it one command at a time, reading what each prints:\n"
-                 "  sudo xmutil unloadapp\n  sudo xmutil loadapp protoemu48\n  sudo xmutil listapps\n"
-                 "and run nothing unless the table shows protoemu48 as its one active row")
-    board = Board()
-    board.reset()
-    spim = Spim()
-    spim.div, spim.quad = 1, False
-    spim.select(fabric=True)
-    pe = board.protoemu()
-    pe.transport = spim
-    if pe.read(sim.A_ID) != sim.ID_VALUE:
-        sys.exit("FAIL: chip ID over the fabric master")
-    print(f"[identity] RTL revision {ident['rtl_rev'][:12]}, clock {board.clk_hz() / 1e6:.4f} MHz")
-
     status, attempt, sw, order, stopped = None, 0, None, None, None
+    board = spim = pe = None
     try:
+        from pe_kria import Board
+        from pe_lab import Lab
+        from pe_spim import Spim
+        lab = Lab()
+        ident = lab.identity()
+        lab.mode(Lab.GPIO)
+        if ident["clk_div"] != 25:
+            sys.exit("FAIL: this needs the 48 MHz build. Load it one command at a time, reading what each prints:\n"
+                     "  sudo xmutil unloadapp\n  sudo xmutil loadapp protoemu48\n  sudo xmutil listapps\n"
+                     "and run nothing unless the table shows protoemu48 as its one active row")
+        board = Board()
+        board.reset()
+        spim = Spim()
+        spim.div, spim.quad = 1, False
+        spim.select(fabric=True)
+        pe = board.protoemu()
+        pe.transport = spim
+        if pe.read(sim.A_ID) != sim.ID_VALUE:
+            sys.exit("FAIL: chip ID over the fabric master")
+        print(f"[identity] RTL revision {ident['rtl_rev'][:12]}, clock {board.clk_hz() / 1e6:.4f} MHz")
         print("[wiring]")
         try:
             prog, order = attach(board, spim, pe)
@@ -435,16 +474,20 @@ def main():
                   f"software staged {sw.unacked}, pending {sw.pending}", flush=True)
             if attempt < a.attaches:
                 prog, order = attach(board, spim, pe)
-    except Stop as e:                    # the Linux client is already killed (run())
+    except Stop as e:
         stopped = e
+        kill_client()                    # if run() has not already
+        sw = LIVE["sw"]                  # stopped inside run(): that attach's software
         print(f"[stop] {e.args[0]}: stopping", flush=True)
     if order is not None:                # as a normal end: core stopped, pulled-up line held low
         usb_demo.detach(board, spim, pe, "full", order)
         left = "detached"
-    else:                                # stopped before the wiring check finished
+    elif pe is not None:                 # stopped before the wiring check finished
         spim.pmod({})
         pe.stop(3)
         left = "every PMOD pin disabled, the cores stopped"
+    else:                                # stopped before the board was opened
+        left = "the board not touched"
     if sw is not None:
         print(f"[device software] attach {attempt}: {len(sw.requests)} requests, {sw.restaged} packets re-staged; {left}")
     else:

@@ -1369,7 +1369,12 @@ own pads.
 > `host/usb_guard_run.py` (200 attaches, 1000 zero-length writes, 10 + 200
 > zero-length reads; proved on the model with `--model`). A SIGINT, SIGTERM or
 > SIGHUP stops it at once: the running demo kills its Linux client and
-> detaches, the tracing state is put back and summary.txt says STOPPED. If the
+> detaches, the tracing state is put back and summary.txt says STOPPED. The
+> script and each of its children run in their own sessions, and the demo's
+> forked client puts the three signals back to their defaults, so a group
+> signal (a terminal Ctrl-C, an ssh hangup) never runs the board cleanup in a
+> second process (tested on a fake board, `test_usb_fs_data_demo_board.py`;
+> not on the board). If the
 > first 5 attaches (`--give-up`) see no request and the kernel logs nothing for
 > the hub port, it stops with "no device seen on the hub port in 5 attaches:
 > check the USB wiring" (2026-11-04: the first board run of it found the device

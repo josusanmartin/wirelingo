@@ -69,7 +69,7 @@ class Tracer:
     def __init__(self, out, trace=TRACE, usbmon=USBMON, run=subprocess.run, popen=subprocess.Popen):
         self.out, self.trace, self.usbmon, self.popen = out, trace, usbmon, popen
         self.run = run
-        run(["modprobe", "usbmon"], check=True)
+        run(["modprobe", "usbmon"], check=True, start_new_session=True)
         self.saved = {f: (trace / f).read_text() for f in ("buffer_size_kb", "tracing_on", "events/xhci-hcd/enable")}
         self.saved_events = (trace / "set_event").read_text().split()
         (trace / "buffer_size_kb").write_text("16384")
@@ -81,7 +81,8 @@ class Tracer:
     def start(self, i):
         (self.trace / "trace").write_text("")
         (self.trace / "tracing_on").write_text("1")
-        self.mon = self.popen(["timeout", "20", "cat", str(self.usbmon)], stdout=open(self.out / f"mon-{i}.txt", "w"))
+        self.mon = self.popen(["timeout", "20", "cat", str(self.usbmon)], stdout=open(self.out / f"mon-{i}.txt", "w"),
+                              start_new_session=True)
         time.sleep(0.2)
 
     def stop(self, i, failed):
@@ -90,7 +91,8 @@ class Tracer:
         self.mon.wait()
         if failed:
             (self.out / f"trace-{i}.txt").write_text((self.trace / "trace").read_text())
-            log = self.run(["journalctl", "-k", "--since", "-40s", "--no-pager"], capture_output=True, text=True)
+            log = self.run(["journalctl", "-k", "--since", "-40s", "--no-pager"], capture_output=True, text=True,
+                           start_new_session=True)
             (self.out / f"dmesg-{i}.txt").write_text(log.stdout)
         else:
             (self.out / f"mon-{i}.txt").unlink(missing_ok=True)
@@ -155,7 +157,9 @@ def demo(args, log, model, timeout, stopper, extra=()):
     a SIGKILL. rc 124: it outlasted `timeout`."""
     cmd = [sys.executable, str(DEMO)] + args + (["--model"] if model else []) + list(extra)
     with open(log, "w") as f:
-        proc = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
+        # its own session: a terminal Ctrl-C or an ssh hangup reaches only this
+        # process, which passes a SIGTERM on (verifier 048)
+        proc = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
     stopper.child = proc
     t0, told = time.monotonic(), None
     if stopper.signal is not None:       # a stop that came as it started
@@ -188,7 +192,7 @@ def port_report(port, run=subprocess.run, sysfs=pathlib.Path("/sys/bus/usb/devic
     """Read only: where this boot's kernel log last saw our device (1209:5634),
     and the hub port's state in sysfs (port "1-1.4": 1-1:1.0/1-1-port4/state)."""
     lines = []
-    out = run(["journalctl", "-k", "-b", "--no-pager"], capture_output=True, text=True).stdout or ""
+    out = run(["journalctl", "-k", "-b", "--no-pager"], capture_output=True, text=True, start_new_session=True).stdout or ""
     seen = [m.group(1) for m in re.finditer(r"usb (\d+-[\d.]+): New USB device found, idVendor=1209, idProduct=5634", out)]
     lines.append(f"[port] device last seen on usb {seen[-1]} (kernel log, this boot)" if seen
                  else "[port] device not in this boot's kernel log")
