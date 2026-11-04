@@ -417,3 +417,41 @@ def test_descriptor_ending_at_wlength_has_no_zlp(concurrent, wlength):
         assert out == usbdev.DEVICE_DESC[:wlength]
         h.wait_bits(gap)
         checked_write(h, 5, b"", f"zero-length write {k}, after GET_DESCRIPTOR(device, {wlength})")
+
+
+TRANSFERS = {   # name -> (request, the bytes the host writes or None, the bytes it reads)
+    "zero-length write": (write_req(0), b"", None),
+    "8-byte write": (write_req(8), bytes(range(8)), None),
+    "GET_DESCRIPTOR(device, 8)": (bytes([0x80, 6, 0, 1, 0, 0, 8, 0]), None, 8),
+    "GET_DESCRIPTOR(device, 16)": (bytes([0x80, 6, 0, 1, 0, 0, 16, 0]), None, 16),
+    "GET_DESCRIPTOR(device, 18)": (bytes([0x80, 6, 0, 1, 0, 0, 18, 0]), None, 18),
+}
+
+
+@pytest.mark.parametrize("name", list(TRANSFERS))
+def test_nothing_left_staged_after_a_transfer(concurrent, name):
+    """After a transfer ends and the software has caught up, the device has
+    nothing staged: F_STAGED clear, the TX FIFO empty, nothing pending. A
+    packet staged for a stage the host will not ask for (a second status ZLP;
+    a ZLP after a data stage that reached wLength) is a bug even when the
+    checks around FSET keep it off the bus, which is all the sweeps above see."""
+    h, sw = enumerated()
+    b = concurrent(h, sw)
+    req, out, n = TRANSFERS[name]
+    if out is not None:
+        checked_write(h, 5, out, name)
+    else:
+        h.setup(5, req)
+        got, toggle = b"", 1
+        while len(got) < n:
+            pid, payload = h.data_in(5, 0)
+            assert pid == usb.pid_byte(usb.PID_DATA1 if toggle else usb.PID_DATA0)
+            toggle ^= 1
+            got += payload
+        h.data_out(5, 0, usb.PID_DATA1, b"")
+        assert got == usbdev.DEVICE_DESC[:n]
+    h.wait_bits(400)
+    chip = b.chip
+    assert not chip.flags & usbdev.F_STAGED and not chip.cores[0].txf, \
+        f"{name}: left staged: F_STAGED {bool(chip.flags & usbdev.F_STAGED)}, TX FIFO {len(chip.cores[0].txf)} words"
+    assert sw.unacked is None and not sw.pending, f"{name}: the software still holds {sw.unacked}, {sw.pending}"

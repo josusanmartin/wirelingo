@@ -1457,6 +1457,24 @@ Two more `pe.usbdev` races of the same kind, evidence model only
   INs (`test_no_restage_after_a_setup`, `test_restage_held_at_every_access`;
   on bc98a97 the same tests give 2, 8 and 1 at accesses 8, 9 and 10), and
   `test_usb_in_guard.py` checks the NAK at both speeds.
+* **Closed too (branch `usb-ls-restage`, evidence model and RTL tests; not
+  on the board):** the same race in two more places. (1) A normal stage,
+  when the host abandons a transfer with a new SETUP while the software
+  stages its reply: the old reply, or a partial packet behind the SETUP's
+  flush, answered the new request's status stage, at both speeds
+  (`test_usb_stage_abort.py`, before the fix). `pe.usbdev` now makes the same
+  checks around the FSET on every stage. (2) The two-core low-speed device
+  (`usb_ls_rx` + `usb_ls_tx`, which has not run on this board): `usb_ls_rx`
+  clears F_STAGED on a SETUP but cannot flush core 1's TX FIFO, so a FSET just
+  after left a whole stale packet for the next IN; at 50 us per SPI access
+  the re-stage sent it (accesses 8 and 9 from the decision). `usb_ls_tx` now
+  empties its TX FIFO while F_SETUP is set and NAKs an IN that finds F_STAGED
+  over an empty FIFO (49 → 55 words; turnaround unchanged on the model, 2.31
+  bit times). Every access of the re-stage (26) and of an abandoned stage
+  (16), both resumes, 1 and 50 us per access, ends right
+  (`test_restage_held_at_every_access_ls`,
+  `test_stage_abort_held_at_every_access`; tables in
+  `evidence/model-usb-ls-restage-20261104/`).
 
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,

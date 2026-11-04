@@ -57,7 +57,7 @@ def test_program_sizes():
     assert len(i2c.words) - i2c.labels["stretch_timeout"] == 8
     from pe import usbdev
     usb = {n: len(pe_prog(n, **usbdev.defines()).words) for n in ("usb_ls_dev", "usb_ls_rx", "usb_ls_tx")}
-    assert usb == {"usb_ls_dev": 130, "usb_ls_rx": 143, "usb_ls_tx": 49}
+    assert usb == {"usb_ls_dev": 130, "usb_ls_rx": 143, "usb_ls_tx": 55}
     assert {n: len(program(n)["words"]) for n in PIO_SIZES} == PIO_SIZES
     # Pico-PIO-USB's README: "1 PIO, 3 state machines, 32 instructions"
     assert sum(PIO_SIZES[n] for n in ("usb_tx_dpdm", "usb_edge_detector", "usb_nrzi_decoder")) == 32

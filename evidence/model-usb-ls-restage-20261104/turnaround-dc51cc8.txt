@@ -1,0 +1,3 @@
+ACK after SETUP  2.312-2.312 bit times over 8 (spec 2-7.5 at low speed through a hub)
+NAK after IN     2.312-2.312 bit times over 8 (spec 2-7.5 at low speed through a hub)
+DATA after IN    2.312-2.312 bit times over 8 (spec 2-7.5 at low speed through a hub)

@@ -5,6 +5,11 @@
 ; Triggers (global flags, set by usb_ls_rx or the host):
 ;   F_IN  : an IN token arrived -> send the staged packet, or NAK if none
 ;   F_ACK : a DATA packet after SETUP/OUT arrived -> send ACK
+;   F_SETUP: a SETUP is arriving (set by usb_ls_rx from its token to the end of its
+;           DATA) -> empty the TX FIFO: the transfer it aborts may have words staged
+;           or being pushed, which nothing else would drop before the next IN
+; An IN that finds F_STAGED over an empty TX FIFO (a stage whose words that flush
+; dropped) is NAKed, never taken as a packet.
 ; Staging: the host pushes the packet into the TX FIFO, then sets F_STAGED (so a
 ; packet is never sent half-pushed). The packet is: word 0 = number of bits
 ; (including the SYNC byte), then the bytes packed little-endian, 4 per word
@@ -21,9 +26,11 @@
 idle:
     jmp f F_RESET, reset_wait
     jmp f F_ACK, send_ack
+    jmp f F_SETUP, setup_flush     ; a SETUP aborts the transfer (usb_ls_rx clears F_STAGED)
     jmp !f F_IN, idle
     flag clr F_IN
-    jmp f F_STAGED, staged
+    jmp !f F_STAGED, send_nak
+    jmp txne, staged               ; F_STAGED over an empty TX FIFO (flushed below): NAK
 send_nak:
     ldi r3, 0x5A80                 ; SYNC + NAK PID
     jmp const16
@@ -78,3 +85,9 @@ reset_wait:
     mov pindirs, null
     wait 0 flag F_RESET
     jmp idle
+setup_flush:                       ; while F_SETUP (its token to the end of its DATA), words
+    jmp txne, setup_drop           ; the host software pushed for the abandoned transfer,
+    jmp idle                       ; before or as the SETUP came, are dropped
+setup_drop:
+    pull block
+    jmp setup_flush
