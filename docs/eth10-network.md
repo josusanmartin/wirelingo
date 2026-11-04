@@ -374,7 +374,7 @@ short; and `run_closing`'s finally is entered only with the signals already igno
 try clears the flag as its last statement and each except as its first, and a first
 signal handled before one of those stores clears it itself and raises there, not in the
 finally. So where the interpreter checks for signals inside the finally, and which
-thread the OS hands a signal to, doesn't matter (verifier report 037, note 1). A first
+thread the OS hands a signal to, doesn't matter ([verifier report 037](../evidence/verifier/037-fabric-ping-fix3.report.md), note 1). A first
 try with `pthread_sigmask` failed this test under pytest-xdist, whose worker threads
 take a process signal the main thread has masked. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
 reads pe_spim's VERSION and pe_lab's MAGIC, and writes the GPIO path's idle levels,
@@ -395,10 +395,13 @@ the body, and requires one close every time, under pytest-xdist as well as alone
 point can be any opcode, where the interpreter itself handles signals at fewer places
 (calls, backward jumps). Code outside it (the assembler `FabricEth` runs, the model's
 own code in the fake) is not injected into: a signal handled there ends the same
-`try` and is given back by the same holder, but no test injects it there. Verifier
-report 034's own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or `eth.Station`
+`try` and is given back by the same holder, but no test injects it there. [Verifier
+report 034](../evidence/verifier/034-fabric-ping-fix2.report.md)'s own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or `eth.Station`
 call after `FabricEth`) are tests too. On the Kria, Python is 3.12.3, on Ubuntu 24.04.2
-(the orchestrator's reading of the board, 2026-11-04); the tests ran on 3.12.3 too. Verifier reports 029, 031 and 034
+(the orchestrator's reading of the board, 2026-11-04); the tests ran on 3.12.3 too. Verifier reports
+[029](../evidence/verifier/029-fabric-ping.report.md),
+[031](../evidence/verifier/031-fabric-ping-fix.report.md) and
+[034](../evidence/verifier/034-fabric-ping-fix2.report.md)
 found three such windows in turn, each a statement past the last fix; the board runs
 went through all of them without a fault.
 

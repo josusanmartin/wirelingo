@@ -1,0 +1,7 @@
+Commit: bc280ff  Base: 4ca4b0d (improve-2026-11)  Branch: hostname-fix2  (your 035 notes 2-4)
+Builder's claims:
+1. Note 2: test_private_hosts.py matches the bare label in any case (still split in source; `git grep -i` on the label finds nothing tracked); scratch-repo plant test covers an upper-case copy and a bare label. Plants on runner1: upper-case FQDN in docs/blind-test.md -> fails at :368; bare label in a Tailscale admin-URL line in evidence/README.md -> fails at :27; reverted -> 3 passed.
+2. Note 3: test_install_refuses_with_no_host runs bash on a scratch copy of install.sh with ssh/scp/rsync stubbed (print, record, exit 97; test fails if any called); unset and both-empty: exit 1, empty stdout, exactly the WL_KRIA line on stderr; a copy cut after the host check shows KRIA fallback and WL_KRIA precedence. Mutant privacy-kria-other-default (default ubuntu@kria.local) killed by it; privacy-* 2/2 killed.
+3. Note 4: docs/hardware-day.md defines WL_KRIA near the top with one `export WL_KRIA=ubuntu@<kria-host>` line; setup block and step 0/1 inline ssh use "$WL_KRIA"; fpga/kv260/README.md every pasted ssh/scp uses "$WL_KRIA", prose keeps <kria-host>; also the usage docstrings of legacy_demo.py and usb_replay_demo.py (--help unchanged, first paragraph only).
+4. Model suite 2354 passed, 29 skipped.
+test/gl.log and history untouched (author decisions). No Kria, no SWD. Check that every pasted command in both runbooks actually works with WL_KRIA exported (quoting, scp "$WL_KRIA":path forms).

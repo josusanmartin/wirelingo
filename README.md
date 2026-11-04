@@ -46,12 +46,14 @@ describes how, and what it caught.
   HD44780 fits in 99 words; ATA PIO does not fit as specified, and an 8-bit
   subset does. Model and RTL simulation only; the draw's list was written by
   an agent and its fixing in advance cannot be proved.
-* [evidence/verifier/](evidence/verifier/README.md): every item and report of
-  the independent verifier agent, 15 PASS and 15 FAIL, verbatim.
+* [evidence/verifier/](evidence/verifier/README.md): the independent verifier
+  agent's items and reports 000-041, 21 PASS and 21 FAIL, verbatim apart from
+  the redactions listed there.
 
 **Raw evidence in the repository:** [evidence/](evidence/README.md) holds the
 verifier's reports, the kernel and step logs of the 2026-10-30 real-host USB
-runs, and the 2026-11-03 fabric ping (pending verification). The release
+runs, and the 2026-11-03 fabric ping (verified,
+[verifier report 037](evidence/verifier/037-fabric-ping-fix3.report.md)). The release
 receipts' archive, `wirelingo-release-evidence-7685aba-fo6.tar.gz` (about
 55 MB, sha256 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`), is not in git: it is to be attached as a release asset
 when the repository is published ([docs/release-evidence.md](docs/release-evidence.md)).
