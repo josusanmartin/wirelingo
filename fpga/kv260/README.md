@@ -1434,7 +1434,8 @@ SET_CONFIGURATION 569 us later), against `pe.usbfsdata` running over a
 modelled SPI port concurrently with the bus at 20 to 100 us per transaction,
 with pauses of 0.2 to 2 ms in the service loop: SET_CONFIGURATION's status
 stage was answered with one zero-length DATA1 in all 160 enumerations with
-the software before the fixes above (c184dd6) and all 160 with them (8c71177). (At 200 us per
+the software before the fixes above (c184dd6), and all 160 with them, at
+8c71177 and again with the re-stage checks of 64b59c2. (At 200 us per
 transaction, 6 of 40 failed earlier, at SET_ADDRESS: the model's host sent it
 0.1 to 3 ms after the port reset, before software that slow had restarted
 the core; Linux took 64 ms there.) The races fixed above leave
