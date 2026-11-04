@@ -53,9 +53,10 @@ real commits of the repository that this branch does not contain:
 
 The other hexadecimal strings in 042-050 are not commits: sha256 prefixes of
 files (`2d1a8e27…`, `5a7b9b36…`, `69982302…`, `7d6a1459…`, `80aa7f1b…`,
-`8734c99b…`, `b966db0a…`, `f5d30a14…`, `f8293aa0…`), an agent's id in a
-checkout path (`afe09457da93fe81d`), dates, and the numeric suffixes of the
-verifier's checkouts.
+`8734c99b…`, `b966db0a…`, `f5d30a14…`, `f8293aa0…`), a builder agent's id
+and numeric suffix in the path of its checkout that report 043 quotes
+(`afe09457da93fe81d`, `1550601`), dates, and the numeric suffixes of the
+verifier's own checkouts.
 
 | # | Item | Commit | Verdict | | |
 |---|---|---|---|---|---|
@@ -264,13 +265,20 @@ below are what pin the content. They were searched for every class in the
 030-038 table, for the Kria's Ethernet MAC in any form (with colons, with
 dashes, bare, and its NIC half), for any IPv4 or IPv6 address, and with a
 case-insensitive `git grep` for the tailnet label, the build machine's
-provider hostname and the tailnet domain (none of the three is written here,
-so that this README passes the same search).
+provider hostname and the tailnet domain. The 18 files 042-050, as
+committed, pass that search. The tailnet label and the provider hostname are
+not written in this README; the bare tailnet domain is, but only as a class
+searched for, as in 030-041.
 
 Two replacements were made, on 2 lines of 2 files. Neither line names a host:
-both quote the bare tailnet domain as a class searched for, as 030, 035, 038
-and 041 still do. They are redacted because this update's rule is that the
-`git grep` above finds nothing in the added files; each replaces exactly the redacted
+both quote the bare tailnet domain as a class searched for. The same class
+mention is kept, unredacted, in the files 030 (item and report), 035 (item
+and report), 038 (report) and 041 (report), in three lines of this README
+(`:130` and `:157`, the 000-029 and 030-038 tables, as `*.` and the domain;
+`:235`, the 039-041 list, bare), and in one of `evidence/README.md` (`:24`,
+its redaction summary). The two lines here are
+redacted only because this update's rule is that the `git grep` above finds
+nothing in the added files; each replaces exactly the redacted
 string, inside its backticks, and nothing else on the line changed:
 
 | File | Line | What | Replaced with |
@@ -284,7 +292,7 @@ Found and kept, as they name no host, address or person:
   (report 042 `:42`), as in 039-041;
 * the locally administered `02:00:de:ad:be:01` (report 042 `:41`);
 * `/home/ubuntu`, `/home/pi` and `/home/someone` quoted from earlier files
-  (report 042 `:43`, `:44`), and `/home/runner1/protoemu-flow/…` (report 043
+  (item 042 `:6`, report 042 `:17`, `:43`, `:44`), and `/home/runner1/protoemu-flow/…` (report 043
   `:22`), the compute runner's own home, kept like `~/protoemu-flow`;
 * `~/…` paths, and the words `[build host provider redacted]` and `fastmail` where report 042
   (`:36`) gives the line numbers of 041's kept list;
