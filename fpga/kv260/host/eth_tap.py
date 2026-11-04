@@ -658,7 +658,15 @@ def run_closing(make, body):
     statement, runs the closer, and once the finally has begun no signal can cut it
     short. Before that point only board_parts has run, which leaves the board as it
     is given back to (board_hold.py). SIGKILL can't be caught. Returns body's status,
-    or 128 + the signal; a refusal by the guard returns 2."""
+    or 128 + the signal; a refusal by the guard returns 2.
+
+    Why the finally can't be cut short, whichever opcodes the interpreter checks for
+    signals at: every way out of the try first blocks the three signals
+    (pthread_sigmask), so the finally runs with them held pending, and they are
+    unblocked only after the close, when `live` is False and they are ignored. A first
+    signal handled in the few opcodes before a block() has already set `live` False in
+    stop(), so it can raise only once, inside the try or an except, never in the
+    finally. (Verifier report 037, note 1.)"""
     live = [True]
 
     def stop(signum, frame):                   # the first signal ends the run; the rest are ignored
@@ -667,25 +675,39 @@ def run_closing(make, body):
             raise KeyboardInterrupt if signum == signal.SIGINT else RunStopped(signum)
 
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])          # the mask as it was
+
+    def block():
+        signal.pthread_sigmask(signal.SIG_BLOCK, signals)
+
     old = [signal.signal(n, stop) for n in signals]
     held = Held()
     backend = None
     try:
         backend = make(held)
-        return body(backend)
+        status = body(backend)
+        block()
+        return status
     except (RunStopped, SessionSignal) as e:
+        block()
         print(f"stopped by {e}; {'giving the board back' if held.closer else 'nothing had touched the board'}",
               file=sys.stderr)
         return 128 + e.signum
     except fabric_guard.NoActiveApp as e:
+        block()
         print(f"refusing to run: {e}", file=sys.stderr)
         return 2
+    except BaseException:
+        block()
+        raise
     finally:
+        block()                                # a no-op unless a path above didn't get there
         live[0] = False
         try:
             if not held.close() and backend is not None:
                 backend.close()
         finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)    # pending signals arrive now, ignored
             for n, handler in zip(signals, old):
                 signal.signal(n, handler)
 

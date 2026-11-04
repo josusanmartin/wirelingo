@@ -439,6 +439,8 @@ MUTANTS = {
         "    signals = (signal.SIGTERM, signal.SIGINT)", FAB),
     "fab-sigint-not-ours": ("fpga/kv260/host/eth_tap.py", "    signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)",
         "    signals = (signal.SIGHUP, signal.SIGTERM)", FAB),
+    "fab-way-out-unblocked": ("fpga/kv260/host/eth_tap.py", "        signal.pthread_sigmask(signal.SIG_BLOCK, signals)\n",
+        "        pass\n", FAB),
     "fab-holder-not-closed": ("fpga/kv260/host/eth_tap.py", "            if not held.close() and backend is not None:",
         "            if backend is not None:", FAB),
     "fab-compare-blind-to-edges": ("fpga/kv260/host/eth_tap.py", "if seen in phases:", "if True:", FAB),

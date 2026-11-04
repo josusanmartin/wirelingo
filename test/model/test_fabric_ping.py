@@ -876,12 +876,13 @@ def test_verifier_034_window_after_fabric_eth(monkeypatch, sentinels, capsys, ca
 TRACED = (str(HOST), str(ROOT / "tools/micropython"))   # the board code; not the model, the assembler or these fakes
 
 
-def injected_run(monkeypatch, kind, at):
-    """eth_tap.main on the fake KV260 with a fault injected at line event number `at`
-    (None: count them). Counting starts at the call of Board.reset, the first write
-    after board_rig hands the holder its closer, so before the host port first moves
-    (SEL), and stops at the first line of run_closing that has the backend. Line
-    events are those of the board code (TRACED). Returns (events, outcome, stderr)."""
+def injected_run(monkeypatch, kind, at, grain="line"):
+    """eth_tap.main on the fake KV260 with a fault injected at event number `at` (None:
+    count them), events being the board code's (TRACED) `line` events or, grain
+    "opcode", its opcode events. Counting starts at the call of Board.reset, the first
+    write after board_rig hands the holder its closer, so before the host port first
+    moves (SEL), and stops at the first event of run_closing that has the backend.
+    Returns (events, outcome, stderr)."""
     fm, parts = fake_parts()
     board, spim, lab = parts
     monkeypatch.setattr(fe, "board_parts", lambda: parts)
@@ -896,8 +897,13 @@ def injected_run(monkeypatch, kind, at):
         if event == "call":
             if code is reset_code:
                 st["armed"] = True
-            return tracer if code.co_filename.startswith(TRACED) else None
-        if event != "line" or not st["armed"]:
+            if not code.co_filename.startswith(TRACED):
+                return None
+            if grain == "opcode":
+                frame.f_trace_opcodes = True
+                sys.settrace(tracer)                    # 3.12: the flag takes effect on a re-arm
+            return tracer
+        if event != grain or not st["armed"]:
             return tracer
         if code.co_name == "run_closing" and frame.f_locals.get("backend") is not None:
             st["done"] = True
@@ -929,43 +935,128 @@ def injected_run(monkeypatch, kind, at):
     return st["n"], outcome, err.getvalue()
 
 
-SHARDS = 8
+SHARDS = {"line": 8, "opcode": 32}
+_points = {}
 
 
-@pytest.fixture(scope="module")
-def window_points():
-    """How many line events the window has (one clean run)."""
-    mp = pytest.MonkeyPatch()
-    try:
-        mp.setattr(fg, "_checked", None)
-        mp.setattr(fg, "check", lambda **kw: "protoemu")
-        n, outcome, _ = injected_run(mp, None, None)
-    finally:
-        mp.undo()
-    assert outcome == 0
-    return n
+def window_points(grain):
+    """How many events of this grain the window has (one clean run, once a process)."""
+    if grain not in _points:
+        mp = pytest.MonkeyPatch()
+        try:
+            mp.setattr(fg, "_checked", None)
+            mp.setattr(fg, "check", lambda **kw: "protoemu")
+            n, outcome, _ = injected_run(mp, None, None, grain)
+        finally:
+            mp.undo()
+        assert outcome == 0
+        _points[grain] = n
+    return _points[grain]
 
 
-@pytest.mark.parametrize("shard", range(SHARDS))
+@pytest.mark.parametrize("grain,shard", [(g, s) for g in SHARDS for s in range(SHARDS[g])])
 @pytest.mark.parametrize("kind", ["ctrl-c", "sigterm"])
-def test_every_point_in_the_window_gives_the_board_back(monkeypatch, sentinels, window_points, kind, shard):
+def test_every_point_in_the_window_gives_the_board_back(monkeypatch, sentinels, kind, grain, shard):
     """Verifier report 034, asked for structurally: a Ctrl-C, and separately a real
-    SIGTERM, at every line event of the board code from the call of Board.reset (just
-    after the holder has the board, before the first SEL write) until run_closing holds
-    the backend. Each run ends as run_closing promises, and the board is given back."""
-    assert window_points > 200
-    for at in range(shard, window_points, SHARDS):
+    SIGTERM, at every line event, and then at every opcode event (report 037, note 2),
+    of the board code from the call of Board.reset (just after the holder has the
+    board, before the first SEL write) until run_closing holds the backend. Each run
+    ends as run_closing promises, and the board is given back."""
+    n = window_points(grain)
+    assert n > (2000 if grain == "opcode" else 200)
+    for at in range(shard, n, SHARDS[grain]):
         monkeypatch.setattr(fg, "_checked", None)
         monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
-        _, outcome, err = injected_run(monkeypatch, kind, at)
+        _, outcome, err = injected_run(monkeypatch, kind, at, grain)
         if kind == "ctrl-c":
-            assert outcome == "KeyboardInterrupt", f"point {at}: {outcome}"
+            assert outcome == "KeyboardInterrupt", f"{grain} {at}: {outcome}"
         else:
-            assert outcome == 128 + signal.SIGTERM, f"point {at}: {outcome}"
-            assert "giving the board back" in err, f"point {at}: {err}"
+            assert outcome == 128 + signal.SIGTERM, f"{grain} {at}: {outcome}"
+            assert "giving the board back" in err, f"{grain} {at}: {err}"
     assert sentinels()
 
 
-def test_the_window_point_count(window_points, capsys):
+def test_the_window_point_count(capsys):
+    lines, opcodes = window_points("line"), window_points("opcode")
     with capsys.disabled():
-        print(f"\nfabric-ping window: {window_points} line events of the board code")
+        print(f"\nfabric-ping window: {lines} line events, {opcodes} opcode events of the board code")
+
+
+# ---------------------------------------------------------------- run_closing's own way out (verifier report 037, note 1)
+def finally_run(tap, end, at):
+    """run_closing with a holder whose closer counts, the body ending as `end` says,
+    and a real SIGTERM sent at opcode event number `at` (None: count them) of
+    run_closing's frame and block()'s, from the body's last statement until Held.close
+    is called: the rest of the try, the except taken, and the finally up to the close.
+    Returns (events, outcome, closes)."""
+    rc_code, close_code = tap.run_closing.__code__, board_hold.Held.close.__code__
+    closes, st = [], dict(armed=False, n=0, done=False, fired=False)
+
+    def tracer(frame, event, arg):
+        if st["done"]:
+            return None
+        code = frame.f_code
+        if event == "call":
+            if code is close_code and st["armed"]:
+                st["done"] = True
+                sys.settrace(None)
+                return None
+            if code is rc_code or (code.co_name == "block" and code.co_filename == rc_code.co_filename):
+                frame.f_trace_opcodes = True
+                sys.settrace(tracer)
+                return tracer
+            return None
+        if event == "opcode" and st["armed"]:
+            if at is not None and st["n"] == at:
+                st["fired"], st["done"] = True, True
+                sys.settrace(None)
+                os.kill(os.getpid(), signal.SIGTERM)
+                return None
+            st["n"] += 1
+        return tracer
+
+    def make(held):
+        held.hold(lambda: closes.append(1))
+        return "backend"
+
+    def body(backend):
+        st["armed"] = True
+        if end == "exception":
+            raise OSError("the body failed")
+        if end == "ctrl-c":
+            raise KeyboardInterrupt
+        return 7
+    sys.settrace(tracer)
+    try:
+        outcome = tap.run_closing(make, body)
+    except BaseException as e:                          # noqa: BLE001 - the outcome is what is checked
+        outcome = type(e).__name__
+    finally:
+        sys.settrace(None)
+    if at is not None:
+        assert st["fired"], f"opcode {at} not reached"
+    return st["n"], outcome, len(closes)
+
+
+FINAL_ENDS = {"return": (7,), "exception": ("OSError",), "ctrl-c": ("KeyboardInterrupt",)}
+
+
+@pytest.mark.parametrize("end", sorted(FINAL_ENDS))
+def test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close(sentinels, end, capsys):
+    """A SIGTERM at every opcode from the body's last statement to the call of
+    Held.close, after a normal end, an exception and a Ctrl-C in the body. The close
+    happens once every time, and the run ends as the body did or as the signal says
+    (143), never with the signal escaping past the close."""
+    tap = load_bridge()
+    n, outcome, closes = finally_run(tap, end, None)
+    assert outcome in FINAL_ENDS[end] and closes == 1
+    assert n >= 10
+    for at in range(n):
+        _, outcome, closes = finally_run(tap, end, at)
+        assert closes == 1, f"opcode {at}: closed {closes} times, outcome {outcome}"
+        # 143: the signal ended the run in the try; RunStopped: it arrived while an
+        # exception from the body was on its way out, and replaced it. Either way after the close.
+        assert outcome in FINAL_ENDS[end] + (128 + signal.SIGTERM, "RunStopped"), f"opcode {at}: {outcome}"
+    assert sentinels()
+    with capsys.disabled():
+        print(f"\nrun_closing way out after {end}: {n} opcode events")
