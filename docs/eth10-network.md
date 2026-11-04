@@ -370,20 +370,35 @@ to the fabric master (the first SEL write), the ID read, quad, the clock measure
 SIGTERM, SIGHUP, at any statement) runs the closer in `run_closing`'s finally: cores
 stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPIO path.
 The first signal ends the run and every later one is ignored, so nothing cuts the close
-short. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
+short; and `run_closing`'s finally is entered only with the signals already ignored: the
+try clears the flag as its last statement and each except as its first, and a first
+signal handled before one of those stores clears it itself and raises there, not in the
+finally. So where the interpreter checks for signals inside the finally, and which
+thread the OS hands a signal to, doesn't matter (verifier report 037, note 1). A first
+try with `pthread_sigmask` failed this test under pytest-xdist, whose worker threads
+take a process signal the main thread has masked. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
 reads pe_spim's VERSION and pe_lab's MAGIC, and writes the GPIO path's idle levels,
 which are what the board is given back to anyway. So there is no first SEL write a
 signal could land inside without a holder: the holder is set first. SIGKILL can't be
 caught, and nothing here can help a process that is killed.
 
-The test of it is exhaustive over the code that runs in between:
-`test_every_point_in_the_window_gives_the_board_back` injects a Ctrl-C, and separately a
-real SIGTERM, at every line event of the board code (`fpga/kv260/host`,
-`tools/micropython`; not the cycle model, the assembler or the test's fakes) from the
-call of `Board.reset` until `run_closing` holds the backend, 621 points, each run
-through `eth_tap.main` on the fake KV260, and checks the end state above after each.
-Verifier report 034's own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or
-`eth.Station` call after `FabricEth`) are tests too. Verifier reports 029, 031 and 034
+What the tests cover, exactly. `test_every_point_in_the_window_gives_the_board_back`
+injects a Ctrl-C, and separately a real SIGTERM, at every line event and then at every
+opcode event of the board code (`fpga/kv260/host`, `tools/micropython`; not the cycle
+model, the assembler or the test's fakes) from the call of `Board.reset` until
+`run_closing` holds the backend: 621 line events and 4186 opcode events, each run
+through `eth_tap.main` on the fake KV260, with the end state above checked after each.
+`test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close` sends a real SIGTERM at
+every opcode of `run_closing` from the body's last statement to the call of
+`Held.close`, after a normal end (14 opcodes), an exception (31) and a Ctrl-C (31) in
+the body, and requires one close every time, under pytest-xdist as well as alone. Within the traced code an injected
+point can be any opcode, where the interpreter itself handles signals at fewer places
+(calls, backward jumps). Code outside it (the assembler `FabricEth` runs, the model's
+own code in the fake) is not injected into: a signal handled there ends the same
+`try` and is given back by the same holder, but no test injects it there. Verifier
+report 034's own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or `eth.Station`
+call after `FabricEth`) are tests too. On the Kria, Python is 3.12.3, on Ubuntu 24.04.2
+(the orchestrator's reading of the board, 2026-11-04); the tests ran on 3.12.3 too. Verifier reports 029, 031 and 034
 found three such windows in turn, each a statement past the last fix; the board runs
 went through all of them without a fault.
 
@@ -403,12 +418,13 @@ size, tcpdump's exit status and what it printed. No pcap from the board is claim
 The fake board's PMOD registers are only ever written 0, and its host-port select ends
 on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
 Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
-24 of 24 killed, and with the 79 `hw-*` (the guard and hardware-day) 103 of 103.
-`fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the exhaustive
-test alone (16 of 16 of its runs fail on each). The runs in the table and the mutants
-ran on runner1 from a clean clone of `b24511c`, whose code is this commit's (logs:
-`selftest-50.log`, `selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
-`runner1:~/protoemu-flow/agent-runs/fabric-ping/logs/b24511c`); the fake board is a test.
+26 of 26 killed, and with the 79 `hw-*` (the guard and hardware-day) and the 2
+`privacy-*`, 107 of 107. `fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the
+exhaustive test alone (all of its runs fail on each), and `fab-way-out-live-on-return`
+and `fab-way-out-live-on-exception` by the way-out test. The runs in the table and the mutants ran on runner1 from a clean
+clone of `baed5c8`, whose code is this commit's (logs: `selftest-50.log`,
+`selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
+`runner1:~/protoemu-flow/agent-runs/fabric-ping2/logs/baed5c8`); the fake board is a test.
 
 With a real cable none of this applies and the bridge isn't needed: Linux on the other
 end of the cable is the test.

@@ -658,7 +658,15 @@ def run_closing(make, body):
     statement, runs the closer, and once the finally has begun no signal can cut it
     short. Before that point only board_parts has run, which leaves the board as it
     is given back to (board_hold.py). SIGKILL can't be caught. Returns body's status,
-    or 128 + the signal; a refusal by the guard returns 2."""
+    or 128 + the signal; a refusal by the guard returns 2.
+
+    Why the finally can't be cut short, whichever opcodes the interpreter checks for
+    signals at and whichever thread the OS delivers them to: the finally is entered
+    only with `live` already False, so stop() ignores every signal there. The try sets
+    it as its last statement before returning, and each except as its first. A first
+    signal handled in the few opcodes before one of those stores clears `live` itself
+    in stop() and raises once, inside the try or an except, never in the finally.
+    (Verifier report 037, note 1.)"""
     live = [True]
 
     def stop(signum, frame):                   # the first signal ends the run; the rest are ignored
@@ -672,14 +680,21 @@ def run_closing(make, body):
     backend = None
     try:
         backend = make(held)
-        return body(backend)
+        status = body(backend)
+        live[0] = False                        # from here on, signals are ignored
+        return status
     except (RunStopped, SessionSignal) as e:
+        live[0] = False
         print(f"stopped by {e}; {'giving the board back' if held.closer else 'nothing had touched the board'}",
               file=sys.stderr)
         return 128 + e.signum
     except fabric_guard.NoActiveApp as e:
+        live[0] = False
         print(f"refusing to run: {e}", file=sys.stderr)
         return 2
+    except BaseException:
+        live[0] = False                        # an exception from make or the body, Ctrl-C included
+        raise
     finally:
         live[0] = False
         try:
