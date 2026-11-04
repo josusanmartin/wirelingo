@@ -1394,15 +1394,24 @@ Two more `pe.usbdev` races of the same kind, evidence model only
   it re-stages, again before it sets F_STAGED, and again after; when one
   came, it does not set F_STAGED, or clears it, and empties the FIFOs (and
   restarts the core) before it stages the reply to that SETUP. In the model
-  the old DATA is never sent, wherever the software is descheduled. What
-  software cannot close: a SETUP that lands in the one SPI access between the
-  last check and the FSET leaves F_STAGED set over a flushed FIFO until the
-  check after it (two reads and a write); an IN in that gap parks the core in
-  `pull block`, and it answers nothing until the next `service()` stages the
-  reply (8 unanswered INs in the model). The restart that frees it can also
-  cut one IN short. This needs a lost ACK first; the board's stalled runs
-  re-staged nothing. A one-word firmware guard (NAK an IN when F_STAGED is
-  set over an empty TX FIFO) would close it; it is not applied.
+  the old DATA is never sent, wherever the software is descheduled (six
+  points, `test_no_restage_after_a_setup`). What software cannot close: the
+  window runs from the check's flags read to the FSET, that is the RX-level
+  read and the FSET write. A SETUP whose token lands in it (its DATA not yet
+  in the RX FIFO at the RX-level read, or the whole SETUP before the FSET
+  write) has flushed the FIFO, and the FSET then sets F_STAGED over it until
+  the check after the FSET (two reads and a write) clears it. An IN in that
+  gap parks the core in `pull block`, answering nothing until the next
+  `service()` stages the reply. In the model that is 2 unanswered INs (the
+  token inside the check) and 8 (the whole SETUP at the FSET); the restart
+  that frees the core can also cut one IN short (1, a SETUP just after the
+  FSET). A real host may not sit through that: an xHCI control endpoint
+  gives up after 3 errors in a row (its CErr count; from the xHCI spec, not
+  tested here), and on this board a cancelled control transfer once took the
+  controller down (`nodata1000.log`). This needs a lost ACK first; the
+  board's stalled runs re-staged nothing. A one-word firmware guard (NAK an IN
+  when F_STAGED is set over an empty TX FIFO) would close it; it is not
+  applied.
 
 **Open: `SET_CONFIGURATION` stall.** In 5 of 116 attaches Linux timed out on
 `SET_CONFIGURATION` (`can't set config #1, error -110`). A new attach fixes it,

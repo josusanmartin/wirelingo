@@ -101,7 +101,7 @@ class SpiBridge:
     def __init__(self, h, sw, poll=480, sck=2, overhead=48):
         self.chip = sw.mh.chip
         self.sw = sw
-        self.hold = None            # hold(op, previous op): True keeps the software waiting
+        self.hold = None            # hold(op, previous op, the one before): True keeps the software waiting
         self.held = False
         self.ops, self.results, self.go = queue.Queue(), queue.Queue(), queue.Queue()
         sw.mh = self
@@ -151,7 +151,7 @@ class SpiBridge:
 
     # -- the SPI side (runs inside FsHost's clock loop)
     def _program(self, bus):
-        prev = None
+        prev = prev2 = None
         while True:
             self.go.put(True)
             while True:
@@ -160,10 +160,10 @@ class SpiBridge:
                     break
                 if op[0] == "error":
                     raise op[1]
-                while self.hold is not None and self.hold(op, prev):    # descheduled here
+                while self.hold is not None and self.hold(op, prev, prev2):    # descheduled here
                     self.held = True
                     yield 4
-                self.held, prev = False, op
+                self.held, prev, prev2 = False, op, prev
                 if op[0] == "read":
                     v = (yield from bus.read(op[1]))[0]
                 elif op[0] == "write":
@@ -267,19 +267,25 @@ def test_round_trips_with_software_running_concurrently(concurrent, size):
 
 RX_STATUS = ("read", sim.core_reg(0, sim.C_STATUS))
 FSET_READ, FSET_WRITE = ("read", sim.A_FSET), ("write", sim.A_FSET, usbdev.F_STAGED)
-HOLDS = {   # where the software is descheduled: (access, the access before it)
-    "at the decision": (FSET_READ, "pop_all"),                         # before the flags read
-    "at the first write": (("write", sim.A_FCLR, usbdev.F_GOTACK), RX_STATUS),  # checks passed
-    "at FSET": (FSET_WRITE, RX_STATUS),                                 # words pushed, checked again
-    "after FSET": (FSET_READ, FSET_WRITE),                              # F_STAGED set
+PUSH = ("write", sim.core_reg(0, sim.C_FIFO))
+HOLDS = {   # where the software is descheduled: (access, the access before it, the one before that)
+    "at the decision": (FSET_READ, "pop_all", None),                   # before the flags read
+    "at the first write": (("write", sim.A_FCLR, usbdev.F_GOTACK), RX_STATUS, None),  # checks passed
+    "inside the check before FSET": (RX_STATUS, FSET_READ, PUSH),       # flags read, RX level not yet
+    "at FSET": (FSET_WRITE, RX_STATUS, None),                           # words pushed, checked again
+    "after FSET": (FSET_READ, FSET_WRITE, None),                        # F_STAGED set
+    "inside the check after FSET": (RX_STATUS, FSET_READ, FSET_WRITE),  # (verifier 036)
 }
 # What software alone cannot close (fpga/kv260/README.md, "narrowed"): a SETUP
-# landing in the one access between the last check and the FSET leaves
-# F_STAGED over a flushed FIFO until the check after it; an IN in between
+# whose token lands after the check's flags read and whose DATA is not yet in
+# the RX FIFO at its RX-level read (or that lands at the FSET write) leaves
+# F_STAGED over a flushed FIFO until the check after the FSET; an IN in between
 # parks the core in `pull block`, unanswered until the next service() stages
-# the reply, clears the FIFOs and restarts the core. That restart can also
-# cut one IN short when the SETUP came just after the FSET. Never stale DATA.
-UNANSWERED = {("at FSET", "after the SETUP"): 16, ("after FSET", "after the SETUP"): 2}
+# the reply, clears the FIFOs and restarts the core. That restart can also cut
+# one IN short when the SETUP came just after the FSET. Never stale DATA. The
+# allowances are the counts measured in the model (deterministic); 0 elsewhere.
+UNANSWERED = {("inside the check before FSET", "after its token"): 2,
+              ("at FSET", "after the SETUP"): 8, ("after FSET", "after the SETUP"): 1}
 
 
 def staged_over_empty(h, b, what):
@@ -303,7 +309,9 @@ def test_no_restage_after_a_setup(concurrent, where, resume):
     request's SETUP, which clears F_GOTACK and flushes the TX FIFO. The
     software is descheduled at one point of the re-stage (before it reads
     the flags to decide; at the first write of stage(), both checks passed;
-    at the FSET, the words pushed; just after the FSET) and resumes once the
+    between the flags and RX-level reads of the check before the FSET; at the
+    FSET, the words pushed; just after the FSET; between the two reads of the
+    check after it) and resumes once the
     SETUP is on the bus (all of it, or only its token, while its DATA
     follows). Whatever the point, SET_CONFIGURATION's status IN must get one
     zero-length DATA1, never the old DATA (left in the TX FIFO behind the
@@ -317,11 +325,13 @@ def test_no_restage_after_a_setup(concurrent, where, resume):
     assert h.data_in(5, 0, ack=False) == (usb.pid_byte(usb.PID_DATA1), data)     # ACK lost
     h.data_out(5, 0, usb.PID_DATA1, b"")
     stale = (usb.PID_DATA1, data)
-    access, before = HOLDS[where]
+    access, before, before2 = HOLDS[where]
     go = {"on": False}
 
-    def hold(op, prev):
+    def hold(op, prev, prev2):
         if go["on"] or op != access or not prev or (prev[0] if before == "pop_all" else prev) != before:
+            return False
+        if before2 is not None and (not prev2 or prev2[:len(before2)] != before2):
             return False
         if where == "at the decision":
             return sw.unacked == stale and sw.sent_at is not None and b.now_us() - sw.sent_at >= 100
