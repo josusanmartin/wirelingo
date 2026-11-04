@@ -242,6 +242,14 @@ MUTANTS = {
                                          "        signal.pthread_sigmask(signal.SIG_SETMASK, old)\n"
                                          "        os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))\n",
                                          pytest('test/model/test_usb_fs_data_demo_board.py -k "client_that_raises"')),
+    "hw-demo-reattach-wiring-escapes": ("fpga/kv260/host/usb_fs_data_demo.py",
+                                        "                try:\n"
+                                        "                    prog, order = attach(board, spim, pe)\n"
+                                        "                except usb_demo.WiringError as e:",
+                                        "                if True:\n"
+                                        "                    prog, order = attach(board, spim, pe)\n"
+                                        "                if False:",
+                                        pytest('test/model/test_usb_fs_data_demo_board.py -k "wiring_failure_on_a_re_attach"')),
     "hw-guard-run-raw-buffer-size": ("fpga/kv260/host/usb_guard_run.py",
                                      "        if size.isdigit():\n            put(\"buffer_size_kb\", size + \"\\n\")",
                                      "        if True:\n            put(\"buffer_size_kb\", self.saved[\"buffer_size_kb\"])",

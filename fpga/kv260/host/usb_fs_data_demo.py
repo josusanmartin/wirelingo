@@ -468,7 +468,14 @@ def main():
         os.sched_setaffinity(0, {SERVICE_CPU})
         for attempt in range(1, a.attaches + 1):
             if attempt > 1:              # the re-attach, under its own number (verifier 049 note 1)
-                prog, order = attach(board, spim, pe)
+                try:
+                    prog, order = attach(board, spim, pe)
+                except usb_demo.WiringError as e:    # as attach 1's, and named (verifier 052 note 1)
+                    spim.pmod({})
+                    print(f"  {e}\n[device software] attach {attempt}: its wiring check failed before its device "
+                          f"software started; every PMOD pin disabled, the cores stopped\n"
+                          f"FAIL (wiring): every PMOD pin disabled, the core not started")
+                    sys.exit(2)
             status, _, sw = run(board, spim, pe, prog, a, sizes, attempt)
             if status is not None:
                 break

@@ -61,6 +61,8 @@ class FakeSpim:
         pass
     def pmod(self, d):
         note(f"spim.pmod {d}")
+    def pmod_in(self):                     # every pin reads low: no pull-up
+        return 0
 
 sys.modules["pe_kria"] = types.SimpleNamespace(Board=FakeBoard)
 sys.modules["pe_lab"] = types.SimpleNamespace(Lab=FakeLab)
@@ -72,12 +74,15 @@ dev.mkdir(exist_ok=True)
 (dev / "bConfigurationValue").write_text("0\n" if os.environ.get("NOT_CONFIGURED") else "1\n")
 d.usb_demo.sysfs_device = lambda *a, **k: str(dev)      # Linux has configured it (or never does)
 detects = []
+real_detect = d.usb_demo.detect
 
-def detect(spim, pe):                      # each attach's wiring check; SLOW_DETECT=k: the k-th one hangs
-    detects.append(1)
+def detect(spim, pe):                      # each attach's wiring check; SLOW_DETECT=k: the k-th one hangs;
+    detects.append(1)                      # NO_PULLUP=k: the k-th is the real check, and finds no pull-up
     note(f"usb_demo.detect {len(detects)}")
     if os.environ.get("SLOW_DETECT") == str(len(detects)):
         time.sleep(60)
+    if os.environ.get("NO_PULLUP") == str(len(detects)):
+        return real_detect(spim, pe)
     return "normal", "D+"
 d.usb_demo.detect = detect
 
@@ -218,6 +223,30 @@ def test_a_stop_during_a_wiring_check_names_that_attach(tmp_path, n):
     board = ops(log)
     assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
     assert [op for _, op in board][-3:] == (["usb_demo.detect 1", "spim.pmod {}", "pe.stop 3"] if n == 1 else DETACH)
+
+
+def test_a_wiring_failure_on_a_re_attach_reports_as_on_the_first(tmp_path):
+    """The pull-up gone at attach 2's wiring check (attach 1 never configured,
+    so main() re-attaches): FAIL (wiring) and exit 2 as at attach 1, no
+    traceback, and a [device software] line naming attach 2 (verifier 052
+    note 1). The board is left as the check leaves it: reset, cores stopped,
+    every PMOD pin disabled; no detach after it."""
+    env = {"ATTACHES": "2", "NO_PULLUP": "2", "NOT_CONFIGURED": "1", "TIMEOUT": "1"}
+    p, log = start(tmp_path, env)
+    out, _ = p.communicate(timeout=120)
+    assert p.returncode == 2 and "Traceback" not in out and "STOPPED" not in out, out
+    assert out.splitlines()[-1] == "FAIL (wiring): every PMOD pin disabled, the core not started", out
+    assert "  no pulled-up pin: the 1.5k pull-up is missing" in out, out
+    assert "  attach 1 of 2: not configured after 1 s" in out, out
+    assert ("[device software] attach 2: its wiring check failed before its device software started; "
+            "every PMOD pin disabled, the cores stopped") in out, out
+    assert out.count("[device software]") == 1, out
+    board = ops(log)
+    assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
+    pulses = [f"spim.pmod {{{q}: 8}}" if i % 2 == 0 else "spim.pmod {}" for q in range(4) for i in range(10)]
+    tail = (["spim.pmod {}", "board.reset", "pe.stop 3", "usb_demo.detect 2", "pe.write 0x809 0"] + pulses
+            + ["spim.pmod {}"])          # attach()'s start, the check's pulses, the handler's pins off
+    assert [op for _, op in board][-len(tail):] == tail, board[-len(tail) - 3:]
 
 
 @pytest.mark.parametrize("how", ["no-device", "stop"])
