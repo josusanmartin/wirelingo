@@ -113,12 +113,12 @@ Once, from your checkout of this branch. This puts one copy of the software in
 `~/hwday` on the Kria, away from the app directories, and adds the alias `hd`.
 
 ```
-ssh ubuntu@kria.[tailnet domain redacted] mkdir -p hwday/fpga/kv260
-rsync -a --exclude __pycache__ tools firmware ubuntu@kria.[tailnet domain redacted]:hwday/
-rsync -a --exclude __pycache__ fpga/kv260/host ubuntu@kria.[tailnet domain redacted]:hwday/fpga/kv260/
-ssh ubuntu@kria.[tailnet domain redacted] "echo \"alias hd='sudo python3 -B ~/hwday/fpga/kv260/host/hw_day.py'\" >> ~/.bashrc"
+ssh ubuntu@<kria-host> mkdir -p hwday/fpga/kv260
+rsync -a --exclude __pycache__ tools firmware ubuntu@<kria-host>:hwday/
+rsync -a --exclude __pycache__ fpga/kv260/host ubuntu@<kria-host>:hwday/fpga/kv260/
+ssh ubuntu@<kria-host> "echo \"alias hd='sudo python3 -B ~/hwday/fpga/kv260/host/hw_day.py'\" >> ~/.bashrc"
 git archive eth-stack tools/pe/eth.py tools/pe/ethhost.py tools/pe/ethsim.py firmware/eth10_tx_cs.pasm \
-    fpga/kv260/host/eth_tap.py | ssh ubuntu@kria.[tailnet domain redacted] 'tar -x -C hwday'    # only for budget and ping
+    fpga/kv260/host/eth_tap.py | ssh ubuntu@<kria-host> 'tar -x -C hwday'    # only for budget and ping
 ```
 
 Then, on the Kria:
@@ -349,7 +349,7 @@ Time: 30 min (estimate). App: any. Needs: nothing.
 
 **Risk.** On 2026-11-03 the Kria had rebooted into its default app, `k26-starter-kits`, which held the slot. `xmutil loadapp protoemu` printed `protoemu: Load Error: -1`, the next command ran a host tool anyway, the tool read pe_spim's address inside the wrong design, and the board froze: its journal for that boot ends as the command started. Probably only a power cycle brings a board back from that; nobody here can do it but you. A board with no active app of ours must have no tool run on it: no `hd run` of a board step, no demo, no `bringup_kria.py`, nothing that opens `/dev/mem`. This step itself opens nothing.
 
-**Before you start.** **First, does it answer?** From another machine: `ssh ubuntu@kria.[tailnet domain redacted] uptime`. If it answers, do not power it off, whatever app is active: go straight to the diagnosis. A power cycle is only for a board that doesn't answer.
+**Before you start.** **First, does it answer?** From another machine: `ssh ubuntu@<kria-host> uptime`. If it answers, do not power it off, whatever app is active: go straight to the diagnosis. A power cycle is only for a board that doesn't answer.
 
 **Only if it doesn't answer for 10 minutes:** take every wire out of J2. Unplug the Kria's power, wait 10 seconds, plug it back in. It boots into `k26-starter-kits`, not ours: expected. After a few minutes (estimate) the `ssh` line above should answer, with an uptime of minutes. If it doesn't within 10 minutes, check the power and link LEDs, and stop there. This is the one power cycle in this runbook; confirming this step lasts, so it never sends you back to it.
 
@@ -409,7 +409,7 @@ Time: 5 min (estimate). App: protoemu or protoemu40 or protoemu48. Needs: `recov
 
 **Risk.** None. No wire moves and no pin is enabled. Like every demo, it resets the chip's cores. The USB wiring may still be on the board: that is fine here, because every PMOD pin is off.
 
-**Before you start.** Open a terminal on the Kria (`ssh ubuntu@kria.[tailnet domain redacted]`). This is your terminal for every `hd` command today.
+**Before you start.** Open a terminal on the Kria (`ssh ubuntu@<kria-host>`). This is your terminal for every `hd` command today.
 
 **Must stay disconnected:**
 

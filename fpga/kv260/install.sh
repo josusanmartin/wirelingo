@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Install the protoemu app on the Kria, load it, and copy the host software.
 #
-#   fpga/kv260/install.sh            # after build.sh; KRIA (default ubuntu@kria.[tailnet domain redacted])
+#   WL_KRIA=ubuntu@kria.example fpga/kv260/install.sh   # after build.sh
 #   APP=protoemu48 fpga/kv260/install.sh   # a second app (e.g. the 48 MHz build), the first one kept
 #
+# WL_KRIA is the board's ssh address (a LAN IP or a tailnet name); the older
+# name KRIA is still read when WL_KRIA is unset. With neither, it stops.
 # On the Kria: /lib/firmware/xilinx/$APP/{$APP.bit.bin,$APP.dtbo,shell.json}
 # (dtbo compiled there from protoemu.dtsi, firmware-name = $APP.bit.bin),
 # `xmutil unloadapp`, then `xmutil loadapp $APP`, then `xmutil listapps` (LOAD=0 skips it), and
@@ -11,9 +13,10 @@
 # host/expected_build.json = this checkout's RTL revision (build_id.py info).
 # APP defaults to protoemu.
 set -euo pipefail
+kria=${WL_KRIA:-${KRIA:-}}
+[ -n "$kria" ] || { echo "set WL_KRIA to the board's ssh address, e.g. WL_KRIA=ubuntu@kria.example" >&2; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
-kria=${KRIA:-ubuntu@kria.[tailnet domain redacted]}
 test -f "$here/out/protoemu.bit.bin" || { echo "no out/protoemu.bit.bin: run build.sh first" >&2; exit 1; }
 # bringup_kria.py checks the loaded bitstream against this checkout's RTL revision
 want=$(python3 "$here/build_id.py" info)

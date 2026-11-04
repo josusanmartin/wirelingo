@@ -269,7 +269,7 @@ quad SPI at SCK = clk: RX of 1518 + 64 bytes at the minimum gap, 7-word and 6-wo
 overflow and recovery, TX of 1518 bytes, and the match pin.
 
 ```
-[home directory redacted]/dev/protoemu-agent-tools/remote_test.sh model test_rmii_rtl
+~/dev/protoemu-agent-tools/remote_test.sh model test_rmii_rtl
 PYTHONPATH=tools pytest -s test/model/test_rmii.py      # prints the numbers above
 PYTHONPATH=tools python -m pe.timing firmware/rmii_rx.pasm
 ```

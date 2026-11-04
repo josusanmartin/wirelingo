@@ -135,7 +135,7 @@ Per test, wall time in seconds (each with its own Icarus compile):
 
 (RTL: each test's Icarus run time within one RTL simulation of the module
 at `a1561d6` on runner1, 144 s in all.) Archive `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz`
-(sha256 `7466b8f8…0485`; runner1 `~/protoemu-flow/` and `[home directory redacted]/`) has
+(sha256 `7466b8f8…0485`; runner1 `~/protoemu-flow/` and the build machine's home directory) has
 both runs' receipts, summaries, XMLs and logs, the diagnostic, and the
 source bundle.
 

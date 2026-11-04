@@ -357,7 +357,7 @@ killed after a passing baseline.
 ## Reproduce
 
 ```
-remote_test.sh model test_blind       # [home directory redacted]/dev/protoemu-agent-tools/
+remote_test.sh model test_blind       # ~/dev/protoemu-agent-tools/
 # with sigrok, in the runner1 checkout it prints:
 cd test && PATH=$HOME/tools/oss-cad-suite/bin:$PATH \
   SIGROK_CLI=$HOME/protoemu-flow/sigrok/sigrok-cli \
