@@ -61,7 +61,7 @@ ANY_APP = tuple(APPS)
 OTHER_BOARD_SCRIPTS = ("bringup_kria.py", "pmod_test.py", "spim_test.py", "usb_demo.py", "usb_stress.py",
                        "usb_fs_data_demo.py", "usb_replay_demo.py", "v2_demo.py", "legacy_demo.py",
                        "postfreeze_demo.py", "postfreeze2_demo.py", "postfreeze3_demo.py",
-                       "spi_uart_demo.py", "eth_tap.py")
+                       "spi_uart_demo.py", "eth_tap.py", "usb_guard_run.py")
 
 MAX_AGE_S = 12 * 3600             # a confirmation is of wiring on a bench: it doesn't outlast the day
 EXIT_OK, EXIT_FAILED, EXIT_REFUSED = 0, 1, 2

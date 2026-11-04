@@ -28,8 +28,10 @@
 ; gets its DATA NAKed (F_NAKOUT), so a slow host never makes the receive loop
 ; stall (a stall would delay the ACK past the turnaround).
 ; Turnaround (USB 2.0 §7.1.18.1: 2 to 6.5 bit times = 8 to 26 clocks from the
-; host's SE0 -> J to our first K): about 11-16 clocks; the delays on the
-; responses keep it off the 2-bit minimum.
+; host's SE0 -> J to our first K): about 10-17 clocks (model, test_timing_check:
+; 10.29-16.45 on the bus); the delays on the responses keep it off the 2-bit
+; minimum. got_in also NAKs an IN that finds F_STAGED over an empty TX FIFO (a
+; stage that raced a SETUP's flush) instead of waiting in `pull block`.
 ;
 ; Timing annotations (python -m pe.timing firmware/usb_fs_dev.pasm --defs pe.usbdev:defines;
 ; docs/timing-check.md). Turnaround = from the host's SE0 -> J at the pads to our

@@ -1,0 +1,36 @@
+rm -f fsdev.xml
+"make" -f Makefile fsdev.xml
+make[1]: Entering directory '<tree bc98a97>/test'
+mkdir -p sim_build/fsdev
+~/tools/oss-cad-suite/bin/iverilog -o sim_build/fsdev/sim.vvp -s tb -g2012  -DPE_NCORES=2 -DPE_NBANKS=2 -DPE_FIFO_LOG2=3 -g2012 -I<tree bc98a97>/test/../src -f sim_build/fsdev/cmds.f  <tree bc98a97>/test/../src/project.v <tree bc98a97>/test/../src/pe_chip.sv <tree bc98a97>/test/../src/pe_core.sv <tree bc98a97>/test/../src/pe_line.sv <tree bc98a97>/test/../src/pe_fifos.sv <tree bc98a97>/test/../src/pe_fifo.sv <tree bc98a97>/test/../src/pe_cg.sv <tree bc98a97>/test/../src/pe_imem.sv <tree bc98a97>/test/../src/pe_hostport.sv <tree bc98a97>/test/sram_model.v <tree bc98a97>/test/tb.v
+warning: Found both default and explicit timescale based delays. Use
+       : -Wtimescale to find the design element(s) with no explicit
+       : timescale.
+~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb_tools/makefiles/simulators/Makefile.icarus:66: Using TESTCASE is deprecated, please use COCOTB_TESTCASE instead.
+rm -f fsdev.xml
+COCOTB_TEST_MODULES=test COCOTB_TESTCASE=test_usb_fs_device COCOTB_TEST_FILTER= COCOTB_TOPLEVEL=tb TOPLEVEL_LANG=verilog \
+         ~/tools/oss-cad-suite/bin/vvp -M ~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs -m libcocotbvpi_icarus   sim_build/fsdev/sim.vvp -fst  +DUMP_FILE=sim_build/fsdev/wave.fst 
+     -.--ns INFO     gpi                                ../gpi/GpiCommon.cpp:216  in gpi_load_users                  Running entry func 'initialize' from loaded library '~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/libs/libcocotb.so'
+     -.--ns INFO     gpi                                ..mbed/gpi_embed.cpp:96   in initialize                      Using Python 3.11.6 interpreter at ~/tools/oss-cad-suite/bin/tabbypy3
+     0.00ns INFO     cocotb                             Running on Icarus Verilog version 14.0 (devel)
+     0.00ns INFO     cocotb                             Seeding Python random module with 1793777205
+     0.00ns INFO     cocotb                             Initialized cocotb v2.1.0.dev0+41564633 from ~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb
+     0.00ns WARNING  py.warnings                        ~/tools/oss-cad-suite/lib/python3.11/site-packages/cocotb-2.1.0.dev0+41564633-py3.11-linux-x64.egg/cocotb/_init.py:103: DeprecationWarning: COCOTB_TESTCASE is deprecated in favor of COCOTB_TEST_FILTER
+                                                          _setup_regression_manager()
+     0.00ns INFO     cocotb                             Running tests
+     0.00ns INFO     cocotb.regression                  running test.test_usb_fs_device (1/1)
+                                                            USB FULL-SPEED device (docs/usb-full-speed.md): usb_fs_dev on core 0 with
+979698.02ns INFO     cocotb.tb                          turnaround ACK: 2.64 bit times = 10.5 clocks (spec 2-6.5)
+979698.02ns INFO     cocotb.tb                          turnaround NAK: 3.34 bit times = 13.4 clocks (spec 2-6.5)
+979698.02ns INFO     cocotb.tb                          turnaround DATA1: 3.73 bit times = 14.9 clocks (spec 2-6.5)
+3313189.35ns INFO     cocotb.tb                          half-cycle NRZI sample point, clk 20.834 ns: DCD 9.25 ns (18.5 ns edge-to-edge): 24/24 ACKed; DCD 14.00 ns (28.0 ns): 24/24 ACKed
+3313189.35ns INFO     cocotb.regression                  test.test_usb_fs_device passed
+3313189.35ns INFO     cocotb.regression                  **************************************************************************************
+                                                        ** TEST                          STATUS  SIM TIME (ns)  REAL TIME (s)  RATIO (ns/s) **
+                                                        **************************************************************************************
+                                                        ** test.test_usb_fs_device        PASS     3313189.35          18.06     183501.93  **
+                                                        **************************************************************************************
+                                                        ** TESTS=1 PASS=1 FAIL=0 SKIP=0            3313189.35          18.12     182825.25  **
+                                                        **************************************************************************************
+FST info: dumpfile sim_build/fsdev/wave.fst opened for output.
+make[1]: Leaving directory '<tree bc98a97>/test'

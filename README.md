@@ -66,7 +66,9 @@ when the repository is published ([docs/release-evidence.md](docs/release-eviden
   FPGA, and these results apply to it only after a rerun there.) With
   `usb_fs_dev` and Python on the SPI port, a Linux
   process then wrote random data through USB and read it back, 350 of 350 round
-  trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. Details and
+  trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. (That was
+  `usb_fs_dev` before the got_in guard of 2026-11-04; not re-run on the board
+  with the 142-word one yet.) Details and
   limits: [fpga/kv260/README.md](fpga/kv260/README.md); the kernel and step logs
   of the enumeration runs, which hold part of these counts, are in
   [evidence/kv260-usb-20261030/](evidence/kv260-usb-20261030/README.md).

@@ -1,0 +1,19 @@
+turnaround SETUP data -> ACK: 10.9 clocks = 2.72 bit times (spec 2.0-6.5; margin 3.78 bits = 15.1 clocks)
+turnaround NAK: 12.7 clocks = 3.17 bit times (spec 2.0-6.5; margin 3.33 bits = 13.3 clocks)
+turnaround IN -> DATA/NAK: 15.7 clocks = 3.92 bit times (spec 2.0-6.5; margin 2.58 bits = 10.3 clocks)
+.jitter +-0 ns/edge, +0 ppm: 40/40 ACKed, turnaround 2.64-3.60 bit times
+.jitter +-9.25 ns/edge, +500 ppm: 40/40 ACKed, turnaround 2.53-3.78 bit times
+.jitter +-9.25 ns/edge, -500 ppm: 40/40 ACKed, turnaround 2.47-3.77 bit times
+.jitter +-9.25 ns/edge, +2500 ppm: 40/40 ACKed, turnaround 2.58-3.69 bit times
+.jitter +-9.25 ns/edge, -2500 ppm: 40/40 ACKed, turnaround 2.53-3.66 bit times
+.DCD 14 ns (28 ns edge to edge), +0 ppm: 40/40 ACKed
+.DCD 14 ns (28 ns edge to edge), +2500 ppm: 40/40 ACKed
+.DCD 14 ns (28 ns edge to edge), -2500 ppm: 40/40 ACKed
+.....enumerated in 0.25 ms of bus time; 14 device responses, turnaround 2.60-4.09 bit times
+. 8-byte packets: IN 407 kB/s (0 underruns), OUT 597 kB/s (0 unacknowledged tries)
+.16-byte packets: IN 561 kB/s (0 underruns), OUT 854 kB/s (0 unacknowledged tries)
+.24-byte packets: IN 709 kB/s (0 underruns), OUT 998 kB/s (0 unacknowledged tries)
+.64-byte packets: IN 1056 kB/s (0 underruns), OUT 1260 kB/s (0 unacknowledged tries)
+.log: ['nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'crc', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', 'nak', '0xc3']
+.
+19 passed in 21.85s

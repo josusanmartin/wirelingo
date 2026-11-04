@@ -680,6 +680,10 @@ $ flow/gl_sdf_test.sh ~/dev/protoemu-exp-v2c v2
 gl_sdf_test (v2): all cases as required        (31 min wall, load average ~28 on 16 cores)
 ```
 
+(`usb_fs_device` here ran `usb_fs_dev` from before the got_in guard of
+2026-11-04, branch `usb-guard`; not re-run at gate level with it. The guard
+adds one instruction on the IN → DATA path: docs/usb-full-speed.md.)
+
 The 80 MHz cases show the annotation is in effect for these tests too, not
 that they target the feature's own paths: at that clock much more breaks
 (test_call_ret never saw a side-set edge).

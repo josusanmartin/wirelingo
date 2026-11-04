@@ -539,7 +539,8 @@ These are the limits the repository records. None of them is ranked here.
 * The same agents wrote the spec, the model and the RTL.
 * With `usb_fs_dev`, 5 of 116 attaches stalled at `SET_CONFIGURATION`, the
   request that activates a device; the cause is not proved
-  (`fpga/kv260/README.md`, "Data at full speed").
+  (`fpga/kv260/README.md`, "Data at full speed"). That is the firmware before
+  the got_in guard (2026-11-04); not re-measured on the board with it yet.
 
 ### Questions a reader may ask
 

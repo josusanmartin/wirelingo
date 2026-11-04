@@ -1,0 +1,96 @@
+usb_fs_dev: 141 words, CLKDIV 1+0/256 (1 tick = 1 clk)
+deadline ack_ta (line 47): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
+  bound: [5, 12] ticks = [5, 12] clk; with adjust +3..4: [8, 16] clk
+  required: >= 8 and <= 26 clk  ->  PASS
+  worst path (12 ticks):
+    line 93 `ldi r2, 0x800D`                         +1
+    line 94 `mov r1, crc`                            +1
+    line 95 `cmp r1, r2`                             +1
+    line 96 `jmp !z, data_bad`                       +1
+    line 97 `cmp r3, 0x1C3`                          +1
+    line 98 `jmp z, data_ok`                         +1
+    line 99 `jmp f F_SETUP, data_bad`                +1
+    line 100 `cmp r3, 0x1D2`                         +1
+    line 101 `jmp !z, data_bad`                      +1
+    line 103 `wait 1 pin DM`                         +8  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 9, the lines above count from the anchor)
+    line 104 `ldi r2, 0xD280            [2]`         +3
+    line 105 `mov osr, r2`                           +1
+    line 106 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 47) at line 106 `out line, 16`
+deadline in_nak_ta (line 48): resp_wait.cond (2..6 ticks after tok_end.enter) -> resp_out.done  -- IN -> NAK
+  bound: [7, 11] ticks = [7, 11] clk; with adjust +3..4: [10, 15] clk
+  required: >= 8 and <= 26 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach resp_out; these never do:
+    never reaches resp_out from line 144 `cmp r3, 0x1B4`
+  worst path (11 ticks):
+    line 139 `ldi r2, TOKEN_FILTER`                  +1
+    line 140 `cmp r1, r2`                            +1
+    line 141 `jmp !z, idle`                          +1
+    line 142 `cmp r3, 0x196`                         +1
+    line 143 `jmp z, got_in`                         +1
+    line 173 `jmp f F_STAGED, send_data`             +1
+    line 174 `ldi r3, 0x5A80`                        +1
+    line 177 `wait 1 pin DM`                         +6  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 7, the lines above count from the anchor)
+    line 178 `mov osr, r3               [4]`         +5
+    line 179 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 48) at line 179 `out line, 16`
+deadline in_data_ta (line 49): data_wait.cond (2..6 ticks after tok_end.enter) -> data_out.done  -- IN -> staged DATA (F_STAGED: the packet is in the TX FIFO)
+  bound: [9, 13] ticks = [9, 13] clk; with adjust +3..4: [12, 17] clk
+  required: >= 8 and <= 26 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach data_out; these never do:
+    never reaches data_out from line 144 `cmp r3, 0x1B4`
+    never reaches data_out from line 174 `ldi r3, 0x5A80`
+    never reaches data_out from line 192 `flag set F_UNDERRUN`
+  worst path (13 ticks):
+    line 139 `ldi r2, TOKEN_FILTER`                  +1
+    line 140 `cmp r1, r2`                            +1
+    line 141 `jmp !z, idle`                          +1
+    line 142 `cmp r3, 0x196`                         +1
+    line 143 `jmp z, got_in`                         +1
+    line 173 `jmp f F_STAGED, send_data`             +1
+    line 182 `flag clr F_STAGED`                     +1
+    line 183 `pull block`                            +1
+    line 184 `mov r0, osr`                           +1
+    line 185 `shr r0, 3`                             +1
+    line 186 `sub r0, 1`                             +1
+    line 187 `out null, 32`                          +1
+    line 188 `wait 1 pin DM`                         +11  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 12, the lines above count from the anchor)
+    line 190 `jmp !osre, sgo`                        +1
+    line 191 `jmp txne, sgo`                         +1
+    line 195 `out line, 8`                           +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 49) at lines 183, 195
+deadline out_nak_ta (line 50): resp_wait.cond (2..6 ticks after nak_send.enter) -> resp_out.done  -- OUT DATA without room -> NAK
+  bound: [6, 6] ticks = [6, 6] clk; with adjust +3..4: [9, 10] clk
+  required: >= 8 and <= 26 clk  ->  PASS
+  worst path (6 ticks):
+    line 210 `ldi r3, 0x5A80`                        +1
+    line 211 `jmp send16`                            +1
+    line 177 `wait 1 pin DM`                         +1  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 2, the lines above count from the anchor)
+    line 178 `mov osr, r3               [4]`         +5
+    line 179 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 50) at line 179 `out line, 16`
+deadline rx_bit (line 51): rx_bit.done -> rx_bit.enter  -- DATA receive loop keeps up: a bit every 4 clocks
+  bound: [3, 3] ticks = [3, 3] clk
+  required: <= 4 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach rx_bit; these never do:
+    never reaches rx_bit from line 89 `jmp t, dend`
+  worst path (3 ticks):
+    line 88 `in line, 1`                             +1
+    line 89 `jmp t, dend`                            +1
+    line 90 `add r0, 1`                              +1
+    line 88 `in line, 1`                             +0  (end)
+deadline tx_byte (line 52): data_out.done -> data_out.enter  -- DATA transmit loop: the next byte within a byte time
+  bound: [3, 4] ticks = [3, 4] clk
+  required: <= 32 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach data_out; these never do:
+    never reaches data_out from line 192 `flag set F_UNDERRUN`
+  worst path (4 ticks):
+    line 195 `out line, 8`                           +1
+    line 196 `jmp r0--, sbyte`                       +1
+    line 190 `jmp !osre, sgo`                        +1
+    line 191 `jmp txne, sgo`                         +1
+    line 195 `out line, 8`                           +0  (end)

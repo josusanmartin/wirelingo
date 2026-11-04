@@ -12,9 +12,26 @@ full-speed wiring of fpga/kv260/README.md:
 Unlike usb_demo.py the chip is not autonomous here: Python answers every request
 over the SPI port, so the throughput measures this loop, not the chip. Exit
 status 0 = every byte read back equal.
+
+--nodata N: before the round trips, the client sends N zero-length vendor
+requests (--rt/--rq: 0x40 0x10 = REQ_WRITE, the default; 0xC0 0x11 = REQ_READ),
+1 s timeout each, and counts how many time out or fail otherwise; the log line
+names RT and RQ. (This replaces the orchestrator's nodata.py/nodata2.py.)
+
+--model: the same device side (usb_fs_dev on core 0 with the line unit,
+pe.usbfsdata as the host software) on the cycle model, no board: a pins-only
+host (pe.usbfs.FsHost) does what Linux did on the board (usbmon, 2026-11-03):
+the 64-byte device descriptor read ended by the first 8-byte packet, a 10 ms
+port reset, SET_ADDRESS, the device and configuration descriptors and
+SET_CONFIGURATION, then the client's requests, every stage checked (DATA
+toggles, one zero-length DATA1 per status stage). The device software is
+served between the host's transactions, not concurrently with them (that is
+test/model/test_usb_fs_data.py). Same output lines as on the board, in model
+time. fpga/kv260/host/usb_guard_run.py drives both.
 """
 import argparse
 import ctypes
+import errno
 import fcntl
 import os
 import pathlib
@@ -66,12 +83,43 @@ def control(fd, request_type, request, data=None, length=0):
     return buf.raw[:got]
 
 
-def client(sizes, rounds, seed):
+def nodata_line(n, rt, rq, lat, timeouts, other):
+    """The --nodata summary (board and model alike); lat in seconds."""
+    head = f"  NODATA rt 0x{rt:02X} rq 0x{rq:02X} wLength 0: {n} sent: {len(lat)} ok, {timeouts} timed out, other {other}"
+    lat = sorted(lat)
+    if lat:
+        head += (f"; latency ms min {lat[0] * 1e3:.2f} median {lat[len(lat) // 2] * 1e3:.2f} "
+                 f"max {lat[-1] * 1e3:.2f}")
+    return head
+
+
+def nodata(fd, n, rt, rq):
+    """n zero-length vendor requests through the kernel, 1 s timeout each. Returns the exit status."""
+    buf = ctypes.create_string_buffer(1)
+    timeouts, other, lat = 0, {}, []
+    for i in range(n):
+        xfer = usb_stress.CtrlTransfer(rt, rq, 0, 0, 0, 1000, ctypes.addressof(buf))
+        t0 = time.monotonic()
+        try:
+            fcntl.ioctl(fd, usb_stress.USBDEVFS_CONTROL, xfer)
+            lat.append(time.monotonic() - t0)
+        except OSError as e:
+            if e.errno == errno.ETIMEDOUT:
+                timeouts += 1
+                print(f"  no-data {i}: TIMEOUT after {time.monotonic() - t0:.2f} s", flush=True)
+            else:
+                other[e.errno] = other.get(e.errno, 0) + 1
+                print(f"  no-data {i}: errno {e.errno} ({os.strerror(e.errno)})", flush=True)
+    print(nodata_line(n, rt, rq, lat, timeouts, other), flush=True)
+    return int(timeouts > 0 or bool(other))
+
+
+def client(sizes, rounds, seed, n_nodata=0, rt=0x40, rq=usbfsdata.REQ_WRITE):
     """The USB side: only the kernel's interface. Returns the exit status."""
     os.sched_setaffinity(0, {CLIENT_CPU})
     fd = os.open(usb_stress.find(), os.O_RDWR)
     rng = random.Random(seed)
-    status = 0
+    status = nodata(fd, n_nodata, rt, rq) if n_nodata else 0
     for size in sizes:
         bad = 0
         t0 = time.monotonic()
@@ -109,7 +157,7 @@ def run(board, spim, pe, prog, a, sizes):
                 t0 = now
                 child = os.fork()
                 if child == 0:
-                    os._exit(client(sizes, a.rounds, a.seed))
+                    os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))
             elif now - t0 > a.timeout:
                 return None, None, sw
         else:
@@ -123,6 +171,165 @@ def run(board, spim, pe, prog, a, sizes):
                 return 1, None, sw
 
 
+# ------------------------------------------------------------------ --model
+class ModelBus:
+    """--model: the chip on the cycle model, the device software served at each
+    of the host's idle points, and a pins-only host's transfers with every stage
+    checked (DATA toggles; a status stage is one zero-length DATA1)."""
+
+    def __init__(self, seed):
+        from pe.modelhost import ModelHost
+        from pe.usbfs import FsHost
+        from pe import usb
+        self.usb = usb
+        self.prog = asm.assemble(FW.read_text(), usbdev.defines())
+        mh = self.mh = ModelHost()
+        mh.apply(host.load_program(0, self.prog, 0, clkdiv=1 << 8))
+        mh.write(sim.core_reg(0, sim.C_CRCCTRL), usbdev.CRCCTRL)
+        mh.write(sim.A_LINEDIV, (4 << 16) | (4 << 8))
+        mh.write(sim.A_LINEPINS, 0)
+        mh.write(sim.A_LINECFG, LINECFG)
+        mh.pull_up = 0b10
+        mh.start(1)
+        mh.step(50)
+        self.sw = usbfsdata.LoopbackDevice(mh, self.prog, usbdev.DESCRIPTORS, 0, 0)
+        self.h = FsHost(mh, idle=self.idle, seed=seed, jitter_ns=5)
+
+    def idle(self, mh):
+        mh.step(300)
+        self.sw.service(mh)
+
+    def ms(self):
+        return self.h.now() / 1e6
+
+    def wait_us(self, us):
+        end = self.h.now() + us * 1e3
+        while self.h.now() < end:
+            self.h.wait_bits(64)
+            self.idle(self.mh)
+
+    def reset(self, ms=10):
+        for _ in range(int(ms * 48000)):
+            self.h._edge(0b00)
+        self.h.last_eop_j = None
+        self.wait_us(200)
+
+    def status_in(self, addr, what):
+        h, usb = self.h, self.usb
+        pid, payload = h.data_in(addr, 0)
+        if (pid, payload) != (usb.pid_byte(usb.PID_DATA1), b""):
+            raise AssertionError(f"{what}: status stage got {pid:#04x} {payload.hex()}")
+
+    def read(self, addr, req, what, mps=8):
+        h, usb = self.h, self.usb
+        n = req[6] | req[7] << 8
+        h.setup(addr, req)
+        if not n:
+            self.status_in(addr, what)
+            return b""
+        out, toggle = b"", 1
+        while len(out) < n:
+            pid, payload = h.data_in(addr, 0)
+            if pid != usb.pid_byte(usb.PID_DATA1 if toggle else usb.PID_DATA0):
+                raise AssertionError(f"{what}: DATA toggle")
+            toggle ^= 1
+            out += payload
+            if len(payload) < mps:
+                break
+        h.data_out(addr, 0, usb.PID_DATA1, b"")
+        return out
+
+    def write(self, addr, req, data, what):
+        h, usb = self.h, self.usb
+        h.setup(addr, req)
+        for i in range(0, len(data), 8):
+            h.data_out(addr, 0, usb.PID_DATA0 if i // 8 % 2 else usb.PID_DATA1, data[i:i + 8])
+        self.status_in(addr, what)
+
+    def enumerate(self, addr=31):
+        """Linux's sequence on the board (usbmon, 2026-11-03)."""
+        dev64 = bytes([0x80, 6, 0, 1, 0, 0, 64, 0])
+        if self.read(0, dev64, "GET_DESCRIPTOR(device, 64)", mps=64) != usbdev.DEVICE_DESC[:8]:
+            raise AssertionError("device descriptor")
+        self.wait_us(100)
+        self.reset()
+        self.write(0, bytes([0, 5, addr, 0, 0, 0, 0, 0]), b"", "SET_ADDRESS")
+        self.wait_us(2000)
+        for req, want, what in ((bytes([0x80, 6, 0, 1, 0, 0, 18, 0]), usbdev.DEVICE_DESC, "device, 18"),
+                                (bytes([0x80, 6, 0, 2, 0, 0, 9, 0]), usbdev.CONFIG_DESC[:9], "config, 9"),
+                                (bytes([0x80, 6, 0, 2, 0, 0, 18, 0]), usbdev.CONFIG_DESC, "config, 18")):
+            if self.read(addr, req, f"GET_DESCRIPTOR({what})") != want:
+                raise AssertionError(f"GET_DESCRIPTOR({what})")
+        self.wait_us(569)
+        self.write(addr, bytes([0, 9, 1, 0, 0, 0, 0, 0]), b"", "SET_CONFIGURATION")
+
+    def client(self, addr, sizes, rounds, seed, n_nodata, rt, rq):
+        """The board client's requests, in the same order and with the same output lines."""
+        status = 0
+        if n_nodata:
+            timeouts, other, lat = 0, {}, []
+            req = bytes([rt, rq, 0, 0, 0, 0, 0, 0])
+            for i in range(n_nodata):
+                t0 = self.ms()
+                try:
+                    if rt & 0x80:
+                        self.read(addr, req, f"no-data {i}")
+                    else:
+                        self.write(addr, req, b"", f"no-data {i}")
+                    lat.append((self.ms() - t0) / 1e3)
+                except TimeoutError:
+                    timeouts += 1
+                    print(f"  no-data {i}: TIMEOUT after {self.ms() - t0:.2f} ms of bus time", flush=True)
+                except AssertionError as e:
+                    other["protocol"] = other.get("protocol", 0) + 1
+                    print(f"  no-data {i}: {e}", flush=True)
+            print(nodata_line(n_nodata, rt, rq, lat, timeouts, other), flush=True)
+            status |= int(timeouts > 0 or bool(other))
+        rng = random.Random(seed)
+        for size in sizes:
+            bad = 0
+            t0 = self.ms()
+            for _ in range(rounds):
+                data = rng.randbytes(size)
+                self.write(addr, bytes([0x40, usbfsdata.REQ_WRITE, 0, 0, 0, 0, size & 255, size >> 8]), data, "write")
+                got = self.read(addr, bytes([0xC0, usbfsdata.REQ_READ, 0, 0, 0, 0, size & 255, size >> 8]), "read")
+                bad += got != data
+            dt = (self.ms() - t0) / 1e3
+            print(f"  {size:5d} B x {rounds}: {rounds - bad} of {rounds} equal, "
+                  f"{2 * size * rounds / dt / 1e3:.1f} kB/s both ways together (model bus time)", flush=True)
+            status |= bad != 0
+        return status
+
+
+def model_main(a, sizes):
+    import hashlib
+    words = len(asm.assemble(FW.read_text(), usbdev.defines()).words)
+    print(f"[identity] cycle model (no board); usb_fs_dev {words} words, "
+          f"sha256 {hashlib.sha256(FW.read_bytes()).hexdigest()[:16]}")
+    print("[wiring]\n  model pads: D- on uio0, D+ on uio1, 1.5k pull-up on D+")
+    status, sw = None, None
+    for attempt in range(1, a.attaches + 1):
+        bus = ModelBus(a.seed + attempt)
+        sw = bus.sw
+        print("[service] answering between the model host's transactions until it has configured the device",
+              flush=True)
+        try:
+            bus.enumerate()
+        except (AssertionError, TimeoutError) as e:
+            st = bus.mh.read(sim.core_reg(0, sim.C_STATUS))
+            print(f"  attach {attempt} of {a.attaches}: not configured ({e}); requests seen: {sw.requests[-3:]}; "
+                  f"F_SET 0x{bus.mh.read(sim.A_FSET):02X}; core 0 TX FIFO {st & 15} words, RX FIFO {(st >> 4) & 15}, "
+                  f"PC {bus.mh.read(sim.core_reg(0, sim.C_PC))}; software staged {sw.unacked}, pending {sw.pending}")
+            continue
+        print(f"  configured after {bus.ms():.2f} ms of bus time, {len(sw.requests)} requests, address {sw.address}\n"
+              f"[data] model host, the client's requests", flush=True)
+        status = bus.client(sw.address, sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq)
+        break
+    print(f"[device software] attach {attempt}: {len(sw.requests)} requests, {sw.restaged} packets re-staged")
+    print("PASS (model)" if status == 0 else "FAIL (model)")
+    sys.exit(0 if status == 0 else 1)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--sizes", default="8,64,256,1024,4096")
@@ -131,8 +338,14 @@ def main():
     ap.add_argument("--timeout", type=float, default=7, help="seconds to wait for configuration")
     ap.add_argument("--attaches", type=int, default=3, help="attaches to try (docs: the SET_CONFIGURATION stall)")
     ap.add_argument("--limit", type=float, default=300, help="seconds the client may take")
+    ap.add_argument("--nodata", type=int, default=0, help="zero-length requests before the round trips")
+    ap.add_argument("--rt", type=lambda s: int(s, 0), default=0x40, help="their bmRequestType (0x40 or 0xC0)")
+    ap.add_argument("--rq", type=lambda s: int(s, 0), default=usbfsdata.REQ_WRITE, help="their bRequest")
+    ap.add_argument("--model", action="store_true", help="the cycle model, no board")
     a = ap.parse_args()
     sizes = [int(s) for s in a.sizes.split(",")]
+    if a.model:
+        model_main(a, sizes)
 
     from pe_kria import Board
     from pe_lab import Lab

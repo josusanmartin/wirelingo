@@ -1,0 +1,481 @@
+...
+deadline scl_high (line 30): scl_hi.done -> scl_lo.done  -- high, stretching up to the timeout
+  bound: [4, 2006] ticks = [240, 120360] clk
+  required: >= 4 and <= 2006 tick  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach scl_lo; these never do:
+    never reaches scl_lo from line 104 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 118 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 128 `pin SCL, lo              [1]`
+    never reaches scl_lo from line 52 `ldi r3, TMO`
+    never reaches scl_lo from line 63 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 79 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 87 `jmp t, stretch_timeout`
+  worst path (2006 ticks):
+    line 61 `pin SCL, hi`                            +1
+    line 62 `wait 1 pin SCL timeout r3`              +2001
+    line 63 `jmp t, stretch_timeout`                 +1
+    line 64 `jmp !pin SDA, start_fault`              +1
+    line 65 `pin SDA, lo              [1]`           +2
+    line 66 `pin SCL, lo              [1]`           +0  (end)
+deadline scl_high_ns (line 31): scl_hi.done -> scl_lo.done  -- high, no stretching
+  bound: [4, 6] ticks = [240, 360] clk
+  required: >= 4 and <= 6 tick  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach scl_lo; these never do:
+    never reaches scl_lo from line 128 `pin SCL, lo              [1]`
+    never reaches scl_lo from line 52 `ldi r3, TMO`
+  worst path (6 ticks):
+    line 61 `pin SCL, hi`                            +1
+    line 62 `wait 1 pin SCL timeout r3`              +1
+    line 63 `jmp t, stretch_timeout`                 +1
+    line 64 `jmp !pin SDA, start_fault`              +1
+    line 65 `pin SDA, lo              [1]`           +2
+    line 66 `pin SCL, lo              [1]`           +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 31) at lines 53, 62, 78, 86, 103, 117
+deadline scl_low (line 32): scl_lo.done -> scl_hi.done  -- low phase inside a command
+  bound: [4, 8] ticks = [240, 480] clk
+  required: >= 4 and <= 8 tick  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach scl_hi; these never do:
+    never reaches scl_hi from line 121 `pin SDA, hi`
+    never reaches scl_hi from line 67 `jmp top`
+    never reaches scl_hi from line 90 `mov r0, isr`
+  worst path (8 ticks):
+    line 106 `pin SCL, lo              [1]`          +2
+    line 107 `jmp r0--, rbit`                        +1
+    line 108 `and r1, 4`                             +1
+    line 109 `jmp !r1, send_ack`                     +1
+    line 110 `pin SDA, hi`                           +1
+    line 111 `jmp ack_clk`                           +1
+    line 115 `ldi r3, TMO`                           +1
+    line 116 `pin SCL, hi`                           +0  (end)
+deadline t_high (line 33): scl_hi.done -> scl_lo.done  -- 100 kHz: tHIGH >= 4.0 us (192 clk)
+  bound: [4, 2006] ticks = [240, 120360] clk
+  required: >= 192 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach scl_lo; these never do:
+    never reaches scl_lo from line 104 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 118 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 128 `pin SCL, lo              [1]`
+    never reaches scl_lo from line 52 `ldi r3, TMO`
+    never reaches scl_lo from line 63 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 79 `jmp t, stretch_timeout`
+    never reaches scl_lo from line 87 `jmp t, stretch_timeout`
+  worst path (2006 ticks):
+    line 61 `pin SCL, hi`                            +1
+    line 62 `wait 1 pin SCL timeout r3`              +2001
+    line 63 `jmp t, stretch_timeout`                 +1
+    line 64 `jmp !pin SDA, start_fault`              +1
+    line 65 `pin SDA, lo              [1]`           +2
+    line 66 `pin SCL, lo              [1]`           +0  (end)
+deadline t_low (line 34): scl_lo.done -> scl_hi.done  -- 100 kHz: tLOW >= 4.7 us (226 clk)
+  bound: [4, 8] ticks = [240, 480] clk
+  required: >= 226 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach scl_hi; these never do:
+    never reaches scl_hi from line 121 `pin SDA, hi`
+    never reaches scl_hi from line 67 `jmp top`
+    never reaches scl_hi from line 90 `mov r0, isr`
+  worst path (8 ticks):
+    line 106 `pin SCL, lo              [1]`          +2
+    line 107 `jmp r0--, rbit`                        +1
+    line 108 `and r1, 4`                             +1
+    line 109 `jmp !r1, send_ack`                     +1
+    line 110 `pin SDA, hi`                           +1
+    line 111 `jmp ack_clk`                           +1
+    line 115 `ldi r3, TMO`                           +1
+    line 116 `pin SCL, hi`                           +0  (end)
+.
+deadline start_bit (line 9): start.done -> bit.done  -- start bit
+  bound: [8, 8] ticks = [416, 417] clk
+  required: >= 8 and <= 8 tick  ->  PASS
+  worst path (8 ticks):
+    line 19 `ldi r0, 7           side 0 [7]`         +8
+    line 21 `out pins, 1`                            +0  (end)
+deadline data_bit (line 10): bit.done -> bit.done  -- bit to bit inside a byte
+  bound: [8, 8] ticks = [416, 417] clk
+  required: >= 8 and <= 8 tick  ->  PASS
+  worst path (8 ticks):
+    line 21 `out pins, 1`                            +1
+    line 22 `jmp r0--, bitloop          [6]`         +7
+    line 21 `out pins, 1`                            +0  (end)
+deadline last_bit (line 11): bit.done -> stop.enter  -- bit 7 to the stop bit
+  bound: [8, 8] ticks = [416, 417] clk
+  required: >= 8 and <= 8 tick  ->  PASS
+  worst path (8 ticks):
+    line 21 `out pins, 1`                            +1
+    line 22 `jmp r0--, bitloop          [6]`         +7
+    line 18 `pull block          side 1 [7]`         +0  (end)
+deadline frame (line 12): start.done -> stop.enter  -- start + 8 data bits
+  bound: [72, 72] ticks = [3749, 3750] clk
+  required: >= 72 and <= 72 tick  ->  PASS
+  worst path (72 ticks):
+    line 19 `ldi r0, 7           side 0 [7]`         +8
+    line 21 `out pins, 1`                            +1
+    line 22 `jmp r0--, bitloop          [6]`         +7   (last 2 lines x8)
+    line 18 `pull block          side 1 [7]`         +0  (end)
+deadline stop_bit (line 13): stop.enter -> start.done  -- stop bit (and idle: as long as the FIFO is empty)
+  bound: [8, inf] ticks = [416, inf] clk
+  required: >= 8 tick  ->  PASS
+  UNBOUNDED because line 18 `pull block          side 1 [7]`: PULL may find TXF empty and no fifo_stall/@stall bound
+  worst path (inf ticks):
+    line 18 `pull block          side 1 [7]`         +inf
+    line 19 `ldi r0, 7           side 0 [7]`         +nan..nan  (end)
+.
+deadline ack_ta (line 47): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
+  bound: [5, 12] ticks = [5, 12] clk; with adjust +3..4: [8, 16] clk
+  required: >= 8 and <= 26 clk  ->  PASS
+  worst path (12 ticks):
+    line 93 `ldi r2, 0x800D`                         +1
+    line 94 `mov r1, crc`                            +1
+    line 95 `cmp r1, r2`                             +1
+    line 96 `jmp !z, data_bad`                       +1
+    line 97 `cmp r3, 0x1C3`                          +1
+    line 98 `jmp z, data_ok`                         +1
+    line 99 `jmp f F_SETUP, data_bad`                +1
+    line 100 `cmp r3, 0x1D2`                         +1
+    line 101 `jmp !z, data_bad`                      +1
+    line 103 `wait 1 pin DM`                         +8  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 9, the lines above count from the anchor)
+    line 104 `ldi r2, 0xD280            [2]`         +3
+    line 105 `mov osr, r2`                           +1
+    line 106 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 47) at line 106 `out line, 16`
+deadline in_nak_ta (line 48): resp_wait.cond (2..6 ticks after tok_end.enter) -> resp_out.done  -- IN -> NAK
+  bound: [7, 12] ticks = [7, 12] clk; with adjust +3..4: [10, 16] clk
+  required: >= 8 and <= 26 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach resp_out; these never do:
+    never reaches resp_out from line 144 `cmp r3, 0x1B4`
+  worst path (12 ticks):
+    line 139 `ldi r2, TOKEN_FILTER`                  +1
+    line 140 `cmp r1, r2`                            +1
+    line 141 `jmp !z, idle`                          +1
+    line 142 `cmp r3, 0x196`                         +1
+    line 143 `jmp z, got_in`                         +1
+    line 173 `jmp !f F_STAGED, nak_in`               +1
+    line 174 `jmp txne, send_data`                   +1
+    line 176 `ldi r3, 0x5A80`                        +1
+    line 179 `wait 1 pin DM`                         +7  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 8, the lines above count from the anchor)
+    line 180 `mov osr, r3               [4]`         +5
+    line 181 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 48) at line 181 `out line, 16`
+deadline in_data_ta (line 49): data_wait.cond (2..6 ticks after tok_end.enter) -> data_out.done  -- IN -> staged DATA (F_STAGED: the packet is in the TX FIFO)
+  bound: [10, 14] ticks = [10, 14] clk; with adjust +3..4: [13, 18] clk
+  required: >= 8 and <= 26 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach data_out; these never do:
+    never reaches data_out from line 144 `cmp r3, 0x1B4`
+    never reaches data_out from line 176 `ldi r3, 0x5A80`
+    never reaches data_out from line 194 `flag set F_UNDERRUN`
+  worst path (14 ticks):
+    line 139 `ldi r2, TOKEN_FILTER`                  +1
+    line 140 `cmp r1, r2`                            +1
+    line 141 `jmp !z, idle`                          +1
+    line 142 `cmp r3, 0x196`                         +1
+    line 143 `jmp z, got_in`                         +1
+    line 173 `jmp !f F_STAGED, nak_in`               +1
+    line 174 `jmp txne, send_data`                   +1
+    line 184 `flag clr F_STAGED`                     +1
+    line 185 `pull block`                            +1
+    line 186 `mov r0, osr`                           +1
+    line 187 `shr r0, 3`                             +1
+    line 188 `sub r0, 1`                             +1
+    line 189 `out null, 32`                          +1
+    line 190 `wait 1 pin DM`                         +12  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 13, the lines above count from the anchor)
+    line 192 `jmp !osre, sgo`                        +1
+    line 193 `jmp txne, sgo`                         +1
+    line 197 `out line, 8`                           +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 49) at line 197 `out line, 8`
+deadline out_nak_ta (line 50): resp_wait.cond (2..6 ticks after nak_send.enter) -> resp_out.done  -- OUT DATA without room -> NAK
+  bound: [6, 6] ticks = [6, 6] clk; with adjust +3..4: [9, 10] clk
+  required: >= 8 and <= 26 clk  ->  PASS
+  worst path (6 ticks):
+    line 212 `ldi r3, 0x5A80`                        +1
+    line 213 `jmp send16`                            +1
+    line 179 `wait 1 pin DM`                         +1  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 2, the lines above count from the anchor)
+    line 180 `mov osr, r3               [4]`         +5
+    line 181 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 50) at line 181 `out line, 16`
+deadline rx_bit (line 51): rx_bit.done -> rx_bit.enter  -- DATA receive loop keeps up: a bit every 4 clocks
+  bound: [3, 3] ticks = [3, 3] clk
+  required: <= 4 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach rx_bit; these never do:
+    never reaches rx_bit from line 89 `jmp t, dend`
+  worst path (3 ticks):
+    line 88 `in line, 1`                             +1
+    line 89 `jmp t, dend`                            +1
+    line 90 `add r0, 1`                              +1
+    line 88 `in line, 1`                             +0  (end)
+deadline tx_byte (line 52): data_out.done -> data_out.enter  -- DATA transmit loop: the next byte within a byte time
+  bound: [3, 4] ticks = [3, 4] clk
+  required: <= 32 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach data_out; these never do:
+    never reaches data_out from line 194 `flag set F_UNDERRUN`
+  worst path (4 ticks):
+    line 197 `out line, 8`                           +1
+    line 198 `jmp r0--, sbyte`                       +1
+    line 192 `jmp !osre, sgo`                        +1
+    line 193 `jmp txne, sgo`                         +1
+    line 197 `out line, 8`                           +0  (end)
+.
+uart_tx CLKDIV 52+21/256:
+  start_bit    bound [8, 8] ticks; measured 28 clean in [8, 8], 0 outside the assumptions
+  data_bit     bound [8, 8] ticks; measured 196 clean in [8, 8], 0 outside the assumptions
+  last_bit     bound [8, 8] ticks; measured 28 clean in [8, 8], 0 outside the assumptions
+  frame        bound [72, 72] ticks; measured 28 clean in [72, 72], 0 outside the assumptions
+  stop_bit     bound [8, inf] ticks; measured 28 clean in [8, 75], 0 outside the assumptions
+.
+uart_tx CLKDIV 1+0/256:
+  start_bit    bound [8, 8] ticks; measured 23 clean in [8, 8], 0 outside the assumptions
+  data_bit     bound [8, 8] ticks; measured 161 clean in [8, 8], 0 outside the assumptions
+  last_bit     bound [8, 8] ticks; measured 23 clean in [8, 8], 0 outside the assumptions
+  frame        bound [72, 72] ticks; measured 23 clean in [72, 72], 0 outside the assumptions
+  stop_bit     bound [8, inf] ticks; measured 23 clean in [8, 86], 0 outside the assumptions
+.
+uart_tx CLKDIV 3+128/256:
+  start_bit    bound [8, 8] ticks; measured 26 clean in [8, 8], 0 outside the assumptions
+  data_bit     bound [8, 8] ticks; measured 182 clean in [8, 8], 0 outside the assumptions
+  last_bit     bound [8, 8] ticks; measured 26 clean in [8, 8], 0 outside the assumptions
+  frame        bound [72, 72] ticks; measured 26 clean in [72, 72], 0 outside the assumptions
+  stop_bit     bound [8, inf] ticks; measured 26 clean in [8, 8], 0 outside the assumptions
+..
+i2c_master CLKDIV 4, random stretching:
+  scl_high     bound [4, 2006] ticks; measured 23 clean in [4, 13], 0 outside the assumptions
+  scl_high_ns  bound [4, 6] ticks; measured 17 clean in [4, 6], 6 outside the assumptions
+  scl_low      bound [4, 8] ticks; measured 16 clean in [4, 8], 0 outside the assumptions
+  t_high       bound [4, 2006] ticks; measured 23 clean in [4, 13], 0 outside the assumptions
+  t_low        bound [4, 8] ticks; measured 16 clean in [4, 8], 0 outside the assumptions
+.
+i2c_master CLKDIV 4, random stretching:
+  scl_high     bound [4, 2006] ticks; measured 31 clean in [4, 11], 0 outside the assumptions
+  scl_high_ns  bound [4, 6] ticks; measured 23 clean in [4, 6], 8 outside the assumptions
+  scl_low      bound [4, 8] ticks; measured 24 clean in [4, 7], 0 outside the assumptions
+  t_high       bound [4, 2006] ticks; measured 31 clean in [4, 11], 0 outside the assumptions
+  t_low        bound [4, 8] ticks; measured 24 clean in [4, 7], 0 outside the assumptions
+.
+i2c_master CLKDIV 4, random stretching:
+  scl_high     bound [4, 2006] ticks; measured 55 clean in [4, 12], 0 outside the assumptions
+  scl_high_ns  bound [4, 6] ticks; measured 48 clean in [4, 6], 7 outside the assumptions
+  scl_low      bound [4, 8] ticks; measured 48 clean in [4, 8], 0 outside the assumptions
+  t_high       bound [4, 2006] ticks; measured 55 clean in [4, 12], 0 outside the assumptions
+  t_low        bound [4, 8] ticks; measured 48 clean in [4, 8], 0 outside the assumptions
+..
+usb_fs_dev over 8 sessions (jitter up to 9.25 ns, ppm -2500..+2500):
+  ack_ta       bound [5, 12] ticks; measured 16 clean in [7, 11], 0 outside the assumptions
+  in_nak_ta    bound [7, 12] ticks; measured 8 clean in [9, 10], 0 outside the assumptions
+  in_data_ta   bound [10, 14] ticks; measured 8 clean in [12, 13], 0 outside the assumptions
+  out_nak_ta   bound [6, 6] ticks; measured 8 clean in [6, 6], 0 outside the assumptions
+  rx_bit       bound [3, 3] ticks; measured 1280 clean in [3, 3], 0 outside the assumptions
+  tx_byte      bound [3, 4] ticks; measured 84 clean in [3, 4], 0 outside the assumptions
+  ack_ta       bus turnaround 10.29..14.33 clk; checker 8..16
+  in_data_ta   bus turnaround 15.73..16.45 clk; checker 13..18
+  in_nak_ta    bus turnaround 12.77..13.37 clk; checker 10..16
+  out_nak_ta   bus turnaround 9.25..9.70 clk; checker 9..10
+.
+deadline in_ta (line 31): tok_end.enter -> in_out.done  -- IN token -> DATA/STALL (r1 prepared ahead)
+  bound: [13, 13] ticks = [13, 13] clk; with adjust +-3..2: [10, 15] clk
+  required: >= 8 and <= 26 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach in_out; these never do:
+    never reaches in_out from line 158 `jmp !f F_ADDR, idle`
+    never reaches in_out from line 169 `cmp r0, 0x2D`
+  worst path (13 ticks):
+    line 155 `mov r0, ::isr`                         +1
+    line 156 `cmp r0, r3`                            +1
+    line 157 `jmp z, ours`                           +1
+    line 165 `mov r0, isr`                           +1
+    line 166 `shr r0, 8`                             +1
+    line 167 `cmp r0, 0x69`                          +1
+    line 168 `jmp z, got_in`                         +1
+    line 182 `ldi r0, 120`                           +1
+    line 183 `wait 1 pin DM timeout r0`              +1
+    line 184 `jmp t, se0`                            +1
+    line 185 `mov osr, r1  [TURN - 2 + J_LATE]`      +3
+    line 186 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 31) at lines 183, 186
+deadline in_ta_any (line 32): tok_end.enter -> in_out.done  -- the same, with the lost-ACK commit path
+  bound: [13, 19] ticks = [13, 19] clk; with adjust +-3..2: [10, 21] clk
+  required: >= 8 and <= 26 clk  ->  PASS
+  worst path (19 ticks):
+    line 155 `mov r0, ::isr`                         +1
+    line 156 `cmp r0, r3`                            +1
+    line 157 `jmp z, ours`                           +1
+    line 158 `jmp !f F_ADDR, idle`                   +1
+    line 159 `cmp r0, r2`                            +1
+    line 160 `jmp !z, idle`                          +1
+    line 161 `mov r3, r2`                            +1
+    line 162 `flag clr F_ADDR`                       +1
+    line 163 `ldi r2, dev`                           +1
+    line 165 `mov r0, isr`                           +1
+    line 166 `shr r0, 8`                             +1
+    line 167 `cmp r0, 0x69`                          +1
+    line 168 `jmp z, got_in`                         +1
+    line 182 `ldi r0, 120`                           +1
+    line 183 `wait 1 pin DM timeout r0`              +1
+    line 184 `jmp t, se0`                            +1
+    line 185 `mov osr, r1  [TURN - 2 + J_LATE]`      +3
+    line 186 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 32) at lines 183, 186
+deadline data_ta (line 33): d_end.enter -> hs_out.done  -- DATA0/1 -> ACK/STALL
+  bound: [14, 18] ticks = [14, 18] clk; with adjust +-3..2: [11, 20] clk
+  required: >= 8 and <= 26 clk  ->  PASS
+  worst path (18 ticks):
+    line 314 `jmp !f F_SETUP, d_crc`                 +1
+    line 315 `cmp r0, 48`                            +1
+    line 316 `jmp !z, idle`                          +1
+    line 318 `mov r0, crc`                           +1
+    line 319 `xor r0, 0xD`                           +1
+    line 320 `add r0, r0`                            +1
+    line 321 `jmp !c, idle`                          +1
+    line 322 `jmp !z, idle`                          +1
+    line 323 `ldi r0, 0xD280`                        +1
+    line 324 `jmp f F_SETUP, handshake`              +1
+    line 325 `jmp !f F_STALL, handshake`             +1
+    line 326 `ldi r0, 0x1E80`                        +1
+    line 328 `mov osr, r0`                           +1
+    line 329 `ldi r0, 120`                           +1
+    line 330 `wait 1 pin DM timeout r0`              +1
+    line 331 `jmp t, se0  [TURN - 2 + 2 * J_LATE]`   +3
+    line 332 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 33) at lines 330, 332
+deadline rx_bit (line 34): d_bit.done -> d_bit.enter  -- DATA receive loop: a bit every 4 clocks
+  bound: [3, 3] ticks = [3, 3] clk
+  required: <= 4 clk  ->  PASS (conditional)
+  CONDITIONAL: bounds only paths that reach d_bit; these never do:
+    never reaches d_bit from line 310 `jmp t, d_end`
+  worst path (3 ticks):
+    line 309 `in line, 1`                            +1
+    line 310 `jmp t, d_end`                          +1
+    line 311 `add r0, 1`                             +1
+    line 309 `in line, 1`                            +0  (end)
+deadline in_reach (line 39): tok_end.enter -> in_tmo.enter  -- frame end -> got_in's J WAIT: after the J
+  bound: [8, 14] ticks = [8, 14] clk
+  required: >= 7 tick  ->  PASS
+  worst path (14 ticks):
+    line 155 `mov r0, ::isr`                         +1
+    line 156 `cmp r0, r3`                            +1
+    line 157 `jmp z, ours`                           +1
+    line 158 `jmp !f F_ADDR, idle`                   +1
+    line 159 `cmp r0, r2`                            +1
+    line 160 `jmp !z, idle`                          +1
+    line 161 `mov r3, r2`                            +1
+    line 162 `flag clr F_ADDR`                       +1
+    line 163 `ldi r2, dev`                           +1
+    line 165 `mov r0, isr`                           +1
+    line 166 `shr r0, 8`                             +1
+    line 167 `cmp r0, 0x69`                          +1
+    line 168 `jmp z, got_in`                         +1
+    line 182 `ldi r0, 120`                           +1
+    line 183 `wait 1 pin DM timeout r0`              +0  (end)
+deadline hs_reach (line 40): d_end.enter -> hs_tmo.enter  -- frame end -> handshake's J WAIT: after the J
+  bound: [10, 14] ticks = [10, 14] clk
+  required: >= 7 tick  ->  PASS
+  worst path (14 ticks):
+    line 314 `jmp !f F_SETUP, d_crc`                 +1
+    line 315 `cmp r0, 48`                            +1
+    line 316 `jmp !z, idle`                          +1
+    line 318 `mov r0, crc`                           +1
+    line 319 `xor r0, 0xD`                           +1
+    line 320 `add r0, r0`                            +1
+    line 321 `jmp !c, idle`                          +1
+    line 322 `jmp !z, idle`                          +1
+    line 323 `ldi r0, 0xD280`                        +1
+    line 324 `jmp f F_SETUP, handshake`              +1
+    line 325 `jmp !f F_STALL, handshake`             +1
+    line 326 `ldi r0, 0x1E80`                        +1
+    line 328 `mov osr, r0`                           +1
+    line 329 `ldi r0, 120`                           +1
+    line 330 `wait 1 pin DM timeout r0`              +0  (end)
+.
+usb_enum: the forced lost-ACK IN answered at [18.65, 18.77, 18.36, 19.02, 18.93] clocks; later than 26: []
+.
+deadline data_bit (line 10): bit.done -> bit.done  -- bit to bit inside a byte
+  bound: [7, 7] ticks = [364, 365] clk
+  required: >= 8 and <= 8 tick  ->  FAIL
+  worst path (7 ticks):
+    line 21 `out pins, 1`                            +1
+    line 22 `jmp r0--, bitloop          [5]`         +6
+    line 21 `out pins, 1`                            +0  (end)
+.
+deadline ack_ta (line 47): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
+  bound: [17, 24] ticks = [17, 24] clk; with adjust +3..4: [20, 28] clk
+  required: >= 8 and <= 26 clk  ->  FAIL
+  worst path (24 ticks):
+    line 93 `ldi r2, 0x800D`                         +1
+    line 94 `mov r1, crc`                            +1
+    line 95 `cmp r1, r2`                             +1
+    line 96 `jmp !z, data_bad`                       +1
+    line 97 `cmp r3, 0x1C3`                          +1
+    line 98 `jmp z, data_ok`                         +1
+    line 99 `jmp f F_SETUP, data_bad`                +1
+    line 100 `cmp r3, 0x1D2`                         +1
+    line 101 `jmp !z, data_bad`                      +1
+    line 103 `wait 1 pin DM`                         +8  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 9, the lines above count from the anchor)
+    line 104 `ldi r2, 0xD280            [7]`         +8
+    line 105 `mov osr, r2               [7]`         +8
+    line 106 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 47) at line 106 `out line, 16`
+.
+deadline out_nak_ta (line 50): resp_wait.cond (2..6 ticks after nak_send.enter) -> resp_out.done  -- OUT DATA without room -> NAK
+  bound: [2, 2] ticks = [2, 2] clk; with adjust +3..4: [5, 6] clk
+  required: >= 8 and <= 26 clk  ->  FAIL
+  worst path (2 ticks):
+    line 212 `ldi r3, 0x5A80`                        +1
+    line 213 `jmp send16`                            +1
+    line 179 `wait 1 pin DM`                         +1  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 2, the lines above count from the anchor)
+    line 180 `mov osr, r3`                           +1
+    line 181 `out line, 16`                          +0  (end)
+  assumes:
+    stall= of the deadline max=0 (line 50) at line 181 `out line, 16`
+.deadline w (line 2): a.done -> b.enter
+  bound: [2, inf] ticks = [2, inf] clk
+  required: <= 100 clk  ->  FAIL (UNBOUNDED)
+  UNBOUNDED because line 7 `wait 1 pin 3`: untimed WAIT and no @stall bound
+  worst path (inf ticks):
+    line 6 `a:  nop`                                 +1
+    line 7 `wait 1 pin 3`                            +inf
+    line 8 `b:  pull block`                          +nan..nan  (end)
+deadline f (line 3): b.enter -> c.done
+  bound: [1, inf] ticks = [1, inf] clk
+  required: <= 100 clk  ->  FAIL (UNBOUNDED)
+  UNBOUNDED because line 8 `b:  pull block`: PULL may find TXF empty and no fifo_stall/@stall bound
+  worst path (inf ticks):
+    line 8 `b:  pull block`                          +inf
+    line 9 `c:  ldi r0, 3`                           +nan..nan  (end)
+deadline l (line 4): c.done -> d.done
+  bound: [2, inf] ticks = [2, inf] clk
+  required: <= 100 clk  ->  FAIL (UNBOUNDED)
+  UNBOUNDED because a loop through line 10 `lp: jmp pin 4, lp` has no bound (add `; @loop max=N` on one of its instructions)
+deadline ok (line 5): a.done -> b.enter
+  bound: [2, 7] ticks = [2, 7] clk
+  required: <= 100 clk  ->  PASS
+  worst path (7 ticks):
+    line 6 `a:  nop`                                 +1
+    line 7 `wait 1 pin 3`                            +6
+    line 8 `b:  pull block`                          +0  (end)
+  assumes:
+    stall= of the deadline max=5 (line 5) at line 7 `wait 1 pin 3`
+......
+random programs: 131 deadlines with a path (66 with a finite max), 10047 measured intervals, all inside the bounds
+...: 4 words, CLKDIV 1+0/256 (1 tick = 1 clk)
+deadline d (line 1): start.done -> end.done
+  bound: [2, 2] ticks = [2, 2] clk
+  required: <= 1 clk  ->  FAIL
+  worst path (2 ticks):
+    line 2 `start: nop`                              +1
+    line 3 `nop`                                     +1
+    line 4 `end: nop`                                +0  (end)
+: 5 words, CLKDIV 1+0/256 (1 tick = 1 clk)
+deadline d (line 1): start.done -> end.done
+  bound: [2, 2] ticks = [2, 2] clk
+  required: <= 3 clk  ->  FAIL (MAY NEVER REACH)
+  some reachable paths never reach end (fails; use avoid= or reach=conditional if that is intended):
+    never reaches end from line 6 `lost: jmp lost`
+  worst path (2 ticks):
+    line 2 `start: nop`                              +1
+    line 3 `jmp pin 0, lost`                         +1
+    line 4 `end: nop`                                +0  (end)
+.
+30 passed in 27.72s
