@@ -69,15 +69,39 @@ import usb_fs_data_demo as d
 os.sched_setaffinity = lambda *a: None
 dev = pathlib.Path(log).parent / "dev"
 dev.mkdir(exist_ok=True)
-(dev / "bConfigurationValue").write_text("1\n")
-d.usb_demo.sysfs_device = lambda *a, **k: str(dev)      # Linux has configured it
-d.usb_demo.detect = lambda spim, pe: ("normal", "D+")
+(dev / "bConfigurationValue").write_text("0\n" if os.environ.get("NOT_CONFIGURED") else "1\n")
+d.usb_demo.sysfs_device = lambda *a, **k: str(dev)      # Linux has configured it (or never does)
+detects = []
+
+def detect(spim, pe):                      # each attach's wiring check; SLOW_DETECT=k: the k-th one hangs
+    detects.append(1)
+    note(f"usb_demo.detect {len(detects)}")
+    if os.environ.get("SLOW_DETECT") == str(len(detects)):
+        time.sleep(60)
+    return "normal", "D+"
+d.usb_demo.detect = detect
 
 def fake_client(*a):
     note(f"client SIGINT={signal.getsignal(signal.SIGINT)!r}")
     time.sleep(60)
     return 0
-d.client = fake_client
+real_client, d.client = d.client, fake_client
+raises = os.environ.get("CLIENT_RAISES")
+if raises:                                 # a client() that raises in the child; its exit status logged
+    def raising_client(*a):
+        note("client start")
+        if raises == "stop":               # the one exception main() catches, and then cleans up after
+            raise d.Stop("SIGTERM", signal.SIGTERM)
+        d.usb_stress.find = lambda: None   # no device: the real client's os.open(None) raises TypeError
+        return real_client(*a)
+    d.client = raising_client
+    real_waitpid = os.waitpid
+    def waitpid(pid, flags):
+        got, st = real_waitpid(pid, flags)
+        if got:
+            note(f"client exit {os.waitstatus_to_exitcode(st)}")
+        return got, st
+    os.waitpid = waitpid
 if os.environ.get("FORK_SIGNAL"):          # a SIGTERM that lands between the fork and the unblock
     real_fork = os.fork
     def fork():
@@ -86,7 +110,8 @@ if os.environ.get("FORK_SIGNAL"):          # a SIGTERM that lands between the fo
             os.kill(os.getpid(), signal.SIGTERM)     # blocked here: pending until fork_client unblocks
         return pid
     os.fork = fork
-sys.argv = ["usb_fs_data_demo.py", "--sizes", "8", "--rounds", "1", "--attaches", "1", "--timeout", "30"]
+sys.argv = ["usb_fs_data_demo.py", "--sizes", "8", "--rounds", "1", "--attaches", os.environ.get("ATTACHES", "1"),
+            "--timeout", os.environ.get("TIMEOUT", "30")]
 d.main()
 '''
 
@@ -171,3 +196,45 @@ def test_a_stop_during_an_attach_reports_that_attach(tmp_path, sig):
     assert "[device software] attach 1: 0 requests, 0 packets re-staged; detached" in out, out
     board = [(pid, op) for pid, op in ops(log) if not op.startswith("client")]
     assert {pid for pid, _ in board} == {str(p.pid)} and [op for _, op in board][-3:] == DETACH
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_a_stop_during_a_wiring_check_names_that_attach(tmp_path, n):
+    """A SIGTERM while attach n's wiring check runs (attach 1 never configured,
+    so main() re-attaches): the report names attach n, not the attach before
+    it (verifier 049 note 1), and says it had no device software yet. The
+    board ends as before: cores stopped and pins off if no attach finished,
+    else attach 1's detach."""
+    env = {"ATTACHES": "2", "SLOW_DETECT": str(n), "NOT_CONFIGURED": "1", "TIMEOUT": "1"}
+    p, log = start(tmp_path, env)
+    wait_for(log, f"usb_demo.detect {n}")
+    p.send_signal(signal.SIGTERM)
+    out, _ = p.communicate(timeout=120)
+    assert p.returncode == 143 and "STOPPED" in out and "Traceback" not in out, out
+    left = "every PMOD pin disabled, the cores stopped" if n == 1 else "detached"
+    assert f"[device software] attach {n}: stopped before its device software started; {left}" in out, out
+    assert out.count("[device software]") == 1, out
+    assert ("  attach 1 of 2: not configured after 1 s" in out) == (n == 2), out
+    board = ops(log)
+    assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
+    assert [op for _, op in board][-3:] == (["usb_demo.detect 1", "spim.pmod {}", "pe.stop 3"] if n == 1 else DETACH)
+
+
+@pytest.mark.parametrize("how", ["no-device", "stop"])
+def test_a_client_that_raises_exits_1_and_leaves_the_board_alone(tmp_path, how):
+    """client() raising in the child (no device found: the real client's
+    os.open(None); or a Stop, which main() would catch and clean up after)
+    ends the child by fork_client's os._exit(1) (verifier 049 note 2): no
+    traceback, no board operation from the child, and the demo itself reports
+    the failure and detaches as at a normal end."""
+    p, log = start(tmp_path, {"CLIENT_RAISES": how})
+    out, _ = p.communicate(timeout=120)
+    assert p.returncode == 1 and out.splitlines()[-1] == "FAIL", out
+    assert "Traceback" not in out and "STOPPED" not in out, out
+    started = [pid for pid, op in ops(log) if op == "client start"]
+    assert len(started) == 1 and started[0] != str(p.pid), ops(log)
+    assert [(pid, op) for pid, op in ops(log) if op.startswith("client exit")] == [(str(p.pid), "client exit 1")]
+    board = [(pid, op) for pid, op in ops(log) if not op.startswith("client")]
+    assert {pid for pid, _ in board} == {str(p.pid)}, f"another process touched the board: {board}"
+    assert [op for _, op in board][-3:] == DETACH, board[-5:]
+    assert "[device software] attach 1: 0 requests, 0 packets re-staged; detached" in out, out

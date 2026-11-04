@@ -140,11 +140,12 @@ class Stop(Exception):
     """A SIGINT, SIGTERM or SIGHUP: stop, leaving the board as a normal end does."""
 
 
-# The live Linux client's pid and the current attach's device software, kept
-# here rather than in run()'s locals: a Stop can be raised in fork_client()
+# The live Linux client's pid and the latest attach's (number, device software),
+# kept here rather than in run()'s locals: a Stop can be raised in fork_client()
 # itself (Python runs a pending handler when the signals are unblocked, before
 # the pid reaches run()), and main() must still kill that client and report
-# that attach.
+# that attach. The number is stored with the software in one assignment, so a
+# Stop while the next attach is set up never reports the previous one's.
 LIVE = {"client": None, "sw": None}
 
 
@@ -173,11 +174,12 @@ def catch_signals():
         signal.signal(s, handler)
 
 
-def run(board, spim, pe, prog, a, sizes):
-    """Service the device until the client is done. Returns (status, order, software);
-    status None: Linux never configured it. Any exception (Stop among them)
-    kills the client first, so no process is left using the device."""
-    sw = LIVE["sw"] = usbfsdata.LoopbackDevice(pe, prog, usbdev.DESCRIPTORS, 0, 0)
+def run(board, spim, pe, prog, a, sizes, n):
+    """Service attach n's device until the client is done. Returns (status, order,
+    software); status None: Linux never configured it. Any exception (Stop among
+    them) kills the client first, so no process is left using the device."""
+    sw = usbfsdata.LoopbackDevice(pe, prog, usbdev.DESCRIPTORS, 0, 0)
+    LIVE["sw"] = n, sw
     t0 = time.monotonic()
     child = None
     polls = 0
@@ -455,6 +457,7 @@ def main():
             sys.exit("FAIL: chip ID over the fabric master")
         print(f"[identity] RTL revision {ident['rtl_rev'][:12]}, clock {board.clk_hz() / 1e6:.4f} MHz")
         print("[wiring]")
+        attempt = 1                      # a Stop from here on is attach 1's
         try:
             prog, order = attach(board, spim, pe)
         except usb_demo.WiringError as e:
@@ -464,7 +467,9 @@ def main():
 
         os.sched_setaffinity(0, {SERVICE_CPU})
         for attempt in range(1, a.attaches + 1):
-            status, _, sw = run(board, spim, pe, prog, a, sizes)
+            if attempt > 1:              # the re-attach, under its own number (verifier 049 note 1)
+                prog, order = attach(board, spim, pe)
+            status, _, sw = run(board, spim, pe, prog, a, sizes, attempt)
             if status is not None:
                 break
             st = pe.read(sim.core_reg(0, sim.C_STATUS))     # reads only: TX/RX FIFO levels, PC
@@ -472,12 +477,12 @@ def main():
                   f"requests seen: {sw.requests[-3:]}; F_SET 0x{pe.read(sim.A_FSET):02X}; "
                   f"core 0 TX FIFO {st & 15} words, RX FIFO {(st >> 4) & 15}, PC {pe.read(sim.core_reg(0, sim.C_PC))}; "
                   f"software staged {sw.unacked}, pending {sw.pending}", flush=True)
-            if attempt < a.attaches:
-                prog, order = attach(board, spim, pe)
     except Stop as e:
         stopped = e
         kill_client()                    # if run() has not already
-        sw = LIVE["sw"]                  # stopped inside run(): that attach's software
+        n, sw = LIVE["sw"] or (0, None)  # stopped inside run(): that attach's software
+        if n != attempt:                 # stopped while attach `attempt` was set up: none of its own yet
+            sw = None
         print(f"[stop] {e.args[0]}: stopping", flush=True)
     if order is not None:                # as a normal end: core stopped, pulled-up line held low
         usb_demo.detach(board, spim, pe, "full", order)
@@ -490,6 +495,8 @@ def main():
         left = "the board not touched"
     if sw is not None:
         print(f"[device software] attach {attempt}: {len(sw.requests)} requests, {sw.restaged} packets re-staged; {left}")
+    elif attempt and stopped is not None:
+        print(f"[device software] attach {attempt}: stopped before its device software started; {left}")
     else:
         print(f"[device software] no attach; {left}")
     if stopped is not None:
