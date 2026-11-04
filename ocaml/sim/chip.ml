@@ -1236,3 +1236,139 @@ let state_line b chip =
   List.iter list l.entries;
   list l.rq
 ;;
+
+(* The inverse of [state_line]: set every value the line holds from such a line.
+   ocaml/test/lock_chip.py sends one after a test writes into the Python chip (a
+   direct FIFO pop, a register set by hand), so that the comparison goes on from
+   the written state. Memory and the coverage counters are not in the line and
+   are left as they are. Raises [Failure] unless the line has exactly the values
+   [state_line] writes. *)
+let load_state chip s =
+  let a =
+    String.split_on_char ' ' s
+    |> List.filter (fun x -> x <> "")
+    |> List.map int_of_string
+    |> Array.of_list
+  in
+  let pos = ref 0 in
+  let next () =
+    if !pos >= Array.length a then failwith "load_state: line too short";
+    let v = a.(!pos) in
+    incr pos;
+    v
+  in
+  let list () =
+    let n = next () in
+    let acc = ref [] in
+    for _ = 1 to n do
+      acc := next () :: !acc
+    done;
+    List.rev !acc
+  in
+  chip.enable <- next ();
+  chip.ctrl_pend <- (match next () with -1 -> None | v -> Some v);
+  chip.flags <- next ();
+  for i = 0 to Array.length chip.pin_owner - 1 do
+    chip.pin_owner.(i) <- next ()
+  done;
+  chip.od_mask <- next ();
+  chip.pin_out <- next ();
+  chip.pin_oe <- next ();
+  chip.hostcfg <- next ();
+  chip.sync1 <- next ();
+  chip.sync2 <- next ();
+  chip.sync_bypass <- next ();
+  chip.rx_hq <- next ();
+  chip.rx_h2 <- next ();
+  chip.pads_prev <- next ();
+  chip.cycle <- next ();
+  Array.iter
+    (fun c ->
+       c.div_int <- next ();
+       c.div_frac <- next ();
+       c.out_base <- next ();
+       c.out_count <- next ();
+       c.set_base <- next ();
+       c.set_count <- next ();
+       c.side_base <- next ();
+       c.side_count <- next ();
+       c.side_opt <- next ();
+       c.side_pindir <- next ();
+       c.in_base <- next ();
+       c.out_shr <- next ();
+       c.in_shr <- next ();
+       c.autopull <- next ();
+       c.autopush <- next ();
+       c.pull_thresh <- next ();
+       c.push_thresh <- next ();
+       c.fjoin <- next ();
+       c.entry <- next ();
+       c.wrap_bottom <- next ();
+       c.wrap_top <- next ();
+       c.crc_poly <- next ();
+       c.crc_w <- next ();
+       c.in_tap <- next ();
+       c.out_tap <- next ();
+       c.crc <- next ();
+       for i = 0 to 3 do
+         c.r.(i) <- next ()
+       done;
+       c.lr <- next ();
+       c.pc <- next ();
+       c.isr <- next ();
+       c.isr_cnt <- next ();
+       c.osr <- next ();
+       c.osr_cnt <- next ();
+       c.z <- next ();
+       c.c <- next ();
+       c.t <- next ();
+       c.dcnt <- next ();
+       c.in_wait <- next ();
+       c.wprev <- next ();
+       c.wevent <- next ();
+       c.cnt <- next ();
+       c.facc <- next ();
+       c.halted <- next ();
+       c.fault <- next ();
+       c.stalled <- next ();
+       c.txf <- list ();
+       c.rxf <- list ();
+       c.res <- List.map (fun r -> r <> 0) (list ()))
+    chip.cores;
+  let l = chip.line in
+  l.cfg <- next ();
+  l.div <- next ();
+  l.pins <- next ();
+  l.tx_on <- next ();
+  l.ending <- next ();
+  l.eop_idle <- next ();
+  l.half <- next ();
+  l.bit <- next ();
+  l.level <- next ();
+  l.txn <- next ();
+  l.tcnt <- next ();
+  l.tfacc <- next ();
+  l.trun <- next ();
+  l.trunbit <- next ();
+  l.trunv <- next ();
+  l.rx_on <- next ();
+  l.rcnt <- next ();
+  l.rlast <- next ();
+  l.rprev <- next ();
+  l.quiet <- next ();
+  l.q <- next ();
+  l.n <- next ();
+  l.rrun <- next ();
+  l.rrunbit <- next ();
+  l.rrunv <- next ();
+  l.end_pend <- next ();
+  l.ovf <- next ();
+  let n = next () in
+  let acc = ref [] in
+  for _ = 1 to n do
+    acc := list () :: !acc
+  done;
+  l.entries <- List.rev !acc;
+  l.rq <- list ();
+  if !pos <> Array.length a then failwith "load_state: line too long"
+;;

@@ -5,7 +5,8 @@
 #   ocaml/test/self_check.sh WORK
 #
 # Assembler bugs go to asm_parity.py, model bugs to the lockstep plugin on four
-# model test files, RTL bugs to the waveform tests. Needs the same environment as dune build and stage3_model_suite.sh.
+# model test files (and, for the state load after a test writes into a chip, on
+# one test that does), RTL bugs to the waveform tests. Needs the same environment as dune build and stage3_model_suite.sh.
 # Exit status 0 only if every planted bug is caught.
 # SPDX-License-Identifier: Apache-2.0
 set -uo pipefail
@@ -49,6 +50,18 @@ EOF
     cp "$work"/keep/test_*.ml "$work"/keep/dune wave_test/
     echo "  with the rule: $with; rule removed: $without"
     [ $with = fail ] && [ $without = pass ] && caught=yes || caught=no
+  elif [ "$kind" = resync ]; then
+    # a bug that only a test which writes into its chip reaches: it must be caught
+    # with the state load after the write, and missed without it, or the case shows nothing
+    for r in 1 0; do
+      rm -f "$work"/lock.*
+      (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_RESYNC=$r \
+        WL_LOCK_OUT="$work/lock" "$py" -m pytest -q -p no:cacheprovider -p capture_plugin \
+        test/model/test_rmii.py::test_port_model_read_path_counts_every_word > "$work/check$r.log" 2>&1)
+      ls "$work"/lock.fail.* >/dev/null 2>&1 && got[$r]=caught || got[$r]=missed
+    done
+    echo "  with the load: ${got[1]}; without: ${got[0]}"
+    [ ${got[1]} = caught ] && [ ${got[0]} = missed ] && caught=yes || caught=no
   elif [ "$kind" = asm ]; then
     python3 test/asm_parity.py --fuzz 300 > "$work/check.log" 2>&1 && caught=no || caught=yes
   else
@@ -67,6 +80,10 @@ try sim/chip.ml 'c.dcnt <- delay;' 'c.dcnt <- delay + (delay land 1);' sim
 try sim/chip.ml 'c.lr <- (if c.pc = c.wrap_top then c.wrap_bottom else (c.pc + 1) land 1023);' 'c.lr <- (c.pc + 1) land 1023 lor 1;' sim
 try sim/line.ml 'let g = min 5 (1 + (l.n / 6)) in' 'let g = min 4 (1 + (l.n / 6)) in' sim
 try sim/chip.ml '"wait:timeout"' '"wait:timed_out"' sim
+try sim/chip.ml 'then List.nth c.rxf n else 0)' 'then List.nth c.rxf (List.length c.rxf - 1 - n) else 0)' resync
+try sim/chip.ml '       c.txf <- list ();
+       c.rxf <- list ();' '       c.rxf <- list ();
+       c.txf <- list ();' resync
 try asm/asm.ml '(cond lsl 15) lor (z_int sel lsl 10) lor addr' '(cond lsl 15) lor (z_int sel lsl 11) lor addr' asm
 try asm/asm.ml '"pin out of range"' '"pin outside range"' asm
 try asm/pyexpr.ml 'I (Z.fdiv x y)' 'I (Z.div x y)' asm

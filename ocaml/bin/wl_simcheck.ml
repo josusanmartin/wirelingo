@@ -8,6 +8,9 @@
      = state                                      Chip.state_line after that edge
      F name=count name=count ...                  the coverage counters, sorted
      X                                            the test cleared the counters
+     L state                                      the test wrote into the chip: load
+                                                  this state (Chip.load_state), which
+                                                  must print back as the same line
      Q                                            stop, nothing left to compare
 
    ocaml/test/lock_chip.py writes this stream from tools/pe/sim.py. The first
@@ -104,6 +107,14 @@ let () =
           let want = String.sub line 2 (String.length line - 2) in
           if got <> want then fail "coverage" got want
         | 'X' -> Hashtbl.reset (get ()).Chip.stats
+        | 'L' ->
+          let want = String.sub line 2 (String.length line - 2) in
+          (try Chip.load_state (get ()) want with
+           | Failure e -> fail ("load: " ^ e) "" want);
+          Buffer.clear b;
+          Chip.state_line b (get ());
+          let got = Buffer.contents b in
+          if got <> want then fail "load" got want
         | 'Q' -> raise End_of_file
         | _ -> failwith ("bad line: " ^ line))
     done

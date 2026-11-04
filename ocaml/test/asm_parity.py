@@ -455,7 +455,7 @@ def run_corpus(p, files):
 
 
 # A drop below these means coverage was lost, even with nothing disagreeing.
-FLOORS = {"firmware": {"ok": 300}, "directed": {"ok": 130, "error": 110, "crash": 8}, "corpus": {"ok": 250, "error": 20}}
+FLOORS = {"firmware": {"ok": 340}, "directed": {"ok": 130, "error": 110, "crash": 8}, "corpus": {"ok": 330, "error": 20}}
 
 
 def main():

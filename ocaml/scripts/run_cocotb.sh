@@ -71,7 +71,16 @@ for s in "$@"; do
   esac
   n=$(grep -c '^@cocotb.test()' "$mod.py")
   [ "$s" = lockstep3 ] || [ "$s" = lockstep3src ] && n=$((n + 6))
-  python3 check_results.py "$xml" "$n" || rc=1
+  # Two suites have a test that skips by design; CI's test.yaml names the ones
+  # that must pass, and so does this (bench_sigrok_available needs sigrok-cli,
+  # pps_one_second needs PPS_LONG=1).
+  names=()
+  case $s in
+    test_bench_fw) names=(bench_mdio_master_and_phy bench_mdio_master_phy_model bench_mdio_phy_sta_model
+                          bench_qsfp bench_pmbus) ;;
+    test_pps) names=(pps_record_paths pps_rollover_phases pps_train pps_fifo_full) ;;
+  esac
+  python3 check_results.py "$xml" "$n" "${names[@]}" || rc=1
   [ $rc -eq 0 ] || fail=1
 done
 exit $fail
