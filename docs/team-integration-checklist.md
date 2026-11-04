@@ -6,7 +6,7 @@ The dated `shipping1913` dependency table below is historical. The later
 review delivery is `2d08f141fa0c61ef2117fd7f07710eac636d1072` on
 `team/20261014-overlap4-service`, based on main
 `34de7a06a884e99976be1e99d589e4d63d267a8a`. Its complete apply order is in the
-[October 14 handoff]([home directory redacted]/wirelingo-team-20261011/control/resume-20261013/integration-20261014-handoff.md).
+October 14 handoff (`~/wirelingo-team-20261011/control/resume-20261013/integration-20261014-handoff.md`, outside the repository).
 Use that sequence for this delivery; do not reapply the older table's commits
 to a main tree that already contains them. This note is a documentation-only
 successor and changes no tested inputs.
@@ -62,7 +62,7 @@ Select the declared production prerequisites, not every worker ancestor.
 ## Five lanes — accepted shipping1913 dependency snapshot
 
 Pinned main base: `0ebe6caac4e76ca2a648356543d0d7460574546d`.
-The [lead handoff]([home directory redacted]/wirelingo-team-20261011/control/resume-20261013/shipping-20261013-1913/HANDOFF.md)
+The lead handoff (`~/wirelingo-team-20261011/control/resume-20261013/shipping-20261013-1913/HANDOFF.md`, outside the repository)
 records the full commit identities, reviewed patches and saved results.
 **Numbers below are the global apply order of its 24 commits**; apply in
 increasing numerical order, including the interleaved lanes. No unselected
@@ -86,7 +86,7 @@ Lead's saved isolated-index check applied all 24 commits and a fresh export
 passed `pe.mpy_bundle --check`: 75 files, no src/, flow/ or FPGA changes.
 That apply/bundle check adds zero model/RTL clocks and does **not** replace
 still-unrun final combined-tree dynamic regression or Claude/main integration.
-The [checklist source review]([home directory redacted]/wirelingo-team-20261011/control/resume-20261013/integration-checklist-current-review.json)
+The checklist source review (`~/wirelingo-team-20261011/control/resume-20261013/integration-checklist-current-review.json`, outside the repository)
 identified this document's stale pending table and absent default fanout test.
 
 The later C14 UART serial attempt is **outside this selected snapshot** and

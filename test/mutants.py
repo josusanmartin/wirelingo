@@ -394,6 +394,9 @@ MUTANTS = {
         '        pass\n', HW_TESTS),
     "hw-chained-load-line": ("fpga/kv260/host/hw_day.py", 'f"  sudo xmutil unloadapp\\n  sudo xmutil loadapp {app}\\n  sudo xmutil listapps\\n"',
         'f"  sudo xmutil unloadapp; sudo xmutil loadapp {app} && sudo xmutil listapps\\n"', HW_TESTS),
+    # the tailnet name back as install.sh's default (split so this file stays clean)
+    "privacy-kria-default-host": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.tail' '[tailnet label redacted].ts.net}}', pytest("test/model/test_private_hosts.py")),
 }
 
 

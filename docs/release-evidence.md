@@ -207,7 +207,7 @@ LibreLane plugin are byte-identical in `f6b8ca0`, `d916d40`, `f1cb7c9` and
 `7685aba`, so the ci7 reproduction still applies. The archive
 `wirelingo-release-evidence-7685aba-fo6.tar.gz` (sha256
 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`, 473
-payload files, runner1 `~/protoemu-flow/` and `[home directory redacted]/`) has the same
+payload files, runner1 `~/protoemu-flow/` and the build machine's home directory) has the same
 contents as the f1cb7c9 record's: every hashed input and result, the job
 logs, the verdict, the source bundle, ci7's candidate files and the
 reproduction comparison. Extracted into an empty directory, its own
@@ -271,7 +271,7 @@ scripts, `info.yaml`, the LibreLane plugin) are byte-identical in `f6b8ca0`,
 `d916d40` and `f1cb7c9`, so the ci7 reproduction (identical netlist and
 normalized GDS) still applies. The archive
 `wirelingo-release-evidence-f1cb7c9-fo6.tar.gz` (sha256 `091a1070…4209a`,
-461 payload files; runner1 `~/protoemu-flow/` and `[home directory redacted]/`) keeps every
+461 payload files; runner1 `~/protoemu-flow/` and the build machine's home directory) keeps every
 hashed input and result, the job logs, verdict and source bundle, the ci7
 candidate files and the reproduction comparison. Extracted elsewhere, its
 own `release_check.py` re-verifies all seven receipts and passes. A later
