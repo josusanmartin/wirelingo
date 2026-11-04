@@ -26,6 +26,7 @@ RX, TX = 0, 1
 DESC_8 = bytes([0x80, 6, 0, 1, 0, 0, 8, 0])          # GET_DESCRIPTOR(device, 8): one DATA1
 SET_CONFIG = bytes([0, 9, 1, 0, 0, 0, 0, 0])
 DESC_18 = bytes([0x80, 6, 0, 1, 0, 0, 18, 0])
+GAP = 8      # bit times between a handshake's EOP and the host's next token (UsbHost.data_in's retry gap)
 
 
 class ConcurrentModelHost(ModelHost):
@@ -75,6 +76,7 @@ def concurrent():
 def in_until_answer(h, addr, tries=2000):
     """IN tokens until a DATA packet (ACKed). Returns (packet, NAKs, unanswered)."""
     naks = silent = 0
+    h._gap(GAP)
     for _ in range(tries):
         h._send(usb.token(usb.PID_IN, addr, 0))
         r = h._listen(120 * h.bit)
@@ -101,7 +103,7 @@ def restage_race_ls(concurrent, resume, hold_at):
     "right" (one zero-length DATA1 after NAKs only)."""
     mh, sw = two_core()
     b = concurrent(mh, sw)
-    h = UsbHost(mh)
+    h = UsbHost(mh, idle=lambda m: m.step(GAP * 32))   # the host's gap after each transaction
     h.setup(0, DESC_8)
     # armed now: at low speed the OUT status alone outlasts the 100 us re-stage delay
     ctx = {"go": False, "stale": (usb.PID_DATA1, usbdev.DEVICE_DESC[:8]), "sw": sw, "b": b, "mh": mh}
@@ -125,6 +127,7 @@ def restage_race_ls(concurrent, resume, hold_at):
         h.setup(0, SET_CONFIG)
         ctx["go"] = True
     else:
+        h._gap(GAP)
         h._send(usb.token(usb.PID_SETUP, 0, 0))
         ctx["go"] = True
         h._gap(2)
