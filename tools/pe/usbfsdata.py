@@ -10,10 +10,11 @@ The token filter matches one address and endpoint, so data stays on endpoint
 software; automatic NAKs cover its latency.
 
 Tested on the model and the KV260 (fpga/kv260/host/usb_fs_data_demo.py).
-Zero-length requests (wLength 0) are tested on the model only, with the
-software running concurrently with the bus (test/model/test_usb_fs_data.py):
-until 2026-11-03 a zero-length write staged its status ZLP twice, and a
-zero-length read staged none.
+Zero-length requests (wLength 0): until 2026-11-03 a zero-length write staged
+its status ZLP twice, and a zero-length read staged none. Tested on the model
+with the software running concurrently with the bus
+(test/model/test_usb_fs_data.py), and on the KV260: 1000 writes and 210 reads
+(evidence/kv260-usbfs-zlp-20261103/).
 """
 from . import usbdev
 

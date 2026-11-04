@@ -1,0 +1,22 @@
+Nov 03 19:10:20 kria kernel: usb 1-1.4: new full-speed USB device number 10 using xhci-hcd
+Nov 03 19:10:20 kria kernel: usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01
+Nov 03 19:10:20 kria kernel: usb 1-1.4: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+Nov 03 19:10:27 kria kernel: xhci-hcd xhci-hcd.0.auto: xHCI host not responding to stop endpoint command
+Nov 03 19:10:27 kria kernel: xhci-hcd xhci-hcd.0.auto: xHCI host controller not responding, assume dead
+Nov 03 19:10:27 kria kernel: xhci-hcd xhci-hcd.0.auto: HC died; cleaning up
+Nov 03 19:10:27 kria kernel: usb 1-1.4: usbfs: USBDEVFS_CONTROL failed cmd python3 rqt 64 rq 16 len 0 ret -110
+Nov 03 19:10:27 kria kernel: onboard-usb-dev 1-1: USB disconnect, device number 2
+Nov 03 19:10:27 kria kernel: usb 1-1.1: USB disconnect, device number 12
+Nov 03 19:10:27 kria kernel: onboard-usb-dev 2-1: USB disconnect, device number 2
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg1 bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: AICWFDBG(LOGERROR)        rwnx_send_msg bus is down
+Nov 03 19:10:27 kria kernel: tcp_ack_deinit 
+Nov 03 19:10:27 kria kernel: usb 1-1.4: USB disconnect, device number 10
+Nov 03 19:10:27 kria kernel: usb 1-1.5: USB disconnect, device number 8
