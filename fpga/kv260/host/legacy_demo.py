@@ -7,8 +7,8 @@ virtual pin or a uio pad that a core or pe_lab drives; no PMOD pin is enabled.
 (The USB device firmwares are in usb_replay_demo.py: they need the 48 MHz app.)
 
     python3 fpga/kv260/host/legacy_demo.py --model --save ml.json --plans pl.json   # cycle model first
-    scp pl.json ubuntu@<kria-host>:legacy_logs/
-    ssh ubuntu@<kria-host> sudo python3 -u protoemu/fpga/kv260/host/legacy_demo.py \\
+    scp pl.json "$WL_KRIA":legacy_logs/
+    ssh "$WL_KRIA" sudo python3 -u protoemu/fpga/kv260/host/legacy_demo.py \\
         --save legacy_logs/hl.json --plans legacy_logs/pl.json
     python3 fpga/kv260/host/legacy_demo.py compare hl.json ml.json
     python3 fpga/kv260/host/legacy_demo.py sigrok hl.json
