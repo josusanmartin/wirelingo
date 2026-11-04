@@ -94,6 +94,7 @@ def abort_fs(make, resume, hold_at):
     outcome, d = classify(r, naks, silent, {"held": ctx.get("held_op"), "underrun": bool(b.chip.flags & 1)})
     if outcome in ("right", "silent"):
         fs.staged_over_empty(h, b, "after SET_CONFIGURATION")
+        b.service.overhead = 48                  # the race is over: the check after at 1 us per access
         h.setup(5, DESC_18)
         got, toggle = b"", 1
         while len(got) < 18:
@@ -134,6 +135,7 @@ def abort_ls(make, resume, hold_at):
         return "no answer (TimeoutError)", {}
     outcome, d = classify(r, naks, silent, {"held": ctx.get("held_op"), "tx_fifo": len(mh.chip.cores[ls.TX].txf)})
     if outcome in ("right", "silent"):
+        b.service.overhead = 48                  # the race is over: the check after at 1 us per access
         h._gap(16)
         h.setup(0, DESC_18)
         got = b""

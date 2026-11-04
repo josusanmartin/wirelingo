@@ -109,7 +109,7 @@ class SpiBridge:
         self.thread = threading.Thread(target=self._software, daemon=True)
         self.thread.start()
         self.poll = poll
-        h.service = SpiService(self._program, sck=sck, overhead=overhead)
+        self.service = h.service = SpiService(self._program, sck=sck, overhead=overhead)
 
     def close(self):
         self.go.put(False)
