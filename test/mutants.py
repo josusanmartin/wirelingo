@@ -192,11 +192,11 @@ MUTANTS = {
                                "            self.incoming, self.expected = bytearray(), wlen   # service() stages the status ZLP once\n",
                                "            self.incoming, self.expected = bytearray(), wlen\n"
                                "            if not wlen:\n                self.pending = [b\"\"]\n",
-                               pytest("test/model/test_usb_fs_data.py -k zero_length_writes_with_software")),
+                               pytest('test/model/test_usb_fs_data.py -k "zero_length_writes_with_software or nothing_left_staged"')),
     "usbfs-read0-no-status": ("tools/pe/usbfsdata.py", " % 8 == 0 or not wlen:", " % 8 == 0:",
                               pytest('test/model/test_usb_fs_data.py -k "round_trips and 0"')),
     "usbdev-zlp-at-wlength": ("tools/pe/usbdev.py", "if len(desc) % 8 == 0 and (len(desc) < wlen or not wlen):",
-                              "if len(desc) % 8 == 0:", pytest("test/model/test_usb_fs_data.py -k descriptor_ending")),
+                              "if len(desc) % 8 == 0:", pytest('test/model/test_usb_fs_data.py -k "descriptor_ending or nothing_left_staged"')),
     "usbdev-restage-in-setup": ("tools/pe/usbdev.py", "return bool(flags & F_SETUP or rx_level)", "return bool(rx_level)",
                                 pytest(f'{FSDATA} "no_restage and token"')),
     "usbdev-restage-after-setup": ("tools/pe/usbdev.py", "return bool(flags & F_SETUP or rx_level)",
