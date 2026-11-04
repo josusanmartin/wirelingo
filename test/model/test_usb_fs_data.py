@@ -276,16 +276,16 @@ HOLDS = {   # where the software is descheduled: (access, the access before it, 
     "after FSET": (FSET_READ, FSET_WRITE, None),                        # F_STAGED set
     "inside the check after FSET": (RX_STATUS, FSET_READ, FSET_WRITE),  # (verifier 036)
 }
-# What software alone cannot close (fpga/kv260/README.md, "narrowed"): a SETUP
-# whose token lands after the check's flags read and whose DATA is not yet in
-# the RX FIFO at its RX-level read (or that lands at the FSET write) leaves
-# F_STAGED over a flushed FIFO until the check after the FSET; an IN in between
-# parks the core in `pull block`, unanswered until the next service() stages
-# the reply, clears the FIFOs and restarts the core. That restart can also cut
-# one IN short when the SETUP came just after the FSET. Never stale DATA. The
-# allowances are the counts measured in the model (deterministic); 0 elsewhere.
-UNANSWERED = {("inside the check before FSET", "after its token"): 2,
-              ("at FSET", "after the SETUP"): 8, ("after FSET", "after the SETUP"): 1}
+# What the software cannot close by itself: a SETUP whose token lands after
+# the check's flags read and whose DATA is not yet in the RX FIFO at its
+# RX-level read (or that lands at the FSET write) leaves F_STAGED over a
+# flushed FIFO until the check after the FSET clears it. The firmware's got_in
+# guard NAKs an IN then (F_STAGED with an empty TX FIFO) instead of parking the
+# core in `pull block` (usb_fs_dev.pasm, branch usb-guard), so the host sees
+# NAKs, never silence: 0 unanswered INs at every point. Before the guard the
+# counts were 2 (inside the check before FSET, token), 8 (at FSET, SETUP) and 1
+# (after FSET, SETUP: the restart that freed the core), fpga/kv260/README.md.
+UNANSWERED = {}
 
 
 def staged_over_empty(h, b, what):
@@ -300,23 +300,14 @@ def staged_over_empty(h, b, what):
     assert not chip.flags & 1 << usbdev.FLAGS["F_IN"], f"{what}: F_UNDERRUN, a packet sent unasked and cut short"
 
 
-@pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
-@pytest.mark.parametrize("where", list(HOLDS))
-def test_no_restage_after_a_setup(concurrent, where, resume):
-    """The host takes the last DATA of a read but its ACK is lost, so the
-    device must re-stage it 100 us on (the host retries, or ACKs and drops
-    the old toggle). The host has moved on, though: OUT status, then the next
-    request's SETUP, which clears F_GOTACK and flushes the TX FIFO. The
-    software is descheduled at one point of the re-stage (before it reads
-    the flags to decide; at the first write of stage(), both checks passed;
-    between the flags and RX-level reads of the check before the FSET; at the
-    FSET, the words pushed; just after the FSET; between the two reads of the
-    check after it) and resumes once the
-    SETUP is on the bus (all of it, or only its token, while its DATA
-    follows). Whatever the point, SET_CONFIGURATION's status IN must get one
-    zero-length DATA1, never the old DATA (left in the TX FIFO behind the
-    SETUP's flush), and silence (F_STAGED set over a flushed FIFO leaves the
-    core waiting in `pull block`) only where UNANSWERED allows it."""
+def restage_race(concurrent, resume, hold_at):
+    """The scenario: the host takes the last DATA of a read but its ACK is
+    lost, so the device must re-stage it 100 us on; the host has moved on
+    (OUT status, then SET_CONFIGURATION's SETUP, which clears F_GOTACK and
+    flushes the TX FIFO). hold_at(op, prev, prev2, ctx) deschedules the
+    software at one access; the SETUP goes on the bus while it is held, whole
+    or token first, and the software resumes. Returns (h, sw, b, unanswered
+    INs in the status stage)."""
     h, sw = enumerated()
     b = concurrent(h, sw)
     data = bytes(range(0xB0, 0xB8))
@@ -324,40 +315,84 @@ def test_no_restage_after_a_setup(concurrent, where, resume):
     h.setup(5, read_req(8))
     assert h.data_in(5, 0, ack=False) == (usb.pid_byte(usb.PID_DATA1), data)     # ACK lost
     h.data_out(5, 0, usb.PID_DATA1, b"")
-    stale = (usb.PID_DATA1, data)
-    access, before, before2 = HOLDS[where]
-    go = {"on": False}
-
-    def hold(op, prev, prev2):
-        if go["on"] or op != access or not prev or (prev[0] if before == "pop_all" else prev) != before:
-            return False
-        if before2 is not None and (not prev2 or prev2[:len(before2)] != before2):
-            return False
-        if where == "at the decision":
-            return sw.unacked == stale and sw.sent_at is not None and b.now_us() - sw.sent_at >= 100
-        return sw.unacked == stale
-    b.hold = hold
+    ctx = {"go": False, "stale": (usb.PID_DATA1, data), "sw": sw, "b": b}
+    b.hold = lambda op, prev, prev2: not ctx["go"] and hold_at(op, prev, prev2, ctx)
     for _ in range(5000):
         if b.held:
             break
         h.wait_bits(8)
-    assert b.held, f"the software never got {where}"
+    assert b.held, "the software never got to the hold"
     req = bytes([0, 9, 1, 0, 0, 0, 0, 0])               # SET_CONFIGURATION(1)
     if resume == "after the SETUP":
         h.setup(5, req)
-        go["on"] = True
+        ctx["go"] = True
     else:
         t = h.send(usb.token(usb.PID_SETUP, 5, 0))
-        go["on"] = True
+        ctx["go"] = True
         t = h.send(usb.data_packet(usb.PID_DATA0, req), t, h.ipd)
         assert h.listen(t) == usb.handshake(usb.PID_ACK)
-    status_in(h, 5, "SET_CONFIGURATION", UNANSWERED.get((where, resume), 0))
+    n = len(h.log)
+    status_in(h, 5, "SET_CONFIGURATION", 1000)
+    unanswered = sum(1 for e in h.log[n:] if e == ("IN", None, None))
     staged_over_empty(h, b, "after SET_CONFIGURATION")
     checked_write(h, 5, data[::-1], "8-byte write after")
     assert checked_read(h, 5, 8, "8-byte read after") == data[::-1]
     staged_over_empty(h, b, "after the round trip")
+    return h, sw, b, unanswered
+
+
+def at_decision(op, prev, prev2, ctx):
+    """The flags read after pop_all with which the software decides to re-stage."""
+    sw, b = ctx["sw"], ctx["b"]
+    return (op == FSET_READ and bool(prev) and prev[0] == "pop_all" and sw.unacked == ctx["stale"]
+            and sw.sent_at is not None and b.now_us() - sw.sent_at >= 100)
+
+
+@pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
+@pytest.mark.parametrize("where", list(HOLDS))
+def test_no_restage_after_a_setup(concurrent, where, resume):
+    """restage_race held at one named point of the re-stage (before it reads
+    the flags to decide; at the first write of stage(), both checks passed;
+    between the flags and RX-level reads of the check before the FSET; at the
+    FSET, the words pushed; just after the FSET; between the two reads of the
+    check after it). Whatever the point, SET_CONFIGURATION's status IN must
+    get one zero-length DATA1 after NAKs only, never the old DATA (left in the
+    TX FIFO behind the SETUP's flush) and never silence (UNANSWERED)."""
+    access, before, before2 = HOLDS[where]
+
+    def hold_at(op, prev, prev2, ctx):
+        if where == "at the decision":
+            return at_decision(op, prev, prev2, ctx)
+        if op != access or prev != before or ctx["sw"].unacked != ctx["stale"]:
+            return False
+        return before2 is None or (bool(prev2) and prev2[:len(before2)] == before2)
+    h, sw, b, unanswered = restage_race(concurrent, resume, hold_at)
+    assert unanswered == UNANSWERED.get((where, resume), 0), f"{where}, {resume}: {unanswered} unanswered INs"
     if where == "at the decision":
         assert sw.tx_clears == 0, "the first check should have kept the old DATA out of the TX FIFO"
+
+
+@pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
+@pytest.mark.parametrize("n", range(26))
+def test_restage_held_at_every_access(concurrent, n, resume):
+    """restage_race held at the n-th SPI access from the re-stage decision
+    (n = 0 is the decision's flags read): every access of the decision, the
+    pushes, both checks, the FSET and the service loops after, not only the
+    named points (verifier 040, note 3). With the got_in guard every one gives
+    0 unanswered INs; before it, n = 8, 9 and 10 gave 2, 8 and 1."""
+    seen = {"n": None, "last": None}
+
+    def hold_at(op, prev, prev2, ctx):
+        if seen["n"] is None:
+            if not at_decision(op, prev, prev2, ctx):
+                return False
+            seen["n"], seen["last"] = 0, op
+        elif op is not seen["last"]:
+            seen["n"] += 1
+            seen["last"] = op
+        return seen["n"] == n
+    h, sw, b, unanswered = restage_race(concurrent, resume, hold_at)
+    assert unanswered == 0, f"access {n}, {resume}: {unanswered} unanswered INs"
 
 
 @pytest.mark.parametrize("wlength", [8, 16])

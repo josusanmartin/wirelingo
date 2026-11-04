@@ -169,8 +169,10 @@ flush:
 drop:
     pull block
     jmp flush
-got_in:
-    jmp f F_STAGED, send_data
+got_in:                            ; F_STAGED over an empty TX FIFO (the software's stage
+    jmp !f F_STAGED, nak_in        ; raced a SETUP's flush): NAK, never `pull block`
+    jmp txne, send_data
+nak_in:
     ldi r3, 0x5A80                 ; SYNC + NAK
 ; ---------------------------------------------------------------- responses
 send16:
