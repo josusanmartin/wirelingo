@@ -1,8 +1,8 @@
 # Verifier reports
 
 Every report of the project's independent verifier, with the item it
-answered, from the first (2026-11-02) to item 038 (2026-11-04): 39 items, 39
-reports, 19 `VERDICT: PASS` and 20 `VERDICT: FAIL`. FAILs are kept: they are
+answered, from the first (2026-11-02) to item 041 (2026-11-04): 42 items, 42
+reports, 21 `VERDICT: PASS` and 21 `VERDICT: FAIL`. FAILs are kept: they are
 most of what the verifier caught.
 
 ## What the verifier is
@@ -33,8 +33,10 @@ For each number NNN:
   come numbered findings with file:line, how each was shown, and what the
   verifier ran.
 
-Commits named here are local commits of the project; some are on branches not
-merged into this one (for example `usbfs-zlp`).
+Commits named here are local commits of the project. All of them are in this
+branch's history except `a85fc57` (item 041): that was this folder's update to
+038 before it was rebased onto `bc98a97`, and the same change, with report
+041's finding fixed, is in this branch's history under other hashes.
 
 | # | Item | Commit | Verdict | | |
 |---|---|---|---|---|---|
@@ -77,6 +79,9 @@ merged into this one (for example `usbfs-zlp`).
 | 036 | `usbfs-zlp-fix` | `f88fb31` | FAIL | [item](036-usbfs-zlp-fix.md) | [report](036-usbfs-zlp-fix.report.md) |
 | 037 | `fabric-ping-fix3` | `1b3ff6b` | PASS | [item](037-fabric-ping-fix3.md) | [report](037-fabric-ping-fix3.report.md) |
 | 038 | `hostname-fix2` | `bc280ff` | PASS | [item](038-hostname-fix2.md) | [report](038-hostname-fix2.report.md) |
+| 039 | `fabric-ping2` | `651513e` | PASS | [item](039-fabric-ping2.md) | [report](039-fabric-ping2.report.md) |
+| 040 | `usbfs-zlp-fix2` | `05f86ec` | PASS | [item](040-usbfs-zlp-fix2.md) | [report](040-usbfs-zlp-fix2.report.md) |
+| 041 | `verifier-reports2` | `a85fc57` | FAIL | [item](041-verifier-reports2.md) | [report](041-verifier-reports2.report.md) |
 
 ## Verbatim, and the redactions
 
@@ -84,7 +89,11 @@ merged into this one (for example `usbfs-zlp`).
 
 The 60 files 000-029 are byte-for-byte copies of the verifier's inbox as of
 2026-11-03 20:30 UTC (the concatenation's sha256 was checked against the
-source after copying). Before committing they were searched for the
+source after copying). The time can't be checked from the repository; the
+hash pins the content. The 60 files concatenated in name order
+(`cat evidence/verifier/0[0-2]?-*.md | sha256sum`, in the C locale) have
+sha256 `f8293aa094267dad4f46266223bc03f0350f269abb1966b655f68721a568c561`,
+in the inbox and as committed. Before committing they were searched for the
 following, to be redacted:
 
 | Searched for | Found | Redacted |
@@ -107,7 +116,11 @@ found none.
 
 The 18 files 030-038 were copied byte for byte from the verifier's inbox on
 2026-11-04 at about 04:55 UTC, checked equal to the source with `cmp`, and
-then searched for the following, to be redacted:
+then searched for the following, to be redacted. The time can't be checked
+from the repository; the sha256 columns below are what pin the content.
+
+This table counts by kind, not by line: `035-hostname-fix.md:9` holds both a
+home directory and the build machine's hostname, and is counted under each.
 
 | Searched for | Found | Redacted |
 |---|---|---|
@@ -117,7 +130,7 @@ then searched for the following, to be redacted:
 | the local user's home directory (`/home/` and the user name) | 4 lines in 035 and 036, where reports quote what was searched for | all 4 |
 | the build machine's hostname | 2 lines in 035, and inside the two email addresses below | all |
 | email addresses | 2 lines in 035 with the commit author's address. Kept: `modprobe@loop.service` (a systemd unit); the public organisational `forum@t13.org` and `asic-competition@janestreet.com`; and addresses on reserved or placeholder names that reach no one, `root@example.org`, `n@cocotb.test`, `ubuntu@kria.example`, `ubuntu@kria.local` | the 2 |
-| MAC addresses other than the project's made-up locally administered ones | 1, the Kria's Ethernet MAC, quoted in report 030. Kept: `02:00:de:ad:be:01` and the truncated `02:57:4c:…` (035), both locally administered | the 1 |
+| MAC addresses other than the project's made-up locally administered ones | 1, the Kria's Ethernet MAC, quoted in [report 030](030-docs-fix.report.md). Kept: `02:00:de:ad:be:01` and the truncated `02:57:4c:…` (035), both locally administered | the 1 |
 | Wi-Fi network names (SSIDs), and anything that looks like a credential or key (passwords, tokens, `psk=`, API keys, private-key blocks) | none (030 names "the WiFi network name" only as something to search for; "token" is always a USB token) | nothing |
 
 Also kept, as they name no host, address or person: the bare provider names
@@ -146,7 +159,8 @@ nothing else on the line changed:
 | `035-hostname-fix.report.md` | 69 | the tailnet label | `[tailnet label redacted]` |
 | `036-usbfs-zlp-fix.report.md` | 111 | the home directory | `[home directory redacted]` |
 
-That is 17 replacements on 16 lines of 4 files; the other 14 files are
+That is 17 replacements on 15 lines of 4 files (one row per line; lines 9 of
+the 035 item and 14 of the 035 report carry two each); the other 14 files are
 unchanged. The sha256 of each file, in the verifier's inbox and as committed
 (`.gitattributes` keeps git from converting line endings under `evidence/`):
 
@@ -175,5 +189,42 @@ To check: `sha256sum evidence/verifier/03[0-8]-*.md` gives the right-hand
 column; where the inbox is at hand, the same over its files gives the
 left-hand one, and `diff` of each pair shows only the lines above.
 
-Items 039 and 040 have no report yet and are not here, nor is any later
-report.
+### 039-041
+
+The 6 files 039-041 were copied byte for byte from the verifier's inbox on
+2026-11-04 at about 06:37 UTC and checked equal to the source with `cmp`. As
+above, the time can't be checked from the repository; the sha256 column below
+is what pins the content. They were searched for every class in the 030-038
+table, and also for the Kria's Ethernet MAC in any form (with colons, with
+dashes, bare). Nothing needed redacting, so all 6 are unchanged:
+
+* the only email addresses are kept ones listed above, quoted in
+  [report 041](041-verifier-reports2.report.md)
+  (`:41`) and item 041 (`:5`);
+* the only MAC address is the locally administered `02:00:de:ad:be:01`, with
+  the truncated `02:57:4c:…` ([report 041](041-verifier-reports2.report.md), `:42`);
+* `ssid`, `psk`, `ts.net` and 100.64.0.0 appear only as classes searched
+  for, and `/home/` only as `/home/ubuntu` on the board and the examples of
+  000-029;
+* `josusanmartin`, `[build host provider redacted]` and `fastmail` appear in item 041 (`:5`), as
+  in the 030-038 list of what was kept.
+
+[Item 041](041-verifier-reports2.md) is the item for this folder's update to 038, and
+[report 041](041-verifier-reports2.report.md) is its
+FAIL, kept as it stands: its one finding was "17 replacements on 16 lines",
+now corrected above to 15 lines. Item 041's claim 1 repeats the wrong number,
+and as a verbatim record it is left so.
+
+| File | sha256 in the inbox | sha256 committed |
+|---|---|---|
+| `039-fabric-ping2.md` | `2d1a8e276c1cd0620ad91767e7390f061e8f5e2f5060bf615ba80cbc17881df8` | same |
+| `039-fabric-ping2.report.md` | `80aa7f1b9fbd059a6c2cdf004a55656609953afdf167a31fc4aa0748d0682ba3` | same |
+| `040-usbfs-zlp-fix2.md` | `8734c99b96c6e9e88a6f12cb3be90415e340e20ede9735351c1004b8ebce8542` | same |
+| `040-usbfs-zlp-fix2.report.md` | `7d6a145913d749e4d667c40cd93b4a610e0f20143f9891b55e0b56bba8623f86` | same |
+| `041-verifier-reports2.md` | `5a7b9b36cd97bf3475481d27b1dcc6d3238cfb154863a8bfe299235349336819` | same |
+| `041-verifier-reports2.report.md` | `69982302656c9d42919681d5c427a816c75e6dc37e0d2d0d2935a1ab9fd892f8` | same |
+
+To check: `sha256sum evidence/verifier/039-*.md evidence/verifier/04[01]-*.md`
+gives the right-hand column.
+
+Item 042 and later items and reports are not here.

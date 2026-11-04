@@ -47,7 +47,7 @@ describes how, and what it caught.
   subset does. Model and RTL simulation only; the draw's list was written by
   an agent and its fixing in advance cannot be proved.
 * [evidence/verifier/](evidence/verifier/README.md): the independent verifier
-  agent's items and reports 000-038, 19 PASS and 20 FAIL, verbatim apart from
+  agent's items and reports 000-041, 21 PASS and 21 FAIL, verbatim apart from
   the redactions listed there.
 
 **Raw evidence in the repository:** [evidence/](evidence/README.md) holds the
