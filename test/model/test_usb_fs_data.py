@@ -187,16 +187,18 @@ def concurrent():
         b.close()
 
 
-def status_in(h, addr, what):
+def status_in(h, addr, what, unanswered=0):
     """The status stage of a control write or a no-data request: one IN
     answered with a zero-length DATA1 (after NAKs while the software catches
     up). A DATA0 here is a stale packet from an earlier request (a real host
     ACKs and drops it, then keeps asking); no answer at all is a transaction
-    error to the host."""
+    error to the host, allowed only `unanswered` times before the DATA1."""
     n = len(h.log)
     pid, payload = h.data_in(addr, 0)
     seen = [e for e in h.log[n:] if e[:2] != ("IN", "nak")]
-    assert seen == [("IN", usb.pid_byte(usb.PID_DATA1), "")], f"{what}: status stage saw {seen}"
+    silent = [e for e in seen[:-1] if e == ("IN", None, None)]
+    assert seen[-1:] == [("IN", usb.pid_byte(usb.PID_DATA1), "")] and len(silent) == len(seen) - 1 \
+        and len(silent) <= unanswered, f"{what}: status stage saw {seen}"
     assert payload == b""
 
 
@@ -263,17 +265,38 @@ def test_round_trips_with_software_running_concurrently(concurrent, size):
         h.wait_bits(gap)
 
 
+RX_STATUS = ("read", sim.core_reg(0, sim.C_STATUS))
+FSET_READ, FSET_WRITE = ("read", sim.A_FSET), ("write", sim.A_FSET, usbdev.F_STAGED)
+HOLDS = {   # where the software is descheduled: (access, the access before it)
+    "at the decision": (FSET_READ, "pop_all"),                         # before the flags read
+    "at the first write": (("write", sim.A_FCLR, usbdev.F_GOTACK), RX_STATUS),  # checks passed
+    "at FSET": (FSET_WRITE, RX_STATUS),                                 # words pushed, checked again
+    "after FSET": (FSET_READ, FSET_WRITE),                              # F_STAGED set
+}
+# What software alone cannot close (fpga/kv260/README.md, "narrowed"): a SETUP
+# landing in the one access between the last check and the FSET leaves
+# F_STAGED over a flushed FIFO until the check after it; an IN in between
+# parks the core in `pull block`, unanswered until the next service() stages
+# the reply, clears the FIFOs and restarts the core. That restart can also
+# cut one IN short when the SETUP came just after the FSET. Never stale DATA.
+UNANSWERED = {("at FSET", "after the SETUP"): 16, ("after FSET", "after the SETUP"): 2}
+
+
 @pytest.mark.parametrize("resume", ["after the SETUP", "after its token"])
-def test_no_restage_after_a_setup(concurrent, resume):
+@pytest.mark.parametrize("where", list(HOLDS))
+def test_no_restage_after_a_setup(concurrent, where, resume):
     """The host takes the last DATA of a read but its ACK is lost, so the
     device must re-stage it 100 us on (the host retries, or ACKs and drops
     the old toggle). The host has moved on, though: OUT status, then the next
     request's SETUP, which clears F_GOTACK and flushes the TX FIFO. The
-    software is descheduled just before it reads the flags to decide, and
-    resumes once the SETUP is on the bus (all of it, or only its token, while
-    its DATA follows). Re-staging then would leave the old DATA in the TX
-    FIFO, ahead of SET_CONFIGURATION's status reply, which the status IN would
-    get instead of a zero-length DATA1."""
+    software is descheduled at one point of the re-stage (before it reads
+    the flags to decide; at the first write of stage(), both checks passed;
+    at the FSET, the words pushed; just after the FSET) and resumes once the
+    SETUP is on the bus (all of it, or only its token, while its DATA
+    follows). Whatever the point, SET_CONFIGURATION's status IN must get one
+    zero-length DATA1, never the old DATA (left in the TX FIFO behind the
+    SETUP's flush), and silence (F_STAGED set over a flushed FIFO leaves the
+    core waiting in `pull block`) only where UNANSWERED allows it."""
     h, sw = enumerated()
     b = concurrent(h, sw)
     data = bytes(range(0xB0, 0xB8))
@@ -281,15 +304,22 @@ def test_no_restage_after_a_setup(concurrent, resume):
     h.setup(5, read_req(8))
     assert h.data_in(5, 0, ack=False) == (usb.pid_byte(usb.PID_DATA1), data)     # ACK lost
     h.data_out(5, 0, usb.PID_DATA1, b"")
-    fset = ("read", sim.A_FSET)
+    stale = (usb.PID_DATA1, data)
+    access, before = HOLDS[where]
     go = {"on": False}
-    b.hold = lambda op, prev: (not go["on"] and op == fset and prev and prev[0] == "pop_all" and sw.unacked is not None
-                               and sw.sent_at is not None and b.now_us() - sw.sent_at >= 100)
+
+    def hold(op, prev):
+        if go["on"] or op != access or not prev or (prev[0] if before == "pop_all" else prev) != before:
+            return False
+        if where == "at the decision":
+            return sw.unacked == stale and sw.sent_at is not None and b.now_us() - sw.sent_at >= 100
+        return sw.unacked == stale
+    b.hold = hold
     for _ in range(5000):
         if b.held:
             break
         h.wait_bits(8)
-    assert b.held, "the software never reached its re-stage decision"
+    assert b.held, f"the software never got {where}"
     req = bytes([0, 9, 1, 0, 0, 0, 0, 0])               # SET_CONFIGURATION(1)
     if resume == "after the SETUP":
         h.setup(5, req)
@@ -299,9 +329,11 @@ def test_no_restage_after_a_setup(concurrent, resume):
         go["on"] = True
         t = h.send(usb.data_packet(usb.PID_DATA0, req), t, h.ipd)
         assert h.listen(t) == usb.handshake(usb.PID_ACK)
-    status_in(h, 5, "SET_CONFIGURATION")
+    status_in(h, 5, "SET_CONFIGURATION", UNANSWERED.get((where, resume), 0))
     checked_write(h, 5, data[::-1], "8-byte write after")
     assert checked_read(h, 5, 8, "8-byte read after") == data[::-1]
+    if where == "at the decision":
+        assert sw.tx_clears == 0, "the first check should have kept the old DATA out of the TX FIFO"
 
 
 @pytest.mark.parametrize("wlength", [8, 16])
