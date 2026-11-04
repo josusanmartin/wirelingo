@@ -9,7 +9,8 @@ import re
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-FIGURES = ("17.6 kB/s", "350 of 350", "5 of 116", "every pad edge equal to the model")
+FIGURES = ("17.6 kB/s", "350 of 350", "5 of 116", "every pad edge equal to the model",
+           "every device edge at the clock the model gives")
 LABEL = re.compile(r"before\s+the\s+(got_in\s+)?guard", re.I)
 
 

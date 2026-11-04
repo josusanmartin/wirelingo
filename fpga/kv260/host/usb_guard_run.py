@@ -86,17 +86,35 @@ class Tracer:
             (self.out / f"mon-{i}.txt").unlink(missing_ok=True)
 
     def close(self):
-        """Back to what it found: the events enabled (set_event takes one per
-        write; a write that truncates clears the rest), then the buffer size,
-        the xHCI enable and tracing on or off."""
-        (self.trace / "set_event").write_text("")
+        """Back to what it found, as far as the kernel lets it: the events
+        enabled (set_event takes one per write; a write that truncates clears
+        the rest), the xHCI enable, the buffer size and tracing on or off. Each
+        write is tried on its own and never raises; returns what it could not
+        put back. buffer_size_kb reads "N (expanded: M)" before the ring buffer
+        was first expanded and "X" when the per-CPU sizes differ (Linux 6.8,
+        tracing_entries_read), and takes only an integer (kstrtoul): those two
+        forms are left, and said so."""
+        problems = []
+
+        def put(name, text, mode="w"):
+            try:
+                with open(self.trace / name, mode) as f:
+                    f.write(text)
+            except OSError as e:
+                problems.append(f"{name}: could not write {text.strip()!r} back ({e})")
+
+        put("set_event", "")
         for e in self.saved_events:
-            with open(self.trace / "set_event", "a") as f:
-                f.write(e + "\n")
+            put("set_event", e + "\n", "a")
         if self.saved["events/xhci-hcd/enable"].strip() in ("0", "1"):   # "X" (some): set_event did it
-            (self.trace / "events/xhci-hcd/enable").write_text(self.saved["events/xhci-hcd/enable"])
-        for f in ("buffer_size_kb", "tracing_on"):
-            (self.trace / f).write_text(self.saved[f])
+            put("events/xhci-hcd/enable", self.saved["events/xhci-hcd/enable"])
+        size = self.saved["buffer_size_kb"].strip()
+        if size.isdigit():
+            put("buffer_size_kb", size + "\n")
+        else:
+            problems.append(f"buffer_size_kb: left at 16384, it read {size!r}, which it does not take back")
+        put("tracing_on", self.saved["tracing_on"])
+        return problems
 
 
 def demo(args, log, model, timeout):
@@ -121,14 +139,18 @@ def nodata_summary(text):
     return f"rt {rt} rq {rq}: {ok} of {n} ok, {to} timed out, other {other}{lat}"
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--attaches", type=int, default=200)
     ap.add_argument("--writes", type=int, default=1000, help="zero-length vendor writes (0x40 0x10)")
     ap.add_argument("--reads", default="10,200", help="zero-length vendor reads (0xC0 0x11), runs of these counts")
     ap.add_argument("--out", type=pathlib.Path, help="log folder (default ~/usbguard/run-<UTC>)")
     ap.add_argument("--model", action="store_true", help="the cycle model, no board")
-    a = ap.parse_args()
+    ap.add_argument("--trace-root", type=pathlib.Path,
+                    help="with --model: capture with this fake tracefs (test_usb_guard_run; modprobe and journalctl skipped)")
+    a = ap.parse_args(argv)
+    if a.trace_root and not a.model:
+        ap.error("--trace-root is for a model run against a fake tracefs")
     if not a.model:                    # refuse before anything is written or opened
         if os.geteuid() != 0:
             sys.exit("run as root (sudo): the demo maps the fabric and the capture writes /sys/kernel/tracing")
@@ -152,6 +174,9 @@ def main():
         sys.exit("STOP: firmware/usb_fs_dev.pasm has no got_in guard: this is not the usb-guard checkout")
     if not a.model:
         tracer = Tracer(out)
+    elif a.trace_root:
+        tracer = Tracer(out, trace=a.trace_root, usbmon=a.trace_root / "usbmon-1u",
+                        run=lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="(skipped)\n"))
     fails = []
     t0 = time.time()
     try:
@@ -166,8 +191,14 @@ def main():
             if rc:
                 fails.append(i)
     finally:
+        problems = []
         if tracer:
-            tracer.close()
+            try:
+                problems = tracer.close()
+            except Exception as e:          # never lose the remaining steps and the summary to it
+                problems = [f"close() failed: {e!r}"]
+    for p in problems:
+        say(f"[tracing] {p}")
     say(f"[attaches] {a.attaches} runs, {len(fails)} not configured or failed{': runs ' + ' '.join(map(str, fails)) if fails else ''}"
         f" ({time.time() - t0:.0f} s)")
     status = int(bool(fails))

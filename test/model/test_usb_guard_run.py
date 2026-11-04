@@ -66,13 +66,62 @@ def test_tracer_puts_back_what_it_found(tmp_path):
     t.stop(1, failed=False)
     t.start(2)
     t.stop(2, failed=True)
-    t.close()
+    assert t.close() == []
     assert not (out / "mon-1.txt").exists() and (out / "mon-2.txt").read_text() == "usbmon text\n"
     assert (out / "dmesg-2.txt").read_text() == "kernel log\n" and (out / "trace-2.txt").exists()
     assert calls == ["modprobe", "journalctl"]
     for f in ("buffer_size_kb", "tracing_on", "events/xhci-hcd/enable"):
         assert (trace / f).read_text() == before[f], f
     assert (trace / "set_event").read_text().split() == before["set_event"].split()
+
+
+@pytest.mark.parametrize("found", ["1408\n", "7 (expanded: 1408)\n", "X\n"])
+def test_full_run_with_a_fake_tracefs(tmp_path, monkeypatch, found):
+    """The whole run (one attach, a write, a read, on the model) with the board
+    path's capture on a fake tracefs whose buffer_size_kb reads each of the
+    kernel's forms (Linux 6.8 tracing_entries_read: a number; "N (expanded:
+    M)" before the ring buffer's first expansion; "X" when the per-CPU sizes
+    differ) and, like tracing_entries_write, takes only an integer: EINVAL
+    otherwise (verifier 045). The run must finish, PASS and write summary.txt;
+    a form it cannot take back is left and said so, never written."""
+    sys.path.insert(0, str(RUN.parent))
+    import usb_guard_run as g
+    trace, out = tmp_path / "tracing", tmp_path / "out"
+    (trace / "events/xhci-hcd").mkdir(parents=True)
+    for f, v in {"buffer_size_kb": found, "tracing_on": "1\n", "events/xhci-hcd/enable": "0\n",
+                 "set_event": "", "trace": "", "usbmon-1u": ""}.items():
+        (trace / f).write_text(v)
+    tried = []
+    real_open = open
+
+    def kernel_open(path, mode="r", *a, **kw):
+        f = real_open(path, mode, *a, **kw)
+        if pathlib.Path(path).name != "buffer_size_kb" or "w" not in mode:
+            return f
+        write = f.write
+
+        def checked(text):
+            tried.append(text)
+            if not text.strip().isdigit():
+                f.close()
+                raise OSError(22, "Invalid argument")
+            return write(text)
+        f.write = checked
+        return f
+    monkeypatch.setattr(g, "open", kernel_open, raising=False)
+    status = g.main(["--model", "--attaches", "1", "--writes", "1", "--reads", "1",
+                     "--out", str(out), "--trace-root", str(trace)])
+    summary = (out / "summary.txt").read_text()
+    assert status == 0 and summary.rstrip().endswith("PASS"), summary
+    assert "[zero-length writes] rt 0x40 rq 0x10: 1 of 1 ok" in summary
+    assert "[zero-length reads] rt 0xC0 rq 0x11: 1 of 1 ok" in summary
+    assert (trace / "tracing_on").read_text() == "1\n"
+    assert all(t.strip().isdigit() for t in tried), f"wrote {tried} to buffer_size_kb"
+    if found.strip().isdigit():
+        assert (trace / "buffer_size_kb").read_text() == found and "[tracing]" not in summary
+    else:
+        assert (trace / "buffer_size_kb").read_text() == "16384"
+        assert f"[tracing] buffer_size_kb: left at 16384, it read {found.strip()!r}" in summary
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="the refusal is for a non-root run")
