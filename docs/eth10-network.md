@@ -431,13 +431,14 @@ size, tcpdump's exit status and what it printed. No pcap from the board is claim
 The fake board's PMOD registers are only ever written 0, and its host-port select ends
 on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
 Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
-FABCOUNT. `fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the
+27 of 27 killed, and with the 79 `hw-*` (the guard and hardware-day) and the 2
+`privacy-*`, 108 of 108. `fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the
 exhaustive test alone (all of its runs fail on each), `fab-way-out-live-on-return` and
 `fab-way-out-live-on-exception` by the way-out test, and `fab-stop-keeps-live` (verifier
 039's m7: `stop` raises without clearing the flag) by its second-signal cases. The runs
-in the table and the mutants ran on runner1 from a clean clone of RUNSHA, whose code
+in the table and the mutants ran on runner1 from a clean clone of `be2f453`, whose code
 is this commit's (logs: `selftest-50.log`, `selftest-40.log`, `probe-50.json`,
-`probe-40.json`, `mutants.log` in `runner1:~/protoemu-flow/agent-runs/fabric-ping3/logs/RUNSHA`);
+`probe-40.json`, `mutants.log` in `runner1:~/protoemu-flow/agent-runs/fabric-ping3/logs/be2f453`);
 the fake board is a test.
 
 With a real cable none of this applies and the bridge isn't needed: Linux on the other
