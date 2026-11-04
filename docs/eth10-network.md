@@ -370,11 +370,13 @@ to the fabric master (the first SEL write), the ID read, quad, the clock measure
 SIGTERM, SIGHUP, at any statement) runs the closer in `run_closing`'s finally: cores
 stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPIO path.
 The first signal ends the run and every later one is ignored, so nothing cuts the close
-short; and every way out of `run_closing`'s try blocks the three signals
-(`pthread_sigmask`) before the finally starts, so where the interpreter checks for
-signals inside the finally doesn't matter: they stay pending until the close is done,
-then arrive and are ignored (verifier report 037, note 1; eth_tap runs one thread, which
-is what the mask covers). Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
+short; and `run_closing`'s finally is entered only with the signals already ignored: the
+try clears the flag as its last statement and each except as its first, and a first
+signal handled before one of those stores clears it itself and raises there, not in the
+finally. So where the interpreter checks for signals inside the finally, and which
+thread the OS hands a signal to, doesn't matter (verifier report 037, note 1). A first
+try with `pthread_sigmask` failed this test under pytest-xdist, whose worker threads
+take a process signal the main thread has masked. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
 reads pe_spim's VERSION and pe_lab's MAGIC, and writes the GPIO path's idle levels,
 which are what the board is given back to anyway. So there is no first SEL write a
 signal could land inside without a holder: the holder is set first. SIGKILL can't be
@@ -387,9 +389,9 @@ model, the assembler or the test's fakes) from the call of `Board.reset` until
 `run_closing` holds the backend: 621 line events and 4186 opcode events, each run
 through `eth_tap.main` on the fake KV260, with the end state above checked after each.
 `test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close` sends a real SIGTERM at
-every opcode of `run_closing` (and its `block()`) from the body's last statement to the
-call of `Held.close`, after a normal end (34 opcodes), an exception (52) and a Ctrl-C
-(52) in the body, and requires one close every time. Within the traced code an injected
+every opcode of `run_closing` from the body's last statement to the call of
+`Held.close`, after a normal end (14 opcodes), an exception (31) and a Ctrl-C (31) in
+the body, and requires one close every time, under pytest-xdist as well as alone. Within the traced code an injected
 point can be any opcode, where the interpreter itself handles signals at fewer places
 (calls, backward jumps). Code outside it (the assembler `FabricEth` runs, the model's
 own code in the fake) is not injected into: a signal handled there ends the same
@@ -417,8 +419,8 @@ The fake board's PMOD registers are only ever written 0, and its host-port selec
 on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
 Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
 FABKILLED. `fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the
-exhaustive test alone (all of its runs fail on each), and `fab-way-out-unblocked` by the
-way-out test alone. The runs in the table and the mutants ran on runner1 from a clean
+exhaustive test alone (all of its runs fail on each), and `fab-way-out-live-on-return`
+and `fab-way-out-live-on-exception` by the way-out test. The runs in the table and the mutants ran on runner1 from a clean
 clone of RUNSHA, whose code is this commit's (logs: `selftest-50.log`,
 `selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
 `runner1:~/protoemu-flow/agent-runs/fabric-ping2/logs/RUNSHA`); the fake board is a test.

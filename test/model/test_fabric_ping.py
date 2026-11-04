@@ -986,7 +986,7 @@ def test_the_window_point_count(capsys):
 def finally_run(tap, end, at):
     """run_closing with a holder whose closer counts, the body ending as `end` says,
     and a real SIGTERM sent at opcode event number `at` (None: count them) of
-    run_closing's frame and block()'s, from the body's last statement until Held.close
+    run_closing's frame, from the body's last statement until Held.close
     is called: the rest of the try, the except taken, and the finally up to the close.
     Returns (events, outcome, closes)."""
     rc_code, close_code = tap.run_closing.__code__, board_hold.Held.close.__code__
