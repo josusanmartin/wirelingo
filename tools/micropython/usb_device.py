@@ -129,10 +129,14 @@ class DeviceSoftware:
         rx_level = self.mh.read(sim.CORE_BASE + sim.CORE_STRIDE * self.rx + sim.C_STATUS) >> 4 & 15
         return bool(flags & F_SETUP or rx_level)
 
-    def stage(self, pid, payload, racing=False):
-        """racing: the host may have moved on to a new SETUP (a re-stage), so
-        F_STAGED is set only if no SETUP came while the words went in; one that
-        came leaves the TX FIFO dirty, emptied before the next stage."""
+    def stage(self, pid, payload):
+        """Push the packet and set F_STAGED, unless a SETUP came meanwhile: the
+        host may abandon any transfer with a new SETUP (a re-stage after a lost
+        ACK, or a reply the host gave up on), and that SETUP's flush (one-core
+        firmware) or F_STAGED clear (two-core) must not be undone by a later
+        FSET. One that came leaves the TX FIFO dirty, emptied before the next
+        stage; a false alarm (another record) only defers the packet to the
+        100 us re-stage."""
         mh = self.mh
         if self.dirty:                             # the host waits for this packet: no record is due
             self.tx_clears += 1
@@ -145,11 +149,11 @@ class DeviceSoftware:
             mh.push(self.tx, w)
         self.unacked = (pid, payload)
         self.sent_at = None
-        if racing and self.setup_since(mh.read(sim.A_FSET)):
+        if self.setup_since(mh.read(sim.A_FSET)):
             self.dirty = True                      # not staged: the words may follow its flush
             return
         mh.write(sim.A_FSET, F_STAGED)
-        if racing and self.setup_since(mh.read(sim.A_FSET)):
+        if self.setup_since(mh.read(sim.A_FSET)):
             mh.write(sim.A_FCLR, F_STAGED)         # its flush may have emptied the FIFO first (an IN
             self.dirty = True                      # meanwhile is NAKed: the firmware's got_in guard)
 
@@ -197,7 +201,7 @@ class DeviceSoftware:
                 # F_GOTACK and flushed the TX FIFO, so a packet staged now would
                 # be a stale one waiting there. stage() checks again around FSET.
                 if elapsed >= 100 and not self.setup_since(flags):
-                    self.stage(*self.unacked, racing=True)
+                    self.stage(*self.unacked)
                     self.restaged += 1
         if not self.unacked and self.pending:
             chunk = self.pending.pop(0)
