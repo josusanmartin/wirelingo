@@ -6,9 +6,9 @@ source and the redactions made before it was committed.
 
 | Folder | What | Level |
 |---|---|---|
-| [verifier/](verifier/README.md) | The independent verifier's items and reports, 000-029, 15 PASS and 15 FAIL, verbatim | Review records |
+| [verifier/](verifier/README.md) | The independent verifier's items and reports, 000-038, 19 PASS and 20 FAIL, verbatim apart from the listed redactions | Review records |
 | [kv260-usb-20261030/](kv260-usb-20261030/README.md) | Kernel and step logs of Linux enumerating `usb_enum` (246 words, before `fault-fixes`) at low and full speed | RTL in FPGA fabric |
-| [fabric-ping-20261103/](fabric-ping-20261103/README.md) | Board run of the ARP/ping/UDP stack through the KV260 build, one 64-byte frame at a time, no cable. **Pending verification** (item 029) | RTL in FPGA fabric |
+| [fabric-ping-20261103/](fabric-ping-20261103/README.md) | Board run of the ARP/ping/UDP stack through the KV260 build, one 64-byte frame at a time, no cable. Verified ([report 037](verifier/037-fabric-ping-fix3.report.md), after FAILs 029, 031 and 034) | RTL in FPGA fabric |
 
 Not in git: the release receipts' archive,
 `wirelingo-release-evidence-7685aba-fo6.tar.gz` (55,515,939 bytes, sha256
@@ -22,5 +22,7 @@ Redactions, in every folder: tailnet hostnames (`*.ts.net`) and addresses
 build machine's provider hostname, and anything that looks like a credential
 or key were searched for and would be replaced by a bracketed `[... redacted]`
 note. What was found and replaced is listed in each folder's README: six
-replacements, all in the USB kernel logs. Runner names such as `runner1` and
-paths under `~/protoemu-flow` are kept.
+replacements in the USB kernel logs, and 17 in verifier files 030-038, which
+were also searched for the Kria's tailnet label, the local user's home
+directory, MAC addresses and Wi-Fi network names. Runner names such as
+`runner1` and paths under `~/protoemu-flow` are kept.

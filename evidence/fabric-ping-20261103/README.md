@@ -3,8 +3,10 @@
 **Status: verified.** The code went through verifier items 029, 031, 034 (each
 `VERDICT: FAIL`, on the board not being handed back when a run is stopped at
 the wrong moment, and on `--compare` ignoring the link pulses) and 037
-(`VERDICT: PASS`). [Report 029](../verifier/029-fabric-ping.report.md) is in
-`evidence/verifier/`; reports 031, 034 and 037 are not copied there yet. The
+(`VERDICT: PASS`): [report 029](../verifier/029-fabric-ping.report.md),
+[report 031](../verifier/031-fabric-ping-fix.report.md),
+[report 034](../verifier/034-fabric-ping-fix2.report.md) and
+[report 037](../verifier/037-fabric-ping-fix3.report.md). The
 fixed code, branch `fabric-ping` at `1b3ff6b`, is merged into this branch.
 Every report reproduced the board results from the files here.
 
