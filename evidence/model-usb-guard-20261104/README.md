@@ -7,7 +7,9 @@ Levels: **model** (the cycle model and the static checker) and **RTL**
 
 Run on runner1 (`run.sh`; `remote_test.sh model test lockstep` at c4003a2 for
 the RTL module log), except the `pe.timing` outputs, run locally (static, no
-simulation). Absolute paths in the logs are shortened: the runner's home to
+simulation). `run.sh` holds every command, the replays and their comparison
+(`compare_dev_replay.py plans-bc98a97.json plans-c4003a2.json`) as its second
+step, run by hand after the first. Absolute paths in the logs are shortened: the runner's home to
 `~`, the c4003a2 checkout to `<checkout c4003a2>`, the bc98a97 tree to
 `<tree bc98a97>`; nothing else is changed.
 
@@ -29,7 +31,8 @@ d798f4b6f97f4e5daf38c2b48ea86ba08c7fb9faea70b3a6f5ee6bfd460f870b  pe-timing-usb_
 bf547029586ef58ed6430ed5c3067baf6d2c6b96bd99a8a782a9f40d114dd63b  replay-c4003a2.log
 79e07aa0ffcea282f791863ff02fd35109df161f208f73fbf0e6b87e9a0a6f2b  rtl-fsdev-bc98a97.log
 a5e2b3287b235e3a35a657bafddaac76a404046de2c1a82cac68a2eb2c197452  rtl-test-module-c4003a2.log
-f21606d1b94233939b76b134a8f728926cf4ecfc7d0b9dea434f250fca88af21  run.sh
+7c15b1cc9325a22fb5e480291286ef87cb1434a1af7e77236f17dece49ed4ef2  run.sh
+9874b2de62bdd47a6930325df61e35687dace4fd8969e5b0a4bd4f1c5f22032d  compare_dev_replay.py
 d821dcea756db17dfbbbf14f690dfc6ce7c1019d7ca7da427186ca3bb95a0d93  timing-check-bc98a97.log
 eb61737cb1c45a3614dda2f72676f6cca22f639455cc6121a136626558eae544  timing-check-c4003a2.log
 23d98447894470303a07a09ee69d995d9455afd9def462d71ce97f7fc073923a  usbfs-model-bc98a97.log

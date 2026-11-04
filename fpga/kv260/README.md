@@ -750,7 +750,8 @@ port on the GPIO path (pe_spim SEL 0).
 
 The autonomous USB device (`firmware/usb_enum.pasm`,
 [docs/usb-enumeration.md](../../docs/usb-enumeration.md)) and the one-core
-device firmwares `usb_ls_dev` / `usb_fs_dev`, run on the 48 MHz build
+device firmwares `usb_ls_dev` / `usb_fs_dev` (as they were before the got_in
+guard: see the note under the table), run on the 48 MHz build
 (`protoemu48`) against a USB host that pe_lab's pattern generator replays on
 the D+/D- pads. No PC, cable or PMOD pin is involved. What ran is the RTL on
 an FPGA with digital levels on fabric pads, not silicon and not a real host

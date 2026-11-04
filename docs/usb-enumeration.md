@@ -323,7 +323,8 @@ standard sequence, Linux's with a 10 ms reset, lost and damaged handshakes,
 bus resets at six phases and a 3 µs one, 15 ACK variants incl. dribble and
 malformed, 9 STALLed requests, bad CRCs and wLength 0-255, SET_ADDRESS's lost
 status ACK with an IN first) plus `usb_ls_dev` / `usb_fs_dev` with their
-device software: **every device edge at the clock the model gives** (0 clocks
+device software (as they were before the got_in guard of 2026-11-04, 129 / 141
+words; not re-run on the board with it): **every device edge at the clock the model gives** (0 clocks
 difference on all 32,880 device edges, 16,440 per speed), every device packet byte for byte,
 the end states equal, and sigrok's decode of the board's edges equal to the
 host model's packet record. (The model runs here with its falling-edge pad

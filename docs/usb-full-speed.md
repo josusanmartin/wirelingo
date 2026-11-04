@@ -427,6 +427,8 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   `usb_fs_dev` carried data to and from Linux the same day, 350 round trips over
   endpoint 0 at 17.6 kB/s with Python on the SPI port; 5 of 116 attaches stalled at
   `SET_CONFIGURATION`, cause not proved ([fpga/kv260/README.md](../fpga/kv260/README.md)).
+  Those runs used `usb_fs_dev` before the got_in guard (141 words); not
+  re-measured on the board with it yet.
   Not covered: EHCI-companion timing,
   other hubs (FS traffic for other devices; PRE plus
   low-speed traffic, which the receiver should reject as stuffing errors but

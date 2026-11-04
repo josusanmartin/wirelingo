@@ -734,7 +734,8 @@ SDF (`tb.v`, `TB_EXT_DELAY`, a transport delay; RTL is unchanged with it:
 the v2 tests and test_reverse_engineering pass with the delay compiled in),
 and the test passes at typ and slow. No chip finding: the bypass itself (the
 positive check) passed either way, and test_usb_fs_device, whose host
-places edges at random phase, passed at typ without the delay as well.
+places edges at random phase, passed at typ without the delay as well
+(with `usb_fs_dev` before the got_in guard; not re-run at gate level with it).
 
 **Getting Icarus to annotate this netlist.** Out of the box, Icarus 14
 (devel) silently annotated only part of it: its SDF reader stops at the first

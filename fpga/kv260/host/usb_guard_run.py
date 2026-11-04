@@ -50,36 +50,53 @@ def identity(say):
 
 
 class Tracer:
-    """hunt.sh's capture: xHCI trace events and usbmon text around each attach (board only)."""
+    """hunt.sh's capture: xHCI trace events and usbmon text around each attach
+    (board only). It saves the tracing state it finds (buffer size, tracing on
+    or off, the enabled events) and puts it back on close(). trace, usbmon,
+    run and popen are the kernel's paths and subprocess's, replaceable for a
+    test."""
 
-    def __init__(self, out):
-        self.out = out
-        subprocess.run(["modprobe", "usbmon"], check=True)
-        (TRACE / "buffer_size_kb").write_text("16384")
-        (TRACE / "tracing_on").write_text("0")
-        (TRACE / "set_event").write_text("")
-        (TRACE / "events/xhci-hcd/enable").write_text("1")
+    def __init__(self, out, trace=TRACE, usbmon=USBMON, run=subprocess.run, popen=subprocess.Popen):
+        self.out, self.trace, self.usbmon, self.popen = out, trace, usbmon, popen
+        self.run = run
+        run(["modprobe", "usbmon"], check=True)
+        self.saved = {f: (trace / f).read_text() for f in ("buffer_size_kb", "tracing_on", "events/xhci-hcd/enable")}
+        self.saved_events = (trace / "set_event").read_text().split()
+        (trace / "buffer_size_kb").write_text("16384")
+        (trace / "tracing_on").write_text("0")
+        (trace / "set_event").write_text("")
+        (trace / "events/xhci-hcd/enable").write_text("1")
         self.mon = None
 
     def start(self, i):
-        (TRACE / "trace").write_text("")
-        (TRACE / "tracing_on").write_text("1")
-        self.mon = subprocess.Popen(["timeout", "20", "cat", str(USBMON)], stdout=open(self.out / f"mon-{i}.txt", "w"))
+        (self.trace / "trace").write_text("")
+        (self.trace / "tracing_on").write_text("1")
+        self.mon = self.popen(["timeout", "20", "cat", str(self.usbmon)], stdout=open(self.out / f"mon-{i}.txt", "w"))
         time.sleep(0.2)
 
     def stop(self, i, failed):
-        (TRACE / "tracing_on").write_text("0")
+        (self.trace / "tracing_on").write_text("0")
         self.mon.terminate()
         self.mon.wait()
         if failed:
-            (self.out / f"trace-{i}.txt").write_text((TRACE / "trace").read_text())
-            log = subprocess.run(["journalctl", "-k", "--since", "-40s", "--no-pager"], capture_output=True, text=True)
+            (self.out / f"trace-{i}.txt").write_text((self.trace / "trace").read_text())
+            log = self.run(["journalctl", "-k", "--since", "-40s", "--no-pager"], capture_output=True, text=True)
             (self.out / f"dmesg-{i}.txt").write_text(log.stdout)
         else:
             (self.out / f"mon-{i}.txt").unlink(missing_ok=True)
 
     def close(self):
-        (TRACE / "set_event").write_text("")
+        """Back to what it found: the events enabled (set_event takes one per
+        write; a write that truncates clears the rest), then the buffer size,
+        the xHCI enable and tracing on or off."""
+        (self.trace / "set_event").write_text("")
+        for e in self.saved_events:
+            with open(self.trace / "set_event", "a") as f:
+                f.write(e + "\n")
+        if self.saved["events/xhci-hcd/enable"].strip() in ("0", "1"):   # "X" (some): set_event did it
+            (self.trace / "events/xhci-hcd/enable").write_text(self.saved["events/xhci-hcd/enable"])
+        for f in ("buffer_size_kb", "tracing_on"):
+            (self.trace / f).write_text(self.saved[f])
 
 
 def demo(args, log, model, timeout):
