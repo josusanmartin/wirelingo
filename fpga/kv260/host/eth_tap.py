@@ -233,8 +233,8 @@ class FpgaBackend(Backend):
         rig = fabric_eth.board_rig(clock_hz) if rig is None else rig
         try:
             self.fab = fabric_eth.FabricEth(rig, clock_hz)
-        except Exception:
-            rig.close()
+        except BaseException:                  # Ctrl-C and run_closing's SessionSignal too
+            fabric_eth.shielded(rig.close)
             raise
         self.station = eth.Station(eth.mac(CHIP_MAC_TEXT), ipaddr)
         self.replies, self.log, self.stats = [], [], {}

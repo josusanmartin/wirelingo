@@ -365,11 +365,16 @@ stopped, pe_lab in GPIO mode, quad off, PMOD pins disabled, host port on the GPI
 and a second signal can't cut that short. That includes an end while the rig is being
 built, when `v2_demo.Hw` has moved the host port to the fabric master and read the ID
 and HwRig has turned quad on and is measuring the clock (2 s): the signal handlers are
-in place before the build starts, and `fabric_eth.board_rig` gives back what it had
-touched (`test_a_rig_stopped_while_it_is_built_gives_the_board_back`: an exception, a
-wrong ID, Ctrl-C, SIGTERM and SIGHUP, on the fake KV260). Until verifier report 029
-found it, a run stopped in that window left the host port on the fabric master with
-quad on. The board run of `da82a51` went through that window without a fault.
+in place before the build starts, `fabric_eth.board_rig` gives back what it had
+touched, and `FpgaBackend` closes a whole rig if setting up `FabricEth` on it ends any
+way at all (`test_a_rig_stopped_while_it_is_built_gives_the_board_back`: an exception, a
+wrong ID, Ctrl-C, SIGTERM and SIGHUP during the clock measurement;
+`test_a_ctrl_c_at_the_id_read_gives_the_board_back`;
+`test_a_backend_stopped_while_fabric_eth_is_built_gives_the_board_back`; all on the fake
+KV260). Until verifier reports 029 and 031 found them, a run stopped in the rig's build
+left the host port on the fabric master with quad on, and so did a Ctrl-C while
+`FabricEth` was set up. The board runs so far went through both windows without a
+fault.
 
 `--pcap` takes a tcpdump of the TAP, for the record only; it is never part of the pass.
 On the board's selftest of `da82a51` the file came out empty, and that version kept

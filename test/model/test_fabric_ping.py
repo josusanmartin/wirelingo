@@ -376,6 +376,8 @@ class FakeSpimMem:
                 self.buf[i] = fm.read(a, pop=True)
                 if a == sim.A_ID and getattr(self, "bad_id", False):
                     self.buf[i] = 0
+                if a == sim.A_ID and getattr(self, "on_id", None):
+                    self.on_id()
             else:
                 fm.step(per - 1)
                 fm.write(a, self.buf[i])
@@ -723,10 +725,67 @@ def test_a_rig_stopped_while_it_is_built_gives_the_board_back(monkeypatch, senti
     assert sentinels()
 
 
+def test_a_ctrl_c_at_the_id_read_gives_the_board_back(monkeypatch, sentinels):
+    """Verifier report 031, note 1: inside v2_demo.Hw, after the host port has moved to
+    the fabric master and before HwRig's clock measurement."""
+    monkeypatch.setattr(fg, "_checked", None)
+    monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
+    fm, parts = fake_parts()
+    board, spim, lab = parts
+    spim.mem.on_id = lambda: raise_(KeyboardInterrupt())
+    monkeypatch.setattr(fe, "board_parts", lambda: parts)
+    with pytest.raises(KeyboardInterrupt):
+        load_bridge().main(["--backend", "fpga", "--probe"])
+    assert (pe_spim.SEL, 1) in spim.mem.log and spim.mem.log[-1] == (pe_spim.SEL, 0)
+    assert fm.chip.hostcfg == 0 and lab.mem.modes[-1] == pfd.GPIO and sentinels()
+
+
+@pytest.mark.parametrize("fault", ["exception", "ctrl-c", "sigterm", "sighup"])
+def test_a_backend_stopped_while_fabric_eth_is_built_gives_the_board_back(monkeypatch, sentinels, fault):
+    """Verifier report 031, finding 1: the rig is whole (host port on the fabric
+    master, quad on) and FabricEth's constructor is where the end comes."""
+    action, outcome = FAULTS[fault]
+    monkeypatch.setattr(fg, "_checked", None)
+    monkeypatch.setattr(fg, "check", lambda **kw: "protoemu")
+    fm, parts = fake_parts()
+    board, spim, lab = parts
+    monkeypatch.setattr(fe, "board_parts", lambda: parts)
+    quad = []
+
+    class Asm:
+        @staticmethod
+        def assemble(*a, **kw):
+            quad.append(fm.chip.hostcfg & 1)
+            action()
+            raise AssertionError("the fault should have ended the build")
+    monkeypatch.setattr(fe, "asm", Asm)
+    tap = load_bridge()
+    if isinstance(outcome, int):
+        assert tap.main(["--backend", "fpga", "--probe"]) == outcome
+    else:
+        with pytest.raises(outcome):
+            tap.main(["--backend", "fpga", "--probe"])
+    assert quad == [1]                                       # the rig was whole, quad on
+    log = spim.mem.log
+    assert log[-1] == (pe_spim.SEL, 0) and all(v == 0 for off, v in log if off != pe_spim.SEL)
+    assert fm.chip.hostcfg == 0 and lab.mem.modes[-1] == pfd.GPIO and sentinels()
+
+
 def test_give_back_runs_every_step_and_reports_the_first_failure():
     fm, (board, spim, lab) = fake_parts()
     spim.select(fabric=True)
     board.set_inputs = lambda **kw: raise_(OSError("gpio"))
     with pytest.raises(OSError, match="gpio"):
+        fe.give_back(board, spim, lab)
+    assert spim.mem.log[-1] == (pe_spim.SEL, 0) and lab.mem.modes[-1] == pfd.GPIO
+
+
+def test_give_back_goes_on_when_the_select_cannot_be_read():
+    """Verifier report 031, note 2."""
+    fm, (board, spim, lab) = fake_parts()
+    spim.select(fabric=True)
+    real = spim.mem.rd
+    spim.mem.rd = lambda off: raise_(OSError("SEL")) if off == pe_spim.SEL else real(off)
+    with pytest.raises(OSError, match="SEL"):
         fe.give_back(board, spim, lab)
     assert spim.mem.log[-1] == (pe_spim.SEL, 0) and lab.mem.modes[-1] == pfd.GPIO

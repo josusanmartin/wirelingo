@@ -343,8 +343,6 @@ def give_back(board, spim, lab):
     host port is still on the fabric master, PMOD pins disabled, pe_lab in GPIO
     mode, the host port back on the GPIO path. Every step is tried; no signal can
     cut it short (they are ignored meanwhile). The first error is raised after."""
-    names = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-    old = [signal.signal(n, signal.SIG_IGN) for n in names]
     errors = []
 
     def step(fn):
@@ -352,19 +350,33 @@ def give_back(board, spim, lab):
             fn()
         except Exception as e:                   # noqa: BLE001 - every step must still run
             errors.append(e)
-    try:
-        if spim.mem.rd(pe_spim.SEL) & 1:
+
+    def quad_off():
+        if spim.mem.rd(pe_spim.SEL) & 1:         # only the fabric master can reach HOSTCFG
             spim.quad = False
-            step(lambda: spim.write(0x80B, 0))   # HOSTCFG: QUAD_EN off, a 1-bit write
+            spim.write(0x80B, 0)                 # HOSTCFG: QUAD_EN off, a 1-bit write
+
+    def steps():
+        step(quad_off)
         step(lambda: lab.mode(pfd.GPIO))
         step(lambda: board.set_inputs(uio=0xFF))
         step(lambda: spim.pmod({}))
         step(lambda: spim.select(fabric=False))
+    shielded(steps)
+    if errors:
+        raise errors[0]
+
+
+def shielded(fn):
+    """fn() with SIGINT, SIGTERM and SIGHUP ignored, so a second signal can't cut a
+    give-back short; the handlers are put back after."""
+    names = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    old = [signal.signal(n, signal.SIG_IGN) for n in names]
+    try:
+        return fn()
     finally:
         for n, h in zip(names, old):
             signal.signal(n, h)
-    if errors:
-        raise errors[0]
 
 
 def board_rig(clock_hz, parts=None):
