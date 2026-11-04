@@ -142,7 +142,10 @@ def restage_race_ls(concurrent, resume, hold_at):
         return "stale", d
     if r != usb.data_packet(usb.PID_DATA1, b""):
         return f"wrong {r.hex()}", d
-    # the device still works: a whole descriptor read
+    # the device still works: a whole descriptor read. The race is over, so the
+    # software runs it at 1 us per access whatever the case's pace (at 2400
+    # clocks it was about 45% of a case's run time, NAK polls while it stages)
+    b.service.overhead = 48
     h._gap(16)
     h.setup(0, DESC_18)
     got, d["silent_after"] = b"", 0

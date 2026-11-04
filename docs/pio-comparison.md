@@ -88,7 +88,7 @@ protoemu 8 ticks per bit at 800 kHz.
 | **I2C SCL held low** | SM waits forever; `pio_i2c_write_blocking` doesn't return (100 ms simulated) | error reply after 2.5 ms per command; idle after 7.6 ms; works again when SCL is freed | protoemu |
 | I2C address NACK | SM halts on `irq wait`; CPU drains, forces a JMP, clears the IRQ, sends STOP; no further bytes clocked | per-byte ACK bit to host; keeps clocking bytes already queued | PIO (stops by itself) |
 | I2C SDA held low | false ACK, "success" | bus fault: reply 0x200, F1 (false ACK and data 0x00 before `fault-fixes`) | protoemu |
-| **USB** | Pico-PIO-USB: 32 instr, 3 SMs; CPU does NRZI/stuff encoding, CRC and handshake timing (source); FS device, FS/LS host | LS device only: 130 instr on one core + line unit (or 143 + 55 on two cores); handshakes, CRC check and stuff errors in the engine | different scope; protoemu on CPU offload |
+| **USB** | Pico-PIO-USB: 32 instr, 3 SMs; CPU does NRZI/stuff encoding, CRC and handshake timing (source); FS device, FS/LS host | LS device only: 130 instr on one core + line unit (or 143 + 56 on two cores); handshakes, CRC check and stuff errors in the engine | different scope; protoemu on CPU offload |
 | **Area** | not published; "each SM ≈ a standard SPI/I2C controller" (datasheet §3.1) | 0.354 mm² std cells + 0.099 mm² SRAM, whole chip incl. host port and line unit (run g4) | not comparable |
 | **Host link** | on-chip bus, DMA up to 1 word per clock (datasheet §3.1) | external SPI: 193 Mbit/s quad (simulated, 193.6 on FPGA) | PIO |
 
@@ -320,7 +320,7 @@ simulations.
 
 | | Pico-PIO-USB | protoemu `usb_ls_dev` (or `usb_ls_rx` + `usb_ls_tx`) |
 |---|---|---|
-| Engine instructions | 32 (3 SMs) | 130 on core 0 with the line unit; 143 + 55 on two cores without it |
+| Engine instructions | 32 (3 SMs) | 130 on core 0 with the line unit; 143 + 56 on two cores without it |
 | NRZI + bit stuffing, TX | CPU, `pio_usb_ll_encode_tx_data` (`pio_usb.c:459`) | line unit (or firmware) |
 | Stuff-bit errors on RX | dropped "without error check" (`usb_rx.pio:103`) | detected; malformed stuffing tested |
 | CRC | CPU (`update_usb_crc16`, `pio_usb.c:230`) | RX: CRC tap checks the residue in the engine; TX: CRC bytes staged by host software |
@@ -333,8 +333,9 @@ engine. Pico-PIO-USB keeps the engine small and spends CPU time instead. Full
 speed is out of reach for protoemu at 50 MHz with this firmware.
 
 guide.md had listed the two-core variant as 138 + 48 instructions. The current
-sources assemble to 143 + 55 (49 for usb_ls_tx until its SETUP flush and
-got_in-style guard, branch `usb-ls-restage`); guide.md is corrected and the
+sources assemble to 143 + 56 (49 for usb_ls_tx until its SETUP flush and
+got_in-style guard, branch `usb-ls-restage`; 56 since that flush also drops
+an IN inside a SETUP, branch `usb-in-setup`); guide.md is corrected and the
 tests check the counts (`test_pio_comparison.py`, `test_guide_sizes.py`).
 
 ## TI Sitara PRU, for reference
