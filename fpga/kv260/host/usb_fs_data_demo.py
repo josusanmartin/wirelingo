@@ -135,40 +135,71 @@ def client(sizes, rounds, seed, n_nodata=0, rt=0x40, rq=usbfsdata.REQ_WRITE):
     return status
 
 
+class Stop(Exception):
+    """A SIGINT, SIGTERM or SIGHUP: stop, leaving the board as a normal end does."""
+
+
+def catch_signals():
+    """The first SIGINT, SIGTERM or SIGHUP raises Stop wherever the demo is;
+    later ones are ignored, so the cleanup (killing the client, detaching)
+    runs to its end. Installed explicitly: a process started in the background
+    from a non-interactive shell begins with SIGINT ignored, and Python then
+    leaves it so (the 2026-11-04 board run did not stop on SIGINT)."""
+    import signal
+    state = {"live": True}
+
+    def handler(signum, frame):
+        if state["live"]:
+            state["live"] = False
+            raise Stop(signal.Signals(signum).name, signum)
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, handler)
+
+
 def run(board, spim, pe, prog, a, sizes):
     """Service the device until the client is done. Returns (status, order, software);
-    status None: Linux never configured it."""
+    status None: Linux never configured it. Any exception (Stop among them)
+    kills the client first, so no process is left using the device."""
     sw = usbfsdata.LoopbackDevice(pe, prog, usbdev.DESCRIPTORS, 0, 0)
     t0 = time.monotonic()
     child = None
     polls = 0
     print("[service] answering over the SPI port until Linux has configured the device", flush=True)
-    while True:
-        sw.service()
-        polls += 1
-        if polls & 255:
-            continue
-        now = time.monotonic()
-        if child is None:
-            d = usb_demo.sysfs_device()
-            if d is not None and pathlib.Path(d, "bConfigurationValue").read_text().strip() == "1":
-                print(f"  configured after {now - t0:.2f} s, {len(sw.requests)} requests, address "
-                      f"{sw.address}\n[data] Linux client, random bytes out and back", flush=True)
-                t0 = now
-                child = os.fork()
-                if child == 0:
-                    os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))
-            elif now - t0 > a.timeout:
-                return None, None, sw
-        else:
-            pid, st = os.waitpid(child, os.WNOHANG)
-            if pid:
-                return os.waitstatus_to_exitcode(st), None, sw
-            if now - t0 > a.limit:
-                os.kill(child, 9)
-                os.waitpid(child, 0)
-                print(f"  client still running after {a.limit:.0f} s: killed")
-                return 1, None, sw
+    try:
+        while True:
+            sw.service()
+            polls += 1
+            if polls & 255:
+                continue
+            now = time.monotonic()
+            if child is None:
+                d = usb_demo.sysfs_device()
+                if d is not None and pathlib.Path(d, "bConfigurationValue").read_text().strip() == "1":
+                    print(f"  configured after {now - t0:.2f} s, {len(sw.requests)} requests, address "
+                          f"{sw.address}\n[data] Linux client, random bytes out and back", flush=True)
+                    t0 = now
+                    child = os.fork()
+                    if child == 0:
+                        os._exit(client(sizes, a.rounds, a.seed, a.nodata, a.rt, a.rq))
+                elif now - t0 > a.timeout:
+                    return None, None, sw
+            else:
+                pid, st = os.waitpid(child, os.WNOHANG)
+                if pid:
+                    child = None
+                    return os.waitstatus_to_exitcode(st), None, sw
+                if now - t0 > a.limit:
+                    os.kill(child, 9)
+                    os.waitpid(child, 0)
+                    child = None
+                    print(f"  client still running after {a.limit:.0f} s: killed")
+                    return 1, None, sw
+    except BaseException:
+        if child:
+            os.kill(child, 9)
+            os.waitpid(child, 0)
+            print("  the Linux client killed", flush=True)
+        raise
 
 
 # ------------------------------------------------------------------ --model
@@ -313,6 +344,12 @@ def model_main(a, sizes):
         sw = bus.sw
         print("[service] answering between the model host's transactions until it has configured the device",
               flush=True)
+        if a.model_no_device:            # no cable: the host never addresses the device
+            bus.wait_us(1000)            # 1 ms of bus time stands for the board's wait
+            print(f"  attach {attempt} of {a.attaches}: not configured after {a.timeout:.0f} s; "
+                  f"requests seen: {sw.requests[-3:]}; F_SET 0x{bus.mh.read(sim.A_FSET):02X} (model, no device)",
+                  flush=True)
+            continue
         try:
             bus.enumerate()
         except (AssertionError, TimeoutError) as e:
@@ -342,10 +379,18 @@ def main():
     ap.add_argument("--rt", type=lambda s: int(s, 0), default=0x40, help="their bmRequestType (0x40 or 0xC0)")
     ap.add_argument("--rq", type=lambda s: int(s, 0), default=usbfsdata.REQ_WRITE, help="their bRequest")
     ap.add_argument("--model", action="store_true", help="the cycle model, no board")
+    ap.add_argument("--model-no-device", action="store_true",
+                    help="with --model: no device on the bus (a cable not connected): every attach sees nothing")
     a = ap.parse_args()
     sizes = [int(s) for s in a.sizes.split(",")]
+    catch_signals()
     if a.model:
-        model_main(a, sizes)
+        try:
+            model_main(a, sizes)
+        except Stop as e:
+            print(f"[stop] {e.args[0]}: stopped (model: nothing on a board to put back)", flush=True)
+            print("STOPPED")
+            sys.exit(128 + e.args[1])
 
     from pe_kria import Board
     from pe_lab import Lab
@@ -368,29 +413,45 @@ def main():
         sys.exit("FAIL: chip ID over the fabric master")
     print(f"[identity] RTL revision {ident['rtl_rev'][:12]}, clock {board.clk_hz() / 1e6:.4f} MHz")
 
-    print("[wiring]")
+    status, attempt, sw, order, stopped = None, 0, None, None, None
     try:
-        prog, order = attach(board, spim, pe)
-    except usb_demo.WiringError as e:
-        spim.pmod({})
-        print(f"  {e}\nFAIL (wiring): every PMOD pin disabled, the core not started")
-        sys.exit(2)
-
-    os.sched_setaffinity(0, {SERVICE_CPU})
-    status = None
-    for attempt in range(1, a.attaches + 1):
-        status, _, sw = run(board, spim, pe, prog, a, sizes)
-        if status is not None:
-            break
-        st = pe.read(sim.core_reg(0, sim.C_STATUS))     # reads only: TX/RX FIFO levels, PC
-        print(f"  attach {attempt} of {a.attaches}: not configured after {a.timeout:.0f} s; "
-              f"requests seen: {sw.requests[-3:]}; F_SET 0x{pe.read(sim.A_FSET):02X}; "
-              f"core 0 TX FIFO {st & 15} words, RX FIFO {(st >> 4) & 15}, PC {pe.read(sim.core_reg(0, sim.C_PC))}; "
-              f"software staged {sw.unacked}, pending {sw.pending}")
-        if attempt < a.attaches:
+        print("[wiring]")
+        try:
             prog, order = attach(board, spim, pe)
-    usb_demo.detach(board, spim, pe, "full", order)
-    print(f"[device software] attach {attempt}: {len(sw.requests)} requests, {sw.restaged} packets re-staged; detached")
+        except usb_demo.WiringError as e:
+            spim.pmod({})
+            print(f"  {e}\nFAIL (wiring): every PMOD pin disabled, the core not started")
+            sys.exit(2)
+
+        os.sched_setaffinity(0, {SERVICE_CPU})
+        for attempt in range(1, a.attaches + 1):
+            status, _, sw = run(board, spim, pe, prog, a, sizes)
+            if status is not None:
+                break
+            st = pe.read(sim.core_reg(0, sim.C_STATUS))     # reads only: TX/RX FIFO levels, PC
+            print(f"  attach {attempt} of {a.attaches}: not configured after {a.timeout:.0f} s; "
+                  f"requests seen: {sw.requests[-3:]}; F_SET 0x{pe.read(sim.A_FSET):02X}; "
+                  f"core 0 TX FIFO {st & 15} words, RX FIFO {(st >> 4) & 15}, PC {pe.read(sim.core_reg(0, sim.C_PC))}; "
+                  f"software staged {sw.unacked}, pending {sw.pending}", flush=True)
+            if attempt < a.attaches:
+                prog, order = attach(board, spim, pe)
+    except Stop as e:                    # the Linux client is already killed (run())
+        stopped = e
+        print(f"[stop] {e.args[0]}: stopping", flush=True)
+    if order is not None:                # as a normal end: core stopped, pulled-up line held low
+        usb_demo.detach(board, spim, pe, "full", order)
+        left = "detached"
+    else:                                # stopped before the wiring check finished
+        spim.pmod({})
+        pe.stop(3)
+        left = "every PMOD pin disabled, the cores stopped"
+    if sw is not None:
+        print(f"[device software] attach {attempt}: {len(sw.requests)} requests, {sw.restaged} packets re-staged; {left}")
+    else:
+        print(f"[device software] no attach; {left}")
+    if stopped is not None:
+        print("STOPPED")
+        sys.exit(128 + stopped.args[1])
     print("PASS" if status == 0 else "FAIL")
     sys.exit(0 if status == 0 else 1)
 

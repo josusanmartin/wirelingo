@@ -129,3 +129,94 @@ def test_board_path_refuses_without_root(tmp_path):
     p = subprocess.run([sys.executable, str(RUN), "--out", str(tmp_path)], capture_output=True, text=True, timeout=60)
     assert p.returncode != 0 and "run as root" in p.stderr
     assert not any(tmp_path.iterdir())
+
+
+def fake_tracefs(root, journal=""):
+    (root / "events/xhci-hcd").mkdir(parents=True)
+    for f, v in {"buffer_size_kb": "1408\n", "tracing_on": "1\n", "events/xhci-hcd/enable": "0\n",
+                 "set_event": "sched:sched_switch\n", "trace": "", "usbmon-1u": "", "journal.txt": journal}.items():
+        (root / f).write_text(v)
+    return root
+
+
+def restored(root):
+    return ((root / "buffer_size_kb").read_text(), (root / "tracing_on").read_text(),
+            (root / "events/xhci-hcd/enable").read_text(), (root / "set_event").read_text().split()) == \
+        ("1408\n", "1\n", "0\n", ["sched:sched_switch"])
+
+
+@pytest.mark.parametrize("sig, ignored", [("SIGTERM", False), ("SIGINT", True)])
+def test_a_signal_stops_the_run_cleanly(tmp_path, sig, ignored):
+    """A real signal to the run while a demo child is running (verifier 046's
+    board run: SIGINT went on to the next attach; SIGTERM killed it with the
+    tracing state left set). SIGINT is sent with SIGINT ignored at the run's
+    start, as for a run put in the background by a non-interactive shell. The
+    run must end, the demo must stop itself (rc 128 + 15: its own SIGTERM
+    handler, after detaching), the tracing state must be put back, and
+    summary.txt must say STOPPED."""
+    import signal
+    import time
+    trace, out = fake_tracefs(tmp_path / "tracing"), tmp_path / "out"
+    pre = (lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)) if ignored else None
+    p = subprocess.Popen([sys.executable, str(RUN), "--model", "--attaches", "50", "--out", str(out),
+                          "--trace-root", str(trace)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, preexec_fn=pre)
+    log = out / "demo-1.log"
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline and not (log.exists() and "[service]" in log.read_text()):
+        time.sleep(0.2)
+    assert log.exists() and "[service]" in log.read_text(), "the first demo never started"
+    p.send_signal(getattr(signal, sig))
+    stdout, _ = p.communicate(timeout=300)
+    assert p.returncode == 128 + getattr(signal, sig), stdout
+    summary = (out / "summary.txt").read_text()
+    assert f"[stopped] by {sig} during attach 1 (the demo stopped: rc 143)" in summary, summary
+    assert summary.rstrip().endswith("STOPPED") and "the zero-length steps not run" in summary
+    assert "STOPPED" in log.read_text(), "the demo did not stop itself"
+    assert not (out / "demo-2.log").exists(), "it went on to the next attach"
+    assert restored(trace), "the tracing state was not put back"
+
+
+def test_no_device_stops_early(tmp_path):
+    """A bus with nothing on it (the demo's --model-no-device): after --give-up
+    attaches that see no request and no kernel line for the port, it stops
+    with the wiring message and writes summary.txt (exit 3)."""
+    trace, out = fake_tracefs(tmp_path / "tracing"), tmp_path / "out"
+    p = subprocess.run([sys.executable, str(RUN), "--model", "--model-no-device", "--give-up", "3",
+                        "--attaches", "50", "--out", str(out), "--trace-root", str(trace)],
+                       capture_output=True, text=True, timeout=900)
+    assert p.returncode == 3, p.stdout + p.stderr
+    summary = (out / "summary.txt").read_text()
+    assert "no device seen on the hub port in 3 attaches: check the USB wiring" in summary
+    assert "[attaches] 3 of 50 run" in summary and summary.rstrip().endswith("NO DEVICE")
+    assert (out / "demo-3.log").exists() and not (out / "demo-4.log").exists()
+    assert restored(trace)
+
+
+def test_a_kernel_line_for_the_port_is_not_nothing(tmp_path):
+    """The same empty attaches, but the kernel logged the port (a device the
+    hub saw and failed to enumerate): that is not "no device", so the run does
+    not stop for it."""
+    trace = fake_tracefs(tmp_path / "tracing", journal="usb 1-1.4: new full-speed USB device number 9 using xhci-hcd\n")
+    out = tmp_path / "out"
+    p = subprocess.run([sys.executable, str(RUN), "--model", "--model-no-device", "--give-up", "2",
+                        "--attaches", "3", "--writes", "0", "--reads", "", "--out", str(out), "--trace-root", str(trace)],
+                       capture_output=True, text=True, timeout=900)
+    summary = (out / "summary.txt").read_text()
+    assert p.returncode == 1 and "no device seen" not in summary, summary
+    assert "[attaches] 3 runs, 3 not configured or failed" in summary
+
+
+def test_port_report_reads_the_log_and_sysfs(tmp_path):
+    """The read-only report at the start: the port this boot's kernel log last
+    saw our device on, and the hub port's sysfs state."""
+    sys.path.insert(0, str(RUN.parent))
+    import usb_guard_run as g
+    state = tmp_path / "1-1:1.0" / "1-1-port4" / "state"
+    state.parent.mkdir(parents=True)
+    state.write_text("not attached\n")
+    log = ("usb 1-1.4: New USB device found, idVendor=1209, idProduct=5634, bcdDevice= 0.01\n"
+           "usb 1-1.1: New USB device found, idVendor=a69c, idProduct=8d80\n")
+    run = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=log)
+    assert g.port_report("1-1.4", run=run, sysfs=tmp_path) == [
+        "[port] device last seen on usb 1-1.4 (kernel log, this boot)", "[port] 1-1-port4 state: not attached"]
