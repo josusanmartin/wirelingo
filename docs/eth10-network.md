@@ -374,9 +374,15 @@ short; and `run_closing`'s finally is entered only with the signals already igno
 try clears the flag as its last statement and each except as its first, and a first
 signal handled before one of those stores clears it itself and raises there, not in the
 finally. So where the interpreter checks for signals inside the finally, and which
-thread the OS hands a signal to, doesn't matter ([verifier report 037](../evidence/verifier/037-fabric-ping-fix3.report.md), note 1). A first
-try with `pthread_sigmask` failed this test under pytest-xdist, whose worker threads
-take a process signal the main thread has masked. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
+thread the OS hands a signal to, doesn't matter ([verifier report 037](../evidence/verifier/037-fabric-ping-fix3.report.md), note 1). Of the
+stores, the try's last statement and the `except BaseException` one carry this; the
+ones in the other two excepts and at the top of the finally are defensive, and removing
+any of them changes nothing a test can see ([verifier report 039](../evidence/verifier/039-fabric-ping2.report.md), note 4). A first try
+with `pthread_sigmask` (`c108e09`) did not hold up in testing: in one full-suite run on
+runner1 the way-out test failed in all three of its cases, a signal escaping before the
+close ([`evidence/fabric-ping-20261103/c108e09-suite/model.log`](../evidence/fabric-ping-20261103/c108e09-suite/model.log)). Verifier report 039
+could not reproduce that in seven runs of the test file under `-n 12`, and why it
+failed was not established. Before that point only `fabric_eth.board_parts` has run: it maps the fabric,
 reads pe_spim's VERSION and pe_lab's MAGIC, and writes the GPIO path's idle levels,
 which are what the board is given back to anyway. So there is no first SEL write a
 signal could land inside without a holder: the holder is set first. SIGKILL can't be
@@ -388,17 +394,24 @@ opcode event of the board code (`fpga/kv260/host`, `tools/micropython`; not the 
 model, the assembler or the test's fakes) from the call of `Board.reset` until
 `run_closing` holds the backend: 621 line events and 4186 opcode events, each run
 through `eth_tap.main` on the fake KV260, with the end state above checked after each.
-`test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close` sends a real SIGTERM at
-every opcode of `run_closing` from the body's last statement to the call of
-`Held.close`, after a normal end (14 opcodes), an exception (31) and a Ctrl-C (31) in
-the body, and requires one close every time, under pytest-xdist as well as alone. Within the traced code an injected
+`test_no_opcode_on_the_way_out_lets_a_signal_skip_the_close` sends a real SIGTERM, and
+separately a SIGHUP and a SIGINT, at every opcode of `run_closing` from the body's last
+statement to the call of `Held.close`, after a normal end (14 opcodes), an exception
+(31), a Ctrl-C (31) and a SIGTERM (45) in the body; in the last case it is a second
+signal, which must be ignored (verifier report 039, note 3). It requires one close
+every time and an outcome from an exact list: after a normal end, 7 or the signal's
+128 + n (`KeyboardInterrupt` for SIGINT); after an exception or a Ctrl-C, that or the
+signal's own exception replacing it; after a SIGTERM in the body, 143 only. It runs
+under pytest-xdist as well as alone. Within the traced code an injected
 point can be any opcode, where the interpreter itself handles signals at fewer places
 (calls, backward jumps). Code outside it (the assembler `FabricEth` runs, the model's
 own code in the fake) is not injected into: a signal handled there ends the same
 `try` and is given back by the same holder, but no test injects it there. [Verifier
 report 034](../evidence/verifier/034-fabric-ping-fix2.report.md)'s own cases (a Ctrl-C or SIGTERM at the first `eth.mac` or `eth.Station`
-call after `FabricEth`) are tests too. On the Kria, Python is 3.12.3, on Ubuntu 24.04.2
-(the orchestrator's reading of the board, 2026-11-04); the tests ran on 3.12.3 too. Verifier reports
+call after `FabricEth`) are tests too. On the Kria, Python is 3.12.3 (GCC 13.3.0), on
+Ubuntu 24.04.2 LTS, kernel 6.8.0-1036-xilinx: the orchestrator's reading of the board at
+2026-11-04 06:35Z, [`evidence/fabric-ping-20261103/kria-python-os.txt`](../evidence/fabric-ping-20261103/kria-python-os.txt). The tests ran on
+runner1's Python 3.12.3 too. Verifier reports
 [029](../evidence/verifier/029-fabric-ping.report.md),
 [031](../evidence/verifier/031-fabric-ping-fix.report.md) and
 [034](../evidence/verifier/034-fabric-ping-fix2.report.md)
@@ -421,13 +434,15 @@ size, tcpdump's exit status and what it printed. No pcap from the board is claim
 The fake board's PMOD registers are only ever written 0, and its host-port select ends
 on the GPIO path (`test_the_boards_code_path_on_a_fake_board_agrees_with_the_model_to_the_clock`).
 Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-*'`,
-26 of 26 killed, and with the 79 `hw-*` (the guard and hardware-day) and the 2
-`privacy-*`, 107 of 107. `fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the
-exhaustive test alone (all of its runs fail on each), and `fab-way-out-live-on-return`
-and `fab-way-out-live-on-exception` by the way-out test. The runs in the table and the mutants ran on runner1 from a clean
-clone of `baed5c8`, whose code is this commit's (logs: `selftest-50.log`,
-`selftest-40.log`, `probe-50.json`, `probe-40.json`, `mutants.log` in
-`runner1:~/protoemu-flow/agent-runs/fabric-ping2/logs/baed5c8`); the fake board is a test.
+27 of 27 killed, and with the 79 `hw-*` (the guard and hardware-day) and the 2
+`privacy-*`, 108 of 108. `fab-holder-not-closed` and `fab-held-after-the-rig` are also killed by the
+exhaustive test alone (all of its runs fail on each), `fab-way-out-live-on-return` and
+`fab-way-out-live-on-exception` by the way-out test, and `fab-stop-keeps-live` (verifier
+039's m7: `stop` raises without clearing the flag) by its second-signal cases. The runs
+in the table and the mutants ran on runner1 from a clean clone of `be2f453`, whose code
+is this commit's (logs: `selftest-50.log`, `selftest-40.log`, `probe-50.json`,
+`probe-40.json`, `mutants.log` in `runner1:~/protoemu-flow/agent-runs/fabric-ping3/logs/be2f453`);
+the fake board is a test.
 
 With a real cable none of this applies and the bridge isn't needed: Linux on the other
 end of the cable is the test.
