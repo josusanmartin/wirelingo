@@ -1435,7 +1435,9 @@ look the same (`stalls/`): the software saw GET_DESCRIPTOR(config, 9), (config,
 That fits the host or hub side (no status IN reaching the device) and is the
 likely explanation, but it is not proved: there is no D+/D- capture of a stall.
 
-What the model says (2026-11-03, evidence model only). The Linux sequence
+What the model says (2026-11-03, rerun 2026-11-04 with the committed script
+`test/model/usb_fs_enum_sweep.py`; outputs and sha256s in
+`evidence/model-usb-fs-enum-sweep-20261104/`; evidence model only). The Linux sequence
 usbmon recorded in a stalled run (device descriptor read with a 64-byte
 buffer, ended by the first 8-byte packet; port reset; SET_ADDRESS; device
 descriptor; configuration 9 and 18 bytes, 95 and 27 us apart;
@@ -1444,8 +1446,9 @@ modelled SPI port concurrently with the bus at 20 to 100 us per transaction,
 with pauses of 0.2 to 2 ms in the service loop: SET_CONFIGURATION's status
 stage was answered with one zero-length DATA1 in all 160 enumerations with
 the software before the fixes above (c184dd6), and all 160 with them, at
-8c71177 and again with the re-stage checks of 64b59c2. (At 200 us per
-transaction, 6 of 40 failed earlier, at SET_ADDRESS: the model's host sent it
+8c71177 and again with the re-stage checks of 64b59c2 (the `usbdev.py` of
+this branch's head). (At 200 us per transaction, 6 of 40 failed earlier, at
+SET_ADDRESS, the same 6 runs at all three commits: the model's host sent it
 0.1 to 3 ms after the port reset, before software that slow had restarted
 the core; Linux took 64 ms there.) The races fixed above leave
 words or F_STAGED behind only when the software stages for a transfer the

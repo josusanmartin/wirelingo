@@ -1,0 +1,16 @@
+05ee7c236b97464ad66910e52542280c20fcedff7d450dd941ddbaf0b8509878  tools/pe/usbdev.py
+cd51c1043db850fcef609696c61fb648544f6343c3f3a472cbd628f667c235fb  tools/pe/usbfsdata.py
+83ea88ba26b892dedae971f59e03313c397e99fe2615af2081162ff18a213b4c  firmware/usb_fs_dev.pasm
+runs 40 per combination, procs 8
+overhead 2400 poll 0 every 256 pause 96000: 0 of 40 bad, re-staged in 0
+overhead 4800 poll 0 every 16 pause 48000: 0 of 40 bad, re-staged in 0
+overhead 960 poll 0 every 8 pause 24000: 0 of 40 bad, re-staged in 0
+overhead 2400 poll 2400 every 4 pause 9600: 0 of 40 bad, re-staged in 0
+overhead 9600 poll 0 every 64 pause 192000: 6 of 40 bad, re-staged in 0
+    (4, 'TimeoutError: SETUP not acknowledged', ['8006000100004000'], 0)
+    (15, 'TimeoutError: SETUP not acknowledged', ['8006000100004000'], 0)
+    (22, 'TimeoutError: SETUP not acknowledged', ['8006000100004000'], 0)
+    (28, 'TimeoutError: SETUP not acknowledged', ['8006000100004000'], 0)
+    (31, 'TimeoutError: SETUP not acknowledged', ['8006000100004000'], 0)
+    (37, 'TimeoutError: SETUP not acknowledged', ['8006000100004000'], 0)
+1257 s
