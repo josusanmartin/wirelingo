@@ -177,6 +177,46 @@ def test_a_signal_stops_the_run_cleanly(tmp_path, sig, ignored):
     assert restored(trace), "the tracing state was not put back"
 
 
+REAP_DRIVER = r'''
+import os, pathlib, signal, sys
+sys.path.insert(0, sys.argv[1])
+import usb_guard_run as g
+g.DEMO = pathlib.Path(sys.argv[2])
+stopper = g.Stopper()
+real_waitpid, real_kill = os.waitpid, os.kill
+def waitpid(pid, flags):                 # Popen.wait's reap; a SIGINT just after it
+    got, st = real_waitpid(pid, flags)
+    if got:
+        print(f"reaped {got}", flush=True)
+        real_kill(os.getpid(), signal.SIGINT)
+    return got, st
+def kill(pid, sig):
+    print(f"kill {pid} {sig}", flush=True)
+    return real_kill(pid, sig)
+os.waitpid, os.kill = waitpid, kill
+rc, _ = g.demo([], sys.argv[3], False, 60, stopper)
+print(f"rc {rc}, stopped by {stopper.signal.name}", flush=True)
+'''
+
+
+def test_a_signal_as_the_demo_is_reaped_signals_no_reaped_pid(tmp_path):
+    """A SIGINT just after Popen.wait has reaped the demo, before it notes the
+    exit status: the stopper's handler held off until the wait is over
+    (verifier 054), it finds the demo ended and sends nothing; unheld, its
+    poll() said running and the SIGTERM went to the reaped pid (a reused one:
+    some other process)."""
+    driver, demo = tmp_path / "driver.py", tmp_path / "demo.py"
+    driver.write_text(REAP_DRIVER)
+    demo.write_text("import time\ntime.sleep(0.5)\n")
+    p = subprocess.run([sys.executable, str(driver), str(RUN.parent), str(demo), str(tmp_path / "demo.log")],
+                       capture_output=True, text=True, timeout=60)
+    lines = p.stdout.splitlines()
+    assert p.returncode == 0 and lines[-1] == "rc 0, stopped by SIGINT", p.stdout + p.stderr
+    reaped = [line.split()[1] for line in lines if line.startswith("reaped")]
+    assert len(reaped) == 1, p.stdout
+    assert not [line for line in lines if line.startswith(f"kill {reaped[0]} ")], p.stdout
+
+
 def test_no_device_stops_early(tmp_path):
     """A bus with nothing on it (the demo's --model-no-device): after --give-up
     attaches that see no request and no kernel line for the port, it stops

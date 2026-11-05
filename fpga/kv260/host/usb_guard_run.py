@@ -30,6 +30,7 @@ and the kernel logs nothing for --port, it stops: "no device seen on the hub
 port in N attaches: check the USB wiring" (NO DEVICE), summary.txt written.
 """
 import argparse
+import contextlib
 import hashlib
 import os
 import pathlib
@@ -150,6 +151,19 @@ class Stopper:
             if self.child is not None and self.child.poll() is None:
                 self.child.send_signal(signal.SIGTERM)
 
+    @contextlib.contextmanager
+    def held(self):
+        """The signals held off around a wait on the demo (one thread): run
+        between Popen's reaping the demo and its noting the exit status, the
+        handler's poll() would still say running and the SIGTERM would go to
+        a reaped pid, or a reused one (verifier 054). A signal meanwhile is
+        handled as the wait ends."""
+        try:
+            signal.pthread_sigmask(signal.SIG_BLOCK, self.SIGNALS)
+            yield
+        finally:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, self.SIGNALS)
+
 
 def demo(args, log, model, timeout, stopper, extra=()):
     """One usb_fs_data_demo run, its output in `log`. Returns (rc, text). A
@@ -167,15 +181,17 @@ def demo(args, log, model, timeout, stopper, extra=()):
         told = t0
     while True:
         try:
-            rc = proc.wait(timeout=0.2)
+            with stopper.held():
+                rc = proc.wait(timeout=0.2)
             break
         except subprocess.TimeoutExpired:
             now = time.monotonic()
             if stopper.signal is not None and told is None:
                 told = now               # the handler sent it a SIGTERM already
             if (told is not None and now - told > 60) or now - t0 > timeout:
-                proc.kill()
-                rc = proc.wait()
+                with stopper.held():
+                    proc.kill()
+                    rc = proc.wait()
                 if told is None:         # outlasted its timeout
                     rc = 124
                 break

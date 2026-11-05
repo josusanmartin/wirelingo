@@ -30,6 +30,7 @@ test/model/test_usb_fs_data.py). Same output lines as on the board, in model
 time. fpga/kv260/host/usb_guard_run.py drives both.
 """
 import argparse
+import contextlib
 import ctypes
 import errno
 import fcntl
@@ -149,13 +150,35 @@ class Stop(Exception):
 LIVE = {"client": None, "sw": None}
 
 
+@contextlib.contextmanager
+def stops_held():
+    """SIGINT, SIGTERM and SIGHUP held off for a step that must not be cut in
+    two: reaping the client together with clearing its pid (verifier 054), so
+    a Stop never finds a reaped pid recorded, which kill_client would signal
+    (a reused pid: some other process). A signal meanwhile raises its Stop as
+    the step ends. Masking is enough with one thread, the demo's (verifier
+    049); never nested, so the end unblocks rather than restoring."""
+    try:
+        signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+
+
 def kill_client():
-    """Kill and reap the Linux client if one is running."""
-    child, LIVE["client"] = LIVE["client"], None
-    if child:
-        os.kill(child, 9)
-        os.waitpid(child, 0)
-        print("  the Linux client killed", flush=True)
+    """Kill and reap the Linux client if one is running, as one step: a Stop
+    between clearing the pid and the kill would leave the client running. A
+    client already gone (reaped while its pid was still recorded) is left
+    alone."""
+    with stops_held():
+        child, LIVE["client"] = LIVE["client"], None
+        if child:
+            try:
+                os.kill(child, 9)
+                os.waitpid(child, 0)
+                print("  the Linux client killed", flush=True)
+            except (ProcessLookupError, ChildProcessError):
+                pass
 
 
 def catch_signals():
@@ -201,14 +224,17 @@ def run(board, spim, pe, prog, a, sizes, n):
                 elif now - t0 > a.timeout:
                     return None, None, sw
             else:
-                pid, st = os.waitpid(child, os.WNOHANG)
+                with stops_held():                   # the reap and the pid cleared as one (verifier 054)
+                    pid, st = os.waitpid(child, os.WNOHANG)
+                    if pid:
+                        child = LIVE["client"] = None
                 if pid:
-                    child = LIVE["client"] = None
                     return os.waitstatus_to_exitcode(st), None, sw
                 if now - t0 > a.limit:
-                    os.kill(child, 9)
-                    os.waitpid(child, 0)
-                    child = LIVE["client"] = None
+                    with stops_held():
+                        os.kill(child, 9)
+                        os.waitpid(child, 0)
+                        child = LIVE["client"] = None
                     print(f"  client still running after {a.limit:.0f} s: killed")
                     return 1, None, sw
     except BaseException:
