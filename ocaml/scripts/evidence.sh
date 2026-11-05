@@ -35,6 +35,7 @@ step cocotb_a scripts/run_cocotb.sh "$out/wa" test test_post_freeze
 step cocotb_b scripts/run_cocotb.sh "$out/wb" lockstep lockstep4 test_pio test_eth_service \
   test_spi_packed_host test_spi_preloaded_host test_uart_capture_host test_usb_uart_rtl
 step cocotb_c scripts/run_cocotb.sh "$out/wc" lockstep3 lockstep3src
+step cocotb_e scripts/run_cocotb.sh "$out/we" test_bench_fw test_pps
 step cocotb_d env LOCKSTEP_SEED0=5000 LOCKSTEP_SEEDS=100 scripts/run_cocotb.sh "$out/wd" lockstep3
 step model scripts/stage3_model_suite.sh "$out/model" 64
 wait
@@ -52,7 +53,7 @@ grep -v ' rc=0$' "$out/rc.txt" && fail=1
   sort "$out/rc.txt"
   tail -13 "$out/equiv.log"
   cat "$out"/cocotb_?.log
-  tail -5 "$out/model.log"
+  grep -E 'passed|skipped|lockstep totals|tests with a mismatch|stride 1|BELOW' "$out/model.log"
   tail -9 "$out/asm.log"
   tail -3 "$out/host.log"
   tail -1 "$out/run.log"

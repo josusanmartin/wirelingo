@@ -8,14 +8,15 @@
 # the bus read are compared every cycle, and the state and coverage counters at
 # the end of each chip. A test that reaches into a chip shows as a mismatch at a
 # stride above 1, so tests with a mismatch run again at stride 1, where such a
-# reach is detected before the step and the chip is counted as poked: there, any
-# mismatch is real. Exit status 0 only if the second pass has no mismatch.
+# reach is detected before the step, the chip is counted as poked and the written
+# state is loaded into the OCaml model (lock_chip.py): there, any mismatch is
+# real. Exit status 0 only if the second pass has no mismatch.
 #
 # --dist loadfile keeps a test file in one process. test_usb_uart_pairs.py caches
 # runs in a per-process lru_cache, so with plain -n 8 the cycle count depends on
 # how xdist happens to spread that file over workers.
 #
-# Below 1200 chips or 60M cycles the script fails: coverage was lost.
+# Below 19000 chips or 150M cycles the script fails: coverage was lost.
 #
 # Needs pytest and pytest-xdist in $WL_PYTHON (default
 # ~/protoemu-flow/test-venv/bin/python). pytest's own result is reported, not
@@ -46,9 +47,9 @@ print("lockstep totals:", tot)
 names = sorted({l.strip() for f in glob.glob(prefix + ".fail.*") for l in open(f) if l.startswith("test/")})
 print("tests with a mismatch:", len(names))
 open(prefix + ".failed", "w").write("".join(n + "\n" for n in names))
-if prefix.endswith("/lock") and (tot.get("chips", 0) < 1200 or tot.get("cycles", 0) < 60_000_000):
+if prefix.endswith("/lock") and (tot.get("chips", 0) < 19000 or tot.get("cycles", 0) < 150_000_000):
     open(prefix + ".low", "w").write(str(tot))
-    print("BELOW FLOOR: 1200 chips, 60M cycles")
+    print("BELOW FLOOR: 19000 chips, 150M cycles")
 EOF
 }
 summary "$out/lock"

@@ -12,8 +12,12 @@ WL_LOCK_EVERY cycles (default 1) and at the end of a chip's life.
 Some model tests reach into a chip (they drain core.rxf directly, or set a
 register). The OCaml model cannot see that. With WL_LOCK_EVERY=1 the wrapper
 compares the chip with the state it last sent before each step, and on a
-difference stops comparing that chip and counts it as poked: the cycles up to
-then still count. With a larger stride a poke shows as a mismatch, and the test
+difference counts the chip as poked and sends the written state (an L line):
+wl_simcheck loads it, checks that it prints back unchanged, and the comparison
+goes on from there. Up to the write the OCaml model was equal to the chip every
+cycle, so the load hides nothing it computed. TOTALS["resyncs"] counts the
+loads. With WL_LOCK_RESYNC=0 the old rule holds: a poked chip is compared only
+up to the write. With a larger stride a poke shows as a mismatch, and the test
 is rerun with stride 1 to tell the two apart. A deepcopy of a chip (a few USB
 tests fork a run that way) is not compared; TOTALS counts those copies.
 
@@ -33,8 +37,9 @@ from pe import sim
 
 SIMCHECK = pathlib.Path(__file__).resolve().parents[1] / "_build/default/bin/wl_simcheck.exe"
 EVERY = int(os.environ.get("WL_LOCK_EVERY", "1"))
-TOTALS = {"chips": 0, "cycles": 0, "state_compares": 0, "poked_chips": 0, "mismatches": 0, "coverage_events": 0,
-          "copies_not_compared": 0, "cycles_after_mismatch_ignored": 0}
+RESYNC = EVERY == 1 and os.environ.get("WL_LOCK_RESYNC", "1") != "0"
+TOTALS = {"chips": 0, "cycles": 0, "state_compares": 0, "poked_chips": 0, "resyncs": 0, "mismatches": 0,
+          "coverage_events": 0, "copies_not_compared": 0, "cycles_after_mismatch_ignored": 0}
 FAILS = []
 LIVE = []
 
@@ -81,6 +86,7 @@ class Link:
         self.chip = weakref.ref(chip)
         self.cycles = 0
         self.poked = False
+        self.pokes = 0
         self.dead = False
         TOTALS["chips"] += 1
         LIVE.append(self)
@@ -88,18 +94,30 @@ class Link:
     def __deepcopy__(self, memo):
         TOTALS["copies_not_compared"] += 1
         c = Link.__new__(Link)
-        c.dead, c.poked, c.cycles = True, False, 0
+        c.dead, c.poked, c.pokes, c.cycles = True, False, 0, 0
         return c
+
+    def resync(self, chip):
+        """The test wrote into the chip: count it, and load the written state."""
+        if not self.pokes:
+            TOTALS["poked_chips"] += 1
+        self.pokes += 1
+        TOTALS["resyncs"] += 1
+        self.last = state_line(chip)
+        self.send(f"L {self.last}\n")
 
     def finish(self, chip, stats=True):
         if self.dead:
             return
         self.dead = True
         LIVE.remove(self)
-        if EVERY == 1 and stats and chip is not None and not self.poked and state_line(chip) != self.last:
-            self.poked = True                # a write after the last step
-            TOTALS["poked_chips"] += 1
         try:
+            if EVERY == 1 and stats and chip is not None and not self.poked and state_line(chip) != self.last:
+                if RESYNC:                       # a write after the last step
+                    self.resync(chip)
+                else:
+                    self.poked = True
+                    TOTALS["poked_chips"] += 1
             if stats and not self.poked and chip is not None:
                 self.send(f"= {state_line(chip)}\n")
                 TOTALS["state_compares"] += 1
@@ -150,10 +168,16 @@ def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=
     if link.dead or link.poked:
         return _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)
     if EVERY == 1 and state_line(self) != link.last:
-        link.poked = True
-        TOTALS["poked_chips"] += 1
-        link.finish(self, stats=False)
-        return _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)
+        if not RESYNC:
+            link.poked = True
+            TOTALS["poked_chips"] += 1
+            link.finish(self, stats=False)
+            return _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)
+        try:
+            link.resync(self)
+        except BrokenPipeError:
+            link.finish(self, stats=False)
+            return _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)
     uo, uio_out, uio_oe = self.outputs()
     rd = self.read(addr)
     _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)

@@ -11,16 +11,26 @@ itself. Its use is narrower: anything already established for `src/` at RTL leve
 over to the generated Verilog through the proof, and the OCaml tools can stand in for the
 Python ones where they were compared.
 
-All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 2dddff7,
-base 61af9b2, except the repeat of the model suite noted in Stage 3. The commit after it only
-changes this file and `ocaml/README.md`. The generated tapeout Verilog has sha256 `3b9a573559b1a1c1…`.
+All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 89675b6,
+base 9dd256e, except where Stage 3 compares it with a second run. The commit after it only
+changes this file and `evidence/README.md`, and adds the run's `summary.txt` and `rc.txt` in
+[evidence/ocaml-parity-20261104/](../evidence/ocaml-parity-20261104/README.md). The generated
+tapeout Verilog has sha256 `3b9a573559b1a1c1…`, as at the earlier run (2dddff7, base 61af9b2).
+
+Since that run `src/`, `asm.py`, `isa.py`, `sim.py` and `line.py` have not changed; firmware
+and tests have. The same script, unchanged, passed every gate on a clean checkout of 9dd256e:
+the 10 new firmware files assemble byte for byte, and the new model tests show no model
+difference. Three things had lost coverage, and 89675b6 restores them, in `ocaml/` only:
+CI's test job had gained `test_bench_fw` and `test_pps`, which the cocotb gate did not run;
+108 new model tests write into their chips, which were then compared only up to the write
+(Stage 3); and the coverage floors were still the old counts.
 
 | stage | gate | result |
 |---|---|---|
-| 1 | cocotb `test`, `test_post_freeze`, CI tapeout lockstep on generated Verilog | 25/25, 16/16, 6/6 |
+| 1 | cocotb `test`, `test_post_freeze`, `test_bench_fw`, `test_pps`, CI tapeout lockstep on generated Verilog | 27/27, 16/16, 5/5, 4/4, 6/6 |
 | 1 | formal equivalence with `src/`, tapeout build | proved: 7444 of 7444 points by `equiv_simple`, ABC `&cec` equivalent |
-| 2 | assembler, every firmware but `swd_probe` | 57 files byte-identical, no disagreement in 6202 cases |
-| 3 | cycle model against `sim.py` and RTL | no difference in 102,738 + 227,254 cycles three-way, nor in about 63.7 million cycles of the model suite |
+| 2 | assembler, every firmware but `swd_probe` | 67 files byte-identical, no disagreement in 6371 cases |
+| 3 | cycle model against `sim.py` and RTL | no difference in 102,738 + 227,254 cycles three-way, nor in about 155 million cycles of the model suite and 7.1 million more on the chips its tests write into |
 | 4 | host tools | `host`, `profile`, `export`, `disasm`, `listing`, `modelhost` ported, parity holds |
 
 ## Stage 1: RTL
@@ -50,15 +60,19 @@ Makefile are not edited. Each suite also passes `check_results.py` with its full
 
 | suite | configuration | result |
 |---|---|---|
-| `test` | tapeout, `tb.v` | 25/25 |
+| `test` | tapeout, `tb.v` | 27/27 |
 | `test_post_freeze` | tapeout, `tb.v` | 16/16 |
 | lockstep | CI tapeout: 2 cores, 2 banks, FIFO_LOG2 3, 40 seeds x 1000 | 6/6 |
 | lockstep | CI 4-core flop build, 30 seeds x 1000, `LOCKSTEP_GOALS=core` | 6/6 |
 | `test_pio`, `test_eth_service` | tapeout | 2/2, 2/2 |
 | `test_spi_packed_host`, `test_spi_preloaded_host` | tapeout | 1/1, 1/1 |
 | `test_uart_capture_host`, `test_usb_uart_rtl` | tapeout | 1/1, 3/3 |
+| `test_bench_fw`, `test_pps` | tapeout, `tb.v` | 5/5, 4/4 |
 
-That is every cocotb step of CI's test job. RTL simulation in Icarus.
+That is every cocotb step of CI's test job. RTL simulation in Icarus. `test_bench_fw` and
+`test_pps` each have one test that skips by design, and the check takes CI's list of the tests
+that must pass: `bench_sigrok_available` needs sigrok-cli, which runner1 does not have on its
+path, as CI does not, and `pps_one_second` runs only with `PPS_LONG=1`.
 
 `tb.v` instantiates the generated top level directly. `tb_chip.v` needs one disclosed
 adapter. It instantiates `pe_chip` with parameters, and `test_lockstep.py` reads state
@@ -86,7 +100,7 @@ yosys (`proc`, `flatten`). Then:
    input, and yosys `equiv_simple` per point in parallel shards.
 5. Planted bugs in the generated Verilog must each be caught.
 
-Result for the tapeout build, yosys 0.69+158, 664 s with `-j 4` on runner1:
+Result for the tapeout build, yosys 0.69+158, 418 s with `-j 4` on runner1:
 
 | check | count |
 |---|---|
@@ -145,13 +159,16 @@ is not reproduced. An exception `asm.py` does not catch compares by type.
 
 | case set | assembled, equal | error, equal | uncaught exception, equal | disagree |
 |---|---|---|---|---|
-| firmware: 57 files, several define sets each | 301 | 352 | 0 | 0 |
+| firmware: 67 files, several define sets each | 350 | 393 | 0 | 0 |
 | directed error and edge cases | 137 | 117 | 8 | 0 |
-| fuzz: 5000 seeded edits of firmware | 941 | 4052 | 7 | 0 |
-| corpus: `assemble_all()` calls of the model suite, 287 distinct of 1410 | 263 | 24 | 0 | 0 |
+| fuzz: 5000 seeded edits of firmware | 986 | 4007 | 7 | 0 |
+| corpus: `assemble_all()` calls of the model suite, 366 distinct of 9350 | 342 | 24 | 0 | 0 |
 
-Every one of the 57 files assembled under at least one define set. 278,828 relocated bytes
-were compared. The error row of the firmware set is mostly arbitrary define values that do
+Every one of the 67 files assembled under at least one define set. 367,348 relocated bytes
+were compared. The 10 files added since the 2dddff7 run are `ata_pio`, `eth10_reply`,
+`eth10_tx_cs`, `hd44780_4bit`, `mdio_master`, `mdio_phy`, `pps_capture`, `rmii_match`,
+`rmii_rx` and `rmii_tx`; the changed ones include `usb_fs_dev` (142 words), `usb_ls_dev`
+(130) and `usb_ls_tx` (56). The assembler needed no change for any of them. The error row of the firmware set is mostly arbitrary define values that do
 not fit a field. That is a test of the errors: the working define sets are in the other
 column and in the corpus, which holds the tests' real defines.
 
@@ -175,7 +192,8 @@ Three comparisons, each at a stated level:
   This is the firmware run: the tests drive it against their pin-level host and device
   models. Pins and bus reads are compared every cycle, the whole state every 64 cycles and at
   the end of each chip, and coverage counters at the end. Tests with a mismatch run again at
-  stride 1, which separates a test reaching into a chip from a real difference.
+  stride 1, which separates a test reaching into a chip from a real difference, and there the
+  comparison goes on from the state the test wrote.
 * **Hardcaml's own simulator.** `line_cyclesim` runs `Pe_line` under Cyclesim against
   `Line` on random traffic, in OCaml alone. `pe_line` is the one module with a single clock
   and no blackboxes; the others need the Verilog path.
@@ -185,32 +203,47 @@ Three comparisons, each at a stated level:
 | RTL = `sim.py` = OCaml, generated Verilog | seeds 1000-1039, plus the directed lockstep tests | 102,738 | 7/7 tests, 0 mismatches |
 | RTL = `sim.py` = OCaml, `src/` itself | the same | 102,738 | 7/7, 0 mismatches |
 | RTL = `sim.py` = OCaml, generated Verilog | seeds 5000-5099, plus the directed tests | 227,254 | 7/7, 0 mismatches |
-| `sim.py` = OCaml | model suite: 1394 tests passed, 23 skipped, 1262 chips | 63,680,211 | see below |
+| `sim.py` = OCaml | model suite: 2872 tests passed, 29 skipped, 19,602 chips | 155,099,397 | see below |
+| `sim.py` = OCaml, stride 1 | the 108 tests with a state difference (below): 357 chips, 342 written into by the test | 7,135,772 | 0 mismatches |
 | `Pe_line` under Cyclesim = OCaml `Line` | seed 7, random traffic | 2,000,000 | 0 mismatches |
 
-In the model suite the state was compared 995,897 times, plus pins and bus read every
-cycle.
+In the model suite's first pass the state was compared 2,500,279 times, and at stride 1
+7,136,021 times, plus pins and bus read every cycle.
 
-The figure varies by run: treat it as about 63.7M. Two runs at this commit gave 63,680,211
-and 63,723,807, and earlier runs 63.74M to 63.90M. One cause is found:
+The first-pass figure varies by run: treat it as about 155.1M. The run at 9dd256e, whose
+model and wrapper are the same at stride 64, gave 155,135,208, with the same 19,602 chips.
+(At 2dddff7, before the new tests, it was about 63.7M on 1262 chips.) One cause is found:
 `test_usb_uart_pairs.py` keeps runs in a per-process `lru_cache`, so under plain `-n 8` a run
-repeats in each worker that needs it. That file alone gives 408,741 cycles serially and
-573,340 at `-n 8`. The script now uses `--dist loadfile`, which gives 408,741 and held the chip
-count at 1262 in four runs. About 0.1% of variation remains, with the
-same chip count and different coverage counts, so some test's run length differs between
-runs. Its cause is not found. Cycles on chips that hit a mismatch (28,218) are not counted.
+repeats in each worker that needs it; the script uses `--dist loadfile` for that. Some
+variation remains, with the same chip count and different coverage counts, so some test's run
+length differs between runs. Its cause is not found. Cycles on chips that hit a mismatch in
+the first pass (5,258,220) are not counted there; those chips are the stride-1 row.
 
-Three tests showed a state difference. At stride 1 all of them are the test writing
-into a chip: `test_lr_survives_restart` sets `lr` by hand, and the two `test_capture_*` tests
-drain `core.rxf` directly. Those 10 chips are compared only up to that write, with 0
-mismatches at stride 1. 12 deep copies of chips, made by USB and SPI tests, are not compared after the copy.
-`test_swd.py` is excluded. The 23 skips were not itemised; `remote_test.sh` documents that
-sigrok tests skip on runner1, and the firmware test files carry that `skipif`.
+108 tests showed a state difference: 43 in `test_pps.py`, 40 in `test_ata_pio.py`, 21 in
+`test_faults.py` (its `i2c_master` cases), 2 in `test_reverse_engineering.py`, and one each in
+`test_call.py` and `test_rmii.py`. At stride 1 every one of them is the test writing into a
+chip: popping `core.rxf` directly (the ATA, PPS and fault harnesses, the capture tests),
+setting `core.rxf` by hand (`test_rmii.py`), fast-forwarding a wait by setting registers and
+`chip.cycle` (`test_pps.py`), and setting `lr` (`test_lr_survives_restart`). At the 2dddff7
+run such a chip was compared only up to the write; there were 10. Now `lock_chip.py` sends
+the written state to `wl_simcheck` as an `L` line, `Chip.load_state` loads it, `wl_simcheck`
+checks that it prints back as the same line, and the comparison goes on. Up to the write the
+two models were equal every cycle, so a load hides nothing the OCaml model computed; what it
+does not check is the written values themselves, which the test chose. So the 342
+written-into chips are compared to their end, coverage counters included, with 9050 loads:
+7,135,772 cycles, 0 mismatches. Under the old rule (`WL_LOCK_RESYNC=0`; the run at 9dd256e)
+the same pass compared 3,833,185 cycles. 12 deep copies of chips, made by USB and SPI tests,
+are not compared after the copy. `test_swd.py` is excluded. Of the 29 skips, the suite's own
+summary line says 28 are sigrok checks (runner1 has no sigrok-cli on its path); the skips
+were not itemised further.
 
 `test/self_check.sh` plants 5 bugs in the model (a saturation limit, a delay, the link
 value, a loop gain, a coverage counter's name), all caught. The verifier found the last one
 missed by the first version of the script, whose test files never touched that counter;
-`test_i2c_timeout.py` does.
+`test_i2c_timeout.py` does. It plants 2 more that only a chip written into reaches, on the
+`test_rmii.py` test that fills `core.rxf` by hand: the FIFO read taking the wrong end, and
+`load_state` swapping the two FIFOs. Each is caught with the load and missed with
+`WL_LOCK_RESYNC=0`, as the script requires.
 
 ### Waveform tests
 
@@ -238,8 +271,9 @@ form, with enable flops in place of the latches and clock gates that the proved 
 
 `self_check.sh` plants 5 RTL bugs for these tests, all caught. The first run missed one, a
 swap of the two edge ages; the frame-end test above was added for it. It also checks that
-promoting a failed assertion leaves `dune test` failing; that case was run alone, not in a
-whole `evidence.sh`.
+promoting a failed assertion leaves `dune test` failing, and that the dune rule is what makes
+it fail; at 2dddff7 that case was run alone, and at the commit above it ran in the whole
+`evidence.sh`: failing with the rule, passing with it removed.
 
 ## Stage 4: host tools
 
@@ -249,21 +283,21 @@ and `wl_run`, which goes from source to pin changes with no Python.
 
 | check | compared | disagree |
 |---|---|---|
-| `wl_export` against `python -m pe.export`, success | 685 runs | 0 |
-| the same, both fail with the same message | 330 runs | 0 |
-| `load_program` writes | 145 programs | 0 |
-| `Program.listing` | 145 programs | 0 |
+| `wl_export` against `python -m pe.export`, success | 796 runs | 0 |
+| the same, both fail with the same message | 373 runs | 0 |
+| `load_program` writes | 167 programs | 0 |
+| `Program.listing` | 167 programs | 0 |
 | `isa.disasm` | 200,000 words | 0 |
 | `wl_run` against the same run through `pe.modelhost` | 8 firmware, 3714 lines of pin changes | 0 |
 
-`host_parity.py` covers all 57 firmware files. An earlier figure here was smaller: a change to
+`host_parity.py` covers all 67 firmware files. An earlier figure here was smaller: a change to
 the define sets in `asm_parity.py` had silently cut this check's coverage by more than half,
 with 0 disagreements. It now takes up to three define sets per file that really assemble, and
 the parity scripts, the model suite and lockstep fail below floors on their counts.
 
 ## Reproduce
 
-On runner1, from a checkout of branch `ocaml-port`:
+On runner1, from a checkout of commit 89675b6 or later:
 
 ```
 ocaml/scripts/setup_runner.sh ~/protoemu-flow/ocaml-port/sysroot    # once
@@ -274,9 +308,11 @@ cd ocaml && dune build
 scripts/evidence.sh OUT         # every gate above, including self_check.sh; OUT/summary.txt
 ```
 
-`evidence.sh` took 66 minutes at the commit above with runner1 busy (load 20 to 50); the verifier timed under 25 minutes on a quiet box, before `self_check.sh` was added to it. One gate at a time:
+`evidence.sh` took 32 minutes (1899 s) at the commit above, with runner1's load at about 10 to 16
+when it started, and 41 minutes (2450 s) at 9dd256e; at 2dddff7 it took 66 minutes with
+runner1 busy (load 20 to 50). One gate at a time:
 `formal/equiv_port.sh -j 4 --mutants OUT`,
-`scripts/run_cocotb.sh WORK test test_post_freeze lockstep`,
+`scripts/run_cocotb.sh WORK test test_post_freeze test_bench_fw test_pps lockstep`,
 `scripts/stage3_model_suite.sh OUT`, `python3 test/asm_parity.py --fuzz 5000`.
 
 Toolchain: OCaml 5.3.0, dune 3.24.2, hardcaml and hardcaml_waveterm v0.17 from opam, Yosys 0.69+158, Icarus and
@@ -294,7 +330,8 @@ cocotb from OSS CAD Suite. No sudo: runner1 lacks libgmp-dev, which zarith needs
   `spipacked.py`, `line`-level host models). SWD tools are excluded by rule.
 * `spi_frame`, `coalesce`, `start_writes` and `pin_owner_writes` in `host.ml` have no parity
   test of their own.
-* Model suite tests that deep-copy a chip are compared up to the copy, not on the copy; tests
-  that write into a chip are compared up to that write. See the counts above.
+* Model suite tests that deep-copy a chip are compared up to the copy, not on the copy. Tests
+  that write into a chip are compared on from the written state, at stride 1 only; the
+  written values are the test's own and are not checked. See the counts above.
 * The Python assembler's non-ASCII whitespace handling is not reproduced, outside line
   endings. No firmware instruction line depends on it.

@@ -27,7 +27,7 @@ ENV = {"PYTHONPATH": str(REPO / "tools"), "PYTHONDONTWRITEBYTECODE": "1", "PATH"
 
 
 # A drop below these means coverage was lost, even with nothing disagreeing.
-FLOORS = {"files": 57, "export": 600, "export_err": 300, "writes": 130, "listing": 130}
+FLOORS = {"files": 67, "export": 780, "export_err": 360, "writes": 160, "listing": 160}
 
 
 def assembles(text, d):

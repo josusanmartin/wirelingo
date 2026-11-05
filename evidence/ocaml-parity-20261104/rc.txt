@@ -1,0 +1,13 @@
+dune_test rc=0
+equiv rc=0
+cocotb_e rc=0
+cocotb_d rc=0
+cocotb_c rc=0
+cocotb_b rc=0
+model rc=0
+cocotb_a rc=0
+run rc=0
+cyclesim rc=0
+host rc=0
+asm rc=0
+self rc=0
