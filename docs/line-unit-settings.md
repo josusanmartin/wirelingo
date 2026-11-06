@@ -23,7 +23,10 @@ Two protocols use it because a core alone can't keep up:
   sender's phase with a digital loop, while a core sees one sample per clock
   (isa.md §4.7, "Manchester timing"). Every 10BASE-T receiver in `firmware/`
   uses the unit, and none in firmware alone has been written to compare
-  with: this is the mechanism, not a measured comparison.
+  with: this is the mechanism, not a measured comparison. What the unit adds
+  is the rate and the jitter tolerance, not the coding: firmware alone decodes
+  Manchester (bi-phase) at slow rates, in `rc5_rx` (half bit 889 µs) and
+  `dali_ctrl` (half bit 416.67 µs), with no `IN LINE`.
 
 Low-speed USB runs either way: on two cores in pure firmware (`usb_ls_rx` +
 `usb_ls_tx`) or on one core with the unit (`usb_ls_dev`). The 10BASE-T

@@ -56,10 +56,13 @@ unit's settings are chosen by the host when it loads a program.
   writes (LINECFG, LINEDIV, LINEPINS) when it loads a program
   ([docs/isa.md §4.7](docs/isa.md#47-line-unit-core-0)). Two protocols use it.
   Full-speed USB runs at 4 clocks per bit at 48 MHz, and the pure-firmware
-  receiver (`usb_ls_rx`) takes at least 13 instructions per bit, so it cannot
-  keep up. For 10BASE-T receive, the unit samples the pin at both clock edges
-  and tracks the sender's phase, while a core sees one sample per clock; that
-  is the mechanism, not a measured comparison, since no 10BASE-T receiver in
+  receiver (`usb_ls_rx`, the low-speed one) takes at least 13 instructions
+  per bit, so it cannot keep up. For 10BASE-T receive, what the unit adds is
+  the rate and the jitter tolerance, not the coding: firmware alone decodes
+  Manchester at slow rates (`rc5_rx` and `dali_ctrl`, at about 0.56 and
+  1.2 kbit/s). The unit samples the pin at both clock edges and tracks the
+  sender's phase, while a core sees one sample per clock; that is the
+  mechanism, not a measured comparison, since no 10BASE-T receiver in
   firmware alone has been written. Low-speed USB runs either way (two cores without
   it, one with it).
 * **Rehearsed with the chip frozen.** With the chip's Verilog frozen at tag
