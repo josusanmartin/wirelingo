@@ -313,11 +313,14 @@ def staged_over_empty(h, b, what):
 def restage_race(concurrent, resume, hold_at):
     """The scenario: the host takes the last DATA of a read but its ACK is
     lost, so the device must re-stage it 100 us on; the host has moved on
-    (OUT status, then SET_CONFIGURATION's SETUP, which clears F_GOTACK and
-    flushes the TX FIFO). hold_at(op, prev, prev2, ctx) deschedules the
+    (OUT status, then a zero-length REQ_WRITE's SETUP, which clears F_GOTACK
+    and flushes the TX FIFO). hold_at(op, prev, prev2, ctx) deschedules the
     software at one access; the SETUP goes on the bus while it is held, whole
     or token first, and the software resumes. Returns (h, sw, b, unanswered
-    INs in the status stage)."""
+    INs in the status stage). The new request was SET_CONFIGURATION until
+    branch usb-config-prestage, where usb_fs_dev answers that status stage
+    itself and would hide the software's races; the zero-length write's is
+    still the software's."""
     h, sw = enumerated()
     b = concurrent(h, sw)
     data = bytes(range(0xB0, 0xB8))
@@ -332,7 +335,7 @@ def restage_race(concurrent, resume, hold_at):
             break
         h.wait_bits(8)
     assert b.held, "the software never got to the hold"
-    req = bytes([0, 9, 1, 0, 0, 0, 0, 0])               # SET_CONFIGURATION(1)
+    req = write_req(0)                                  # its status ZLP: the software's
     if resume == "after the SETUP":
         h.setup(5, req)
         ctx["go"] = True
@@ -342,9 +345,9 @@ def restage_race(concurrent, resume, hold_at):
         t = h.send(usb.data_packet(usb.PID_DATA0, req), t, h.ipd)
         assert h.listen(t) == usb.handshake(usb.PID_ACK)
     n = len(h.log)
-    status_in(h, 5, "SET_CONFIGURATION", 1000)
+    status_in(h, 5, "zero-length write", 1000)
     unanswered = sum(1 for e in h.log[n:] if e == ("IN", None, None))
-    staged_over_empty(h, b, "after SET_CONFIGURATION")
+    staged_over_empty(h, b, "after the zero-length write")
     checked_write(h, 5, data[::-1], "8-byte write after")
     assert checked_read(h, 5, 8, "8-byte read after") == data[::-1]
     staged_over_empty(h, b, "after the round trip")
@@ -365,7 +368,7 @@ def test_no_restage_after_a_setup(concurrent, where, resume):
     the flags to decide; at the first write of stage(), both checks passed;
     between the flags and RX-level reads of the check before the FSET; at the
     FSET, the words pushed; just after the FSET; between the two reads of the
-    check after it). Whatever the point, SET_CONFIGURATION's status IN must
+    check after it). Whatever the point, the zero-length write's status IN must
     get one zero-length DATA1 after NAKs only, never the old DATA (left in the
     TX FIFO behind the SETUP's flush) and never silence (UNANSWERED)."""
     access, before, before2 = HOLDS[where]

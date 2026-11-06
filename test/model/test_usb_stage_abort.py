@@ -7,8 +7,11 @@ Full speed: usb_fs_dev (one core), whose got_setup flushes the TX FIFO, so a
 SETUP between two pushes leaves the later pushes behind it: a partial packet
 that the got_in guard (F_STAGED over an *empty* FIFO) does not catch. Low
 speed: usb_ls_rx + usb_ls_tx (two cores), where the SETUP clears F_STAGED but
-nothing flushes core 1's TX FIFO. The new request is SET_CONFIGURATION; its
-status stage must be one zero-length DATA1."""
+nothing flushes core 1's TX FIFO. The new request is a no-data one whose
+status stage the software answers: at full speed a zero-length REQ_WRITE
+(SET_CONFIGURATION's is usb_fs_dev's own since branch usb-config-prestage,
+which would hide the race), at low speed SET_CONFIGURATION; its status stage
+must be one zero-length DATA1."""
 import pytest
 
 from pe import usb, usbdev
@@ -18,6 +21,7 @@ import test_usb_ls_restage as ls
 
 DESC_18 = bytes([0x80, 6, 0, 1, 0, 0, 18, 0])
 SET_CONFIG = bytes([0, 9, 1, 0, 0, 0, 0, 0])
+WRITE_0 = fs.write_req(0)                   # full speed: a status stage the software answers
 FCLR_GOTACK = ("write", fs.sim.A_FCLR, usbdev.F_GOTACK)
 
 
@@ -75,12 +79,12 @@ def abort_fs(make, resume, hold_at):
         h.wait_bits(8)
     assert b.held, "the software never got to the hold"
     if resume == "after the SETUP":
-        h.setup(5, SET_CONFIG)
+        h.setup(5, WRITE_0)
         ctx["go"] = True
     else:
         t = h.send(usb.token(usb.PID_SETUP, 5, 0))
         ctx["go"] = True
-        t = h.send(usb.data_packet(usb.PID_DATA0, SET_CONFIG), t, h.ipd)
+        t = h.send(usb.data_packet(usb.PID_DATA0, WRITE_0), t, h.ipd)
         assert h.listen(t) == usb.handshake(usb.PID_ACK)
     n = len(h.log)
     try:
@@ -92,7 +96,7 @@ def abort_fs(make, resume, hold_at):
     naks = sum(1 for e in h.log[n:] if e[:2] == ("IN", "nak"))
     outcome, d = classify(r, naks, silent, {"held": ctx.get("held_op"), "underrun": bool(b.chip.flags & 1)})
     if outcome in ("right", "silent"):
-        fs.staged_over_empty(h, b, "after SET_CONFIGURATION")
+        fs.staged_over_empty(h, b, "after the new request")
         b.service.overhead = 48                  # the race is over: the check after at 1 us per access
         h.setup(5, DESC_18)
         got, toggle = b"", 1
@@ -171,7 +175,7 @@ def run(speed, resume, n, overhead=48):
 def test_stage_abort_held_at_every_access(speed, n, resume, overhead):
     """The reply's stage held at its n-th access (n = 0: its FCLR; then the four
     pushes, the check, the FSET, the check after and the service loops) while
-    the host abandons the transfer with SET_CONFIGURATION. Every case must end
+    the host abandons the transfer with a no-data request. Every case must end
     right: one zero-length DATA1 after NAKs only, then a whole descriptor read.
     Before pe.usbdev checked every stage and usb_ls_tx dropped its FIFO on a
     SETUP (dc51cc8): full speed sent the old reply (n = 0-1) or a partial
