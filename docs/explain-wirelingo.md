@@ -496,7 +496,7 @@ traces (`docs/verification.md:67`). Whole-core equivalence is not proved
 | Firmware on the wire | Pins-only models on the model; key cases through the SPI port in RTL simulation; sigrok decoders where one exists | README, "What runs on it" |
 | The netlist equals the RTL | Formal, run fo6: 7429 points by two engines, every flop, latch, clock gate and SRAM matched; zero delay, cell insides not checked | `docs/equivalence.md` |
 | The netlist runs the tests | Gate level (29 top-level tests) and gate level with SDF (directed subsets at three corners) | `docs/release-evidence.md` |
-| 50 MHz at all three corners; DRC, LVS, antenna clean | Signoff on fo6's layout (STA and checks are models, not silicon) | `docs/physical.md`, `docs/release-evidence.md` |
+| 50 MHz met at all three corners (slow-corner setup slack +0.010 ns; the demos run at 48 MHz, with margin); DRC, LVS, antenna clean | Signoff on fo6's layout (STA and checks are models, not silicon) | `docs/physical.md`, `docs/release-evidence.md` |
 | 14 protocols added with the RTL frozen | RTL simulation, gate level, SDF typical; FPGA fabric against our own models | `docs/post-freeze-protocols.md` |
 | Two protocols for an agent not prepared for them | Model and RTL simulation | `docs/blind-test.md` |
 | Firmware under injected wire faults | Model; two fixes also in RTL simulation | `docs/fault-testing.md` |
@@ -581,12 +581,19 @@ possible (`docs/isa.md:265-267`). USB low speed is USB's 1.5 Mbit/s mode.
 unit, USB low speed took two cores (`usb_ls_rx` + `usb_ls_tx`). It does NRZI,
 bit stuffing, Manchester decoding and clock recovery. NRZI and Manchester send
 bits as transitions, not levels; stuffing adds bits to keep transitions
-coming. So the line unit is protocol-specific hardware, and "protocols are
-firmware" holds for the cores, not for it.
+coming. Those codings are fixed logic: the line unit offers a fixed menu of
+line codings, stuffing rules and frame endings, built with USB and 10BASE-T
+in mind (CAN-style stuffing also fits). The host picks from the menu with
+three register writes when it loads a program, but software cannot add a
+coding. So no protocol is fixed in the silicon, and "protocols are firmware"
+holds fully for the cores; for the line unit it holds only as far as the
+menu reaches (`docs/line-unit-settings.md`).
 
 **What sets the speed limit?**
 The clock period of 20 ns, and routing on one horizontal layer. Run fo6, the
-release-candidate layout, meets 50 MHz at all three corners. Pin edges fall on
+release-candidate layout, meets 50 MHz at all three corners at signoff, with
++0.010 ns of setup slack left at the slow corner; the demos run at 48 MHz,
+which leaves margin. At 50 MHz pin edges fall on
 a 20 ns grid. The fetch-to-pin path is the one `test_fetch_to_pin` guards
 (section 1.6).
 

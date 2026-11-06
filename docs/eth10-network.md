@@ -4,7 +4,11 @@ The chip moves bits. The host does CRC-32 and the protocols. This page says what
 works, at which evidence level, for a station that answers ARP, ping and UDP echo
 over 10BASE-T, and what is left for the day the hardware is wired.
 
-Nothing here has run on an FPGA or on silicon, and no cable has been involved.
+Nothing here has run on silicon, and no cable has been involved. Most of this page
+predates the 2026-11-03 board run: the host stack has since run through the KV260
+build of the RTL, one 64-byte frame at a time, with Linux's own stack pinging it
+(RTL in FPGA fabric, no cable, no pads; verified by verifier report 037:
+[evidence/fabric-ping-20261103](../evidence/fabric-ping-20261103/README.md)).
 
 | Piece | File |
 |---|---|
@@ -30,7 +34,8 @@ The MAC is `02:57:4c:00:00:02`, locally administered.
 | The same, through the real host-port pins: quad SPI, jitter, 1518-byte ping, no reply to a bad FCS or another MAC | RTL simulation | `test_ping_rtl_50mhz`, `test_ping_rtl_40mhz` (ARP and ping, no jitter) |
 | The same 50 MHz session, the 40 MHz ping and carrier sense, on run fo6's netlist (a94a948b): 3 of 3 | gate level, functional, no SDF | `flow/gl_module_test.py`, command below |
 | Linux's own stack ARPs and pings the chip | real kernel in a namespace, against the cycle model | `eth_tap.py --model --selftest` |
-| The same through the KV260 backend's code, one 64-byte frame at a time | real kernel against the cycle model; that code on a fake KV260 register map; not yet on the board | `eth_tap.py --backend fpga-model --selftest`, `test_fabric_ping.py`; "The FPGA backend" below |
+| The same through the KV260 backend's code, one 64-byte frame at a time | real kernel against the cycle model; that code on a fake KV260 register map | `eth_tap.py --backend fpga-model --selftest`, `test_fabric_ping.py`; "The FPGA backend" below |
+| The same on the board, 2026-11-03: ARP, ping and UDP each answered with a 64-byte reply, FCS right; no reply to a bad FCS or another MAC; TD edges and link pulses equal to the model's at one of its divider phases; Linux in a namespace: 5 of 5 pings, UDP echo, no reply for an unknown IP, another IP, another MAC or a bad FCS | RTL in FPGA fabric (KV260), one frame at a time; no cable, PMOD pin or pads; verified by verifier report 037 | `eth_tap.py --backend fpga --probe`, `--compare`, `--selftest`; [evidence/fabric-ping-20261103](../evidence/fabric-ping-20261103/README.md) |
 | tcpdump and scapy accept the frames; each flags a broken checksum | cycle model | `test_tcpdump_reads_the_session`, `test_scapy_validates_the_session` |
 | No reply to a bad FCS, another MAC, another IP, a bit flipped on the line | cycle model at the pads; bad FCS and another MAC on RTL; all but the flipped bit from real Linux | `test_no_reply_at_the_pads`, `test_bit_flipped_on_the_line_gets_no_reply` |
 | 23 kinds of bad frame dropped, each for the stated reason; 6000 random or damaged frames raise nothing | Python, the Station alone | `test_station_rejects`, `test_station_never_raises_and_never_answers_garbage` |
@@ -278,9 +283,14 @@ To drive it by hand: run the same command without `--selftest`, and ping
 
 ### The FPGA backend
 
-**Evidence level: model.** `FpgaBackend` is written and has run on the cycle model and
-on a fake KV260, not on the board. Until the orchestrator reports a board run, nothing
-in this section has run in FPGA fabric.
+**Evidence level: RTL in FPGA fabric (KV260), one frame at a time.** `FpgaBackend`
+ran on the cycle model and on a fake KV260 first, then on the board on 2026-11-03:
+ARP, ping and UDP answered, the replies' edges equal to the model's at one of its
+divider phases, and Linux's own
+stack pinging it 5 of 5 times, with no cable, PMOD pin or pads involved
+([evidence/fabric-ping-20261103](../evidence/fabric-ping-20261103/README.md), verified
+by verifier report 037). The hand-back paths after an early stop have run only on the
+fake board of `test/model/test_fabric_ping.py`.
 
 `eth_tap.py` takes a backend with `send`, `poll` and `busy`. `FpgaBackend`
 (`fpga/kv260/host/fabric_eth.py`) puts Linux's frames through the chip RTL in the
