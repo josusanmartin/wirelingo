@@ -102,15 +102,24 @@ def test_relative_links_resolve():
 
 
 def test_a_broken_link_is_caught(tmp_path):
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs/a.md").write_text("# A title\n\n## Second `code` part\n\ntext\n")
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (tmp_path / "outside.md").write_text("# Outside\n")       # exists, but not in the repository
+    (root / "docs/a.md").write_text("# A title\n\n## Second `code` part\n\n## Again\n\n## Again\n\ntext\n")
     good = ("[a](docs/a.md) [b](docs/a.md#a-title) [c](docs/a.md#second-code-part)\n"
+            "[d](docs/a.md#again) [e](docs/a.md#again-1)\n"
+            '<img src="docs/a.md"> <a href="docs/a.md#again">h</a>\n'
+            "[ref]: docs/a.md\n\n"
             "`[x](missing.md)`\n```\n[y](missing.md)\n```\n[w](https://example.com/x)\n")
-    (tmp_path / "README.md").write_text(good)
-    assert broken(tmp_path / "README.md", tmp_path) == []
-    for link in ("[m](docs/missing.md)", "[n](docs/a.md#no-such-part)", "![i](docs/pic.png)"):
-        (tmp_path / "README.md").write_text(good + link + "\n")
-        assert len(broken(tmp_path / "README.md", tmp_path)) == 1, link
+    (root / "README.md").write_text(good)
+    assert broken(root / "README.md", root) == []
+    for link in ("[m](docs/missing.md)", "[n](docs/a.md#no-such-part)", "![i](docs/pic.png)",
+                 "[o](../outside.md)",                        # outside the repository
+                 '<img src="docs/pic.png">', '<a href="docs/missing.md">x</a>',   # HTML links
+                 "[bad]: docs/missing.md",                    # a reference-style link
+                 "[f](docs/a.md#again-2)"):                   # one duplicate heading: -1 only
+        (root / "README.md").write_text(good + "\n" + link + "\n")
+        assert len(broken(root / "README.md", root)) == 1, link
 
 
 if __name__ == "__main__":
