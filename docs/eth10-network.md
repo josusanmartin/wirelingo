@@ -4,7 +4,11 @@ The chip moves bits. The host does CRC-32 and the protocols. This page says what
 works, at which evidence level, for a station that answers ARP, ping and UDP echo
 over 10BASE-T, and what is left for the day the hardware is wired.
 
-Nothing here has run on an FPGA or on silicon, and no cable has been involved.
+Nothing here has run on silicon, and no cable has been involved. Most of this page
+predates the 2026-11-03 board run: the host stack has since run through the KV260
+build of the RTL, one 64-byte frame at a time, with Linux's own stack pinging it
+(RTL in FPGA fabric, no cable, no pads; verified by verifier report 037:
+[evidence/fabric-ping-20261103](../evidence/fabric-ping-20261103/README.md)).
 
 | Piece | File |
 |---|---|
@@ -280,7 +284,8 @@ To drive it by hand: run the same command without `--selftest`, and ping
 
 **Evidence level: model.** `FpgaBackend` is written and has run on the cycle model and
 on a fake KV260, not on the board. Until the orchestrator reports a board run, nothing
-in this section has run in FPGA fabric.
+in this section has run in FPGA fabric. (That paragraph predates the board run of
+2026-11-03, now in [evidence/fabric-ping-20261103](../evidence/fabric-ping-20261103/README.md).)
 
 `eth_tap.py` takes a backend with `send`, `poll` and `busy`. `FpgaBackend`
 (`fpga/kv260/host/fabric_eth.py`) puts Linux's frames through the chip RTL in the
