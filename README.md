@@ -1,154 +1,187 @@
-# Wirelingo — a programmable protocol emulator ASIC
+# Wirelingo: a programmable protocol emulator ASIC
 
 *(Formerly protoemu; code identifiers such as the Tiny Tapeout module
 `tt_um_josusanmartin_protoemu` and `tools/micropython/protoemu.py` keep the old
 name until the next re-harden.)*
 
 An entry for the [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/),
-targeting IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles).
+on IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles). It has not been
+fabricated. Every result here names its evidence level: model, RTL
+simulation, formal, gate level, or RTL in FPGA fabric. FPGA is not silicon.
+
+**Short on time:** read the [two-page summary](docs/summary.md). Reviewers:
+[docs/guide.md](docs/guide.md) maps each claim to its evidence and the
+command that reproduces it. New to hardware:
+[docs/explain-wirelingo.md](docs/explain-wirelingo.md). The normative spec is
+[docs/isa.md](docs/isa.md).
+
+![The fo6 layout](docs/fo6-layout.png)
+
+*The signed-off layout, run fo6, rendered from its GDS (sha256 `e67697034da6cd34…`,
+[docs/physical.md](docs/physical.md)) with KLayout and the IHP layer colours.
+The two instruction SRAMs are the blocks at the bottom corners; the cores,
+FIFOs, line unit and host port fill the rest.*
+
+## What it is
 
 Protocols are programs, not peripherals. The chip has **two small cores built
 for bit-banging**, each with its own SRAM bank of 256 32-bit instructions,
-FIFOs to the host and a clock divider. A host (the TT demo board's RP2350)
-loads firmware over SPI and exchanges data through the FIFOs. UART, SPI, I2C,
-USB at low and full speed, 10BASE-T, CAN, SWD, JTAG, 1-Wire, PS/2 and WS2812
-are all firmware ([below](#what-runs-on-it)).
+8-word FIFOs to the host, a fractional clock divider, registers with an ALU
+and a CRC tap. Beside core 0 sits a **line unit**, a configurable line coder.
+A host (the Tiny Tapeout demo board's RP2350) loads firmware over SPI, 1-bit
+or quad, and exchanges data through the FIFOs. The instruction set starts
+from the RP2040's PIO and adds what real protocols kept asking for
+([below](#what-wed-do-differently-from-pio)).
 
-**It was designed by one person with no prior chip-design experience, with AI
-agents writing the spec, RTL, firmware and tests,** and claims checked against
-evidence an agent can't talk its way past: two implementations of the spec
-(a Python model and the RTL) compared cycle by cycle, formal proofs,
-mutation testing, gate-level simulation, scripted physical signoff, an adversarial second agent,
-and the RTL running on an FPGA. [docs/methodology.md](docs/methodology.md)
-describes how, and what it caught.
+It was designed by one person with no prior chip-design experience, with AI
+agents writing the spec, RTL, firmware and tests, and claims checked against
+evidence an agent can't talk its way past
+([docs/methodology.md](docs/methodology.md)).
 
-**What is proven, and at what level:**
+## What it does after fabrication
 
-| Level | What has been shown | Limit |
+Everything protocol-specific is software, loaded after the chip is made.
+
+* **Protocols are firmware.** UART, SPI, I2C, CAN, USB at low and full speed,
+  10BASE-T, JTAG, 1-Wire, PS/2, WS2812 and the rest are the 68 programs in
+  [`firmware/`](firmware/), assembled on a PC ([docs/asm.md](docs/asm.md))
+  and loaded over SPI. A new protocol is a new program.
+* **The line unit is configured by software too.** It has no protocol built
+  in: NRZ, NRZI or Manchester coding, bit stuffing after K equal bits or
+  K ones, an end-of-packet pattern and receive clock recovery are all chosen
+  by three register writes (LINECFG, LINEDIV, LINEPINS) that the host makes
+  when it loads a program ([docs/isa.md §4.7](docs/isa.md#47-line-unit-core-0)).
+  Two protocols use it because a core alone is too slow for them: full-speed
+  USB, at 4 clocks per bit at 48 MHz, and 10BASE-T receive, with 802.3's edge
+  jitter. Low-speed USB runs either way (two cores without it, one with it).
+* **Rehearsed with the chip frozen.** With the chip's Verilog frozen at tag
+  `rc-93c2137-t48ba` (unchanged since), three rounds of protocols it was not
+  designed for were added in firmware only: DMX512, LIN, NEC and RC-5
+  infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU,
+  MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with
+  PEC, 21 programs. Their 16 RTL tests also pass on the signed-off gate-level
+  netlist, and all three rounds ran on the RTL in FPGA fabric
+  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)). A fresh
+  agent later added HD44780 and a subset of ATA PIO the same way
+  ([docs/blind-test.md](docs/blind-test.md)).
+
+The line-unit settings that tests exercise
+([docs/line-unit-settings.md](docs/line-unit-settings.md) cites the firmware
+and tests for each):
+
+| LINECFG | Coding | Used by |
 |---|---|---|
-| **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
-| **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
-| **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study and the blind-test firmware; `eth10_tx_cs` only in the 2026-11-03 fabric ping, pending verification ([evidence](evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](docs/fault-testing.md)) and need a rerun |
-| **Signed-off layout (run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
-| **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
+| `0x49F3` | NRZI, a stuffed 0 after six 1s, differential pair, SE0 end of packet | USB low and full speed: `usb_ls_dev`, `usb_fs_dev`, `usb_enum`, the UART-to-USB pairs |
+| `0x4005` | Manchester, receive only | 10BASE-T receive: `eth10_rx`, `eth10_match` |
+| `0x4E85` | Manchester both ways, differential, 3 bits high at the end (TP_IDL) | 10BASE-T receive and reply on one core: `eth10_reply` |
+| `0x6029` | NRZ, one opposite bit after five equal bits | CAN-style framing, in a model test only; `can_tx` and `can_rx` stuff bits in core code instead |
 
-**Failures we found in our own work, and a test we did not prepare for:**
+## What runs on it, and how far each is proven
 
-* [docs/fault-testing.md](docs/fault-testing.md): seeded wire faults (glitches,
-  stuck lines, truncation, bit flips, stretch, jitter) against six firmware on
-  the cycle model found six real failures in `uart_rx`, `i2c_master`, `can_rx`
-  and `usb_enum`, among them a glitch taken for a start bit, an ACK read from a
-  stuck SDA and a missed bus reset inside a token. Four are fixed (model and
-  RTL simulation only; not yet at gate level or on the FPGA); two are left,
-  with the reason.
-* [docs/blind-test.md](docs/blind-test.md): a fresh agent given two protocols
-  drawn by a rule (HD44780 4-bit and ATA PIO), with the chip and tools frozen.
-  HD44780 fits in 99 words; ATA PIO does not fit as specified, and an 8-bit
-  subset does. Model and RTL simulation only; the draw's list was written by
-  an agent and its fixing in advance cannot be proved.
-* [evidence/verifier/](evidence/verifier/README.md): the independent verifier
-  agent's items and reports 000-050, 27 PASS and 24 FAIL, verbatim apart from
-  the redactions listed there.
+Columns: **M** model (cycle-accurate, lockstep-checked against the RTL),
+**R** RTL simulation through the real SPI host port, **G** gate level on
+fo6's signed-off netlist, **F** RTL in FPGA fabric (Kria KV260) against the
+other core, a pattern generator or, where it says so, Linux. A **\*** means
+that level was reached by an earlier version of that firmware, and the
+current one needs a rerun there. No column is silicon. The
+[full firmware table](#what-runs-on-it) gives each program's limits.
 
-**Raw evidence in the repository:** [evidence/](evidence/README.md) holds the
-verifier's reports, the kernel and step logs of the 2026-10-30 real-host USB
-runs, and the 2026-11-03 fabric ping (verified,
-[verifier report 037](evidence/verifier/037-fabric-ping-fix3.report.md)). The release
-receipts' archive, `wirelingo-release-evidence-7685aba-fo6.tar.gz` (about
-55 MB, sha256 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`), is not in git: it is to be attached as a release asset
-when the repository is published ([docs/release-evidence.md](docs/release-evidence.md)).
+| Protocol | Firmware | M | R | G | F |
+|---|---|---|---|---|---|
+| UART 8N1 | `uart_tx`, `uart_rx` | yes | yes | yes (`uart_rx`\*) | yes (`uart_rx`\*) |
+| SPI master: modes 0-3, packed, 4 clocks per SCK | `spi_master`, `spi_master_modes`, `spi_master_packed`, `spi_master_fast` | yes | yes | `spi_master`, `spi_master_fast` | yes |
+| I2C master, target, sniffer | `i2c_master`, `i2c_device`, `i2c_sniff` | yes | master, target | master\*, target | yes (master\*) |
+| Logic analyzer, then an I2C target cloning the captured device | `la_capture` + `i2c_device` | yes | yes | yes | yes |
+| USB low speed, two cores, no line unit | `usb_ls_rx` + `usb_ls_tx` | yes | yes | yes (`usb_ls_tx`\*) | |
+| USB low speed, one core and the line unit | `usb_ls_dev` | yes | yes | yes\* | yes\* |
+| USB full speed (12 Mbit/s), one core and the line unit | `usb_fs_dev` | yes | yes | yes\* | yes\*, also with Linux |
+| USB device that enumerates by itself | `usb_enum` | yes | yes | yes\*, also with SDF | yes\*, also with Linux |
+| 10BASE-T transmit, receive | `eth10_tx`, `eth10_rx` | yes | yes | yes | yes |
+| 10BASE-T with carrier sense; ARP, ping and UDP echo with the host's stack | `eth10_tx_cs` + `eth10_rx` | yes | yes | yes | yes, one frame at a time, also with Linux |
+| 10BASE-T cut-through match; match and reply with no host | `eth10_match`, `eth10_reply` | yes | `eth10_reply` | | `eth10_match` |
+| CAN 2.0A | `can_tx`, `can_rx` | yes | | | yes (`can_rx`\*) |
+| JTAG, 1-Wire, PS/2 device, WS2812 | `jtag`, `onewire`, `ps2_device`, `ws2812` | yes | | | yes |
+| Post-freeze: DMX512, LIN, NEC, I2S, Wiegand, DShot600, DALI, Modbus RTU, MIDI, quadrature encoder, HDMI-CEC, ISO 7816-3, SMBus, RC-5 | 21 programs | yes | yes | yes, also with SDF | yes |
+| MDIO, a QSFP-style module map, PMBus | `mdio_master`, `mdio_phy`, `i2c_device`, `smbus_host` | yes | yes | | |
+| Pulse timestamps | `pps_capture` | yes | yes | | |
+| UART to a PC over USB | `usb_uart_*`, four variants | yes | three of four | | |
+| HD44780 4-bit, ATA PIO subset (blind test) | `hd44780_4bit`, `ata_pio` | yes | yes | | |
+| SWD probe (parked) | `swd_probe` | yes | | | |
 
-**Where it stands:**
+The release gate's gate-level runs used software `7685aba`; the post-freeze
+and network-stack runs on the same netlist are supplementary receipts outside
+the gate. The post-freeze SDF runs pass at the typical corner, and at the slow
+and fast corners in supplementary single-case runs
+([docs/release-evidence.md](docs/release-evidence.md)). The FPGA runs against
+Linux: USB in [fpga/kv260](fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)
+and [evidence/kv260-usb-20261030](evidence/kv260-usb-20261030/README.md); the
+network stack in
+[evidence/fabric-ping-20261103](evidence/fabric-ping-20261103/README.md).
 
-* **Real USB host (2026-10-30):** on the KV260, Linux enumerated and configured
-  the autonomous USB firmware at both speeds with no host software on the chip's
-  side after loading: 32 of 32 attaches, 66,000 of 66,000 descriptor reads
-  (`GET_DESCRIPTOR` control transfers) and 188 of 188 bus resets. (That was the 246-word `usb_enum`; the 253-word one
-  from `fault-fixes`, which sees a reset wherever it starts, has not run on the
-  FPGA, and these results apply to it only after a rerun there.) With
-  `usb_fs_dev` and Python on the SPI port, a Linux
-  process then wrote random data through USB and read it back, 350 of 350 round
-  trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. (That was
-  `usb_fs_dev` before the got_in guard of 2026-11-04; not re-run on the board
-  with the 142-word one yet.) Details and
-  limits: [fpga/kv260/README.md](fpga/kv260/README.md); the kernel and step logs
-  of the enumeration runs, which hold part of these counts, are in
-  [evidence/kv260-usb-20261030/](evidence/kv260-usb-20261030/README.md).
-* **Release candidate: run fo6**, passing the strict release gate with no
-  waiver. The certified software is **`7685aba`** (2026-10-14): `main`
-  `a1561d6`'s firmware, tools and tests, so the third post-freeze round and
-  the `ws2812` and `can_rx` timing fixes are covered. It adds one new,
-  supplementary runner (`flow/gl_module_test.py`) and its model test.
-  Earlier validation roots `d916d40` and `f1cb7c9` (tags `rc-d916d40-fo6`,
-  `rc-f1cb7c9-fo6`) passed too. Receipts cover the firmware and tests of
-  their own validation root; a later change to `firmware/`, `tools/`,
-  `test/` or `src/` needs a new run, and `main` has moved since (test and
-  tool changes, FPGA demos), so the final freeze reruns it.
-  50 MHz is met at all three corners, slow included; hold is met everywhere
-  (fast corner +0.095 ns); DRC, LVS and antenna are clean, with no slew,
-  capacitance or fanout violation at any corner. A clean checkout rebuilt on
-  a 4-CPU machine reproduces its netlist bit for bit, and its GDS apart from
-  the timestamps in the GDS header. Hash-bound receipts: Tiny Tapeout
-  precheck, all 29 top-level tests at gate level, and timing-annotated (SDF) gate level at all
-  three corners ([docs/release-evidence.md](docs/release-evidence.md)).
-  Its netlist is formally proved equivalent to the RTL
-  ([docs/equivalence.md](docs/equivalence.md)). The
-  last exception of the previous candidate, t48ba (antenna diodes taking a
-  net to 11 loads against the IHP cells' fanout limit of 8), is removed by a
-  flow step that buffers such nets after routing ([docs/physical.md](docs/physical.md)).
-* Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
-  crosses real pins in both directions, and the quad host port moves
-  193.6 Mbit/s, matching simulation ([fpga/kv260](fpga/kv260/README.md)).
-  That is against the FPGA's own fabric SPI master on the chip's clock; the
-  demo board's MicroPython driver is far slower, and the port's speed through
-  the Tiny Tapeout pads is unmeasured ([docs/info.md](docs/info.md#how-to-test)).
-  At 48 MHz the autonomous USB device enumerates, at low and full speed,
-  against a host model's waveform replayed on its pads by the FPGA's pattern
-  generator, with every device edge at the clock the cycle model gives when
-  the model samples the pads the way the FPGA drives them. (That was the
-  2026-10-14 replay with the 246-word `usb_enum` from before `fault-fixes`;
-  the 253-word one needs a KV260 rerun before it applies.)
-* A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
-  handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
-  gate-level simulation of the signed-off netlist
-  ([docs/usb-full-speed.md](docs/usb-full-speed.md)); the chip meets 50 MHz,
-  so 48 MHz, at every corner. With no host software after loading, one core
-  also enumerates as a USB device on its own, low or full speed
-  ([docs/usb-enumeration.md](docs/usb-enumeration.md)).
-* Measured in simulation against the RP2040 PIO's reference programs,
-  including where PIO is better ([docs/pio-comparison.md](docs/pio-comparison.md)).
-* **Post-freeze protocol challenge:** with the RTL frozen (tag
-  `rc-93c2137-t48ba`; the chip's Verilog `src/*.v` unchanged since, only the
-  hardening config `src/config.json` changed for fo6), three rounds of
-  protocols were added in firmware, plus one assembler fix (`/` became
-  integer division, which bidirectional DShot needed). Round one: DMX512, LIN
-  (commander and a self-synchronising responder), NEC infrared (38 kHz carrier and receiver),
-  I2S, Wiegand, DShot600 (bidirectional too). Round two: DALI, Modbus RTU,
-  MIDI (receive and transmit), a quadrature encoder counter. Round three:
-  HDMI-CEC (multi-master arbitration), ISO 7816-3 T=0 smart card, SMBus with
-  PEC, RC-5 infrared. Each is checked by the static timing checker, pins-only
-  models, sigrok's decoders where one exists and an RTL test through the SPI
-  port, which also passes on fo6's gate-level netlist (functional 16/16;
-  with SDF at 20 ns 16/16 at the typical corner, two of them after their
-  timing assertions got a 1 ns tolerance for sub-ns pad skew; 16/16 at the
-  slow and fast corners in supplementary single-case runs of 2026-11-02,
-  outside the release gate and with no verifier report). All three rounds also ran on the KV260 FPGA build of the RTL,
-  against the other core or the FPGA's pattern generator playing our own
-  (mostly pre-timed) device models, with results equal to the cycle model's
-  ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), with the
-  25 ISA limitations they ran into).
-* **v2** (first signed off as run v2c; fo6 has the same RTL): four small
-  additions over g4, each in the spec, RTL, model, assembler, lockstep, formal
-  where an invariant applies, and a firmware that uses it. The line unit's NRZI sample
-  point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
-  packets at 28 ns edge-to-edge distortion, g4 11/24; v2c met 48 MHz only at
-  the typical corner, fo6 meets 50 MHz at all three); `SYNC_BYPASS` reads
-  chosen pad inputs through one synchroniser flop (SPI master at 4 clocks
-  per SCK, like PIO, if the pads and
-  the device answer within 2 clocks); WAIT kind 7 waits until any of 8 pins
-  differs from a register (logic analyzer timestamps to the tick instead of
-  5 ticks); CALL/RET with one link register (`i2c_device` 98 → 88
-  instructions). docs/isa.md has the details.
+## How it is verified
+
+| Method | What it checks | Level | Evidence |
+|---|---|---|---|
+| Two implementations, compared every cycle | A Python cycle model and the RTL on random programs, pins and host traffic, with required coverage goals | RTL simulation | [docs/verification.md](docs/verification.md) |
+| A third implementation | A Hardcaml and OCaml port whose generated Verilog is proved equal to the RTL | Formal, simulation | [docs/hardcaml-port.md](docs/hardcaml-port.md) |
+| Formal proofs | FIFOs (with join), the host port against a pin-level reference, core invariants, line-unit bounds | Formal | [docs/verification.md](docs/verification.md), [docs/formal-hostport.md](docs/formal-hostport.md) |
+| Mutation testing | 34 of 34 mutants killed (recorded 2026-10-05) | Model, RTL | [docs/verification.md](docs/verification.md) |
+| Netlist equivalence | fo6's netlist equals the RTL: 7429 of 7429 points, two engines, 5 of 5 planted netlist bugs caught | Formal, on the netlist | [docs/equivalence.md](docs/equivalence.md) |
+| Gate-level simulation | All 29 top-level tests on fo6's netlist; SDF delays at typ, slow and fast, with an overclocked control that must fail | Gate level | [docs/release-evidence.md](docs/release-evidence.md) |
+| Outside oracles | sigrok's protocol decoders; Linux's USB and network stacks on the FPGA build | RTL simulation, FPGA | [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), [fpga/kv260](fpga/kv260/README.md) |
+| Fault injection | Seeded wire faults: six real failures found, four fixed | Model, RTL | [docs/fault-testing.md](docs/fault-testing.md) |
+| Blind test | Two protocols drawn by a rule, chip and tools frozen | Model, RTL | [docs/blind-test.md](docs/blind-test.md) |
+| Independent verifier agent | Reruns and attacks each claim: reports 000-050, 27 PASS and 24 FAIL, kept verbatim | Review | [evidence/verifier](evidence/verifier/README.md) |
+| Lean proofs | Manual proofs and finite comparisons against the RTL, each with its stated scope | Formal | [docs/lean-verification.md](docs/lean-verification.md) |
+
+What is proven at each level, and what is still open:
+[docs/status.md](docs/status.md) and
+[docs/verification-story.md](docs/verification-story.md). Raw records are in
+[evidence/](evidence/README.md). The release receipts' archive
+(`wirelingo-release-evidence-7685aba-fo6.tar.gz`, sha256 `868c5d3a…`) is not
+in git; it is to be attached as a release asset.
+
+## Physical status (run fo6)
+
+* **Signoff passes with no waiver** (`flow/signoff.py`, and the stricter
+  `flow/release_check.py`): 0 routing violations, 0 KLayout DRC, LVS clean,
+  0 antenna violations, and no slew, capacitance or fanout violation at any
+  corner. Tiny Tapeout's precheck passes on the GDS
+  ([docs/physical.md](docs/physical.md),
+  [docs/release-evidence.md](docs/release-evidence.md)).
+* **Clock: the demos run at 48 MHz, with margin; 50 MHz is met at signoff**
+  at all three corners. The worst flop or SRAM setup slack at the slow corner
+  is +0.010 ns at 20 ns; hold slack is +0.19 / +0.36 / +0.095 ns at typ /
+  slow / fast. At 48 MHz the clock period is 0.83 ns longer. Full-speed USB
+  needs exactly 48 MHz; 10BASE-T is tested at 40 and 50 MHz.
+* The netlist is formally equivalent to the RTL and passes all 29 top-level
+  tests at gate level (software `7685aba`). A clean checkout rebuilt on a
+  4-CPU machine reproduces the netlist bit for bit.
+* Not yet measured: anything through the real pads, including the host
+  port's speed from the demo board. Analogue behaviour is not simulated.
+
+## Try it
+
+```
+python3 -m venv .venv && .venv/bin/pip install -r test/requirements.txt
+export PATH=$HOME/tools/oss-cad-suite/bin:$PWD/.venv/bin:$PATH   # iverilog, yosys, sby
+PYTHONPATH=tools .venv/bin/python -m pytest test/model/test_line.py test/model/test_usb_fs.py   # on the model
+cd test && make                                                  # top level through the SPI port (RTL)
+```
+
+To write a protocol: [docs/asm.md](docs/asm.md) (assembler),
+[docs/isa.md](docs/isa.md) (instructions), and any file in `firmware/` as an
+example. On the demo board, copy the MicroPython driver and run
+`bringup.uart_loopback(pe)`, which needs no wiring
+([docs/info.md](docs/info.md#how-to-test)).
+
+---
+
+# In detail
+
+The rest of this page is the full reference: the instruction-set additions,
+the firmware table with each program's limits and exact evidence, optional
+host workflows, verification, physical design and the repository layout.
 
 ## What we'd do differently from PIO
 
@@ -313,7 +346,8 @@ make -C formal                                                   # proofs
   8-deep FIFOs, the line unit and the quad host port.
 * **Run fo6 passes signoff** (`flow/signoff.py`): 0 routing violations,
   0 KLayout DRC, LVS clean, 0 antenna violations. Setup is met at 50 MHz at
-  all three corners, hold everywhere (+0.19 / +0.36 / +0.095 ns typ / slow /
+  all three corners (worst flop or SRAM slack +0.010 ns at the slow corner;
+  the demos run at 48 MHz, with margin), hold everywhere (+0.19 / +0.36 / +0.095 ns typ / slow /
   fast), and no slew or capacitance violation at any corner. 47 % standard-cell
   utilization, 53 % with the macros; Metal3 at 64 % after global routing. What closed the slow
   corner (from about 46 MHz in run v2c) was the clock tree, not the RTL: the
@@ -372,7 +406,7 @@ make -C formal                                                   # proofs
 
 | Path | What |
 |------|------|
-| `docs/` | `isa.md` (spec), `asm.md` (assembler), `methodology.md` (AI-assisted design and verification), `verification.md`, `physical.md`, `info.md` (TT datasheet) |
+| `docs/` | `summary.md` (two pages), `status.md` (status in detail), `line-unit-settings.md`, `isa.md` (spec), `asm.md` (assembler), `methodology.md` (AI-assisted design and verification), `verification.md`, `physical.md`, `info.md` (TT datasheet) |
 | `src/` | RTL: `pe_core`, `pe_fifos`/`pe_fifo`, `pe_chip` (cores + IMEM + pins), `pe_imem`, `pe_hostport` (SPI, 1-bit or quad), TT top `project.v` |
 | `tools/pe/` | `isa`, `asm` (assembler), `sim` (golden model), `host` (register writes), `modelhost`, `randprog`, USB/CAN helpers, `postfreeze` (host side and pins-only models of the post-freeze protocols) |
 | `tools/micropython/` | demo-board driver and generated firmware bundle |
