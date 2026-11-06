@@ -54,12 +54,14 @@ unit's settings are chosen by the host when it loads a program.
   with USB and 10BASE-T in mind, and CAN-style stuffing also fits; software
   chooses from it but cannot add a coding. The host picks with three register
   writes (LINECFG, LINEDIV, LINEPINS) when it loads a program
-  ([docs/isa.md §4.7](docs/isa.md#47-line-unit-core-0)). Two protocols use it
-  because a core alone can't keep up: full-speed USB, at 4 clocks per bit at
-  48 MHz, where a firmware receiver needs at least 13 instructions per bit;
-  and 10BASE-T receive, where the unit samples the pin at both clock edges and
-  tracks the sender's phase, while a core sees one sample per clock. Low-speed
-  USB runs either way (two cores without it, one with it).
+  ([docs/isa.md §4.7](docs/isa.md#47-line-unit-core-0)). Two protocols use it.
+  Full-speed USB runs at 4 clocks per bit at 48 MHz, and the pure-firmware
+  receiver (`usb_ls_rx`) takes at least 13 instructions per bit, so it cannot
+  keep up. For 10BASE-T receive, the unit samples the pin at both clock edges
+  and tracks the sender's phase, while a core sees one sample per clock; that
+  is the mechanism, not a measured comparison, since no 10BASE-T receiver in
+  firmware alone has been written. Low-speed USB runs either way (two cores without
+  it, one with it).
 * **Rehearsed with the chip frozen.** With the chip's Verilog frozen at tag
   `rc-93c2137-t48ba` (unchanged since), three rounds of protocols it was not
   designed for were added in firmware only: DMX512, LIN, NEC and RC-5
