@@ -51,7 +51,6 @@ summary of every run; `compare` prints which runs' deterministic results
 """
 import argparse
 import json
-import math
 import pathlib
 import random
 import sys
