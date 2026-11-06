@@ -224,7 +224,6 @@ async def test_capture_rearm(dut):
     result['pin_trace'] = monitor.trace
     pins = cocotb.start_soon(monitor.run())
     source = cocotb.start_soon(drive_source(spi,plan,result['source_emitted']))
-    active_row = None
     try:
         program = asm.assemble((ROOT/'firmware/uart_rx_capture.pasm').read_text(),{'RX':RX})
         assert len(program.words) == 19
@@ -233,7 +232,6 @@ async def test_capture_rearm(dut):
             row = dict(label=f'capture-{index+1}', expected=list(capture['data']),
                        bad_final=capture['bad_final'], source_start=capture['start'],
                        scheduled_service=capture['service'], received_words=[], transactions=[])
-            active_row = row
             result['cases'].append(row)
             first = len(spi.transactions)
             try:

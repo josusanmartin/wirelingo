@@ -47,7 +47,6 @@ def run(linecfg, tx_div, rx_div, data_bits, trace=None):
     for w in words:
         mh.push(0, w)
     mh.start(1)
-    out = []
     for _ in range(64 * (tx_div >> 8) * 4 + 4000):
         mh.step()
         if trace is not None:

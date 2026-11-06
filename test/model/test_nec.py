@@ -66,7 +66,7 @@ def test_nec_tx_rx_through_receiver_module():
     led = pf.PinLog(mh, pf.pin_probe(LED), period)
     for a, c, m in CODES:
         mh.push(0, pf.nec_word(a, c, m))
-    recs, t_out, tsop_out = [], [], [(0, 1)]
+    recs, tsop_out = [], [(0, 1)]
     for _ in range(int(len(CODES) * 0.110 * f_clk)):
         t = mh.chip.cycle * period
         o = tsop.step(t, (mh.chip.pin_out >> LED) & 1)
