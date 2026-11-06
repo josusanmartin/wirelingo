@@ -349,7 +349,7 @@ async def bench_pmbus(dut):
             T.EXT.set(SCL, not sc, 0)
             T.EXT.set(SDA, not sd, 0)
     task = cocotb.start_soon(bus())
-    log, t0 = [], None
+    log = []
 
     async def watch():
         while True:

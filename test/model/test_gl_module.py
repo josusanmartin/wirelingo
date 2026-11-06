@@ -1,7 +1,6 @@
 """flow/gl_module_test.py with a substitute make: a receipt only when every
 selected test passed exactly once; verify catches later edits."""
 import os
-from pathlib import Path
 import subprocess
 import sys
 

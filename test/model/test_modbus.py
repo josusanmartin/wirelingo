@@ -11,7 +11,6 @@ The chip runs at TB * baud (CLKDIV 1: 1.9968 MHz for 19200 baud), tick for
 tick the waveform of 50 MHz / CLKDIV 25.04; test_modbus_50mhz runs a request
 at 50 MHz."""
 import pathlib
-import random
 
 import pytest
 

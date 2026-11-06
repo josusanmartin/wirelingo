@@ -131,7 +131,6 @@ def test_driver_uart_tx_bundle():
     pe.load(**protoemu_fw.UART_TX)
     pe.start(1)
     msg = b"Hi!"
-    level, bits, t_edge = 1, [], None
     for ch in msg:
         pe.push(0, ch)
     # decode 115200 baud 8N1 from uo0 at 48 MHz: 416.7 clocks per bit

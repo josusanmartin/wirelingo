@@ -11,7 +11,6 @@ level)] (pe.postfreeze.bit_edges); waveforms [(level, duration_ns)].
 """
 from . import host
 from .postfreeze import runs
-from .postfreeze2 import Player
 
 
 # ================================================================== HDMI-CEC

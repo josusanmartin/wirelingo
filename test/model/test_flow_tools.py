@@ -1,6 +1,5 @@
 """Release gates must fail on stale results, missing checks and config drift."""
 import importlib.util
-import hashlib
 import json
 import os
 import pathlib

@@ -41,7 +41,6 @@ import argparse
 import binascii
 import fcntl
 import json
-import os
 import pathlib
 import signal
 import socket

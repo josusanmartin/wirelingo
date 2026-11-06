@@ -4,7 +4,7 @@ import sys
 import time
 from types import SimpleNamespace
 
-from pe import asm, host, isa, sim
+from pe import asm, host, isa
 from pe.profile import FULL, Profile
 from pe.modelhost import ModelHost
 from test_micropython_driver import FakeTT, protoemu, bringup
