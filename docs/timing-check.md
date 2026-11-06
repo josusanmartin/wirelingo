@@ -20,26 +20,26 @@ RTL, and an interval the stimulus never produced is not covered by it.
 
 ```
 $ python -m pe.timing firmware/usb_fs_dev.pasm --defs pe.usbdev:defines
-usb_fs_dev: 142 words, CLKDIV 1+0/256 (1 tick = 1 clk)
-deadline ack_ta (line 47): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
+usb_fs_dev: 159 words, CLKDIV 1+0/256 (1 tick = 1 clk)
+deadline ack_ta (line 57): ack_wait.cond (2..6 ticks after dend.enter) -> ack_out.done  -- DATA0/1 -> ACK
   bound: [5, 12] ticks = [5, 12] clk; with adjust +3..4: [8, 16] clk
   required: >= 8 and <= 26 clk  ->  PASS
   worst path (12 ticks):
-    line 93 `ldi r2, 0x800D`                         +1
-    line 94 `mov r1, crc`                            +1
-    line 95 `cmp r1, r2`                             +1
-    line 96 `jmp !z, data_bad`                       +1
-    line 97 `cmp r3, 0x1C3`                          +1
-    line 98 `jmp z, data_ok`                         +1
-    line 99 `jmp f F_SETUP, data_bad`                +1
-    line 100 `cmp r3, 0x1D2`                         +1
-    line 101 `jmp !z, data_bad`                      +1
-    line 103 `wait 1 pin DM`                         +8  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 9, the lines above count from the anchor)
-    line 104 `ldi r2, 0xD280            [2]`         +3
-    line 105 `mov osr, r2`                           +1
-    line 106 `out line, 16`                          +0  (end)
+    line 118 `ldi r2, 0x800D`                        +1
+    line 119 `mov r1, crc`                           +1
+    line 120 `cmp r1, r2`                            +1
+    line 121 `jmp !z, data_bad`                      +1
+    line 122 `cmp r3, 0x1C3`                         +1
+    line 123 `jmp z, data_ok`                        +1
+    line 124 `jmp f F_SETUP, data_bad`               +1
+    line 125 `cmp r3, 0x1D2`                         +1
+    line 126 `jmp !z, data_bad`                      +1
+    line 128 `wait 1 pin DM`                         +8  <- the interval starts at the condition (2 ticks after the anchor; the WAIT was reached at 9, the lines above count from the anchor)
+    line 129 `ldi r2, 0xD280            [2]`         +3
+    line 130 `mov osr, r2`                           +1
+    line 131 `out line, 16`                          +0  (end)
   assumes:
-    stall= of the deadline max=0 (line 47) at line 106 `out line, 16`
+    stall= of the deadline max=0 (line 57) at line 131 `out line, 16`
 ...
 ```
 
@@ -268,6 +268,7 @@ the TX FIFO (the host sets F_STAGED after pushing it).
 | DATA0/1 → ACK | 8–16 | 10.29–14.33 | 5–12 / 7–11 |
 | IN → NAK | 10–16 | 12.77–13.37 (before the guard; that path is unchanged) | 7–12 / 9–10 |
 | IN → staged DATA | 13–18 | 15.73–16.45 | 10–14 / 12–13 |
+| IN → the firmware's zero-length DATA1 (`in_zlp_ta`, branch `usb-config-prestage`) | 11–17 | 13.77–14.53 | 8–13 / 10–11 |
 | OUT without room → NAK | 9–10 | 9.25–9.70 | 6 / 6 |
 | DATA receive loop (per bit, ≤ 4) | 3 | | 3 |
 | DATA transmit loop (per byte, ≤ 32) | 3–4 | | 3–4 |
@@ -280,6 +281,15 @@ staged DATA one clock (before it, at bc98a97: checker 12–17, bus
 14.73–15.45, program 9–13 / 11–12), and IN → NAK one clock in its bound's
 maximum only, on the new F_STAGED-over-empty path (checker 10–15, program
 7–11 before); the other rows are unchanged.
+
+With SET_CONFIGURATION's status stage answered by the firmware (branch
+`usb-config-prestage`, 2026-11-06; 159 words), `pe.timing` and
+`test_timing_check.py` (whose sessions now start with a SET_CONFIGURATION
+and its status IN) give: IN → NAK one clock longer, checker 11–17, program
+8–13 / 10–12, bus 13.42–15.03 (the `jmp f F_CFGZLP` in `nak_in`); IN → the
+firmware's ZLP as in the row above; DATA0/1 → ACK bus 10.58–14.19, IN →
+staged DATA 14.94–16.35, OUT → NAK 9.38–9.98, with the checker and program
+bounds of those three unchanged. Evidence: model.
 
 Measured over 8 sessions (SETUP/DATA0 → ACK, IN → NAK, IN → DATA1, OUT →
 ACK, OUT → NAK) with host jitter up to ±9.25 ns and −2500 to +2500 ppm; the

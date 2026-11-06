@@ -103,6 +103,7 @@ class SpiBridge:
         self.sw = sw
         self.hold = None            # hold(op, previous op, the one before): True keeps the software waiting
         self.held = False
+        self.services = 0           # service() calls completed
         self.ops, self.results, self.go = queue.Queue(), queue.Queue(), queue.Queue()
         sw.mh = self
         h.idle = lambda mh: None
@@ -157,6 +158,7 @@ class SpiBridge:
             while True:
                 op = self.ops.get()
                 if op[0] == "done":
+                    self.services += 1
                     break
                 if op[0] == "error":
                     raise op[1]
@@ -293,7 +295,15 @@ def staged_over_empty(h, b, what):
     caught up. F_STAGED set over an empty TX FIFO: the next IN finds no packet
     and parks the core in `pull block`. F_UNDERRUN (flag 0, sticky): a core
     freed from `pull block` by a later push started that packet unasked and cut
-    it short, leaving the rest of the words out of step in the FIFO."""
+    it short, leaving the rest of the words out of step in the FIFO. Caught
+    up: two more service() calls end (the one running may be inside a stage's
+    checks, which a status IN the firmware answers itself, SET_CONFIGURATION's,
+    no longer waits for), then 400 bit times."""
+    n = b.services
+    for _ in range(4000):
+        if b.services >= n + 2:
+            break
+        h.wait_bits(8)
     h.wait_bits(400)
     chip = b.chip
     assert not (chip.flags & usbdev.F_STAGED and not chip.cores[0].txf), f"{what}: F_STAGED over an empty TX FIFO"

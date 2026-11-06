@@ -292,3 +292,41 @@ def test_zero_length_write_stages_its_status_once():
             h.idle(h.mh)
         assert staged == [(usb.PID_DATA1, b"")] * (k + 1), f"request {k}: staged {staged}"
     nothing_staged(h, sw, "after three zero-length writes")
+
+
+# ------------------------------------------------------------------ the cost on the receive side
+@pytest.mark.parametrize("seed, ppm", [(0, -2500), (1, 0), (2, 2500)])
+def test_setup_capture_keeps_up(seed, ppm):
+    """The SETUP's first 16 bits take 4 clocks each (one more than the DATA
+    loop), so the line unit holds a bit more while they come in: at most 4
+    bits during a SETUP's DATA (3 before; OUT DATA still 3), and none when the
+    firmware reaches `dend`, so the ACK path starts as it did."""
+    h0, _, _ = device(seed=seed)
+    mh = h0.mh
+    h = FsHost(mh, seed=seed, jitter_ns=5, ppm=ppm)
+    prog = asm.assemble(FW_TEXT, usbdev.defines())
+    line, core, step = mh.chip.line, mh.chip.cores[0], mh.chip.step
+    lo, hi = prog.labels["cfg_bit"] - 2, prog.labels["dend"]    # `jmp !f F_SETUP, dbit` .. the loop's end
+    seen = {"peak": 0, "at_dend": []}
+
+    def watched(*a, **k):
+        r = step(*a, **k)
+        if lo <= core.pc < hi:
+            seen["peak"] = max(seen["peak"], len(line.rq))
+        elif core.pc == hi:
+            seen["at_dend"].append(len(line.rq))
+        return r
+    mh.chip.step = watched
+    peaks = {}
+    for name, fn in (("SET_CONFIGURATION", lambda: h.setup(0, set_config(1))),
+                     ("GET_DESCRIPTOR", lambda: h.setup(0, bytes([0x80, 6, 0, 1, 0, 0, 18, 0]))),
+                     ("OUT, 8 bytes of 0xFF", lambda: h.data_out(0, 0, usb.PID_DATA1, bytes([0xFF] * 8))),
+                     ("OUT, zero-length", lambda: h.data_out(0, 0, usb.PID_DATA1, b""))):
+        seen["peak"], seen["at_dend"] = 0, []
+        fn()
+        peaks[name] = seen["peak"]
+        assert seen["at_dend"] and not any(seen["at_dend"]), f"{name}: bits still queued at dend {seen['at_dend']}"
+        mh.step(200)
+        mh.pop_all(0)
+    assert peaks == {"SET_CONFIGURATION": 4, "GET_DESCRIPTOR": 4, "OUT, 8 bytes of 0xFF": 3,
+                     "OUT, zero-length": 3}, peaks

@@ -1538,6 +1538,28 @@ always sends the status IN; the board's core saw no IN at all, which the
 model cannot produce. The device software is not ruled out by this, but it
 has no known path to the stall.
 
+**Mitigation to test: the firmware answers SET_CONFIGURATION's status stage
+(branch `usb-config-prestage`, 2026-11-06; evidence: model and RTL
+simulation, not yet on the board).** `usb_fs_dev` (159 words) recognises
+SET_CONFIGURATION in the SETUP's first 16 bits and answers the status IN
+with a zero-length DATA1 itself, so that IN is never NAKed while the
+software catches up; the software stages nothing for it
+([docs/usb-full-speed.md](../../docs/usb-full-speed.md)). The stalls above
+had the reply staged already, so this may not change the rate; it removes
+the NAKed status IN through the hub's transaction translator, which is
+what the board can test. The A/B run for the orchestrator (not run yet):
+
+    sudo python3 B/fpga/kv260/host/usb_prestage_ab.py --a A --b B [--pairs 300]
+
+A = a checkout without the pre-stage (improve-2026-11 at f8eed52), B = this
+branch, each copied whole as `install.sh` does. It alternates single attaches
+ABBA (300 per arm by default), with usb_guard_run.py's capture, stop and
+no-device rules, refuses arms the wrong way round, and prints each arm's
+stall count and a one-sided Fisher exact p. At 3 % for A, 300 attaches per
+arm detect a B that never stalls with probability 0.95 (200: 0.72; `--plan`
+prints the table). Proved on the model (`--model`) and on stand-in demos
+(`test/model/test_usb_prestage_ab.py`), not on the board.
+
 ### Build and staging (2026-10-07, branch `kv260-usb`)
 
 On `main` since 2026-10-13, with the USB bus-reset fix (usb_enum waits for
