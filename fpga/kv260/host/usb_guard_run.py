@@ -165,11 +165,12 @@ class Stopper:
             signal.pthread_sigmask(signal.SIG_UNBLOCK, self.SIGNALS)
 
 
-def demo(args, log, model, timeout, stopper, extra=()):
+def demo(args, log, model, timeout, stopper, extra=(), script=None):
     """One usb_fs_data_demo run, its output in `log`. Returns (rc, text). A
     stop asked meanwhile reaches it as a SIGTERM; it gets 60 s to detach, then
-    a SIGKILL. rc 124: it outlasted `timeout`."""
-    cmd = [sys.executable, str(DEMO)] + args + (["--model"] if model else []) + list(extra)
+    a SIGKILL. rc 124: it outlasted `timeout`. script: another checkout's
+    usb_fs_data_demo.py (usb_prestage_ab.py), default this one's."""
+    cmd = [sys.executable, str(script or DEMO)] + args + (["--model"] if model else []) + list(extra)
     with open(log, "w") as f:
         # its own session: a terminal Ctrl-C or an ssh hangup reaches only this
         # process, which passes a SIGTERM on (verifier 048)

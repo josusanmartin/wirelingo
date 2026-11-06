@@ -113,6 +113,9 @@ class DeviceSoftware:
         self.sent_at = None
         self.dirty = False     # the TX FIFO may hold words a SETUP's flush missed
         self.tx_clears = 0
+        # firmware that answers SET_CONFIGURATION's status stage itself (usb_fs_dev's
+        # `cfg_zlp`, F_CFGZLP): a ZLP staged here too would be left over for later
+        self.fw_cfg_status = "cfg_zlp" in getattr(rx_prog, "labels", {})
 
     def records(self):
         self.words += self.mh.pop_all(self.rx)
@@ -259,4 +262,5 @@ class DeviceSoftware:
             self.new_address = wval
             self.pending = [b""]
         elif bm == 0x00 and breq == 9:         # SET_CONFIGURATION
-            self.pending = [b""]
+            if not self.fw_cfg_status:         # (else the firmware sends the ZLP, no round trip)
+                self.pending = [b""]
