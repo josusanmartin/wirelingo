@@ -76,6 +76,7 @@ lists what the runs can't show.
 > | IN → NAK, checker (pads) | 10–16 clocks | 11–17 clocks | `pe.timing` |
 > | IN → the firmware's ZLP, checker (pads) | — | 11–17 clocks | `pe.timing` |
 > | ACK / IN → staged DATA, checker | 8–16 / 13–18 | unchanged | `pe.timing` |
+> | ACK / NAK / staged DATA1 / the firmware's ZLP | 10.5 / 13.4 / 15.9 / — clocks | 10.5 / **14.4** / 15.9 / 14.1 clocks (3.52 bit times; margin 11.9) | RTL, `test_usb_fs_device`, `test_usb_fs_config_zlp` (988746a) |
 > | IN → NAK / IN → ZLP, measured on the bus | 12.77–13.37 / — clocks | 13.42–15.03 / 13.77–14.53 clocks | model, `test_timing_check.py` (8 sessions; the new session set adds SET_CONFIGURATION, so the two runs differ in more than the firmware) |
 >
 > Whether this changes the board's stall rate is not known: in all 8 stalls
