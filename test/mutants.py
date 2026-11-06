@@ -40,6 +40,7 @@ def ETH(selection):
 
 HW_TESTS = pytest("test/model/test_hw_day.py test/model/test_fabric_guard.py")
 FAB = pytest("test/model/test_fabric_ping.py test/model/test_fabric_guard.py")
+PRIVACY_SCAN = pytest("test/model/test_private_hosts.py -k no_tailnet")
 
 
 def REPLY(selection):
@@ -514,9 +515,14 @@ MUTANTS = {
         '        pass\n', HW_TESTS),
     "hw-chained-load-line": ("fpga/kv260/host/hw_day.py", 'f"  sudo xmutil unloadapp\\n  sudo xmutil loadapp {app}\\n  sudo xmutil listapps\\n"',
         'f"  sudo xmutil unloadapp; sudo xmutil loadapp {app} && sudo xmutil listapps\\n"', HW_TESTS),
-    # the tailnet name back as install.sh's default (split so this file stays clean)
+    # a tailnet name or address as install.sh's default, caught by the tracked-files scan
+    # (made-up names, split so this file stays clean)
     "privacy-kria-default-host": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
-        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.tail' '[tailnet label redacted].ts.net}}', pytest("test/model/test_private_hosts.py")),
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.tail' '0c0ffe.ts' '.net}}', PRIVACY_SCAN),
+    "privacy-kria-magicdns-host": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.wren-otter.ts' '.net}}', PRIVACY_SCAN),
+    "privacy-kria-tailnet-address": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@100.10' '1.102.103}}', PRIVACY_SCAN),
     # any other default host: install.sh must still refuse with no host given
     "privacy-kria-other-default": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
         'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.local}}', pytest("test/model/test_private_hosts.py -k install")),
