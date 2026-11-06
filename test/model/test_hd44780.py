@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from pe import asm, host, sigrok, sim, timing
+from pe import asm, host, timing
 from pe.modelhost import ModelHost
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))

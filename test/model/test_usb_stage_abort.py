@@ -12,7 +12,6 @@ status stage must be one zero-length DATA1."""
 import pytest
 
 from pe import usb, usbdev
-from pe.usbfs import FsHost
 from pe.usbhost import UsbHost
 import test_usb_fs_data as fs
 import test_usb_ls_restage as ls

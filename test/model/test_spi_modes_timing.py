@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from pe import asm, isa, timing
-from test_spi_modes import FW, TX, RESP, SCK, program, setup, step, action, pop
+from test_spi_modes import FW, TX, RESP, SCK, setup, step, action, pop
 
 
 def variant(mode, schedule):

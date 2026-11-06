@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 import cocotb
-from cocotb.triggers import First, Timer, ValueChange
+from cocotb.triggers import Timer, ValueChange
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from pe import asm, host, sim, uartcapture

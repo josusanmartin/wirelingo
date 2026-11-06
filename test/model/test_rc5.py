@@ -17,7 +17,7 @@ import random
 
 import pytest
 
-from pe import asm, host, postfreeze as pf, postfreeze3 as p3, sigrok, sim
+from pe import asm, host, postfreeze as pf, postfreeze3 as p3, sigrok
 from pe.modelhost import ModelHost
 from pe.postfreeze2 import Player
 

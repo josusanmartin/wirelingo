@@ -1,4 +1,3 @@
-import cocotb
 from cocotb.triggers import RisingEdge, ReadOnly
 from pe import isa
 

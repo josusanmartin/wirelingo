@@ -1,6 +1,5 @@
 """Exercise the real runner scripts with deterministic external-tool substitutes."""
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys

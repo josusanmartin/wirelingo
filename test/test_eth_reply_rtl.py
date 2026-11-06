@@ -16,7 +16,7 @@ import sys
 import zlib
 
 import cocotb
-from cocotb.triggers import ClockCycles, Edge, FallingEdge, Timer
+from cocotb.triggers import ClockCycles, Edge, Timer
 from cocotb.utils import get_sim_time
 
 from pe import ethreply, ethsim, host, sim

@@ -21,7 +21,7 @@ import cocotb
 from cocotb.triggers import First, Timer, ValueChange
 from cocotb.utils import get_sim_time
 
-from pe import asm, host, sigrok, sim
+from pe import asm, sigrok, sim
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "model"))

@@ -12,7 +12,6 @@ Most runs clock the model at 5 MHz (commander CLKDIV 2.504, responder 2.5):
 the programs count ticks, and the bit timing (104 ticks per bit) is the same
 as at 50 MHz; test_lin_commander_50mhz checks the commander there."""
 import pathlib
-import random
 
 import pytest
 

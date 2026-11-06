@@ -10,7 +10,6 @@ One second is 50 million model steps, so Bench skips the ticks of a WAIT while
 nothing can happen; test_fast_forward_equals_stepping pins that to plain
 stepping, and test/test_pps.py runs without it on the RTL."""
 from fractions import Fraction
-import pathlib
 import random
 
 import pytest

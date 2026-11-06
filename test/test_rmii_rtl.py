@@ -7,7 +7,7 @@ delay each value is sampled at the next rising edge, as the model's are."""
 import cocotb
 from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge
 
-from pe import asm, host, rmii, sim
+from pe import host, rmii, sim
 import test as base
 
 T = base.CLK_NS
