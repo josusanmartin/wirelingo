@@ -7,7 +7,7 @@ is a fast way to develop and test firmware; test/test.py then confirms on RTL.
     mh.apply(host.load_program(0, prog, ...)); mh.start(0)
     mh.run(1000, lambda cyc, outs: ...)      # callback sees outputs, returns inputs
 """
-from . import sim, host
+from . import sim
 
 
 class ModelHost:

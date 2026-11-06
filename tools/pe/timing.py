@@ -38,8 +38,8 @@ from collections import namedtuple
 from dataclasses import dataclass, field
 
 from . import asm, isa
-from .isa import (OP_JMP, OP_WAIT, OP_IN, OP_OUT, OP_PUSH, OP_PULL, OP_MOV, OP_SET,
-                  OP_LDI, OP_ALU, OP_PIN, OP_FLAG, OP_HALT, OP_CALL, bits)
+from .isa import (OP_JMP, OP_WAIT, OP_IN, OP_OUT, OP_PUSH, OP_PULL, OP_MOV,
+                  OP_LDI, OP_ALU, OP_HALT, OP_CALL, bits)
 
 INF = math.inf
 KSET = 6            # a register value is a set of at most KSET constants, else unknown (None)

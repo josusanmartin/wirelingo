@@ -59,7 +59,7 @@ def load_writes(clock_hz, carrier_sense=True, td_pin=8, rxp=16):
     running. TD+ = td_pin, TD- = td_pin + 1 (uo0, uo1), RXP = rxp (ui0).
     carrier_sense=False loads plain eth10_tx."""
     import pathlib
-    from . import asm, host, sim
+    from . import asm, host
     fw = pathlib.Path(__file__).resolve().parents[2] / "firmware"
     clkdiv, period = clock_settings(clock_hz)
     host.input_pad(rxp)
