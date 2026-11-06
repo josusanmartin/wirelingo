@@ -15,7 +15,9 @@ logic. Each core executes one 32-bit instruction per tick and has:
 * a configurable CRC tap fed by the shift registers;
 * 8-word FIFOs to the host, which can be joined into one 16-word TX FIFO.
 
-This tapeout has two cores.
+This tapeout has two cores. The demos run at 48 MHz (full-speed USB needs
+exactly that; 40 MHz for 10BASE-T), with margin; 50 MHz is met at signoff at all three corners,
+with +0.010 ns of setup slack left at the slow corner (`docs/physical.md`).
 
 Programs live in on-chip SRAM: each core has its own bank of 256 instructions.
 
@@ -33,7 +35,9 @@ real protocols fit:
   register, and a per-pin bypass of the input synchroniser.
 * A line unit on core 0 for NRZ, NRZI and Manchester framing with bit
   stuffing, sampled mid-bit on a half-cycle phase so that full-speed USB
-  tolerates the specification's edge jitter.
+  tolerates the specification's edge jitter. It has no protocol built in:
+  the host configures it with register writes when it loads a program
+  (`docs/line-unit-settings.md`).
 
 The firmware verified in simulation covers UART TX/RX, SPI master, I2C master
 (with clock stretching), USB devices at low and full speed (48 MHz), including

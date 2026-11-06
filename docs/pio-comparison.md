@@ -72,7 +72,7 @@ protoemu 8 ticks per bit at 800 kHz.
 
 | | RP2040 PIO (pico-examples) | protoemu (firmware/) | Better |
 |---|---|---|---|
-| **Clock, process** | 133 MHz max (200 MHz at 1.15 V), 40 nm (datasheet) | 50 MHz at all three corners (run fo6; earlier runs reached about 44-46 MHz at the slow corner); IHP 130 nm ([physical.md](physical.md)) | PIO |
+| **Clock, process** | 133 MHz max (200 MHz at 1.15 V), 40 nm (datasheet) | 50 MHz met at signoff at all three corners (run fo6, slow-corner setup slack +0.010 ns; the demos run at 48 MHz; earlier runs reached about 44-46 MHz at the slow corner); IHP 130 nm ([physical.md](physical.md)) | PIO |
 | **Engines** | 2 blocks × 4 SMs, 32 instruction slots per block, shared by its 4 SMs | 2 cores, 256-word private bank each | PIO on engine count; protoemu on per-engine program space |
 | **UART TX** program | 4 instr = 8 B | 4 instr = 16 B | PIO (bytes) |
 | UART TX timing | 8 SM clocks per bit; max 16.6 Mbaud at 133 MHz | 8 ticks per bit; max 6.25 Mbaud at 50 MHz | equal per cycle; PIO in absolute rate |
