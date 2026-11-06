@@ -18,29 +18,39 @@ caught too:
   a MagicDNS name         any `<label>.ts.net`
   a tailnet IPv4 address  100.64.0.0/10, except the range's base 100.64.0.0,
                           which the evidence READMEs quote as the class searched for
-  a tailnet IPv6 address  Tailscale's /48, fd7a:115c:a1e0 then `::`
+  a tailnet IPv6 address  under fd7a:115c:a1e0::/48, except the class itself:
+                          that prefix, with `::` or `::/48` or a trailing colon
 
 `*.ts.net` and `TAIL…TS.NET`, the class as the redaction notes write it, are
 not names and do not match. The planted names below are made up at run time,
 and each pattern is written so that this file does not match itself.
 
+A tracked .py file is also read as Python: each string constant is searched
+whole, and adjacent literals arrive joined, so a label split as
+`"tail" "<hex>"` is found at the constant's first line. Only adjacent literals
+are joined; a name built with `+`, as the planted names and the privacy
+mutants are, is not, so this file and test/mutants.py stay clean.
+
 install.sh's refusal without a host is run on a scratch copy only: with no
 host it stops before anything else, and ssh, scp and rsync are stubs that
 fail loudly if it ever gets further.
 """
+import ast
 import os
 import pathlib
 import re
 import secrets
 import shutil
 import subprocess
+import warnings
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TAILNET = re.compile(rb"tail[0-9a-f]{4}"
                      rb"|[a-z0-9_-]\.ts\.net"
                      rb"|(?<![0-9.])100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}(?![0-9])"
-                     rb"|fd7a:115c:a1e0[:]")
-CLASS_ONLY = {b"100.64.0.0"}
+                     rb"|fd7a:115c:a1e0[:][0-9a-f:]*(?:/[0-9]+)?")
+V6 = b"fd7a:115c:a1e0"
+CLASS_ONLY = {b"100.64.0.0", V6 + b":", V6 + b"::", V6 + b"::/48"}
 NOT_SOURCE = {".git", ".venv", ".venv-flow", "__pycache__", "sim_build"}
 INSTALL = ROOT / "fpga/kv260/install.sh"
 REFUSAL = "set WL_KRIA to the board's ssh address, e.g. WL_KRIA=ubuntu@kria.example\n"
@@ -54,6 +64,28 @@ def tracked(root):
             if p.is_file() and not NOT_SOURCE & set(p.relative_to(root).parts)]
 
 
+def tailnet(text):
+    return any(m.group() not in CLASS_ONLY for m in TAILNET.finditer(text.lower()))
+
+
+def python_constant_lines(source):
+    """First line of each str or bytes constant in Python source that holds a
+    tailnet name (none if the file does not parse)."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")    # invalid escapes in a file under test
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError):
+            return set()
+    lines = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
+            value = node.value if isinstance(node.value, bytes) else node.value.encode("utf-8", "surrogatepass")
+            if tailnet(value):
+                lines.add(node.lineno)
+    return lines
+
+
 def hits(root):
     """file:line for each tailnet name or address in a tracked file (a listed
     path that is not a regular file, such as a submodule, is skipped)."""
@@ -62,9 +94,11 @@ def hits(root):
         p = root / name
         if p.is_symlink() or not p.is_file():
             continue
-        for n, line in enumerate(p.read_bytes().splitlines(), 1):
-            if any(m.group() not in CLASS_ONLY for m in TAILNET.finditer(line.lower())):
-                found.append(f"{name}:{n}")
+        data = p.read_bytes()
+        lines = {n for n, line in enumerate(data.splitlines(), 1) if tailnet(line)}
+        if name.endswith(".py"):
+            lines |= python_constant_lines(data)
+        found += [f"{name}:{n}" for n in sorted(lines)]
     return found
 
 
@@ -87,14 +121,18 @@ def test_a_planted_name_in_a_tracked_file_is_found(tmp_path):
         "b.sh": "h=box." + made_up_label() + ".ts" + ".net\n",
         "c.md": host.upper() + "\n",
         "d.md": f"the admin page of tailnet {label}\n",
-        "e.md": "ssh kria.wren-otter.ts" + ".net\n",
+        "e.md": "ssh kria.example-example.ts" + ".net\n",
         "f.md": "?tailnet=" + made_up_label().upper() + "\n",
         "g.sh": "WL_KRIA=ubuntu@100.10" + "1.102.103\n",
         "h.md": "ends of the range 100.6" + "4.0.1 and 100.12" + "7.255.254\n",
         "i.md": "ping FD7A:115C:A1E0" + "::53\n",
+        "j.py": f'X = "tail" "{made_up_label()[4:]}"\n',               # adjacent literals, joined by Python
+        "k.py": f'X = ("ubuntu@kria.tail"\n     "{made_up_label()[4:]}")\n',  # and across lines
+        "l.md": "ssh -p 22 [fd7a:115c:a1e0" + ":ab12:4843:cd96:6258:b240]\n",
     }
     # the class as the redaction notes name it, and near misses
     clean = ("searched for `*.ts.net`, 100.64.0.0/10 and `TAIL…TS.NET`\n"
+             "and fd7a:115c:a1e0::/48, FD7A:115C:A1E0::, prefix fd7a:115c:a1e0: as a class\n"
              "tail -f m.log; tailored tails; detail\n"
              "100.63.255.1 100.128.0.1 10.100.64.1.5 v1.100.70.2 1100.64.1.1 192.168.1.1\n")
     for name, text in planted.items():

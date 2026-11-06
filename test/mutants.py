@@ -516,13 +516,21 @@ MUTANTS = {
     "hw-chained-load-line": ("fpga/kv260/host/hw_day.py", 'f"  sudo xmutil unloadapp\\n  sudo xmutil loadapp {app}\\n  sudo xmutil listapps\\n"',
         'f"  sudo xmutil unloadapp; sudo xmutil loadapp {app} && sudo xmutil listapps\\n"', HW_TESTS),
     # a tailnet name or address as install.sh's default, caught by the tracked-files scan
-    # (made-up names, split so this file stays clean)
+    # (made-up names, split with + so that neither the lines of this file nor its joined
+    # string constants hold one)
     "privacy-kria-default-host": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
-        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.tail' '0c0ffe.ts' '.net}}', PRIVACY_SCAN),
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.tail' + '0c0ffe.ts' + '.net}}', PRIVACY_SCAN),
     "privacy-kria-magicdns-host": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
-        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.wren-otter.ts' '.net}}', PRIVACY_SCAN),
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.example-example.ts' + '.net}}', PRIVACY_SCAN),
     "privacy-kria-tailnet-address": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
-        'kria=${WL_KRIA:-${KRIA:-ubuntu@100.10' '1.102.103}}', PRIVACY_SCAN),
+        'kria=${WL_KRIA:-${KRIA:-ubuntu@100.10' + '1.102.103}}', PRIVACY_SCAN),
+    # the scan itself: a label split across adjacent Python literals goes unseen without the
+    # AST pass; an IPv6 match cut to the prefix is the allowlisted class, so real addresses pass
+    "privacy-scan-no-python-pass": ("test/model/test_private_hosts.py",
+        '        if name.endswith(".py"):\n            lines |= python_constant_lines(data)\n', '',
+        pytest("test/model/test_private_hosts.py -k planted")),
+    "privacy-scan-v6-prefix-only": ("test/model/test_private_hosts.py",
+        '[:][0-9a-f:]*(?:/[0-9]+)?")', '[:]")', pytest("test/model/test_private_hosts.py -k planted")),
     # any other default host: install.sh must still refuse with no host given
     "privacy-kria-other-default": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
         'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.local}}', pytest("test/model/test_private_hosts.py -k install")),
