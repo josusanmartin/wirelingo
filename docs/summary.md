@@ -32,11 +32,12 @@ codings (NRZ, NRZI, Manchester), stuffing rules, frame endings and receive
 clock recovery. The menu was built with USB and 10BASE-T in mind, and
 CAN-style stuffing also fits; software chooses from it but cannot add a
 coding. The host picks with three register writes (LINECFG, LINEDIV,
-LINEPINS) when it loads the program. Two protocols use it because a core
-alone can't keep up: full-speed USB (4 clocks per bit at 48 MHz; a firmware
-receiver needs at least 13 instructions per bit) and 10BASE-T receive (the
-unit samples at both clock edges and tracks the sender's phase; a core sees
-one sample per clock). [line-unit-settings.md](line-unit-settings.md) lists
+LINEPINS) when it loads the program. Two protocols use it: full-speed USB
+(4 clocks per bit at 48 MHz; the pure-firmware receiver, `usb_ls_rx`, takes
+at least 13 instructions per bit, so it cannot keep up) and 10BASE-T receive
+(the unit samples at both clock edges and tracks the sender's phase, while a
+core sees one sample per clock; this is the mechanism, not a measured
+comparison). [line-unit-settings.md](line-unit-settings.md) lists
 each setting a test uses, the protocols it serves and the firmware.
 
 **This was rehearsed.** With the chip's Verilog frozen at tag
