@@ -581,8 +581,13 @@ possible (`docs/isa.md:265-267`). USB low speed is USB's 1.5 Mbit/s mode.
 unit, USB low speed took two cores (`usb_ls_rx` + `usb_ls_tx`). It does NRZI,
 bit stuffing, Manchester decoding and clock recovery. NRZI and Manchester send
 bits as transitions, not levels; stuffing adds bits to keep transitions
-coming. So the line unit is protocol-specific hardware, and "protocols are
-firmware" holds for the cores, not for it.
+coming. Those codings are fixed logic: the line unit offers a fixed menu of
+line codings, stuffing rules and frame endings, built with USB and 10BASE-T
+in mind (CAN-style stuffing also fits). The host picks from the menu with
+three register writes when it loads a program, but software cannot add a
+coding. So no protocol is fixed in the silicon, and "protocols are firmware"
+holds fully for the cores; for the line unit it holds only as far as the
+menu reaches (`docs/line-unit-settings.md`).
 
 **What sets the speed limit?**
 The clock period of 20 ns, and routing on one horizontal layer. Run fo6, the

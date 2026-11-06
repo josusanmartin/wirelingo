@@ -35,8 +35,9 @@ real protocols fit:
   register, and a per-pin bypass of the input synchroniser.
 * A line unit on core 0 for NRZ, NRZI and Manchester framing with bit
   stuffing, sampled mid-bit on a half-cycle phase so that full-speed USB
-  tolerates the specification's edge jitter. It has no protocol built in:
-  the host configures it with register writes when it loads a program
+  tolerates the specification's edge jitter. Its codings, stuffing rules
+  and frame endings are a fixed menu, built with USB and 10BASE-T in mind;
+  the host picks from it with register writes when it loads a program
   (`docs/line-unit-settings.md`).
 
 The firmware verified in simulation covers UART TX/RX, SPI master, I2C master

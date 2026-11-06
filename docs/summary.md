@@ -22,18 +22,22 @@ second pin; registers and arithmetic; per-pin open drain; CALL/RET
 
 ## What it does after fabrication
 
-**A protocol is a program.** Nothing protocol-specific is fixed in the
-silicon: UART, SPI, I2C, CAN, USB, 10BASE-T and the rest are files in
-`firmware/` (68 programs), assembled on a PC and loaded over SPI. A new
-protocol needs a new program, not a new chip.
+**A protocol is a program.** No protocol is fixed in the silicon. UART, SPI,
+I2C, CAN, USB, 10BASE-T and the rest are files in `firmware/` (68 firmware
+files), assembled on a PC and loaded over SPI. A new protocol needs a new
+program, not a new chip.
 
-**The line unit is configured by software too.** It has no protocol built
-in. The host sets its coding, stuffing rule, end-of-packet pattern and bit
-timing with three register writes (LINECFG, LINEDIV, LINEPINS) when it loads
-the program. Two protocols use it because a core alone is too slow for them:
-full-speed USB (4 clocks per bit at 48 MHz) and 10BASE-T receive (Manchester
-with 802.3's edge jitter). [line-unit-settings.md](line-unit-settings.md)
-lists each setting a test uses, the protocols it serves and the firmware.
+**The line unit is a fixed menu that software picks from.** It offers line
+codings (NRZ, NRZI, Manchester), stuffing rules, frame endings and receive
+clock recovery. The menu was built with USB and 10BASE-T in mind, and
+CAN-style stuffing also fits; software chooses from it but cannot add a
+coding. The host picks with three register writes (LINECFG, LINEDIV,
+LINEPINS) when it loads the program. Two protocols use it because a core
+alone can't keep up: full-speed USB (4 clocks per bit at 48 MHz; a firmware
+receiver needs at least 13 instructions per bit) and 10BASE-T receive (the
+unit samples at both clock edges and tracks the sender's phase; a core sees
+one sample per clock). [line-unit-settings.md](line-unit-settings.md) lists
+each setting a test uses, the protocols it serves and the firmware.
 
 **This was rehearsed.** With the chip's Verilog frozen at tag
 `rc-93c2137-t48ba` (unchanged since), three rounds of protocols the chip was
@@ -85,7 +89,7 @@ rest on an agent's word:
 * **Oracles that don't share our assumptions:** sigrok's protocol decoders,
   a real Linux USB stack on the FPGA build, and seeded wire faults (six real
   failures found, four fixed: [fault-testing.md](fault-testing.md)).
-* **An independent verifier agent** that reruns and attacks each claim: 51
+* **An independent verifier agent** that reruns and attacks the claims of each item sent to it: 51
   reports (000-050), 27 PASS and 24 FAIL, kept verbatim
   ([evidence/verifier](../evidence/verifier/README.md)).
 
@@ -97,7 +101,11 @@ any corner; the Tiny Tapeout precheck passes. **Clock: the demos run at
 48 MHz, with margin; 50 MHz is met at signoff** at all three corners (worst
 flop or SRAM setup slack at the slow corner +0.010 ns at 20 ns; hold
 +0.19 / +0.36 / +0.095 ns typ / slow / fast; [physical.md](physical.md)).
-10BASE-T is tested at 40 and 50 MHz.
+The 48 MHz margin is derived, not measured on fo6: the period is 0.833 ns
+longer, and in every run of physical.md's settings table with STA at both
+clocks the 48 MHz slack is the 50 MHz slack plus 0.833 ns. 10BASE-T receive
+meets 802.3's ±13.5 ns jitter at 50 MHz; at the demo board's 40 MHz it
+tolerates ±12 ns in a one-off model sweep ([guide.md](guide.md#known-limits)).
 
 ## Limits
 

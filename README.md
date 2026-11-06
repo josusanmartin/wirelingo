@@ -19,8 +19,8 @@ command that reproduces it. New to hardware:
 
 *The signed-off layout, run fo6, rendered from its GDS (sha256 `e67697034da6cd34…`,
 [docs/physical.md](docs/physical.md)) with KLayout and the IHP layer colours.
-The two instruction SRAMs are the blocks at the bottom corners; the cores,
-FIFOs, line unit and host port fill the rest.*
+The two instruction SRAMs are the blocks at the bottom corners; standard-cell
+logic fills the rest.*
 
 ## What it is
 
@@ -40,20 +40,26 @@ evidence an agent can't talk its way past
 
 ## What it does after fabrication
 
-Everything protocol-specific is software, loaded after the chip is made.
+No protocol is fixed in the silicon. The cores run firmware, and the line
+unit's settings are chosen by the host when it loads a program.
 
 * **Protocols are firmware.** UART, SPI, I2C, CAN, USB at low and full speed,
-  10BASE-T, JTAG, 1-Wire, PS/2, WS2812 and the rest are the 68 programs in
-  [`firmware/`](firmware/), assembled on a PC ([docs/asm.md](docs/asm.md))
+  10BASE-T, JTAG, 1-Wire, PS/2, WS2812 and the rest are the 68 firmware files
+  in [`firmware/`](firmware/), assembled on a PC ([docs/asm.md](docs/asm.md))
   and loaded over SPI. A new protocol is a new program.
-* **The line unit is configured by software too.** It has no protocol built
-  in: NRZ, NRZI or Manchester coding, bit stuffing after K equal bits or
-  K ones, an end-of-packet pattern and receive clock recovery are all chosen
-  by three register writes (LINECFG, LINEDIV, LINEPINS) that the host makes
-  when it loads a program ([docs/isa.md §4.7](docs/isa.md#47-line-unit-core-0)).
-  Two protocols use it because a core alone is too slow for them: full-speed
-  USB, at 4 clocks per bit at 48 MHz, and 10BASE-T receive, with 802.3's edge
-  jitter. Low-speed USB runs either way (two cores without it, one with it).
+* **The line unit is a fixed menu that software picks from.** It offers
+  NRZ, NRZI or Manchester coding, bit stuffing after K equal bits or K ones,
+  a choice of frame endings (release, SE0, high, hold) and receive clock
+  recovery. The menu was built
+  with USB and 10BASE-T in mind, and CAN-style stuffing also fits; software
+  chooses from it but cannot add a coding. The host picks with three register
+  writes (LINECFG, LINEDIV, LINEPINS) when it loads a program
+  ([docs/isa.md §4.7](docs/isa.md#47-line-unit-core-0)). Two protocols use it
+  because a core alone can't keep up: full-speed USB, at 4 clocks per bit at
+  48 MHz, where a firmware receiver needs at least 13 instructions per bit;
+  and 10BASE-T receive, where the unit samples the pin at both clock edges and
+  tracks the sender's phase, while a core sees one sample per clock. Low-speed
+  USB runs either way (two cores without it, one with it).
 * **Rehearsed with the chip frozen.** With the chip's Verilog frozen at tag
   `rc-93c2137-t48ba` (unchanged since), three rounds of protocols it was not
   designed for were added in firmware only: DMX512, LIN, NEC and RC-5
@@ -83,13 +89,14 @@ Columns: **M** model (cycle-accurate, lockstep-checked against the RTL),
 fo6's signed-off netlist, **F** RTL in FPGA fabric (Kria KV260) against the
 other core, a pattern generator or, where it says so, Linux. A **\*** means
 that level was reached by an earlier version of that firmware, and the
-current one needs a rerun there. No column is silicon. The
+current one needs a rerun there. "Suppl." marks a gate-level run outside the
+release gate. No column is silicon. A blank means no test at that level. The
 [full firmware table](#what-runs-on-it) gives each program's limits.
 
 | Protocol | Firmware | M | R | G | F |
 |---|---|---|---|---|---|
 | UART 8N1 | `uart_tx`, `uart_rx` | yes | yes | yes (`uart_rx`\*) | yes (`uart_rx`\*) |
-| SPI master: modes 0-3, packed, 4 clocks per SCK | `spi_master`, `spi_master_modes`, `spi_master_packed`, `spi_master_fast` | yes | yes | `spi_master`, `spi_master_fast` | yes |
+| SPI master: modes 0-3, packed, 4 clocks per SCK | `spi_master`, `spi_master_modes`, `spi_master_packed`, `spi_master_fast` | yes | `spi_master`, `spi_master_packed`, `spi_master_fast` (modes 1-3: model and FPGA only) | `spi_master`, `spi_master_fast`; `spi_master_packed` suppl. | yes |
 | I2C master, target, sniffer | `i2c_master`, `i2c_device`, `i2c_sniff` | yes | master, target | master\*, target | yes (master\*) |
 | Logic analyzer, then an I2C target cloning the captured device | `la_capture` + `i2c_device` | yes | yes | yes | yes |
 | USB low speed, two cores, no line unit | `usb_ls_rx` + `usb_ls_tx` | yes | yes | yes (`usb_ls_tx`\*) | |
@@ -104,15 +111,17 @@ current one needs a rerun there. No column is silicon. The
 | Post-freeze: DMX512, LIN, NEC, I2S, Wiegand, DShot600, DALI, Modbus RTU, MIDI, quadrature encoder, HDMI-CEC, ISO 7816-3, SMBus, RC-5 | 21 programs | yes | yes | yes, also with SDF | yes |
 | MDIO, a QSFP-style module map, PMBus | `mdio_master`, `mdio_phy`, `i2c_device`, `smbus_host` | yes | yes | | |
 | Pulse timestamps | `pps_capture` | yes | yes | | |
-| UART to a PC over USB | `usb_uart_*`, four variants | yes | three of four | | |
+| UART to a PC over USB | `usb_uart_*`, four variants | yes | three of four | the same three, suppl. | |
 | HD44780 4-bit, ATA PIO subset (blind test) | `hd44780_4bit`, `ata_pio` | yes | yes | | |
 | SWD probe (parked) | `swd_probe` | yes | | | |
 
-The release gate's gate-level runs used software `7685aba`; the post-freeze
-and network-stack runs on the same netlist are supplementary receipts outside
-the gate. The post-freeze SDF runs pass at the typical corner, and at the slow
-and fast corners in supplementary single-case runs
-([docs/release-evidence.md](docs/release-evidence.md)). The FPGA runs against
+The release gate's gate-level runs used software `7685aba`. The post-freeze,
+network-stack and host-workflow runs on the same netlist are supplementary
+receipts outside the gate; the host-workflow ones (`test_usb_uart_rtl` 3/3,
+`test_spi_packed_host` 1/1, functional, validation `61af9b2`) are in
+[docs/release-evidence.md](docs/release-evidence.md). The post-freeze SDF runs
+pass at the typical corner, and at the slow and fast corners in supplementary
+single-case runs. The FPGA runs against
 Linux: USB in [fpga/kv260](fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)
 and [evidence/kv260-usb-20261030](evidence/kv260-usb-20261030/README.md); the
 network stack in
@@ -131,7 +140,7 @@ network stack in
 | Outside oracles | sigrok's protocol decoders; Linux's USB and network stacks on the FPGA build | RTL simulation, FPGA | [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), [fpga/kv260](fpga/kv260/README.md) |
 | Fault injection | Seeded wire faults: six real failures found, four fixed | Model, RTL | [docs/fault-testing.md](docs/fault-testing.md) |
 | Blind test | Two protocols drawn by a rule, chip and tools frozen | Model, RTL | [docs/blind-test.md](docs/blind-test.md) |
-| Independent verifier agent | Reruns and attacks each claim: reports 000-050, 27 PASS and 24 FAIL, kept verbatim | Review | [evidence/verifier](evidence/verifier/README.md) |
+| Independent verifier agent | Reruns and attacks the claims of each item sent to it: reports 000-050, 27 PASS and 24 FAIL, kept verbatim | Review | [evidence/verifier](evidence/verifier/README.md) |
 | Lean proofs | Manual proofs and finite comparisons against the RTL, each with its stated scope | Formal | [docs/lean-verification.md](docs/lean-verification.md) |
 
 What is proven at each level, and what is still open:
@@ -152,8 +161,14 @@ in git; it is to be attached as a release asset.
 * **Clock: the demos run at 48 MHz, with margin; 50 MHz is met at signoff**
   at all three corners. The worst flop or SRAM setup slack at the slow corner
   is +0.010 ns at 20 ns; hold slack is +0.19 / +0.36 / +0.095 ns at typ /
-  slow / fast. At 48 MHz the clock period is 0.83 ns longer. Full-speed USB
-  needs exactly 48 MHz; 10BASE-T is tested at 40 and 50 MHz.
+  slow / fast. The 48 MHz margin is derived, not measured on fo6: the clock
+  period is 0.833 ns longer, and in every run of
+  [physical.md](docs/physical.md)'s settings table that has STA at both
+  clocks, the 48 MHz slack is the 50 MHz slack plus 0.833 ns. Full-speed USB
+  needs exactly 48 MHz. 10BASE-T receive meets 802.3's ±13.5 ns edge jitter
+  at 50 MHz (where the slack is +0.010 ns); at the demo board's 40 MHz it
+  tolerates ±12 ns in a one-off model sweep
+  ([docs/guide.md](docs/guide.md#known-limits)).
 * The netlist is formally equivalent to the RTL and passes all 29 top-level
   tests at gate level (software `7685aba`). A clean checkout rebuilt on a
   4-CPU machine reproduces the netlist bit for bit.
@@ -238,6 +253,7 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 |---|---|---|---|
 | `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error; RX drops a start bit that is high again at mid-bit (a glitch) | RTL; ±3 % and back-to-back on the model. The mid-bit check, added by `fault-fixes`, is verified on the model and in RTL simulation only (`test_uart_rx_glitch`); the gate-level receipts and the KV260 runs (loopback and real PMOD pins) used `uart_rx` from before it, and neither has been rerun |
 | `spi_master` | mode 0, MSB first, 8-bit frames, f_SCK = f_tick / 4 | chip select by the host or a wrapper | RTL; KV260 against pe_lab's SPI device (DELAY sweeps at CLKDIV 1-3) |
+| `spi_master_modes` | modes 0-3 (CPOL by a define, CPHA by program block), MSB first, 8-bit full-duplex frames, compact and unrolled forms | chip select by the host or a wrapper; in mode 3 at CLKDIV 3 MISO is read 4 clocks after the launching fall: on the KV260 a MISO delay up to 77.5 ns was read right and a longer one 1 bit late; no RTL test | model, an independent peer sampling SCK edges: every mode at dividers 3 and 4 and two MISO delays, TX starvation, RX backpressure, a reload in another mode (`test_spi_modes`, `test_spi_modes_timing`); KV260: modes 0 and 3 against pe_lab's SPI device (DELAY sweeps), all four modes captured by `la_capture` ([fpga/kv260](fpga/kv260/README.md)) |
 | `spi_master_fast` (v2) | the same at 4 clocks per SCK (12.5 MHz at 50 MHz): MISO's pad in `SYNC_BYPASS` (one synchroniser flop), sampled at the SCK rise | the device must answer within 2 clocks of SCK falling, pad and board delays included | RTL against a device model; delay sweep on the model; KV260 (DELAY table with and without the bypass) |
 | `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released); **SDA read back** where it is released (a low read-back: F1, reply 0x200) | 4 + 4 ticks per SCL period; a WRITE command takes 9 ticks more than before the read-back, a READ 3 | RTL; stuck-SCL in every phase and stuck-SDA on the model; stuck SDA on the RTL. The SDA read-back, added by `fault-fixes`, is verified on the model and in RTL simulation only (`test_i2c_master_bus_fault`); the gate-level receipts and the KV260 runs (against `i2c_device`, beside `i2c_sniff`) used the firmware from before it, and neither has been rerun |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |

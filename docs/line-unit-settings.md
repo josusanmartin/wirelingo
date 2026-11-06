@@ -1,24 +1,29 @@
 # Line unit settings: which protocol uses what
 
 The line unit ([isa.md §4.7](isa.md#47-line-unit-core-0)) is a configurable
-line coder beside core 0: NRZ, NRZI or Manchester coding, bit stuffing after
-K equal bits or K ones, an end-of-packet pattern, and receive clock recovery.
-Nothing in it is specific to one protocol. Its configuration is three
+line coder beside core 0. It is fixed hardware that offers a menu: NRZ, NRZI
+or Manchester coding, bit stuffing after K equal bits or K ones, a choice of
+frame endings (release, SE0, high, hold), and receive clock recovery. The menu
+was built with USB and 10BASE-T in mind, and CAN-style stuffing also fits.
+Software picks from it but cannot add a coding. The choice is three
 write-only registers, LINECFG, LINEDIV and LINEPINS
 ([isa.md §6.2](isa.md#62-register-map-32-bit-word-addresses)), which the host
 writes over SPI when it loads a program, like the core's clock divider and pin
 settings. The core then feeds and drains the unit with `OUT LINE` and
-`IN LINE`. So which protocol the unit serves is chosen by software after
-fabrication, together with the firmware.
+`IN LINE`. So which of these settings the unit runs is chosen by software
+after fabrication, together with the firmware.
 
-Two protocols use it because a core alone is too slow for them:
+Two protocols use it because a core alone can't keep up:
 
 * **Full-speed USB** (12 Mbit/s at 48 MHz: 4 clocks per bit). The
   pure-firmware receiver takes at least 13 instructions per bit, so it cannot
   keep up ([usb-full-speed.md](usb-full-speed.md), the per-bit budget table).
 * **10BASE-T receive** (Manchester at 10 Mbit/s with 802.3's ±13.5 ns of edge
-  jitter): the unit samples at both clock edges and tracks the sender's
-  phase (isa.md §4.7, "Manchester timing").
+  jitter): the unit samples the pin at both clock edges and tracks the
+  sender's phase with a digital loop, while a core sees one sample per clock
+  (isa.md §4.7, "Manchester timing"). Every 10BASE-T receiver in `firmware/`
+  uses the unit, and none in firmware alone has been written to compare
+  with: this is the mechanism, not a measured comparison.
 
 Low-speed USB runs either way: on two cores in pure firmware (`usb_ls_rx` +
 `usb_ls_tx`) or on one core with the unit (`usb_ls_dev`). The 10BASE-T
