@@ -13,8 +13,9 @@
 # This file lists ONLY old hashes that a public file or message still shows -- the
 # verbatim records under evidence/, kept file and archive names, the bitstream RTL
 # revisions, and citations of unpublished commits. Each old token is given at the
-# length it is cited (never a full 40-hex hash), so this map reveals nothing a
-# public file does not already. Citations in living documents were rewritten to
+# length it is cited (never a full 40-hex hash), so this map shows no old token that
+# a public file does not already show. What it adds is the pairing of each old hash
+# with its new one. Citations in living documents were rewritten to
 # the new hashes in place and are not relisted here. Look an old hash up by prefix:
 #   grep '^<old-prefix>' evidence/history-map.txt
 #
@@ -26,13 +27,25 @@
 # Archive tags (extra histories published beside main; new target):
 #   archive/kv260-usb  (a3918c8f5284)
 #
-# Cited but not published (35 commits): a public file or message cites
+# Cited but not published (47 commits): a public file or message cites
 # them, but they are only in the old object store or on branches that are not part
-# of the public history, so they are not in the table below. Each at its cited
-# length, with the private refs that held it and the reason:
+# of the public history, so they are not in the table below. Each at its shortest
+# cited length (12 hex where only a full hash is cited), with the private refs that
+# held it and the reason. The 12 rows that name their citing files were added after
+# publication. The first list missed them: it read only the commits reachable from a
+# ref, and only the tip's files, not their old versions:
 #   cbeae96 on archive/exp-v2c: the v2c physical-design experiment, kept as a local archive tag
 #   19ebe98 on swd, t48-margin, t48-rtl: the parked SWD work; a t48 timing experiment branch
 #   7db7d61 on swd: the parked SWD work
+#   e96cb69: exists only in the object store (a rebased or deleted branch). Cited in
+#       docs/physical.md
+#   d1aa46f: exists only in the object store (a rebased or deleted branch). Cited in
+#       docs/eth10-network.md, fpga/kv260/README.md, fpga/kv260/host/fabric_eth.py,
+#       evidence/fabric-ping-20261103/ (README.md, fabric-ping-b.json, selftest.log,
+#       smoke-1b3ff6b/fabric-ping-b.json), evidence/verifier/ (README.md,
+#       001-eth10-match-fix.report.md, 029-fabric-ping.md and .report.md,
+#       031-fabric-ping-fix.md and .report.md, 037-fabric-ping-fix3.md and .report.md)
+#       and 8 commit messages
 #   03bc2a6fae0f on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
 #   8e47d0c9f201 on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
 #   c77dd128 on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
@@ -47,6 +60,12 @@
 #   74583e2 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
 #   e4dcb87 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
 #   f328b02 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   aa0820a on team/20261011-sol-forge: a worker branch of the agent team; only what was integrated into main is published. Cited in
+#       an old version of docs/team-integration-checklist.md
+#   987e2d5 on team/20261011-sol-kepler, team/20261013-coexist-docs: a worker branch of the agent team; only what was integrated into main is published. Cited in
+#       an old version of docs/team-integration-checklist.md
+#   f9c7ebd995a6 on team/20261011-sol-atlas: a worker branch of the agent team; only what was integrated into main is published. Cited in
+#       an old version of docs/team-integration-checklist.md (in full)
 #   80f39b6 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
 #   4519e2f on team/20261011-sol-kepler, team/20261013-coexist-docs: a worker branch of the agent team; only what was integrated into main is published
 #   ef192a3 on team/20261011-sol-forge: a worker branch of the agent team; only what was integrated into main is published
@@ -65,6 +84,26 @@
 #   f1a313d on team/20261011-sol-atlas: a worker branch of the agent team; only what was integrated into main is published
 #   82ba9b2 on team/20261011-sol-kepler, team/20261013-coexist-docs: a worker branch of the agent team; only what was integrated into main is published
 #   5dde2a4 on team/20261013-usb-driver-profile: a worker branch of the agent team; only what was integrated into main is published
+#   a85fc57: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/verifier/ (README.md, 041-verifier-reports2.md and .report.md,
+#       042-verifier-reports2-fix.md and .report.md) and 2 commit messages
+#   7c3a039: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/model-usb-ls-restage-20261104/README.md and 1 commit message
+#   aacdc4c: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/model-usb-ls-restage-20261104/README.md and 2 commit messages
+#   dc51cc8: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/model-usb-ls-restage-20261104/ (README.md, jobs.sh, jobs2.sh),
+#       evidence/verifier/README.md, evidence/verifier/047-usb-ls-restage.report.md,
+#       test/model/test_usb_ls_restage.py, test/model/test_usb_stage_abort.py
+#       and 4 commit messages
+#   8fdda85: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/model-usb-ls-restage-20261104/README.md, evidence/verifier/README.md,
+#       evidence/verifier/047-usb-ls-restage.report.md and 4 commit messages
+#   d5b8944: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/model-usb-ls-restage-20261104/README.md and 1 commit message
+#   e158fe0: exists only in the object store (a rebased or deleted branch). Cited in
+#       evidence/verifier/ (README.md, 048-usb-guard2.md and .report.md,
+#       049-usb-guard2-fix.md and .report.md) and 1 commit message
 #
 # 129 published old hashes still shown publicly, one per line:
 #   <old token (cited length)> <new hash>

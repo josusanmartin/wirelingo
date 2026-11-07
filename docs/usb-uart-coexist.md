@@ -199,9 +199,10 @@ DATA bytes instead of dropping or stringifying them.
 
 The test was developed by a team of agents in two numbered tickets on
 2026-10-13. Both ran in a disposable Git tree,
-`f8772208d86e21ca1cec573bd33b353b8dbb5b72`, with only the four new files
-added, while the worker's branch stayed at `82ba9b2`. Each ticket allowed
-one model invocation. Their evidence (exact commands and exits, source
+`b7267f4f146a5899e6a3ad7463cb5f6ad324c1c8` (the tree of commit `67443d9`;
+its id changed when the history was rewritten for publication), with only
+the four new files added, while the worker's branch stayed at `82ba9b2`.
+Each ticket allowed one model invocation. Their evidence (exact commands and exits, source
 hashes, the raw cases of C16) is in `evidence/sol-kepler/C15-KEPLER-USB-UART-PEER/`
 and `evidence/sol-kepler/C16-KEPLER-START-SAVE/` under the team's directory,
 which is not part of this repository.
