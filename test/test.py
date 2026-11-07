@@ -1304,8 +1304,7 @@ async def usb_autonomous(dut, speed):
 
 # ------------------------------------------------------------------ USB full speed (study)
 
-@cocotb.test()
-async def test_usb_fs_device(dut):
+async def usb_fs_session(dut, config_zlp=False):
     """USB FULL-SPEED device (docs/usb-full-speed.md): usb_fs_dev on core 0 with
     the line unit at 4 clocks per bit, clk = 48 MHz. A pins-only host places
     its edges in continuous time (random phase against clk, duty-cycle
@@ -1421,9 +1420,36 @@ async def test_usb_fs_device(dut):
     await ClockCycles(dut.clk, 100)
     flags = (await spi.read(sim.A_FSET))[0]
     assert flags & usbdev.F_GOTACK and not flags & usbdev.F_STAGED, hex(flags)
+    if config_zlp:                     # SET_CONFIGURATION's status IN, answered by the firmware
+        cfg = bytes([0, 9, 1, 0, 0, 0, 0, 0])
+        t = await send(usb.token(usb.PID_SETUP, 0, 0))
+        t = await send(usb.data_packet(usb.PID_DATA0, cfg), after=t)
+        r, tas["ACK (SET_CONFIGURATION)"] = await response(t)
+        assert r == usb.handshake(usb.PID_ACK), r
+        t = await send(usb.token(usb.PID_IN, 0, 0))            # nothing staged, no software
+        r, tas["ZLP"] = await response(t, 60)
+        assert r == usb.data_packet(usb.PID_DATA1, b""), r
+        eop = [b for a, b in zip(bus["edges"], bus["edges"][1:]) if a[1] == "0" and b[1] == "J"][-1]
+        await send(usb.handshake(usb.PID_ACK), gap_bits=2.5, after=eop[0])
+        await ClockCycles(dut.clk, 100)
+        assert await records() == [usbdev.Record(True, cfg, 16 + 8 * 10, setup=True)]
+        flags = (await spi.read(sim.A_FSET))[0]
+        assert flags & usbdev.F_GOTACK and flags & 1 << usbdev.FLAGS["F_SENT"], hex(flags)   # F_CFGZLP
+        req0 = bytes([0x40, 0x10, 0, 0, 0, 0, 0, 0])           # a vendor no-data request: the software's
+        t = await send(usb.token(usb.PID_SETUP, 0, 0), gap_bits=8)
+        t = await send(usb.data_packet(usb.PID_DATA0, req0), after=t)
+        r, _ = await response(t)
+        assert r == usb.handshake(usb.PID_ACK), r
+        t = await send(usb.token(usb.PID_IN, 0, 0))
+        r, tas["NAK (after F_CFGZLP)"] = await response(t)
+        assert r == usb.handshake(usb.PID_NAK), r
+        assert not (await spi.read(sim.A_FSET))[0] & 1 << usbdev.FLAGS["F_SENT"]
     for k, v in tas.items():
         dut._log.info(f"turnaround {k}: {v:.2f} bit times = {v * 4:.1f} clocks (spec 2-6.5)")
         assert 2.0 <= v <= 6.5, (k, v)
+    if config_zlp:
+        mon.cancel()
+        return
 
     async def out_burst(dcd, n):
         ok = 0
@@ -1444,6 +1470,23 @@ async def test_usb_fs_device(dut):
     mon.cancel()
     assert spec == n
     assert wide == n
+
+
+@cocotb.test()
+async def test_usb_fs_device(dut):
+    """USB FULL-SPEED device: usb_fs_session (SETUP, NAK, staged DATA1, the
+    host's ACK, then OUT bursts at two DCDs)."""
+    await usb_fs_session(dut)
+
+
+@cocotb.test()
+async def test_usb_fs_config_zlp(dut):
+    """usb_fs_session's control transaction, then SET_CONFIGURATION: its
+    status IN is answered by usb_fs_dev itself with a zero-length DATA1 (no
+    host software in between), turnaround within 2-6.5 bit times; its SETUP
+    record still reaches the RX FIFO; the next SETUP (a vendor no-data
+    request) clears F_CFGZLP and its IN is NAKed (branch usb-config-prestage)."""
+    await usb_fs_session(dut, config_zlp=True)
 
 
 @cocotb.test()

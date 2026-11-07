@@ -18,7 +18,7 @@ def test_model_run(tmp_path):
                         "--out", str(tmp_path)], capture_output=True, text=True, timeout=900)
     assert p.returncode == 0, p.stdout + p.stderr
     summary = (tmp_path / "summary.txt").read_text()
-    assert "usb_fs_dev 142 words, got_in guard present" in summary
+    assert "usb_fs_dev 159 words, got_in guard present" in summary
     assert "[attaches] 1 runs, 0 not configured or failed" in summary
     assert "[zero-length writes] rt 0x40 rq 0x10: 2 of 2 ok, 0 timed out" in summary
     assert "[zero-length reads] rt 0xC0 rq 0x11: 1 of 1 ok, 0 timed out" in summary

@@ -215,11 +215,16 @@ def stage_words(pid, payload):
 
 
 def usb_session(seed, jitter, ppm):
-    """SETUP/DATA0 -> ACK, IN -> NAK, IN -> staged DATA1 (+ host ACK),
-    OUT/DATA1 -> ACK, OUT/DATA0 without room in the RX FIFO -> NAK."""
+    """SET_CONFIGURATION: SETUP/DATA0 -> ACK, IN -> the firmware's zero-length
+    DATA1 (+ host ACK); SETUP/DATA0 -> ACK, IN -> NAK, IN -> staged DATA1 (+ host
+    ACK), OUT/DATA1 -> ACK, OUT/DATA0 without room in the RX FIFO -> NAK."""
     mh, tr = usb_device()
     h = FsHost(mh, seed=seed, jitter_ns=jitter, ppm=ppm)
     rng = random.Random(seed)
+    h.setup(0, bytes([0, 9, 1, 0, 0, 0, 0, 0]))
+    mh.step(100)
+    mh.pop_all(0)
+    assert h.data_in(0, 0, tries=1) == (usb.pid_byte(usb.PID_DATA1), b"")
     h.setup(0, bytes(rng.getrandbits(8) for _ in range(8)))
     mh.step(100)
     mh.pop_all(0)
@@ -651,7 +656,7 @@ def test_nonreaching_path_fails_unless_declared():
 
 def test_cli_exit_status(tmp_path, capsys):
     """The command line exits 0 when every deadline passes, declared
-    conditional ones included (usb_fs_dev has four), and 1 on a failure."""
+    conditional ones included (usb_fs_dev has five), and 1 on a failure."""
     assert timing.main([str(FW / "usb_fs_dev.pasm"), "--defs", "pe.usbdev:defines"]) == 0
     assert "PASS (conditional)" in capsys.readouterr().out
     bad = tmp_path / "late.pasm"

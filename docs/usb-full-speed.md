@@ -39,6 +39,62 @@ lists what the runs can't show.
 > and every board run ran the firmware before the guard; they have not been
 > re-run with it.
 
+> **SET_CONFIGURATION's status stage (branch `usb-config-prestage`,
+> 2026-11-06; evidence: model and RTL simulation; board result pending).**
+> Backlog item F: on the KV260, about 3 % of attaches stalled at
+> `SET_CONFIGURATION` (14 of 436 attaches on 2026-10-30 and 2026-11-03, all with the
+> firmware before the got_in guard; [fpga/kv260/README.md](../fpga/kv260/README.md)).
+> Until now that request's status stage, like every request's, went through
+> the device software: the SETUP's record reaches the RX FIFO, the software
+> polls it over SPI, `pe.usbdev.DeviceSoftware.handle()` sets a zero-length
+> DATA1 pending, the same `service()` call pushes it and sets F_STAGED, and
+> until then every status IN is NAKed (on the board one software round trip,
+> Python on the SPI port). The software cannot stage it earlier: a SETUP's
+> token flushes the TX FIFO and clears F_STAGED, so nothing staged before
+> the SETUP survives it. Now `usb_fs_dev` answers it itself, as `usb_enum`
+> does for every request: while a SETUP's DATA comes in, its first 16 bits
+> (bmRequestType 0x00, bRequest 0x09) set F_CFGZLP (flag 7, unused by this
+> firmware); an IN that finds nothing staged then gets a zero-length DATA1
+> from `cfg_zlp` instead of a NAK, again if the host repeats the IN; the next
+> SETUP token clears the flag. `DeviceSoftware` sees the `cfg_zlp` label and
+> stages nothing for that request. Every other request is left as it was:
+> SET_ADDRESS stays with the software (it must move the token filter after
+> the status stage's ACK, which only the software can write), and so do the
+> vendor requests and any other no-data request. 142 → 159 words (of 256).
+> The status IN is now answered with 0 NAKs whenever it comes after the
+> SETUP's ACK, with the software held (it never runs) and with it polling
+> over SPI concurrently with the bus, where the same Linux sequence without
+> the pre-stage NAKs it at least once; every other transaction of that
+> sequence is the same apart from NAKs (`test/model/test_usb_config_prestage.py`).
+> Costs: the SETUP's first 16 bits take 4 clocks each instead of 3, so the
+> line unit holds at most 4 bits during a SETUP's DATA instead of 3 (OUT DATA
+> still 3) and none when the packet ends, so the ACK path starts as before
+> (`test_setup_capture_keeps_up`); and IN → NAK takes one more clock:
+>
+> | Turnaround | before (f8eed52) | with the pre-stage | level |
+> |---|---|---|---|
+> | IN → NAK, checker (pads) | 10–16 clocks | 11–17 clocks | `pe.timing` |
+> | IN → the firmware's ZLP, checker (pads) | — | 11–17 clocks | `pe.timing` |
+> | ACK / IN → staged DATA, checker | 8–16 / 13–18 | unchanged | `pe.timing` |
+> | ACK / NAK / staged DATA1 / the firmware's ZLP | 10.5 / 13.4 / 15.9 / — clocks | 10.5 / **14.4** / 15.9 / 14.1 clocks (3.52 bit times; margin 11.9) | RTL, `test_usb_fs_device`, `test_usb_fs_config_zlp` (988746a) |
+> | IN → NAK / IN → ZLP, measured on the bus | 12.77–13.37 / — clocks | 13.42–15.03 / 13.77–14.53 clocks | model, `test_timing_check.py` (8 sessions; the new session set adds SET_CONFIGURATION, so the two runs differ in more than the firmware) |
+>
+> Whether this changes the board's stall rate is not known: in all 8 stalls
+> sampled on 2026-11-03 the status ZLP was already staged and the core idle
+> with no IN received, which points at the host or hub side, and a NAKed
+> status IN alone never stalled in 350 data round trips or 1000 zero-length
+> writes. What it removes is the NAKed status IN through the hub's
+> transaction translator. The board A/B is
+> `fpga/kv260/host/usb_prestage_ab.py` (single attaches, alternating ABBA
+> between a checkout without the pre-stage and one with it, counting
+> SET_CONFIGURATION stalls in each; control flow tested on the model and on
+> stand-in demos, `test_usb_prestage_ab.py`). Sample size (its `--plan`;
+> one-sided Fisher exact test at 0.05, A at 3 %): if B never stalls, 100
+> attaches per arm detect it with probability 0.18, 200 with 0.72, 300 with
+> 0.95; a cut to a third of the rate needs well over 300 per arm (0.43 at
+> 300). B alone with 0 stalls in 100 attaches has probability 0.048 at an
+> unchanged 3 %, in 300 under 0.001. The default is 300 pairs.
+
 ## Bottom line
 
 **The signed-off chip can do it with no RTL change, as far as digital

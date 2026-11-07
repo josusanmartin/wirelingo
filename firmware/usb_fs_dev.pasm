@@ -33,6 +33,14 @@
 ; minimum. got_in also NAKs an IN that finds F_STAGED over an empty TX FIFO (a
 ; stage that raced a SETUP's flush) instead of waiting in `pull block`.
 ;
+; SET_CONFIGURATION's status stage is answered here, not by the host software
+; (branch usb-config-prestage): the first 16 bits of a SETUP's DATA (bmRequestType
+; 0x00, bRequest 0x09) set F_CFGZLP, and an IN with nothing staged then gets a
+; zero-length DATA1 from the firmware (`cfg_zlp`) instead of a NAK, so the status
+; IN needs no software round trip. The next SETUP token clears F_CFGZLP. The host
+; software (pe.usbdev.DeviceSoftware) sees the label `cfg_zlp` and stages nothing
+; for that request. docs/usb-full-speed.md, "SET_CONFIGURATION's status stage".
+;
 ; Timing annotations (python -m pe.timing firmware/usb_fs_dev.pasm --defs pe.usbdev:defines;
 ; docs/timing-check.md). Turnaround = from the host's SE0 -> J at the pads to our
 ; first J -> K at the pads, 8 to 26 clocks. The core sees J (`ack_wait.cond` etc.)
@@ -48,6 +56,7 @@
 ; staged packet in the TX FIFO (the host sets F_STAGED after pushing it).
 ; @deadline ack_ta from=ack_wait.cond after=dend:2..6 to=ack_out avoid=data_bad stall=ack_out:0 min=8 max=26 adjust=3..4 "DATA0/1 -> ACK"
 ; @deadline in_nak_ta from=resp_wait.cond after=tok_end:2..6 to=resp_out avoid=idle,got_setup,send_data stall=resp_out:0 min=8 max=26 adjust=3..4 reach=conditional "IN -> NAK"
+; @deadline in_zlp_ta from=zlp_wait.cond after=tok_end:2..6 to=zlp_out avoid=idle,got_setup,send16,send_data,echo stall=zlp_out:0 min=8 max=26 adjust=3..4 reach=conditional "IN -> the firmware's zero-length DATA1 (F_CFGZLP)"
 ; @deadline in_data_ta from=data_wait.cond after=tok_end:2..6 to=data_out avoid=idle,got_setup,send16,echo stall=staged_pull:0,data_out:0 min=8 max=26 adjust=3..4 reach=conditional "IN -> staged DATA (F_STAGED: the packet is in the TX FIFO)"
 ; @deadline out_nak_ta from=resp_wait.cond after=nak_send:2..6 to=resp_out stall=resp_out:0 min=8 max=26 adjust=3..4 "OUT DATA without room -> NAK"
 ; @deadline rx_bit from=rx_bit to=rx_bit.enter avoid=dend max=4 reach=conditional "DATA receive loop keeps up: a bit every 4 clocks"
@@ -56,6 +65,8 @@
 .program usb_fs_dev
 .define F_UNDERRUN F_IN            ; flags 0 and 1 are unused by the one-core firmware
 .define F_NAKOUT F_ACK
+.define F_CFGZLP F_SENT            ; flag 7, unused by the one-core firmware otherwise:
+                                   ; this SETUP is SET_CONFIGURATION, answer its status IN
 .define OUT_WORDS 5                ; RX FIFO entries an OUT's record needs: 5 for 8
                                    ; bytes (3 full words, the partial one, the trailer),
                                    ; 8 for 16 bytes; 8 or more: never NAK
@@ -84,6 +95,18 @@ idle:
 ; ---------------------------------------------------------------- DATA after SETUP/OUT
     mov crc, ~null                 ; CRC16 over what follows the PID
     ldi r0, 16                     ; bits so far: SYNC + PID
+    jmp !f F_SETUP, dbit
+    ldi r1, 15                     ; a SETUP's first 16 bits, at 4 per bit (the line
+cfg_bit:                           ; unit holds the few bits this falls behind)
+    in line, 1                     ; through the CRC tap
+    jmp t, dend
+    add r0, 1
+    jmp r1--, cfg_bit
+    mov r1, ::isr                  ; rev8(bmRequestType) << 8 | rev8(bRequest)
+    cmp r1, 0x90                   ; 0x00, 0x09: SET_CONFIGURATION
+    jmp !z, dbit
+    flag set F_CFGZLP              ; (a bad CRC means no ACK: the host repeats the
+                                   ; SETUP, whose token clears it)
 ; the per-bit loop: 3 instructions, closed by the wrap (docs/isa.md §4.2)
 dbit:
 .wrap_target
@@ -161,6 +184,7 @@ out_full:                          ; no: NAK its DATA (flow control; the host re
     jmp idle
 got_setup:                         ; a SETUP aborts the last transfer:
     flag clr F_NAKOUT              ; (and a SETUP's DATA is never NAKed)
+    flag clr F_CFGZLP
     flag clr F_GOTACK
     flag clr F_STAGED              ; drop a packet still staged for it
 flush:
@@ -175,12 +199,19 @@ got_in:                            ; F_STAGED over an empty TX FIFO (the softwar
     jmp !f F_STAGED, nak_in        ; raced a SETUP's flush): NAK, never `pull block`
     jmp txne, send_data
 nak_in:
+    jmp f F_CFGZLP, cfg_zlp        ; SET_CONFIGURATION's status stage
     ldi r3, 0x5A80                 ; SYNC + NAK
 ; ---------------------------------------------------------------- responses
 send16:
     wait 1 pin DM                  ; the host's EOP is over (J)  @point resp_wait
     mov osr, r3               [4]
     out line, 16                   ; @point resp_out
+    jmp echo
+cfg_zlp:                           ; zero-length DATA1: SYNC, PID, CRC16 0000
+    ldi r3, 0x4B80                 ; (sent again if the host repeats the IN)
+    wait 1 pin DM                  ; @point zlp_wait
+    mov osr, r3               [4]
+    out line, 32                   ; @point zlp_out
     jmp echo
 send_data:
     flag clr F_STAGED
