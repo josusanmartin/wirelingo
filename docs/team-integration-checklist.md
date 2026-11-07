@@ -40,9 +40,9 @@ This is a review checklist for lead/Claude integration, not permission to merge,
 run another lane's tests, start a harden or use runner1. Workers keep their own
 branches; lead commits reviewed changes. The accepted dependency snapshot below
 is dated **October 13, 2026, shipping1913**. Its combined Git tree is
-`b7267f4f146a5899e6a3ad7463cb5f6ad324c1c8`, the tree of commit `67443d9`
-(the id changed when the history was rewritten for publication); it is not
-main integration.
+`b7267f4f146a5899e6a3ad7463cb5f6ad324c1c8`, the tree of commit `67443d9`:
+the published (redacted) version of that tree, so its id and the content of
+a few files differ from the original's; it is not main integration.
 Select the declared production prerequisites, not every worker ancestor.
 
 ## Release and source baseline

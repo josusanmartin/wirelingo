@@ -56,7 +56,7 @@
 #   8644940 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
 #   fb4d90a on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
 #   03923c9 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
-#   14375cabdaba on team/20261011-sol-forge: a worker branch of the agent team; only what was integrated into main is published
+#   14375ca on team/20261011-sol-forge: a worker branch of the agent team; only what was integrated into main is published
 #   74583e2 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
 #   e4dcb87 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
 #   f328b02 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
@@ -90,14 +90,17 @@
 #   7c3a039: exists only in the object store (a rebased or deleted branch). Cited in
 #       evidence/model-usb-ls-restage-20261104/README.md and 1 commit message
 #   aacdc4c: exists only in the object store (a rebased or deleted branch). Cited in
-#       evidence/model-usb-ls-restage-20261104/README.md and 2 commit messages
+#       evidence/model-usb-ls-restage-20261104/ (README.md, and the path name
+#       table-aacdc4c.txt) and 2 commit messages
 #   dc51cc8: exists only in the object store (a rebased or deleted branch). Cited in
-#       evidence/model-usb-ls-restage-20261104/ (README.md, jobs.sh, jobs2.sh),
-#       evidence/verifier/README.md, evidence/verifier/047-usb-ls-restage.report.md,
+#       evidence/model-usb-ls-restage-20261104/ (README.md, jobs.sh, jobs2.sh, and
+#       the path names table-abort-dc51cc8.txt, table-restage-dc51cc8.txt and
+#       turnaround-dc51cc8.txt), evidence/verifier/README.md, evidence/verifier/047-usb-ls-restage.report.md,
 #       test/model/test_usb_ls_restage.py, test/model/test_usb_stage_abort.py
 #       and 4 commit messages
 #   8fdda85: exists only in the object store (a rebased or deleted branch). Cited in
-#       evidence/model-usb-ls-restage-20261104/README.md, evidence/verifier/README.md,
+#       evidence/model-usb-ls-restage-20261104/ (README.md, and the path names
+#       table-8fdda85.txt and turnaround-8fdda85.txt), evidence/verifier/README.md,
 #       evidence/verifier/047-usb-ls-restage.report.md and 4 commit messages
 #   d5b8944: exists only in the object store (a rebased or deleted branch). Cited in
 #       evidence/model-usb-ls-restage-20261104/README.md and 1 commit message
