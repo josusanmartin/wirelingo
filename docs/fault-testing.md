@@ -9,7 +9,7 @@ RTL on tested traces, and that is all that connects these results to the RTL
 (two of the fixes below also have their own RTL tests).
 
 The sweep found six weaknesses. Branch `fault-fixes` fixed four of them in the
-firmware (1, 2, 5 and 6 below; base `575362a`) and left two (3: expected I2C
+firmware (1, 2, 5 and 6 below; base `0232d4d`) and left two (3: expected I2C
 behaviour; 4: a CAN check outside the README's scope). **The KV260 runs,
 including Linux's enumeration of `usb_enum`, were made with the firmware
 before these fixes.** `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` as
@@ -24,7 +24,7 @@ remote_test.sh test                 # the RTL suite: test_uart_rx_glitch, test_i
 
 The sigrok tests skip unless sigrok-cli is found: `remote_test.sh` does not pass
 `SIGROK_CLI` over ssh, so on the runner set it in the remote command (the
-`fault-fixes` runs did; at `b5496aa`: model 2131 passed, `test_sigrok` 8/8,
+`fault-fixes` runs did; at `6839e10`: model 2131 passed, `test_sigrok` 8/8,
 and without it 2103 passed, 28 skipped).
 
 ## What was injected
@@ -85,7 +85,7 @@ USB), because the sweep's `stuck` is bounded by a frame.
 
 16 seeds per firmware and fault kind: 576 cases, 1 not `ok`: a `second-frame`
 (`i2c_master` under `stuck`, seed 13, below). No `hang`, no `needs-reset`, no
-`bus-clear`, no `false-good`. Before `fault-fixes` (at `575362a`) the same sweep
+`bus-clear`, no `false-good`. Before `fault-fixes` (at `0232d4d`) the same sweep
 gave 7 not `ok`: 5 `false-good` (findings 1 and 2) and 2 `second-frame`
 (finding 3). "Changed" counts the cases where the fault changed what the
 receiver reported at all: where it is low, the fault mostly didn't matter to
@@ -288,7 +288,7 @@ Results (model, full speed unless stated):
   of the device's packets.
 
 The sweeps run on the compute runner (`--firmware` takes another `usb_enum`
-source, such as the one at `575362a`):
+source, such as the one at `0232d4d`):
 
 ```
 cd test/model && export PYTHONPATH=../../tools

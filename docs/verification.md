@@ -360,7 +360,7 @@ full-speed USB device with the half-cycle NRZI sample point
 fo6 passes all of it (test_usb_fs_device with `usb_fs_dev` before the got_in
 guard of 2026-11-04; not re-run at gate level with it), and the release adds the autonomous USB enumeration
 tests (low and full speed) with SDF at all three corners (receipts for
-software `7685aba`, with the 246-word `usb_enum` before `fault-fixes`; the
+software `5457d8e`, with the 246-word `usb_enum` before `fault-fixes`; the
 253-word one needs a gate-level rerun). Historically v2c
 passed the older version of this set (typ 20 ns, slow 23 ns, and full-speed
 USB at slow/48 MHz, which its STA didn't meet). `v2long` runs the full-length

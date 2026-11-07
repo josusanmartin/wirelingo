@@ -1,5 +1,5 @@
 ; MIDI 1.0 transmitter with running status: written after the RTL freeze
-; (tag rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; (tag rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pin TX: the line driver's input (OUT_BASE = TX, OUT_COUNT = 1; idle high,
 ; 8N1, LSB first). TB ticks per bit (define, 32): CLKDIV = f_clk /

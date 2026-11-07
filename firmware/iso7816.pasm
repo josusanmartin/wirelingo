@@ -1,5 +1,5 @@
 ; ISO 7816-3 smart-card interface device (reader), character layer for T=0:
-; written after the RTL freeze (tag rc-93c2137-t48ba), firmware only
+; written after the RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md). ISO/IEC 7816-3 (2006) clauses 6..8 and 10.
 ;
 ; Pins: IO = the card's I/O contact, a uio pin in open-drain mode (OD_MASK)

@@ -1,5 +1,5 @@
 ; DMX512 transmitter (ANSI E1.11, DMX512-A): written after the RTL freeze
-; (tag rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; (tag rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Line: 250 kbit/s, 8N2, LSB first, idle (mark) high; TX = an OUT pin driving
 ; the RS-485 transceiver's DI. 1 tick = 1 us: CLKDIV = f_clk / 1 MHz (50 at

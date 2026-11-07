@@ -6,7 +6,7 @@ fixing, antenna repair and routing) implements the RTL the run synthesised.
 It is a formal check, not a simulation: every compared point is proved for
 all inputs and all states.
 
-**Result (2026-10-14, tool commit 090fd79).** Run fo6, the release candidate
+**Result (2026-10-14, tool commit 1ec8ec4).** Run fo6, the release candidate
 (netlist sha256 `a94a948b70591b22…`): **equivalent**. All 7429 compared points
 are proved by both engines, nothing in the netlist is unmatched, and the five
 planted netlist bugs are all caught. Run t48ba (`e400fa30c291f653…`), which
@@ -18,7 +18,7 @@ Gold is the RTL as LibreLane read it: the nine `src/` files of the run, the
 defines the synthesis step adds (`SCL_sg13cmos5l_stdcell`, `PDK_…`,
 `__librelane__`, `__pnr__`, `PAD_…`) and the parameter values they give
 (`NCORES=2`, `NBANKS=2`, `FIFO_LOG2=3`, `BANK_AW=8`). The run's files are
-byte-identical to `src/` at main f6de125. Gate is the final netlist, with
+byte-identical to `src/` at main 5891c68. Gate is the final netlist, with
 every standard cell replaced by its PDK functional model.
 
 The state elements correspond one to one:
@@ -172,7 +172,7 @@ is 0 only for a full proof.
 
 ## Results
 
-Runs on runner1, `-j 4`, tool commit 090fd79:
+Runs on runner1, `-j 4`, tool commit 1ec8ec4:
 
 | run | netlist | ABC &cec | equiv_simple | mutants | time |
 |---|---|---|---|---|---|

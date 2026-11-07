@@ -1,5 +1,5 @@
 ; Modbus RTU client (master) framing: written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ; Modbus over Serial Line V1.02 (modbus.org): RTU mode, 11-bit characters
 ; (start, 8 data bits LSB first, even parity, stop), CRC-16 (polynomial
 ; 0x8005 reflected, preset 0xFFFF) appended low byte first, frames

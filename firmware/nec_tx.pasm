@@ -1,5 +1,5 @@
 ; NEC infrared remote transmitter with a 38 kHz carrier: written after the
-; RTL freeze (tag rc-93c2137-t48ba), firmware only
+; RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md).
 ;
 ; Pin IR (an LED driver, active high). 1 tick = 1/3 carrier period:

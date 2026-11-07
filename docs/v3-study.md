@@ -1,6 +1,6 @@
 # v3 study: small ISA additions against a respin
 
-Branch `v3-study` (from `main` f0cdb80). The question: would a final hardware
+Branch `v3-study` (from `main` 9fb4f57). The question: would a final hardware
 revision with a few small ISA/RTL additions improve Wirelingo enough to
 justify a full re-signoff before 2027-01-18? Each candidate was implemented in
 the golden model, assembler and timing checker of this branch only, the

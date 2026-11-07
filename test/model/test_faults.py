@@ -1414,7 +1414,7 @@ def usb_session(speed, text=None, seed=1, jitter=0.0, ppm=0.0, lost=False):
 
 USB_SESSIONS = [("full", 1, 0, 0, False), ("full", 2, 9.25, 2500, False),
                 ("full", 3, 5, -2500, True), ("full", 9, 9.25, 2500, True), ("low",)]
-# The device's turnarounds in those sessions with usb_enum at 575362a, before
+# The device's turnarounds in those sessions with usb_enum at 0232d4d, before
 # fault-fixes; the firmware now must give the same, at both speeds.
 USB_TURNAROUNDS = [
     [323.0, 278.68, 267.78, 266.79, 309.01, 331.77, 281.01, 327.64, 263.55, 279.98, 266.94, 320.19,
@@ -1524,7 +1524,7 @@ def i2c_seed13_check(text):
     assert case(I2c, "stuck", 13, text).verdict == "second-frame"
 
 
-# Report 023's mutants: the first four survived b5496aa's suite; the rest were
+# Report 023's mutants: the first four survived 6839e10's suite; the rest were
 # caught by it and are kept here so they stay caught.
 FIX_MUTANTS += [
     ("usb_enum", ".define J_LATE (TURN > 8)", ".define J_LATE 0", check_turnarounds),

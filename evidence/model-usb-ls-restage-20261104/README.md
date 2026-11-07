@@ -23,9 +23,9 @@ board's order).
 | `turnaround-dc51cc8.txt`, `turnaround-8fdda85.txt` | dc51cc8, 8fdda85 | `measure_ls_ta.py`: the two-core device's ACK / NAK / DATA turnarounds, 8 each | 2.312 bit times for all three, before and after (identical files) |
 
 **Commit names.** The tables ran on the branch before it was rebased onto
-usb-guard's edc9042. After the rebase: 7c3a039 → 24f7f89, aacdc4c → 0e705d4,
-dc51cc8 → c887e28, 8fdda85 → 699e430, d5b8944 → 7a3e59b. `git diff` between
-each pair shows only edc9042's own changes (`fpga/kv260/host/usb_guard_run.py`,
+usb-guard's 87d72ae. After the rebase: 7c3a039 → 8be2fa6, aacdc4c → 38233ee,
+dc51cc8 → e59e368, 8fdda85 → ee15b1a, d5b8944 → 6f8562a. `git diff` between
+each pair shows only 87d72ae's own changes (`fpga/kv260/host/usb_guard_run.py`,
 `test_usb_guard_run.py`, `test_doc_guard_labels.py`, one mutant entry), none
 in `tools/`, `firmware/` or the test modules these tables ran.
 

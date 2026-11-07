@@ -29,7 +29,7 @@ pair.
 * Cycle model: two fixed pin-level cases in
   `test/model/test_usb_uart_coexist.py`: enumeration during a 32-byte
   capture, and a USB STALL, a UART bad STOP, a clear and a rearm without
-  either core disturbing the other. On `main` (`0c459b9`) the file passes,
+  either core disturbing the other. On `main` (`d61f548`) the file passes,
   3 tests including both cases, in the model suite.
 * FPGA: `uart_rx_capture_peer` ran on the KV260 build live beside a
   capturing core 0 and was rearmed while core 0 ran
@@ -247,5 +247,5 @@ kept. The single invocation then passed both cases (exit 0, 20.948 s, pytest
 from this run. There was no second invocation, firmware change, default API
 edit or timing retune.
 
-The test was integrated on `main` afterwards; at `0c459b9` (2026-10-14)
+The test was integrated on `main` afterwards; at `d61f548` (2026-10-14)
 `test/model/test_usb_uart_coexist.py` passes, 3 tests including both cases.

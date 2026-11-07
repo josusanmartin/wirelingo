@@ -1,19 +1,19 @@
 # The got_in guard, before and after, 2026-11-04
 
-What `usb_fs_dev`'s got_in guard (branch `usb-guard`, commit c4003a2) changes
-in the turnarounds, at each level, against bc98a97 (the firmware before it).
+What `usb_fs_dev`'s got_in guard (branch `usb-guard`, commit ac382d2) changes
+in the turnarounds, at each level, against c5ee980 (the firmware before it).
 Levels: **model** (the cycle model and the static checker) and **RTL**
 (Icarus, cocotb). Not gate level, not the board, not silicon.
 
-Run on runner1 (`run.sh`; `remote_test.sh model test lockstep` at c4003a2 for
+Run on runner1 (`run.sh`; `remote_test.sh model test lockstep` at ac382d2 for
 the RTL module log), except the `pe.timing` outputs, run locally (static, no
 simulation). `run.sh` holds every command, the replays and their comparison
 (`compare_dev_replay.py plans-bc98a97.json plans-c4003a2.json`) as its second
 step, run by hand after the first. Absolute paths in the logs are shortened: the runner's home to
-`~`, the c4003a2 checkout to `<checkout c4003a2>`, the bc98a97 tree to
-`<tree bc98a97>`; nothing else is changed.
+`~`, the ac382d2 checkout to `<checkout ac382d2>`, the c5ee980 tree to
+`<tree c5ee980>`; nothing else is changed.
 
-| file | level | before (bc98a97) | with the guard (c4003a2) |
+| file | level | before (c5ee980) | with the guard (ac382d2) |
 |---|---|---|---|
 | `pe-timing-usb_fs_dev-*.txt` | model, static | in_data_ta [12, 17] clk, in_nak_ta [10, 15]; 141 words | [13, 18], [10, 16]; 142 words; every deadline PASS |
 | `timing-check-*.log` | model, 8 sessions | IN → DATA bus 14.73..15.45 clk | 15.73..16.45 clk (30 passed) |

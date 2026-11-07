@@ -1,7 +1,7 @@
 """Post-freeze protocols on the RTL, through the real SPI host port
 (docs/post-freeze-protocols.md).
 
-The RTL is frozen at tag rc-93c2137-t48ba; these firmwares were written
+The RTL is frozen at tag rc-01ce16d-t48ba; these firmwares were written
 afterwards. Each test loads one (or two) of them over the bit-banged SPI port
 of test.py, feeds the FIFOs through it, records the pads and judges them with
 the pins-only models of pe.postfreeze and with sigrok's decoders (skipped

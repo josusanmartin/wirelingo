@@ -1,5 +1,5 @@
 ; Philips RC-5 infrared receiver: written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pin IR: the output of a 36 kHz IR receiver module (demodulated, active
 ; low: low while a burst is received; IN_BASE = IR). TB ticks per bit

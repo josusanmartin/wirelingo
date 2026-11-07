@@ -279,7 +279,7 @@ def test_zero_length_write_stages_its_status_once():
     """pe.usbfsdata on the 2026-11-03 board run: a zero-length REQ_WRITE's
     status ZLP was staged twice (handle() set it pending, then service() saw an
     empty, complete incoming buffer and set it again), so a stale DATA0 ZLP
-    answered a later request. Fixed in 6dc8c93 (on f8eed52 already); counted
+    answered a later request. Fixed in 06b0dd4 (on fe3c7ab already); counted
     here at the stage() calls: one zero-length DATA1 per request."""
     h, sw, _ = addressed()
     h.control_write_nodata(5, set_config(1))

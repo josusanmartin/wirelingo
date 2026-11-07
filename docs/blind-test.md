@@ -329,7 +329,7 @@ and the verifier's findings continued after those points and changed firmware.
 
 ## Final results
 
-At commit 82f6195 (later commits touch only this file): whole model suite 1464
+At commit 15ae571 (later commits touch only this file): whole model suite 1464
 passed, 23 skipped, including this work's 70; `test_blind` 17/17 without sigrok and
 17/17 with it, the `parallel` checks running on both protocols; mutants 34/34
 killed after a passing baseline.

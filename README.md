@@ -66,7 +66,7 @@ unit's settings are chosen by the host when it loads a program.
   firmware alone has been written. Low-speed USB runs either way (two cores without
   it, one with it).
 * **Rehearsed with the chip frozen.** With the chip's Verilog frozen at tag
-  `rc-93c2137-t48ba` (unchanged since), three rounds of protocols it was not
+  `rc-01ce16d-t48ba` (unchanged since), three rounds of protocols it was not
   designed for were added in firmware only: DMX512, LIN, NEC and RC-5
   infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU,
   MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with
@@ -120,10 +120,10 @@ release gate. No column is silicon. A blank means no test at that level. The
 | HD44780 4-bit, ATA PIO subset (blind test) | `hd44780_4bit`, `ata_pio` | yes | yes | | |
 | SWD probe (parked) | `swd_probe` | yes | | | |
 
-The release gate's gate-level runs used software `7685aba`. The post-freeze,
+The release gate's gate-level runs used software `5457d8e`. The post-freeze,
 network-stack and host-workflow runs on the same netlist are supplementary
 receipts outside the gate; the host-workflow ones (`test_usb_uart_rtl` 3/3,
-`test_spi_packed_host` 1/1, functional, validation `61af9b2`) are in
+`test_spi_packed_host` 1/1, functional, validation `af2c097`) are in
 [docs/release-evidence.md](docs/release-evidence.md). The post-freeze SDF runs
 pass at the typical corner, and at the slow and fast corners in supplementary
 single-case runs. The FPGA runs against
@@ -175,7 +175,7 @@ in git; it is to be attached as a release asset.
   tolerates ±12 ns in a one-off model sweep
   ([docs/guide.md](docs/guide.md#known-limits)).
 * The netlist is formally equivalent to the RTL and passes all 29 top-level
-  tests at gate level (software `7685aba`). A clean checkout rebuilt on a
+  tests at gate level (software `5457d8e`). A clean checkout rebuilt on a
   4-CPU machine reproduces the netlist bit for bit.
 * Not yet measured: anything through the real pads, including the host
   port's speed from the demo board. Analogue behaviour is not simulated.
@@ -247,7 +247,7 @@ main suite (`test/test.py`) also passes on the signed-off gate-level netlist.
 netlist too (fo6, functional, 2026-10-14). With SDF delays at the typical
 corner all 16 pass: 14 in the first run; `pf_dmx512` and `pf_wiegand`
 failed only on exact-equality timing assertions (pad rise and fall delays
-differ by 50–170 ps) and pass after a 1 ns tolerance (commit 8dd249a):
+differ by 50–170 ps) and pass after a 1 ns tolerance (commit dfdaa27):
 [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md).
 The host-workflow modules (`test_usb_uart_rtl`, `test_spi_packed_host`, `test_spi_preloaded_host`, `test_uart_capture_host`) pass on the RTL and, functionally, on fo6's gate-level netlist ([release evidence](docs/release-evidence.md)).
 "Model" = on the cycle-accurate model, which is lockstep-checked against the RTL. "KV260" =
@@ -385,7 +385,7 @@ make -C formal                                                   # proofs
   compiled PIO 2, Ethernet capture 2), and the SDF gate-level sets pass at
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
-  delays. (These receipts ran software `7685aba`, with the firmware of that
+  delays. (These receipts ran software `5457d8e`, with the firmware of that
   time; `uart_rx`, `i2c_master`, `can_rx` and the 253-word `usb_enum` changed
   by `fault-fixes` need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,

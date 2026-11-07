@@ -1,5 +1,5 @@
 ; NEC infrared remote receiver: written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pin IR: the output of an IR receiver module (TSOP382xx style: the 38 kHz
 ; carrier demodulated, low while a burst is received). 1 tick = 10 us:

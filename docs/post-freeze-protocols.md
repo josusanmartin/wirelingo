@@ -2,11 +2,11 @@
 
 The competition asks for a chip "reprogrammable enough to support new
 protocols after fabrication". This is a rehearsal of that moment: with the
-RTL frozen at **tag `rc-93c2137-t48ba`** (the release candidate, run t48ba),
+RTL frozen at **tag `rc-01ce16d-t48ba`** (the release candidate, run t48ba),
 implement protocols the chip was never designed for, in firmware only, and
 judge each one with oracles that do not share our assumptions.
 
-Rules kept: no change under `src/` (`git diff rc-93c2137-t48ba -- src/` was
+Rules kept: no change under `src/` (`git diff rc-01ce16d-t48ba -- src/` was
 empty on this branch; since then `main` has changed only the harden
 configuration `src/config.json`, for run fo6's antenna repair: the chip
 Verilog `src/*.v` is still the tag's), and none to the golden model,
@@ -77,8 +77,8 @@ FPGA, see below.
 **Gate level** (run fo6's signed-off netlist, 2026-10-14; supplementary
 evidence, not part of the release gate). All 16 tests of
 `test_post_freeze`, unchanged, on runner1 with `flow/gl_module_test.py`,
-validation commit `beddbe2` (`main` a1561d6 plus that runner; its `test/`,
-`tools/`, `firmware/` and `src/` are identical to `7685aba`, the
+validation commit `9254b9e` (`main` ee3dd25 plus that runner; its `test/`,
+`tools/`, `firmware/` and `src/` are identical to `5457d8e`, the
 [release receipt](release-evidence.md)'s validation root), with sigrok-cli
 0.7.2 so the decoder checks ran too:
 
@@ -106,8 +106,8 @@ validation commit `beddbe2` (`main` a1561d6 plus that runner; its `test/`,
   outside the release gate, with no verifier report
   ([release-evidence.md](release-evidence.md)).
   **Follow-up (2026-10-14):** both assertions now allow 1 ns (commit
-  8dd249a; RTL timing is still exact, `test_post_freeze` 16/16 on RTL).
-  Re-run at SDF typ on fo6 with validation `8dd249a`: **`pf_dmx512` and
+  dfdaa27; RTL timing is still exact, `test_post_freeze` 16/16 on RTL).
+  Re-run at SDF typ on fo6 with validation `dfdaa27`: **`pf_dmx512` and
   `pf_wiegand` pass** (354 s, `gl_sdf_test.sh` single-case receipt). With
   the 14 above, all 16 pass at SDF typ, in two runs at two validation
   commits.
@@ -134,7 +134,7 @@ Per test, wall time in seconds (each with its own Icarus compile):
 | `pf_dshot600` | 1.5 | 20 pass | 320 pass |
 
 (RTL: each test's Icarus run time within one RTL simulation of the module
-at `a1561d6` on runner1, 144 s in all.) Archive `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz`
+at `ee3dd25` on runner1, 144 s in all.) Archive `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz`
 (sha256 `7466b8f8…0485`; runner1 `~/protoemu-flow/` and the build machine's home directory) has
 both runs' receipts, summaries, XMLs and logs, the diagnostic, and the
 source bundle.

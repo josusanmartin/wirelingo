@@ -2,7 +2,7 @@
 the words each firmware expects in its TX FIFO, the decoding of what it
 pushes back, and pins-only models of the other end of each line.
 
-Everything here was written after the RTL freeze (tag rc-93c2137-t48ba). The
+Everything here was written after the RTL freeze (tag rc-01ce16d-t48ba). The
 models see nothing but pin levels and times: they are the tests' own judges,
 next to sigrok's decoders (pe.sigrok), which are third-party code.
 

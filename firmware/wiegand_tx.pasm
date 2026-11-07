@@ -1,5 +1,5 @@
 ; Wiegand transmitter (card reader side): written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pins D0, D1: open drain (OD_MASK) with pull-ups, idle high. A 0 is a low
 ; pulse on D0, a 1 on D1, PW us long (define; Wiegand readers use 20..100,

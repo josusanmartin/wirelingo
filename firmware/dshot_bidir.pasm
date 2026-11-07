@@ -1,5 +1,5 @@
 ; Bidirectional DShot600 (inverted DShot with eRPM telemetry from the ESC):
-; written after the RTL freeze (tag rc-93c2137-t48ba), firmware only
+; written after the RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md).
 ;
 ; One wire, a uio pin with a pull-up (ESC): the line idles high. 1 tick =

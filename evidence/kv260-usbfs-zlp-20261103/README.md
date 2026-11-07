@@ -10,7 +10,7 @@ evidence folder (`protoemu-verify-reports/evidence/032/`: `nodata/` and
 `fstall-fix-20261103.tar.gz`, sha256 `f88fe590…a9400d`, which also holds the
 xHCI traces, usbmon text and kernel logs of the stalled runs).
 
-## With the fixed software (branch `usbfs-zlp` at 6dc8c93, in `~/usbfix` on the Kria)
+## With the fixed software (branch `usbfs-zlp` at 06b0dd4, in `~/usbfix` on the Kria)
 
 | file | run | result |
 |---|---|---|

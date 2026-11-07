@@ -1,5 +1,5 @@
 ; I2S transmitter (Philips I2S, 16-bit stereo): written after the RTL freeze
-; (tag rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; (tag rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pins: side-set base = BCLK, BCLK + 1 = WS (LRCLK); OUT pin = SD.
 ; 2 ticks per bit, 32 bits per frame: f_tick = 64 * fs, CLKDIV = f_clk / (64 fs)

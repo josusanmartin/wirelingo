@@ -44,10 +44,10 @@ real commits of the repository that this branch does not contain:
 
 | Commit | Named in | What it is |
 |---|---|---|
-| `a85fc57` | item and report 041; item 042, report 042 | this folder's update to 038 before it was rebased onto `bc98a97`; the same change, with report 041's finding fixed, is in this branch's history as `763e0af` and `ead2d02` |
-| `e158fe0` | item and report 048; item 049, report 049 | the `usb-guard2` commit before it was rebased onto `9baebb7`; `git range-diff` gives it equal to `ac3e72e`, which is in this branch's history (report 049) |
-| `dc51cc8` | report 047 | the `usb-ls-restage` test commit before the rebase onto `edc9042`; the evidence README of `model-usb-ls-restage-20261104/` maps it to `c887e28`, in this branch's history |
-| `8fdda85` | report 047 | the `usb_ls_tx` fix before the same rebase; mapped to `699e430`, in this branch's history |
+| `a85fc57` | item and report 041; item 042, report 042 | this folder's update to 038 before it was rebased onto `c5ee980`; the same change, with report 041's finding fixed, is in this branch's history as `2bc09d9` and `1cc1446` |
+| `e158fe0` | item and report 048; item 049, report 049 | the `usb-guard2` commit before it was rebased onto `084b699`; `git range-diff` gives it equal to `0388de3`, which is in this branch's history (report 049) |
+| `dc51cc8` | report 047 | the `usb-ls-restage` test commit before the rebase onto `87d72ae`; the evidence README of `model-usb-ls-restage-20261104/` maps it to `e59e368`, in this branch's history |
+| `8fdda85` | report 047 | the `usb_ls_tx` fix before the same rebase; mapped to `ee15b1a`, in this branch's history |
 | `60b0692` | items 032 and 036, reports 032, 036 and 038; item 042, report 042 | the RTL commit the KV260 app `protoemu48` was built from (2026-10-07, on the `kv260-usb` branch only), named as a bitstream's source, not as a commit under review |
 | `d1aa46f` | items 029, 031 and 037, reports 001, 029, 031 and 037 | the RTL commit of the KV260 `pe_lab` build (2026-10-06, on no branch), named in the same way |
 
@@ -60,59 +60,64 @@ verifier's own checkouts.
 
 | # | Item | Commit | Verdict | | |
 |---|---|---|---|---|---|
-| 000 | `eth10-match` | `61af9b2` | FAIL | [item](000-eth10-match.md) | [report](000-eth10-match.report.md) |
-| 001 | `eth10-match-fix` | `aedf991` | FAIL | [item](001-eth10-match-fix.md) | [report](001-eth10-match-fix.report.md) |
-| 002 | `rmii-study` | `d811228` | FAIL | [item](002-rmii-study.md) | [report](002-rmii-study.report.md) |
-| 003 | `eth-stack` | `e71ab1c` | FAIL | [item](003-eth-stack.md) | [report](003-eth-stack.report.md) |
-| 004 | `eth10-match-fix2` | `1fddeef` | FAIL | [item](004-eth10-match-fix2.md) | [report](004-eth10-match-fix2.report.md) |
-| 005 | `explain-docs` | `7eaaf9c` | PASS | [item](005-explain-docs.md) | [report](005-explain-docs.report.md) |
-| 006 | `ocaml-port` | `03edc75` | FAIL | [item](006-ocaml-port.md) | [report](006-ocaml-port.report.md) |
-| 007 | `rmii-fix` | `ceb84a4` | PASS | [item](007-rmii-fix.md) | [report](007-rmii-fix.report.md) |
-| 008 | `bench-fw` | `5582d7a` | PASS | [item](008-bench-fw.md) | [report](008-bench-fw.report.md) |
-| 009 | `eth10-match-fix3` | `0bdcbe5` | PASS | [item](009-eth10-match-fix3.md) | [report](009-eth10-match-fix3.report.md) |
-| 010 | `eth-stack-fix` | `d2d89b8` | FAIL | [item](010-eth-stack-fix.md) | [report](010-eth-stack-fix.report.md) |
-| 011 | `bench-fw-notes` | `f47e875` | PASS | [item](011-bench-fw-notes.md) | [report](011-bench-fw-notes.report.md) |
-| 012 | `blind-test` | `40fb59a` | FAIL | [item](012-blind-test.md) | [report](012-blind-test.report.md) |
-| 013 | `ocaml-fix` | `cca723c` | PASS | [item](013-ocaml-fix.md) | [report](013-ocaml-fix.report.md) |
-| 014 | `faults-pulse` | `75eed67` | PASS | [item](014-faults-pulse.md) | [report](014-faults-pulse.report.md) |
-| 015 | `eth-stack-fix2` | `87a1b70` | PASS | [item](015-eth-stack-fix2.md) | [report](015-eth-stack-fix2.report.md) |
-| 016 | `hw-kit` | `49a2d89` | FAIL | [item](016-hw-kit.md) | [report](016-hw-kit.report.md) |
-| 017 | `ocaml-notes` | `7dba86e` | FAIL | [item](017-ocaml-notes.md) | [report](017-ocaml-notes.report.md) |
-| 018 | `blind-fix` | `e5dd3d0` | PASS | [item](018-blind-fix.md) | [report](018-blind-fix.report.md) |
-| 019 | `fabric-guard` | `80cc0b9` | FAIL | [item](019-fabric-guard.md) | [report](019-fabric-guard.report.md) |
-| 020 | `hw-kit-fix` | `8a6dd8f` | PASS | [item](020-hw-kit-fix.md) | [report](020-hw-kit-fix.report.md) |
-| 021 | `ocaml-selfcheck` | `88ab957` | PASS | [item](021-ocaml-selfcheck.md) | [report](021-ocaml-selfcheck.report.md) |
-| 022 | `guard-fix` | `851a373` | PASS | [item](022-guard-fix.md) | [report](022-guard-fix.report.md) |
-| 023 | `fault-fixes` | `b5496aa` | FAIL | [item](023-fault-fixes.md) | [report](023-fault-fixes.report.md) |
-| 024 | `rules-check` | `7e19431` | FAIL | [item](024-rules-check.md) | [report](024-rules-check.report.md) |
-| 025 | `reaction` | `f497922` | PASS | [item](025-reaction.md) | [report](025-reaction.report.md) |
-| 026 | `rules-check-fix` | `f3829df` | PASS | [item](026-rules-check-fix.md) | [report](026-rules-check-fix.report.md) |
-| 027 | `fault-fixes-fix` | `7f7a70f` | FAIL | [item](027-fault-fixes-fix.md) | [report](027-fault-fixes-fix.report.md) |
-| 028 | `fault-fixes-labels` | `b2560de` | PASS | [item](028-fault-fixes-labels.md) | [report](028-fault-fixes-labels.report.md) |
-| 029 | `fabric-ping` | `da82a51` | FAIL | [item](029-fabric-ping.md) | [report](029-fabric-ping.report.md) |
-| 030 | `docs-fix` | `3410bc9` | FAIL | [item](030-docs-fix.md) | [report](030-docs-fix.report.md) |
-| 031 | `fabric-ping-fix` | `48fcce0` | FAIL | [item](031-fabric-ping-fix.md) | [report](031-fabric-ping-fix.report.md) |
-| 032 | `usbfs-zlp` | `6dc8c93` | FAIL | [item](032-usbfs-zlp.md) | [report](032-usbfs-zlp.report.md) |
-| 033 | `docs-fix-fix` | `f3b066b` | PASS | [item](033-docs-fix-fix.md) | [report](033-docs-fix-fix.report.md) |
-| 034 | `fabric-ping-fix2` | `c4ea377` | FAIL | [item](034-fabric-ping-fix2.md) | [report](034-fabric-ping-fix2.report.md) |
-| 035 | `hostname-fix` | `2650f98` | PASS | [item](035-hostname-fix.md) | [report](035-hostname-fix.report.md) |
-| 036 | `usbfs-zlp-fix` | `f88fb31` | FAIL | [item](036-usbfs-zlp-fix.md) | [report](036-usbfs-zlp-fix.report.md) |
-| 037 | `fabric-ping-fix3` | `1b3ff6b` | PASS | [item](037-fabric-ping-fix3.md) | [report](037-fabric-ping-fix3.report.md) |
-| 038 | `hostname-fix2` | `bc280ff` | PASS | [item](038-hostname-fix2.md) | [report](038-hostname-fix2.report.md) |
-| 039 | `fabric-ping2` | `651513e` | PASS | [item](039-fabric-ping2.md) | [report](039-fabric-ping2.report.md) |
-| 040 | `usbfs-zlp-fix2` | `05f86ec` | PASS | [item](040-usbfs-zlp-fix2.md) | [report](040-usbfs-zlp-fix2.report.md) |
+| 000 | `eth10-match` | `af2c097` | FAIL | [item](000-eth10-match.md) | [report](000-eth10-match.report.md) |
+| 001 | `eth10-match-fix` | `8ae633f` | FAIL | [item](001-eth10-match-fix.md) | [report](001-eth10-match-fix.report.md) |
+| 002 | `rmii-study` | `177af7b` | FAIL | [item](002-rmii-study.md) | [report](002-rmii-study.report.md) |
+| 003 | `eth-stack` | `3303b45` | FAIL | [item](003-eth-stack.md) | [report](003-eth-stack.report.md) |
+| 004 | `eth10-match-fix2` | `84e853c` | FAIL | [item](004-eth10-match-fix2.md) | [report](004-eth10-match-fix2.report.md) |
+| 005 | `explain-docs` | `6903fd9` | PASS | [item](005-explain-docs.md) | [report](005-explain-docs.report.md) |
+| 006 | `ocaml-port` | `1815536` | FAIL | [item](006-ocaml-port.md) | [report](006-ocaml-port.report.md) |
+| 007 | `rmii-fix` | `c3d9f85` | PASS | [item](007-rmii-fix.md) | [report](007-rmii-fix.report.md) |
+| 008 | `bench-fw` | `f3ac455` | PASS | [item](008-bench-fw.md) | [report](008-bench-fw.report.md) |
+| 009 | `eth10-match-fix3` | `86abad7` | PASS | [item](009-eth10-match-fix3.md) | [report](009-eth10-match-fix3.report.md) |
+| 010 | `eth-stack-fix` | `cb0283f` | FAIL | [item](010-eth-stack-fix.md) | [report](010-eth-stack-fix.report.md) |
+| 011 | `bench-fw-notes` | `d906eb6` | PASS | [item](011-bench-fw-notes.md) | [report](011-bench-fw-notes.report.md) |
+| 012 | `blind-test` | `897be38` | FAIL | [item](012-blind-test.md) | [report](012-blind-test.report.md) |
+| 013 | `ocaml-fix` | `d614d46` | PASS | [item](013-ocaml-fix.md) | [report](013-ocaml-fix.report.md) |
+| 014 | `faults-pulse` | `26ab95e` | PASS | [item](014-faults-pulse.md) | [report](014-faults-pulse.report.md) |
+| 015 | `eth-stack-fix2` | `02a99de` | PASS | [item](015-eth-stack-fix2.md) | [report](015-eth-stack-fix2.report.md) |
+| 016 | `hw-kit` | `f31bafe` | FAIL | [item](016-hw-kit.md) | [report](016-hw-kit.report.md) |
+| 017 | `ocaml-notes` | `e458a04` | FAIL | [item](017-ocaml-notes.md) | [report](017-ocaml-notes.report.md) |
+| 018 | `blind-fix` | `abdc597` | PASS | [item](018-blind-fix.md) | [report](018-blind-fix.report.md) |
+| 019 | `fabric-guard` | `d2c4bff` | FAIL | [item](019-fabric-guard.md) | [report](019-fabric-guard.report.md) |
+| 020 | `hw-kit-fix` | `00397a5` | PASS | [item](020-hw-kit-fix.md) | [report](020-hw-kit-fix.report.md) |
+| 021 | `ocaml-selfcheck` | `c0e4700` | PASS | [item](021-ocaml-selfcheck.md) | [report](021-ocaml-selfcheck.report.md) |
+| 022 | `guard-fix` | `539b870` | PASS | [item](022-guard-fix.md) | [report](022-guard-fix.report.md) |
+| 023 | `fault-fixes` | `6839e10` | FAIL | [item](023-fault-fixes.md) | [report](023-fault-fixes.report.md) |
+| 024 | `rules-check` | `7ebb95e` | FAIL | [item](024-rules-check.md) | [report](024-rules-check.report.md) |
+| 025 | `reaction` | `ac44c31` | PASS | [item](025-reaction.md) | [report](025-reaction.report.md) |
+| 026 | `rules-check-fix` | `c1459ff` | PASS | [item](026-rules-check-fix.md) | [report](026-rules-check-fix.report.md) |
+| 027 | `fault-fixes-fix` | `d14e5a5` | FAIL | [item](027-fault-fixes-fix.md) | [report](027-fault-fixes-fix.report.md) |
+| 028 | `fault-fixes-labels` | `74c47a1` | PASS | [item](028-fault-fixes-labels.md) | [report](028-fault-fixes-labels.report.md) |
+| 029 | `fabric-ping` | `0a1b76d` | FAIL | [item](029-fabric-ping.md) | [report](029-fabric-ping.report.md) |
+| 030 | `docs-fix` | `d60c36d` | FAIL | [item](030-docs-fix.md) | [report](030-docs-fix.report.md) |
+| 031 | `fabric-ping-fix` | `8ea1baf` | FAIL | [item](031-fabric-ping-fix.md) | [report](031-fabric-ping-fix.report.md) |
+| 032 | `usbfs-zlp` | `06b0dd4` | FAIL | [item](032-usbfs-zlp.md) | [report](032-usbfs-zlp.report.md) |
+| 033 | `docs-fix-fix` | `bc39be5` | PASS | [item](033-docs-fix-fix.md) | [report](033-docs-fix-fix.report.md) |
+| 034 | `fabric-ping-fix2` | `00e61ad` | FAIL | [item](034-fabric-ping-fix2.md) | [report](034-fabric-ping-fix2.report.md) |
+| 035 | `hostname-fix` | `d3ed2e3` | PASS | [item](035-hostname-fix.md) | [report](035-hostname-fix.report.md) |
+| 036 | `usbfs-zlp-fix` | `cdd21e0` | FAIL | [item](036-usbfs-zlp-fix.md) | [report](036-usbfs-zlp-fix.report.md) |
+| 037 | `fabric-ping-fix3` | `956184e` | PASS | [item](037-fabric-ping-fix3.md) | [report](037-fabric-ping-fix3.report.md) |
+| 038 | `hostname-fix2` | `5851b41` | PASS | [item](038-hostname-fix2.md) | [report](038-hostname-fix2.report.md) |
+| 039 | `fabric-ping2` | `7d18b14` | PASS | [item](039-fabric-ping2.md) | [report](039-fabric-ping2.report.md) |
+| 040 | `usbfs-zlp-fix2` | `333a64b` | PASS | [item](040-usbfs-zlp-fix2.md) | [report](040-usbfs-zlp-fix2.report.md) |
 | 041 | `verifier-reports2` | `a85fc57` | FAIL | [item](041-verifier-reports2.md) | [report](041-verifier-reports2.report.md) |
-| 042 | `verifier-reports2-fix` | `7d53740` | PASS | [item](042-verifier-reports2-fix.md) | [report](042-verifier-reports2-fix.report.md) |
-| 043 | `fabric-ping3` | `5d5eb04` | PASS | [item](043-fabric-ping3.md) | [report](043-fabric-ping3.report.md) |
-| 044 | `usb-guard` | `5554b88` | FAIL | [item](044-usb-guard.md) | [report](044-usb-guard.report.md) |
-| 045 | `usb-guard-fix` | `326de49` | FAIL | [item](045-usb-guard-fix.md) | [report](045-usb-guard-fix.report.md) |
-| 046 | `usb-guard-fix2` | `edc9042` | PASS | [item](046-usb-guard-fix2.md) | [report](046-usb-guard-fix2.report.md) |
-| 047 | `usb-ls-restage` | `6e1da04` | PASS | [item](047-usb-ls-restage.md) | [report](047-usb-ls-restage.report.md) |
+| 042 | `verifier-reports2-fix` | `1d9a4da` | PASS | [item](042-verifier-reports2-fix.md) | [report](042-verifier-reports2-fix.report.md) |
+| 043 | `fabric-ping3` | `f3e4744` | PASS | [item](043-fabric-ping3.md) | [report](043-fabric-ping3.report.md) |
+| 044 | `usb-guard` | `0c8c8da` | FAIL | [item](044-usb-guard.md) | [report](044-usb-guard.report.md) |
+| 045 | `usb-guard-fix` | `8a1f900` | FAIL | [item](045-usb-guard-fix.md) | [report](045-usb-guard-fix.report.md) |
+| 046 | `usb-guard-fix2` | `87d72ae` | PASS | [item](046-usb-guard-fix2.md) | [report](046-usb-guard-fix2.report.md) |
+| 047 | `usb-ls-restage` | `1b20982` | PASS | [item](047-usb-ls-restage.md) | [report](047-usb-ls-restage.report.md) |
 | 048 | `usb-guard2` | `e158fe0` | FAIL | [item](048-usb-guard2.md) | [report](048-usb-guard2.report.md) |
-| 049 | `usb-guard2-fix` | `0135ca2` | PASS | [item](049-usb-guard2-fix.md) | [report](049-usb-guard2-fix.report.md) |
-| 050 | `usb-in-setup` | `b665baf` | PASS | [item](050-usb-in-setup.md) | [report](050-usb-in-setup.report.md) |
+| 049 | `usb-guard2-fix` | `c0cf7f0` | PASS | [item](049-usb-guard2-fix.md) | [report](049-usb-guard2-fix.report.md) |
+| 050 | `usb-in-setup` | `d4f5a61` | PASS | [item](050-usb-in-setup.md) | [report](050-usb-in-setup.report.md) |
 
 ## Verbatim, and the redactions
+
+For publication, the history rewrite of 2026-11-07 also redacted one word, the build
+host's provider name, in `030-docs-fix.md`, `035-hostname-fix.md`, `035-hostname-fix.report.md`, `041-verifier-reports2.md` and `042-verifier-reports2-fix.report.md`. The "sha256 committed" digests below for those
+5 files are of the files as published, so they differ from the digests of the
+originals; [history-map.txt](../history-map.txt) says the same.
 
 ### 000-029
 
@@ -195,7 +200,7 @@ unchanged. The sha256 of each file, in the verifier's inbox and as committed
 
 | File | sha256 in the inbox | sha256 committed |
 |---|---|---|
-| `030-docs-fix.md` | `0a8103e64534a4c5e6b089750e8e907b090c1b1965f4f04cd6f674220826009f` | same |
+| `030-docs-fix.md` | `0a8103e64534a4c5e6b089750e8e907b090c1b1965f4f04cd6f674220826009f` | `6e530981e7bc1ff03aafae548a6ccaf3a5f09044416b4d13d6480dbab20cc25a` |
 | `030-docs-fix.report.md` | `6a8860e161cd43785c7851f2564f529a05f12c7d61a1f410c947c544562dacf0` | `280a694e2e22f9f68781945c78751636aed06ba29a6e84464338ce34cb1bba3d` |
 | `031-fabric-ping-fix.md` | `ae4e9c4a046ff43d2e8329e1364a1237a98f3973c19d57669532879eff0c1298` | same |
 | `031-fabric-ping-fix.report.md` | `c825d3510855865a1a65017c507945ac818b290d85a0732bf91ac45573721864` | same |
@@ -205,8 +210,8 @@ unchanged. The sha256 of each file, in the verifier's inbox and as committed
 | `033-docs-fix-fix.report.md` | `cd6b6b09827657c9814d09ae0c4528cb1ebc30b48c9d21854172dc9f991d4ac4` | same |
 | `034-fabric-ping-fix2.md` | `b598638c437596a794e5aa12659dfb804d95b5a99c645d7d70d2bee1a905e0e0` | same |
 | `034-fabric-ping-fix2.report.md` | `e948c21a33f60a4084f9769a3a30c492b7963fa937e4c89ac73bf0a0439c8e10` | same |
-| `035-hostname-fix.md` | `014f5abcba3e3ca269ad0f6b35698122c8f4bb61cd8b4af8eb6f13f0ba599b26` | `00fa8b7524455cf53bb1973309c3d1475c3e0812a74269522679493fd13b0ff0` |
-| `035-hostname-fix.report.md` | `c4cc402bbe16773a0dd025ed4dc1e5dfb354537d7dc1a9eaebfb4bcff6a3c426` | `97d079f019f99de0a47d8161966ad63ac161a6c23bf18dc9950ff12245d0cfb2` |
+| `035-hostname-fix.md` | `014f5abcba3e3ca269ad0f6b35698122c8f4bb61cd8b4af8eb6f13f0ba599b26` | `f348f9205cb81c83831ecd5bd462fca3c7d202dcf82bf5034d00ab2598c1a992` |
+| `035-hostname-fix.report.md` | `c4cc402bbe16773a0dd025ed4dc1e5dfb354537d7dc1a9eaebfb4bcff6a3c426` | `604a8b77f54167144f1338956dede44493988a8eb7fc2e4ee9d01ed675391291` |
 | `036-usbfs-zlp-fix.md` | `e8e3f538ffecca6bebe780206c0a6f99e1011d35763a943a117c6bf9ef45357e` | same |
 | `036-usbfs-zlp-fix.report.md` | `e965765b018d5a294e9bec74c6b757d8ff752db3985b0f9f4ed413074c977629` | `97e498335c006346bd463ce5fb243efe0b6769a14352b04528bf36470bc22248` |
 | `037-fabric-ping-fix3.md` | `6a3b019d2a3f369b27654b1a81aeb07998b88a14df2777a66017a1d4161559dd` | same |
@@ -250,7 +255,7 @@ and as a verbatim record it is left so.
 | `039-fabric-ping2.report.md` | `80aa7f1b9fbd059a6c2cdf004a55656609953afdf167a31fc4aa0748d0682ba3` | same |
 | `040-usbfs-zlp-fix2.md` | `8734c99b96c6e9e88a6f12cb3be90415e340e20ede9735351c1004b8ebce8542` | same |
 | `040-usbfs-zlp-fix2.report.md` | `7d6a145913d749e4d667c40cd93b4a610e0f20143f9891b55e0b56bba8623f86` | same |
-| `041-verifier-reports2.md` | `5a7b9b36cd97bf3475481d27b1dcc6d3238cfb154863a8bfe299235349336819` | same |
+| `041-verifier-reports2.md` | `5a7b9b36cd97bf3475481d27b1dcc6d3238cfb154863a8bfe299235349336819` | `7517b182822f41914f69e2ef31e87339ed0859fc2eb9349f3160d8b2e99208e0` |
 | `041-verifier-reports2.report.md` | `69982302656c9d42919681d5c427a816c75e6dc37e0d2d0d2935a1ab9fd892f8` | same |
 
 To check: `sha256sum evidence/verifier/039-*.md evidence/verifier/04[01]-*.md`
@@ -312,7 +317,7 @@ link syntax.
 | File | sha256 in the inbox | sha256 committed |
 |---|---|---|
 | `042-verifier-reports2-fix.md` | `d0590a46558ad85731065355fc916ecc6f9e5da2ed3aef4c04248366658ea394` | same |
-| `042-verifier-reports2-fix.report.md` | `6d4e347f500e74c5047cdd40afd0a84423b8b79373c567119bb3f254782db76e` | `566ac7179f886a7cec705d9f900de1cae9eaadafd8a1dd41815ebf6cab325de2` |
+| `042-verifier-reports2-fix.report.md` | `6d4e347f500e74c5047cdd40afd0a84423b8b79373c567119bb3f254782db76e` | `64aa416896a84fa559f83bc3e6e6ae899857e45eaf2c12a086b6c0ceb739e895` |
 | `043-fabric-ping3.md` | `46df90460f89cf62fbb8e0c1b37fcd597cfa664a1d02037c31e550f3929123e0` | same |
 | `043-fabric-ping3.report.md` | `a87661d767b734caf7871ee146aeb4bd99b4f9b1b721508df26f909cfeece6ee` | `9e40810a07e80a4f60dd2191de0939c541b00b58909217113dbe4055cba8503b` |
 | `044-usb-guard.md` | `bacfa96a3d8738cccab5849ac07bd5b28b8c02415d0ca4af3b3ecde32e794aab` | same |

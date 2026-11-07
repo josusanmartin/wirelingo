@@ -1,5 +1,5 @@
 ; Wiegand receiver (panel side): written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pins: D0 and D1 = D0 + 1 (IN_BASE = D0), idle high (pull-ups). A low pulse
 ; on D0 is a 0, on D1 a 1, MSB first. 1 tick = 1 us: CLKDIV = f_clk / 1 MHz.

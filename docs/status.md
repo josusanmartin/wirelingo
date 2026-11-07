@@ -61,12 +61,12 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   of the enumeration runs, which hold part of these counts, are in
   [evidence/kv260-usb-20261030/](../evidence/kv260-usb-20261030/README.md).
 * **Release candidate: run fo6**, passing the strict release gate with no
-  waiver. The certified software is **`7685aba`** (2026-10-14): `main`
-  `a1561d6`'s firmware, tools and tests, so the third post-freeze round and
+  waiver. The certified software is **`5457d8e`** (2026-10-14): `main`
+  `ee3dd25`'s firmware, tools and tests, so the third post-freeze round and
   the `ws2812` and `can_rx` timing fixes are covered. It adds one new,
   supplementary runner (`flow/gl_module_test.py`) and its model test.
-  Earlier validation roots `d916d40` and `f1cb7c9` (tags `rc-d916d40-fo6`,
-  `rc-f1cb7c9-fo6`) passed too. Receipts cover the firmware and tests of
+  Earlier validation roots `00dfa75` and `4f5179d` (tags `rc-00dfa75-fo6`,
+  `rc-4f5179d-fo6`) passed too. Receipts cover the firmware and tests of
   their own validation root; a later change to `firmware/`, `tools/`,
   `test/` or `src/` needs a new run, and `main` has moved since (test and
   tool changes, FPGA demos), so the final freeze reruns it.
@@ -105,7 +105,7 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
 * Measured in simulation against the RP2040 PIO's reference programs,
   including where PIO is better ([docs/pio-comparison.md](pio-comparison.md)).
 * **Post-freeze protocol challenge:** with the RTL frozen (tag
-  `rc-93c2137-t48ba`; the chip's Verilog `src/*.v` unchanged since, only the
+  `rc-01ce16d-t48ba`; the chip's Verilog `src/*.v` unchanged since, only the
   hardening config `src/config.json` changed for fo6), three rounds of
   protocols were added in firmware, plus one assembler fix (`/` became
   integer division, which bidirectional DShot needed). Round one: DMX512, LIN

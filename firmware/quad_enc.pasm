@@ -1,5 +1,5 @@
 ; Quadrature (incremental) encoder counter, X4 decoding: written after the
-; RTL freeze (tag rc-93c2137-t48ba), firmware only
+; RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md).
 ;
 ; Pins: A and B = A + 1 (IN_BASE = A), the encoder's two outputs. CLKDIV 1.

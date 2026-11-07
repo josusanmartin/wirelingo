@@ -353,7 +353,7 @@ the results table and the DMX512 section). The KV260 run is in the README's
 
 With SDF at the typical corner, BREAK measures 175999.83 ns, because the pad's
 rise and fall delays differ. The test first failed on exact equality. It now
-allows 1 ns (commit `8dd249a`; `docs/post-freeze-protocols.md:85-113`).
+allows 1 ns (commit `dfdaa27`; `docs/post-freeze-protocols.md:85-113`).
 
 This is not special to this chip. PIO is the programmable I/O block in the
 RP2040 microcontroller, and it inspired this instruction set. A PIO program could
@@ -361,7 +361,7 @@ produce a BREAK too. The comparison here is with a fixed UART block.
 
 ## 3. One bug: the assembler's `/`
 
-This is a real bug, fixed in commit `2673606` on 2026-10-13.
+This is a real bug, fixed in commit `71a0af0` on 2026-10-13.
 
 ### What it was
 
@@ -397,7 +397,7 @@ showed the same numbers.
 
 | Check | Why it stayed quiet |
 |---|---|
-| `test_bidir_no_reply_and_timing`, exact timing on the model | It ran only at 48 MHz, where nothing is lost. See `git show 2673606` |
+| `test_bidir_no_reply_and_timing`, exact timing on the model | It ran only at 48 MHz, where nothing is lost. See `git show 71a0af0` |
 | `test_bidir_50mhz` | It ran at 50 MHz, but only asked whether the ESC model decoded the frames. It did |
 | RTL test `pf_dshot_bidir` | It ran at 48 MHz (`test/test_post_freeze.py:395`, `:403`) |
 | Static timing checker | It ran with `T0` 30 (`test/model/test_post_freeze_timing.py:25`, `firmware/dshot_bidir.pasm:34`) |
@@ -416,7 +416,7 @@ no test compared time against the define.
 * `test/model/test_dshot_bidir.py`: the timing test now runs at 48 and 50 MHz
   and compares against the defines. The commit message says it fails on the old
   assembler with the KV260's numbers.
-* Commit `1369790`: the board reran on the same bitstream, which is the FPGA's
+* Commit `eae2e7a`: the board reran on the same bitstream, which is the FPGA's
   configuration file. It measured 1240, 620 and 1660 ns, exactly 62, 31 and 83
   clocks.
 
@@ -519,7 +519,7 @@ These are the limits the repository records. None of them is ranked here.
 * Post-freeze tests with SDF at the slow and fast corners ran only as
   supplementary single-case runs, outside the release gate, with no verifier
   report (`docs/release-evidence.md`).
-* Firmware changed after `7685aba`, the certified software, has no release
+* Firmware changed after `5457d8e`, the certified software, has no release
   receipt; the final freeze reruns the gate (README, "Where it stands").
 * `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` as changed by `fault-fixes`
   are verified on the model and in RTL simulation only, not at gate level or on
@@ -701,7 +701,7 @@ repository.
 ## Appendix A: reproducing the clock counts
 
 This is a reading aid, not a regression test. Icarus Verilog is a free Verilog
-simulator (`iverilog`, `vvp`). This ran on it at `61af9b2`, in the tapeout
+simulator (`iverilog`, `vvp`). This ran on it at `af2c097`, in the tapeout
 configuration, with `test/sram_model.v`; `src/` is the same on
 `improve-2026-11`. It takes seconds. Save the text below as `/tmp/trace/tb.v`,
 then run from the repo root:

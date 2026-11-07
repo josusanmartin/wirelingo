@@ -254,7 +254,7 @@ any interface but lo (`test_bridge_refuses_the_hosts_namespace`). It never sees 
 adds no route outside the namespace, and sets neighbour timers there only. `-B`
 keeps root from leaving `__pycache__` in the checkout.
 
-Run on runner1 from a clean clone of `400b294`, whose code is the same as this commit's,
+Run on runner1 from a clean clone of `a0956d7`, whose code is the same as this commit's,
 inside `unshare --net`, once per clock (logs: `eth-tap-50.log`, `eth-tap-40.log` in
 `runner1:~/protoemu-flow/eth-stack/logs/363fc2e`):
 
@@ -388,7 +388,7 @@ thread the OS hands a signal to, doesn't matter ([verifier report 037](../eviden
 stores, the try's last statement and the `except BaseException` one carry this; the
 ones in the other two excepts and at the top of the finally are defensive, and removing
 any of them changes nothing a test can see ([verifier report 039](../evidence/verifier/039-fabric-ping2.report.md), note 4). A first try
-with `pthread_sigmask` (`c108e09`) did not hold up in testing: in one full-suite run on
+with `pthread_sigmask` (`2bb94d9`) did not hold up in testing: in one full-suite run on
 runner1 the way-out test failed in all three of its cases, a signal escaping before the
 close ([`evidence/fabric-ping-20261103/c108e09-suite/model.log`](../evidence/fabric-ping-20261103/c108e09-suite/model.log)). Verifier report 039
 could not reproduce that in seven runs of the test file under `-n 12`, and why it
@@ -429,7 +429,7 @@ found three such windows in turn, each a statement past the last fix; the board 
 went through all of them without a fault.
 
 `--pcap` takes a tcpdump of the TAP, for the record only; it is never part of the pass.
-On the board's selftest of `da82a51` the file came out empty, and that version kept
+On the board's selftest of `0a1b76d` the file came out empty, and that version kept
 tcpdump's errors and exit status out of sight. Since then the result reports the file's
 size, tcpdump's exit status and what it printed. No pcap from the board is claimed here.
 
@@ -449,7 +449,7 @@ Tests: `test/model/test_fabric_ping.py`; mutants: `python3 test/mutants.py 'fab-
 exhaustive test alone (all of its runs fail on each), `fab-way-out-live-on-return` and
 `fab-way-out-live-on-exception` by the way-out test, and `fab-stop-keeps-live` (verifier
 039's m7: `stop` raises without clearing the flag) by its second-signal cases. The runs
-in the table and the mutants ran on runner1 from a clean clone of `be2f453`, whose code
+in the table and the mutants ran on runner1 from a clean clone of `2980523`, whose code
 is this commit's (logs: `selftest-50.log`, `selftest-40.log`, `probe-50.json`,
 `probe-40.json`, `mutants.log` in `runner1:~/protoemu-flow/agent-runs/fabric-ping3/logs/be2f453`);
 the fake board is a test.

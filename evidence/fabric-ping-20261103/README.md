@@ -7,14 +7,14 @@ the wrong moment, and on `--compare` ignoring the link pulses) and 037
 [report 031](../verifier/031-fabric-ping-fix.report.md),
 [report 034](../verifier/034-fabric-ping-fix2.report.md) and
 [report 037](../verifier/037-fabric-ping-fix3.report.md). The
-fixed code, branch `fabric-ping` at `1b3ff6b`, is merged into this branch.
+fixed code, branch `fabric-ping` at `956184e`, is merged into this branch.
 Every report reproduced the board results from the files here.
 
-The board run below used the first version of the code (`da82a51`). The
+The board run below used the first version of the code (`0a1b76d`). The
 host-stack and FPGA-fabric paths it exercised did not change after it; what
 changed is how the board is handed back on an early end, and `--compare`,
 which now also requires the link pulse to match. The board file from that run
-still gives SAME against a model file made with the final code (`1b3ff6b`),
+still gives SAME against a model file made with the final code (`956184e`),
 which is the `fabric-ping-m.json` here. `smoke-1b3ff6b/` is a later probe run
 of the final code on the board (2026-11-04).
 
@@ -37,7 +37,7 @@ pads.
 1. `eth_tap.py --backend fpga --probe`: ARP, ping and UDP each answered with a
    64-byte reply, FCS right; a bad FCS and another MAC get no reply.
 2. `eth_tap.py --compare fabric-ping-b.json fabric-ping-m.json` (with the
-   `1b3ff6b` code): each reply's link pulse and TD edges equal the model's at
+   `956184e` code): each reply's link pulse and TD edges equal the model's at
    one of its divider phases (arp phase 1, ping phase 4, udp phase 0, one
    100 ns link pulse each), and the received records are equal. SAME.
 3. `unshare --net -- eth_tap.py --backend fpga --selftest`: a real Linux
@@ -45,7 +45,7 @@ pads.
    round trip 52.3 ms), UDP echo of "wirelingo", no reply for an unknown IP,
    another IP, another MAC or a bad FCS, `"pass": true`.
 
-The 2026-11-04 smoke run of `1b3ff6b` (`smoke-1b3ff6b/`): `protoemu` active
+The 2026-11-04 smoke run of `956184e` (`smoke-1b3ff6b/`): `protoemu` active
 alone, 49.99922 MHz measured, probe PASS on all five frames; `--compare`
 against the same `fabric-ping-m.json` gives SAME (arp, bad_fcs, other_mac
 phase 4, ping phase 4, udp phase 2). The selftest was not repeated, and no
@@ -57,17 +57,21 @@ board of `test/model/test_fabric_ping.py` only.
 | File | What it is |
 |---|---|
 | `fabric-ping-b.json` | The 2026-11-03 board probe results (`rig: KV260`, its build identity and measured clock, every frame in and out) |
-| `fabric-ping-m.json` | The same probe on the cycle model, made with `1b3ff6b` (link pulses per divider phase), for `--compare` |
+| `fabric-ping-m.json` | The same probe on the cycle model, made with `956184e` (link pulses per divider phase), for `--compare` |
 | `selftest.log` | The ping output and the selftest's JSON result from the Linux namespace run |
-| `archive.sha256` | The sha256 of `git archive da82a51 tools firmware fpga/kv260/host`, the code copied to the board on 2026-11-03 |
-| `smoke-1b3ff6b/fabric-ping-b.json` | The 2026-11-04 board probe of `1b3ff6b` |
-| `smoke-1b3ff6b/archive.sha256` | The sha256 of `git archive 1b3ff6b tools firmware fpga/kv260/host`, checked on both ends |
+| `archive.sha256` | The sha256 of `git archive 0a1b76d tools firmware fpga/kv260/host`, the code copied to the board on 2026-11-03 |
+| `smoke-1b3ff6b/fabric-ping-b.json` | The 2026-11-04 board probe of `956184e` |
+| `smoke-1b3ff6b/archive.sha256` | The sha256 of `git archive 956184e tools firmware fpga/kv260/host`, checked on both ends |
 | `kria-python-os.txt` | The board's `python3 -VV`, `/etc/os-release` and kernel release, read by the orchestrator at 2026-11-04 06:35:29Z: Python 3.12.3 (GCC 13.3.0), Ubuntu 24.04.2 LTS, 6.8.0-1036-xilinx. Verbatim copy of `~/dev/protoemu-verify-reports/evidence/039/kria-python-os.txt`; sha256 `b966db0afc022d2107fe71d09779a5c30cfebde46bad3f505d9358715a1e2c97` |
-| `c108e09-suite/model.log` | Not a board record: the model suite's log at `c108e09` on runner1 (`remote_test.sh model`, 2026-11-04), in which the way-out test failed in its three cases with a `pthread_sigmask` design that was then replaced. Verbatim copy of `runner1:~/protoemu-flow/agent-runs/agent-afe09457da93fe81d-c108e09-1550601/model.log`; sha256 `f5d30a1494d1e1d9a2069fefd51de35e40fdedfa1a03c7822358206488bd3053` |
+| `c108e09-suite/model.log` | Not a board record: the model suite's log at `2bb94d9` on runner1 (`remote_test.sh model`, 2026-11-04), in which the way-out test failed in its three cases with a `pthread_sigmask` design that was then replaced. Verbatim copy of `runner1:~/protoemu-flow/agent-runs/agent-afe09457da93fe81d-c108e09-1550601/model.log`; sha256 `f5d30a1494d1e1d9a2069fefd51de35e40fdedfa1a03c7822358206488bd3053` |
+
+The two `archive.sha256` hashes were computed before the history was rewritten for
+publication ([history-map.txt](../history-map.txt)) and can't be reproduced from the
+public history: the archived trees held a private hostname, which the rewrite redacted.
 
 The 2026-11-03 files are verbatim copies of
 `~/dev/protoemu-verify-reports/evidence/029/`, and the smoke files of
-`evidence/037/` there. The model file made with `da82a51` (sha256
+`evidence/037/` there. The model file made with `0a1b76d` (sha256
 `c4385127…ecfc0`) was replaced, because the final `--compare` refuses a model
 file without link pulses per phase. The redaction search (tailnet hostnames and
 addresses, 192.168 addresses, email addresses, the provider hostname,

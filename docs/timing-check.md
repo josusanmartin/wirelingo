@@ -275,9 +275,9 @@ the TX FIFO (the host sets F_STAGED after pushing it).
 
 With the got_in guard (branch `usb-guard`, 2026-11-04: an IN that finds
 F_STAGED over an empty TX FIFO is NAKed), re-derived on the model:
-`pe.timing` and `test_timing_check.py` at c4003a2 (logs:
+`pe.timing` and `test_timing_check.py` at ac382d2 (logs:
 `evidence/model-usb-guard-20261104/`). The guard costs IN →
-staged DATA one clock (before it, at bc98a97: checker 12–17, bus
+staged DATA one clock (before it, at c5ee980: checker 12–17, bus
 14.73–15.45, program 9–13 / 11–12), and IN → NAK one clock in its bound's
 maximum only, on the new F_STAGED-over-empty path (checker 10–15, program
 7–11 before); the other rows are unchanged.

@@ -50,11 +50,11 @@ uses core 0 with core 1 disabled and behavioral SRAM. The separate
 lemmas with finite RTL comparisons; they are not whole-core equivalence.
 
 Combined software/model regression passed **1,194 tests across 52 modules**
-at `85991cddf99d8bffa0bc8208ded123e263e23e16`, with no failures or skips.
+at `dcbb33d976764f08f154c82c9d620590bd975124`, with no failures or skips.
 The later [complete UART-to-USB service test](usb-uart-overlap4.md) passed
 separately on the same firmware/runtime inputs: 32 UART bytes, eight complete
 USB reads and one lost-ACK retry. Its test and measured documentation are
-`6052028` and `2d08f141`. A combined 1,195-test run is not claimed.
+`7c2f5bf` and `9835c0ca`. A combined 1,195-test run is not claimed.
 Physical receipts retain their own named validation roots; neither model
 result extends them to later firmware or grants release approval.
 

@@ -179,10 +179,10 @@ tool substitutes in the Python tests verify failure handling only; they are
 not chip validation. The runners' real artifact results must be recorded
 separately.
 
-## Recorded release: fo6 with software 7685aba (2026-10-14)
+## Recorded release: fo6 with software 5457d8e (2026-10-14)
 
 Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`), validation root
-`7685aba` = `main` `a1561d6` plus `flow/gl_module_test.py` and its test
+`5457d8e` = `main` `ee3dd25` plus `flow/gl_module_test.py` and its test
 `test/model/test_gl_module.py`, nothing else. Its `firmware/`, `tools/`,
 `test/` (apart from that one model test) and `src/` are `main`'s: the
 third post-freeze round, the `ws2812` 0-bit and `can_rx` stuff-bit fixes
@@ -203,12 +203,12 @@ fresh output directories:
 `release_check.py` against the real fo6 path with all seven receipts:
 `RELEASE PASSED (SDF profile v2, slow target 50 MHz)`, no waiver. fo6 was
 only read. `src/`, the existing `flow/` scripts, `info.yaml` and the
-LibreLane plugin are byte-identical in `f6b8ca0`, `d916d40`, `f1cb7c9` and
-`7685aba`, so the ci7 reproduction still applies. The archive
+LibreLane plugin are byte-identical in `d890596`, `00dfa75`, `4f5179d` and
+`5457d8e`, so the ci7 reproduction still applies. The archive
 `wirelingo-release-evidence-7685aba-fo6.tar.gz` (sha256
 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`, 473
 payload files, runner1 `~/protoemu-flow/` and the build machine's home directory) has the same
-contents as the f1cb7c9 record's: every hashed input and result, the job
+contents as the 4f5179d record's: every hashed input and result, the job
 logs, the verdict, the source bundle, ci7's candidate files and the
 reproduction comparison. Extracted into an empty directory, its own
 `release_check.py` re-verifies all seven receipts and passes. The archive
@@ -216,8 +216,8 @@ reproduction comparison. Extracted into an empty directory, its own
 repository is published.
 
 Supplementary, outside the release gate: `test_post_freeze` (16 tests) on
-the same netlist with `flow/gl_module_test.py`, validation `beddbe2`
-(the same `test/`, `tools/`, `firmware/` and `src/` as `7685aba`; its
+the same netlist with `flow/gl_module_test.py`, validation `9254b9e`
+(the same `test/`, `tools/`, `firmware/` and `src/` as `5457d8e`; its
 receipt verifies against `rel-7685aba`). Functional: 16/16 pass,
 hash-bound receipt `rel-beddbe2/test/sim_build/glm.hra0lnoh/receipt.json`
 (sha256 `e4be0ed4…67f1`). SDF at the typical corner: 14/16 pass, each with
@@ -225,12 +225,12 @@ its own `gl_sdf_test.sh` receipt. `pf_dmx512` and `pf_wiegand` fail on
 exact-equality timing assertions: the pads' rise and fall delays differ by
 50–170 ps, so a 176 us BREAK measures 175999.83 ns. The protocols are
 decoded correctly. After a 1 ns tolerance in those two assertions (commit
-8dd249a), both pass at SDF typ on fo6 (separate single-case receipt); see
+dfdaa27), both pass at SDF typ on fo6 (separate single-case receipt); see
 [post-freeze-protocols.md](post-freeze-protocols.md#results). Archive
 `wirelingo-postfreeze-gl-beddbe2-fo6.tar.gz` (sha256 `7466b8f8…0485`).
 
 SDF at the slow and fast corners, 20 ns (2026-11-02), also supplementary:
-`test_post_freeze` 16/16 at each corner on fo6's netlist, validation `61af9b2`,
+`test_post_freeze` 16/16 at each corner on fo6's netlist, validation `af2c097`,
 each with its own `gl_sdf_test.sh` receipt (`pfsdf-61af9b2/test/sim_build/`:
 slow `gl_sdf.I0i5IJ/receipt.json`, sha256 `2d16097a…90b1`; fast
 `gl_sdf.QWI1Yc/receipt.json`, sha256 `fdae9400…3f2a`). These are single-case
@@ -239,17 +239,17 @@ shows the annotation in effect on the same netlist.
 
 Host-workflow modules at gate level (2026-11-02), also supplementary and functional
 (no SDF): 6/6 tests on fo6's netlist with `flow/gl_module_test.py`, validation
-`61af9b2`: `test_usb_uart_rtl` 3/3 (`glm.o49y18cw`, sha256 `a13b2398…6a65`),
+`af2c097`: `test_usb_uart_rtl` 3/3 (`glm.o49y18cw`, sha256 `a13b2398…6a65`),
 `test_spi_packed_host` 1/1 (`glm.ldn0okrb`, `b4c09537…d8dd`),
 `test_spi_preloaded_host` 1/1 (`glm.1uhplvjn`, `7b4e62aa…ba44`),
 `test_uart_capture_host` 1/1 (`glm.cuwsqxi6`, `f27a1435…7e19`). Receipts are under
 `pfsdf-61af9b2/test/sim_build/` on runner1.
 
-## Recorded release: fo6 with software f1cb7c9 (2026-10-14)
+## Recorded release: fo6 with software 4f5179d (2026-10-14)
 
 Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`; `5e0e3c6e…` with
-its timestamps zeroed, the hash in tag `rc-d916d40-fo6`), validation root
-`f1cb7c9` = main `9c7aeae` plus `flow/release_evidence.py`,
+its timestamps zeroed, the hash in tag `rc-00dfa75-fo6`), validation root
+`4f5179d` = main `928c197` plus `flow/release_evidence.py`,
 `flow/archive_evidence.py`, their tests and this document. Generated with the
 one command above on runner1 (clone `~/protoemu-flow/rel-f1cb7c9`, work
 directory `~/protoemu-flow/rcpt-fo6-f1cb7c9-20261014T045116Z`), 63 minutes
@@ -265,10 +265,10 @@ with at most 6 simulator processes, all from fresh output directories:
 
 `release_check.py` against the real fo6 path with all seven receipts:
 `RELEASE PASSED (SDF profile v2, slow target 50 MHz)`, no waiver. The firmware,
-tool and test changes since `d916d40` introduced no GL or SDF regression. fo6
+tool and test changes since `00dfa75` introduced no GL or SDF regression. fo6
 itself was only read. Physical-build inputs (`src/`, the existing `flow/`
-scripts, `info.yaml`, the LibreLane plugin) are byte-identical in `f6b8ca0`,
-`d916d40` and `f1cb7c9`, so the ci7 reproduction (identical netlist and
+scripts, `info.yaml`, the LibreLane plugin) are byte-identical in `d890596`,
+`00dfa75` and `4f5179d`, so the ci7 reproduction (identical netlist and
 normalized GDS) still applies. The archive
 `wirelingo-release-evidence-f1cb7c9-fo6.tar.gz` (sha256 `091a1070…4209a`,
 461 payload files; runner1 `~/protoemu-flow/` and the build machine's home directory) keeps every
@@ -279,21 +279,21 @@ commit that touches only docs keeps the same validation inputs; any change
 to `test/`, `tools/`, `firmware/` or `src/` needs a new run. `main` has since
 changed `firmware/`, `test/` and `tools/` (the third post-freeze round, the
 `ws2812` and `can_rx` timing fixes, the bundled MicroPython images): those
-are not covered by this record (the `7685aba` record above covers them).
+are not covered by this record (the `5457d8e` record above covers them).
 `src/` is unchanged.
 
-## Recorded release: fo6 with software d916d40 (2026-10-13)
+## Recorded release: fo6 with software 00dfa75 (2026-10-13)
 
 Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`), validation root
-`d916d40`. Seven receipts: functional GL (29/29), SDF standard and v2 sets,
+`00dfa75`. Seven receipts: functional GL (29/29), SDF standard and v2 sets,
 autonomous USB enumeration (low and full speed) with SDF at typ, slow and
 fast at 20.834 ns, and precheck. `release_check.py` with all of them:
 `RELEASE PASSED (SDF profile v2, slow target 50 MHz)`, no waiver. Run ci7, a
-capped clean checkout of `d916d40`, reproduces the netlist and the
+capped clean checkout of `00dfa75`, reproduces the netlist and the
 timestamp-normalized GDS. The archive
 `wirelingo-release-evidence-d916d40-fo6.tar.gz` (sha256 `51da7962…`, 400
 payload files) keeps every hashed input and result, the logs, the verdict
-and the source bundle; the 93c2137 + t48ba archive (strict gate failing on
+and the source bundle; the 01ce16d + t48ba archive (strict gate failing on
 one fanout item) is kept for history.
 
 ## Limits

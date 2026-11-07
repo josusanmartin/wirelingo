@@ -2,7 +2,7 @@
 
 An adversarial read of the competition's own text against the entry as a judge
 would see it, plus a refreshed survey of the public rivals. Base: branch
-`improve-2026-11` at `6d5bdd5` (71 commits ahead of `main` `61af9b2`; `src/`
+`improve-2026-11` at `ac4e8e7` (71 commits ahead of `main` `af2c097`; `src/`
 identical to `main`). Physical candidate: run fo6. Nothing here was run on the
 Kria or any board; no file under `src/` or `flow/` was changed.
 
@@ -136,13 +136,13 @@ Status: **met**, **partly**, **not yet** (required later), **at risk**.
 
 ## 3. Claims a judge could catch
 
-Each is checked against the repository at `6d5bdd5`. Severity as in
+Each is checked against the repository at `ac4e8e7`. Severity as in
 claims-audit.md: **wrong**, **overclaim**, **stale**, **unclear**, **unsupported**.
 
 | # | Sev. | Where | Claim | What the repository shows |
 |---|---|---|---|---|
 | 1 | wrong | README:31 (evidence table) | FPGA against our own far ends: "Every firmware except SWD and the two-core USB pairs" | `fpga/kv260/README.md` never mentions `pps_capture`, `mdio_master`/`mdio_phy`, `eth10_tx_cs`, the QSFP/PMBus bench firmware, `rmii_*`, or the blind-test `hd44780_4bit`/`ata_pio`; the README's own rows list them as model/RTL only. The UART/USB pair modes are model and RTL only too |
-| 2 | stale | verification-story.md:96-106 | `0bdcbe5`: "No report when this page was written"; "Until a PASS, treat the `eth10_match` numbers as unverified" | Verifier [report 009](../evidence/verifier/009-eth10-match-fix3.report.md) is `VERDICT: PASS` for `0bdcbe5` |
+| 2 | stale | verification-story.md:96-106 | `86abad7`: "No report when this page was written"; "Until a PASS, treat the `eth10_match` numbers as unverified" | Verifier [report 009](../evidence/verifier/009-eth10-match-fix3.report.md) is `VERDICT: PASS` for `86abad7` |
 | 3 | unclear | README:94 vs verification-story.md:32 vs README:286 | README:94: post-freeze "with SDF at 20 ns 16/16 at the typical, slow and fast corners"; README:286: "With SDF at the typical corner all 16 pass"; verification-story: slow/fast "with no verifier report yet" | The slow/fast run has receipts (release-evidence.md:230) but sits outside the release gate and has no verifier report. Say the same thing in all three places |
 | 4 | stale | methodology.md:144 (record, not the author's statement) | "Nothing formally proves that synthesis preserved the RTL's behaviour" | equivalence.md proves fo6's netlist equal to the RTL; README:288 says so. explain-wirelingo.md Appendix B found this and left it |
 | 5 | stale | methodology.md:50 | "At commit 19ebe98, 164 of the repository's 184 commits are co-authored by Claude" | Dated, so not false; this branch has 355 of 433. Refresh at the freeze |
@@ -152,7 +152,7 @@ claims-audit.md: **wrong**, **overclaim**, **stale**, **unclear**, **unsupported
 | 9 | overclaim by omission | README rows `uart_rx`, `i2c_master`, `can_rx`, `usb_enum` | "RX tolerates a ±3 % sender ..."; "every SCL release times out" | fault-testing.md lists six real failures in these four firmwares (glitch start bit, ACK from stuck SDA, lost transfer after a truncated read, no CAN form check, idle-glitch error flag, missed reset inside a token). None is linked from the README. Fixes are under verification (item 023) |
 | 10 | unclear | info.md:38-48 | "The firmware verified in simulation covers ... an SWD debug probe" | SWD is model only and parked; most others are RTL. Say the level per item or drop SWD from the datasheet list |
 | 11 | unsupported (to a judge) | verification-story.md:93-94 | [Reports 000-023](../evidence/verifier/README.md) | "not published with this repository". A judge can't read the verifier's verdicts the page leans on. Publish them, or cite only what is in the repo |
-| 12 | stale | release-evidence.md, README:44-53 | "certified software `7685aba`" | Honest, but `firmware/` has 11 files and 1,118 lines added since `7685aba`, none under a receipt. The freeze must rerun `flow/release_evidence.py` on the shipping commit |
+| 12 | stale | release-evidence.md, README:44-53 | "certified software `5457d8e`" | Honest, but `firmware/` has 11 files and 1,118 lines added since `5457d8e`, none under a receipt. The freeze must rerun `flow/release_evidence.py` on the shipping commit |
 | 13 | stale | claims-audit.md recommendation F | "`test_post_freeze` (16 tests) has never run on a netlist" | It has (release-evidence.md:216). The audit is dated 2026-10-14; mark it historical |
 | 14 | unclear | usb-uart-byte.md, team-integration-checklist.md, lean-verification*.md | ticket jargon ("Atlas", C13-C24, "settlement") | claims-audit recommendation C, still open |
 | 15 | unclear | methodology.md:37 | "Claude Opus 5.5 and Astra" | Unexplained; Codex is the named reviewer. Author's decision |

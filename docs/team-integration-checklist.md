@@ -3,9 +3,9 @@
 ## Current review delivery — October 14, 2026
 
 The dated `shipping1913` dependency table below is historical. The later
-review delivery is `2d08f141fa0c61ef2117fd7f07710eac636d1072` on
+review delivery is `9835c0ca379c7bbbf251f3fb8030985db6d5ef44` on
 `team/20261014-overlap4-service`, based on main
-`34de7a06a884e99976be1e99d589e4d63d267a8a`. Its complete apply order is in the
+`12c21d1875f259b87b9545d8721b30cf616b9126`. Its complete apply order is in the
 October 14 handoff (`~/wirelingo-team-20261011/control/resume-20261013/integration-20261014-handoff.md`, outside the repository).
 Use that sequence for this delivery; do not reapply the older table's commits
 to a main tree that already contains them. This note is a documentation-only
@@ -13,10 +13,10 @@ successor and changes no tested inputs.
 
 The current evidence closes several gaps left open in the historical table:
 
-- Exact `85991cdd` passed the full software/model suite: 1,194 tests across
+- Exact `dcbb33d9` passed the full software/model suite: 1,194 tests across
   52 modules, no failures, errors, skips, xfails or deselection. The separate
-  complete-service test added in `6052028` passed once on the same runtime
-  inputs. There is no combined 1,195-test result for `2d08f141`.
+  complete-service test added in `7c2f5bf` passed once on the same runtime
+  inputs. There is no combined 1,195-test result for `9835c0ca`.
 - [UART serialized-host capture](uart-capture-host.md) passed the later
   C16 two-message RTL schedule. The earlier C14/C15 failures remain history;
   the pass does not establish continuous capture or concurrent core 1 use.
@@ -47,10 +47,10 @@ Select the declared production prerequisites, not every worker ancestor.
 
 - Preserve current main's post-freeze DMX512, LIN, NEC, I2S, Wiegand and DShot
   programs and USB bus-reset fixes. A stale firmware copy is not the baseline.
-- fo6 with validation root `d916d40` and tag `rc-d916d40-fo6` passed the strict
+- fo6 with validation root `00dfa75` and tag `rc-00dfa75-fo6` passed the strict
   release gate without a waiver, with seven receipts. ci7 reproduced the
   netlist and timestamp-normalized GDS. See [physical notes](physical.md) and
-  [release evidence](release-evidence.md#recorded-release-fo6-with-software-d916d40-2026-10-13).
+  [release evidence](release-evidence.md#recorded-release-fo6-with-software-00dfa75-2026-10-13).
 - t48ba's 11/8 fanout failure and October 11 prototype/provenance work are
   historical. The retired producer ticket stopped after 14 metadata/source
   GETs, with no signature/parser checks or archive download. It is not a
@@ -61,7 +61,7 @@ Select the declared production prerequisites, not every worker ancestor.
 
 ## Five lanes — accepted shipping1913 dependency snapshot
 
-Pinned main base: `0ebe6caac4e76ca2a648356543d0d7460574546d`.
+Pinned main base: `427f25bebb010a597f3bf92d2987189307f0fb07`.
 The lead handoff (`~/wirelingo-team-20261011/control/resume-20261013/shipping-20261013-1913/HANDOFF.md`, outside the repository)
 records the full commit identities, reviewed patches and saved results.
 **Numbers below are the global apply order of its 24 commits**; apply in

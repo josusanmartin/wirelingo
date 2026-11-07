@@ -3,9 +3,9 @@
 Evidence level: **model** (the cycle model, `tools/pe/sim.py`). Not RTL, not
 the board.
 
-`test/model/usb_fs_enum_sweep.py` (committed at 9f6f9ea; what it does and
+`test/model/usb_fs_enum_sweep.py` (committed at c335316; what it does and
 its parameters are in its docstring) run on runner1 against `git archive`
-copies of three commits, with the script from 9f6f9ea:
+copies of three commits, with the script from c335316:
 
     PYTHONPATH=<tree>/tools ~/protoemu-flow/test-venv/bin/python \
         test/model/usb_fs_enum_sweep.py --tree <tree> --runs 40 --procs 8
@@ -24,9 +24,9 @@ SET_ADDRESS: the model's host sends it 0.1-3 ms after the port reset, and
 software that slow has not restarted the core by then (usbmon shows Linux
 taking 64 ms there). They say nothing about SET_CONFIGURATION.
 
-At 9f6f9ea and later `tools/pe/usbdev.py` and `firmware/usb_fs_dev.pasm` are
-byte-identical to 64b59c2's (the hashes in `out-64b59c2.txt`);
-`tools/pe/usbfsdata.py` differs only in its docstring (fd650ee).
+At c335316 and later `tools/pe/usbdev.py` and `firmware/usb_fs_dev.pasm` are
+byte-identical to d14f094's (the hashes in `out-64b59c2.txt`);
+`tools/pe/usbfsdata.py` differs only in its docstring (dbbe0e8).
 
 ## sha256
 

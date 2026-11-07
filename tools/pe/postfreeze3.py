@@ -4,7 +4,7 @@ and RC-5 infrared. As in pe.postfreeze and pe.postfreeze2: the words each
 firmware expects in its TX FIFO, the decoding of what it pushes back, and
 pins-only models of the other end of each line.
 
-Everything here was written after the RTL freeze (tag rc-93c2137-t48ba). The
+Everything here was written after the RTL freeze (tag rc-01ce16d-t48ba). The
 models see nothing but pin levels and times (ns) and take their numbers
 from the specifications, not from the firmware. Edge lists are [(t_ns,
 level)] (pe.postfreeze.bit_edges); waveforms [(level, duration_ns)].

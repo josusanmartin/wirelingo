@@ -1,0 +1,199 @@
+# Old commit hashes that public files still show, and where each is in this repo.
+#
+# Before publication the history was rewritten (2026-11-07): author, committer and
+# tagger emails were set to the GitHub noreply address, and private host names, the
+# hosting provider's name, tailnet names and home paths were replaced in old files
+# by the bracketed notes the evidence READMEs use. Every commit hash changed.
+# The provider-name redaction changed 5 verbatim verifier files (030-docs-fix.md, 035-hostname-fix.md, 035-hostname-fix.report.md, 041-verifier-reports2.md, 042-verifier-reports2-fix.report.md);
+# evidence/verifier/README.md gives their published sha256, which differs from the originals'.
+# A second pass replaced every cited token of a commit whose old hash depends on only
+# one private value (so could test a guess at it alone) with its new hash, in every
+# blob and message of the history; such old tokens appear nowhere public.
+#
+# This file lists ONLY old hashes that a public file or message still shows -- the
+# verbatim records under evidence/, kept file and archive names, the bitstream RTL
+# revisions, and citations of unpublished commits. Each old token is given at the
+# length it is cited (never a full 40-hex hash), so this map reveals nothing a
+# public file does not already. Citations in living documents were rewritten to
+# the new hashes in place and are not relisted here. Look an old hash up by prefix:
+#   grep '^<old-prefix>' evidence/history-map.txt
+#
+# Renamed tags (old name -> new name and new target):
+#   rc-93c2137-t48ba -> rc-01ce16d-t48ba  (01ce16d0b1ab)
+#   rc-d916d40-fo6 -> rc-00dfa75-fo6  (00dfa75b96a0)
+#   rc-f1cb7c9-fo6 -> rc-4f5179d-fo6  (4f5179d46373)
+#
+# Archive tags (extra histories published beside main; new target):
+#   archive/kv260-usb  (a3918c8f5284)
+#
+# Cited but not published (35 commits): a public file or message cites
+# them, but they are only in the old object store or on branches that are not part
+# of the public history, so they are not in the table below. Each at its cited
+# length, with the private refs that held it and the reason:
+#   cbeae96 on archive/exp-v2c: the v2c physical-design experiment, kept as a local archive tag
+#   19ebe98 on swd, t48-margin, t48-rtl: the parked SWD work; a t48 timing experiment branch
+#   7db7d61 on swd: the parked SWD work
+#   03bc2a6fae0f on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   8e47d0c9f201 on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   c77dd128 on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   2de7a6a728a3 on team/20261013-before-resume-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   086d81d on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   37926fe on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   38fa52b on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   8644940 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   fb4d90a on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   03923c9 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   14375cabdaba on team/20261011-sol-forge: a worker branch of the agent team; only what was integrated into main is published
+#   74583e2 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   e4dcb87 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   f328b02 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   80f39b6 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   4519e2f on team/20261011-sol-kepler, team/20261013-coexist-docs: a worker branch of the agent team; only what was integrated into main is published
+#   ef192a3 on team/20261011-sol-forge: a worker branch of the agent team; only what was integrated into main is published
+#   28fa7d9 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   1415771 on team/20261011-sol-atlas: a worker branch of the agent team; only what was integrated into main is published
+#   2f4087c on team/20261011-sol-atlas: a worker branch of the agent team; only what was integrated into main is published
+#   80a28e5 on team/20261011-sol-kepler, team/20261013-coexist-docs: a worker branch of the agent team; only what was integrated into main is published
+#   b6fdac6 on team/20261013-usb-ack-bundle, team/20261013-usb-driver-profile, team/20261013-usb-partial-bundle: a worker branch of the agent team; only what was integrated into main is published
+#   dfee155 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   8f4df47 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   8278342 on team/20261011-sol-atlas: a worker branch of the agent team; only what was integrated into main is published
+#   9620901 on team/20261011-sol-euclid: a worker branch of the agent team; only what was integrated into main is published
+#   416edf0 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   1d62eb7 on team/20261013-usb-driver-profile, team/20261013-usb-partial-bundle: a worker branch of the agent team; only what was integrated into main is published
+#   7cff7d7 on team/20261011-sol-pulse: a worker branch of the agent team; only what was integrated into main is published
+#   f1a313d on team/20261011-sol-atlas: a worker branch of the agent team; only what was integrated into main is published
+#   82ba9b2 on team/20261011-sol-kepler, team/20261013-coexist-docs: a worker branch of the agent team; only what was integrated into main is published
+#   5dde2a4 on team/20261013-usb-driver-profile: a worker branch of the agent team; only what was integrated into main is published
+#
+# 129 published old hashes still shown publicly, one per line:
+#   <old token (cited length)> <new hash>
+0027302 07b0ebf
+0135ca2 c0cf7f0
+01b5625 acd19ef
+03edc75 1815536
+04cfbf6 dae89a4
+05f86ec 333a64b
+07fef6e 50c749e
+08f9228 910d0bd
+0bdcbe5 86abad7
+0d7cd30 79b5cd0
+1255932 fba220a
+1369790 eae2e7a
+1999a39 144dd0a
+1a9ff81 5e8273c
+1b3ff6b 956184e
+1c24c05 9770f76
+1fddeef 84e853c
+2240919 8253a74
+2650f98 d3ed2e3
+2673606 71a0af0
+277944a 2304742
+2c5492b 939b591
+2d05073 eefe71b
+2dddff7 9220637
+31e3ed4 43d6ee7
+3218e99 be9a8df
+323718a 4a58cac
+326de49 8a1f900
+3410bc9 d60c36d
+363fc2e 3ede557
+400b294 a0956d7
+40fb59a 897be38
+48fcce0 8ea1baf
+49a2d89 f31bafe
+4ca4b0d 3f0cb79
+5149c77 1e22838
+529761f ac814df
+5554b88 0c8c8da
+5582d7a f3ac455
+575362a 0232d4d
+5d5eb04 f3e4744
+60b0692 dbd6172
+61af9b2 af2c097
+64b59c2 d14f094
+651513e 7d18b14
+65d2eef 8c5d2b0
+660615a 3d5aff3
+699e430 ee15b1a
+6c46cd29 697c221d
+6d5bdd5 ac4e8e7
+6dc8c93 06b0dd4
+6e1da04 1b20982
+7212b41 260f288
+7503c14 e7624d0
+75eed67 26ab95e
+763e0af 2bc09d9
+7685aba 5457d8e
+79cb8d9 29d9529
+7a3e59b 6f8562a
+7d53740 1d9a4da
+7dba86e e458a04
+7e19431 7ebb95e
+7eaaf9c 6903fd9
+7f7a70f d14e5a5
+80cc0b9 d2c4bff
+82f6195 15ae571
+851a373 539b870
+86fe42d abff112
+87a1b70 02a99de
+88ab957 c0e4700
+89675b6 a167455
+8a6dd8f 00397a5
+8c71177 ea810f8
+93c213722a7f 01ce16d0b1ab
+97e442d 7635c5d
+9baebb7 084b699
+9d7c44b 23c392c
+9dd256e 8c9599c
+9f6f9ea c335316
+ab6880d 2e61141
+ac3e72e 0388de3
+aed4c8f caf6476
+aedf991 8ae633f
+b24511c d289a3e
+b2560de 74c47a1
+b5496aa 6839e10
+b665baf d4f5a61
+baed5c8 eab0698
+bc280ff 5851b41
+bc98a97 c5ee980
+bcd26e0 80cfb5e
+be2f453 2980523
+beddbe2 9254b9e
+c108e09 2bb94d9
+c184dd6 9e244cf
+c1ec4c0 d0e8426
+c4003a2 ac382d2
+c4ea377 00e61ad
+c887e28 e59e368
+cca723c d614d46
+cd7f33e 3672ec4
+ce1252a 9e9a945
+ceb84a4 c3d9f85
+d01db69 54a663a
+d2d89b8 cb0283f
+d811228 177af7b
+d916d40 00dfa75
+da82a51 0a1b76d
+dbde7f7 1aeaa4e
+dc01493 0a6f678
+e28a26b 32cfccc
+e5dd3d0 abdc597
+e61c961 f2a0735
+e71ab1c 3303b45
+ead2d02 1cc1446
+edc9042 87d72ae
+eefea6b d958a80
+eff2b0f f398773
+f1cb7c9 4f5179d
+f2e7d62 78dd97a
+f3829df c1459ff
+f3a9db2 1f455ab
+f3b066b bc39be5
+f47e875 d906eb6
+f497922 ac44c31
+f86eb34 e11008a
+f88fb31 cdd21e0
+fd650ee dbbe0e8
+ff9fecb 25a761f

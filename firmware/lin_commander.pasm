@@ -1,5 +1,5 @@
 ; LIN commander (master node): written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pins: TX = the transceiver's TXD (1 = recessive), OUT_BASE = TX,
 ; OUT_COUNT = 1; RX = its RXD (the bus), IN_BASE = RX. TB ticks per bit

@@ -43,7 +43,7 @@ mechanism, not a measured comparison). [line-unit-settings.md](line-unit-setting
 each setting a test uses, the protocols it serves and the firmware.
 
 **This was rehearsed.** With the chip's Verilog frozen at tag
-`rc-93c2137-t48ba` (unchanged since), three rounds of protocols the chip was
+`rc-01ce16d-t48ba` (unchanged since), three rounds of protocols the chip was
 not designed for were added in firmware only: DMX512, LIN, NEC and RC-5
 infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU, MIDI,
 a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with PEC:
@@ -115,7 +115,7 @@ tolerates ±12 ns in a one-off model sweep ([guide.md](guide.md#known-limits)).
 Nothing has been fabricated. Pad timing, the host port's speed through the
 pads and every analogue interface are unmeasured. FPGA runs used 3.3 V FPGA
 pins and, apart from the Linux USB host, far ends that are our own models or
-replayed waveforms. Seven programs have changed since software `7685aba`,
+replayed waveforms. Seven programs have changed since software `5457d8e`,
 the software of the gate-level receipts (`uart_rx`, `i2c_master`, `can_rx`,
 `usb_enum`, `usb_fs_dev`, `usb_ls_dev`, `usb_ls_tx`), and their gate-level
 and FPGA results apply to them only after a rerun; the

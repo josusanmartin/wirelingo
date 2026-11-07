@@ -1,5 +1,5 @@
 ; SMBus host (master) with Packet Error Checking: written after the RTL
-; freeze (tag rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; freeze (tag rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ; System Management Bus Specification 3.2 (sbs-forum.org): the I2C-level
 ; transactions of every SMBus protocol (quick command, send/receive byte,
 ; write/read byte and word, block write/read, process calls), PEC, the

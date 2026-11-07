@@ -311,7 +311,7 @@ digest `036faa21`, clk_div 25; measured 47.9992 MHz, defines for 48.000 MHz),
 then `protoemu` was loaded again (build/clock/id PASS, 49.9989 MHz) and left
 loaded with PMOD0/PMOD1 = 0, pe_lab MODE 0 and the host port on the GPIO
 path. The chip Verilog (`src/*.v`) is identical in d1aa46f, 60b0692 and
-`main` (0ebe6ca); between them only harden configuration (config.json, SDC)
+`main` (427f25b); between them only harden configuration (config.json, SDC)
 and build.tcl changed. Host software (`tools/`, `firmware/`,
 `fpga/kv260/host/`) was refreshed in `~/protoemu` and `~/protoemu48` by rsync
 as install.sh does, keeping each `expected_build.json`.
@@ -383,7 +383,7 @@ had also run separately at 03:10-03:12 with the same results). `protoemu`
 RTL revision `d1aa46f` (digest `3adc796c`, clk_div 24), clock 49.9988 MHz.
 The script measured 49.9979 MHz over 2 s and, within 200 ppm of
 1200 MHz / 24, derived every CLKDIV for 50.000 MHz. `src/*.v` is identical in
-d1aa46f and this branch's base `main` (2d08f14). Host software (`tools/`,
+d1aa46f and this branch's base `main` (9835c0c). Host software (`tools/`,
 `firmware/`, `fpga/kv260/host/`) was refreshed in `~/protoemu` by rsync as
 `install.sh` does, keeping `expected_build.json`.
 
@@ -480,7 +480,7 @@ first DALI attempt, below). `protoemu` (50 MHz) was loaded: `bringup_kria.py
 clk_div 24), clock 49.9980 MHz. The script measured 49.99920 MHz over 2 s
 and, within 200 ppm of 1200 MHz / 24, derived every CLKDIV and define for
 50.000 MHz. `src/*.v` is identical in d1aa46f and this branch's base `main`
-(35da4ed). Host software (`tools/`, `firmware/`, `fpga/kv260/host/`) was
+(07c3272). Host software (`tools/`, `firmware/`, `fpga/kv260/host/`) was
 refreshed in `~/protoemu` by rsync as `install.sh` does, keeping
 `expected_build.json`. Each run's output went to a file, synced after the run
 (`~/pf2_logs/`).
@@ -609,7 +609,7 @@ build clock id` PASS, RTL revision `d1aa46f` (digest `3adc796c`, clk_div
 24), clock 49.9981 MHz. The script measured 49.99908 MHz over 2 s and,
 within 200 ppm of 1200 MHz / 24, derived every CLKDIV and define for
 50.000 MHz. `src/*.v` is identical in d1aa46f and this branch's base `main`
-(51662db). Host software (`tools/`, `firmware/`, `fpga/kv260/host/`) was
+(c20655a). Host software (`tools/`, `firmware/`, `fpga/kv260/host/`) was
 refreshed in `~/protoemu` by rsync as `install.sh` does, keeping
 `expected_build.json`. Each run's output went to a file in `~/pf3_logs/`,
 synced after the run. All 49 pre-timing runs came from the plans file made
@@ -748,6 +748,12 @@ port on the GPIO path (pe_spim SEL 0).
 
 ## USB enumeration with a replayed host, no PC (2026-10-14, `host/usb_replay_demo.py`)
 
+**Public history and `--expect`.** The bitstreams already built report their
+pre-rewrite RTL revision, so `60b0692` here is the hash the loaded board prints;
+its commit in the public history is `dbd6172` on `archive/kv260-usb`. `build_id.py`
+on a public checkout computes the new hash, so keep passing `--expect 60b0692`
+against the current board until it is rebuilt from the public history.
+
 The autonomous USB device (`firmware/usb_enum.pasm`,
 [docs/usb-enumeration.md](../../docs/usb-enumeration.md)) and the one-core
 device firmwares `usb_ls_dev` / `usb_fs_dev` (as they were before the got_in
@@ -839,9 +845,9 @@ scenario at the clock the model gives, `compare`: all 16 equal):
 | `dev`: `usb_ls_dev` / `usb_fs_dev` + DeviceSoftware: 64-byte read, SET_ADDRESS 5, descriptors, SET_CONFIGURATION, then a DATA1 not ACKed, re-staged after 100 us | PASS: 27 segments, 49/25 packets, 1022 edges 0 clocks, turnaround 2.16-2.22; requests and re-stage count = the model's | PASS: same, turnaround 2.75-3.75 |
 
 The `dev` row ran `usb_ls_dev` / `usb_fs_dev` from before the got_in guard
-(129 / 141 words, bc98a97 and earlier); not re-run on the board with it yet.
-On the model the `dev` replay with the guard (branch `usb-guard`, c4003a2)
-gives the same requests, re-stage count (1) and wire packets as at bc98a97,
+(129 / 141 words, c5ee980 and earlier); not re-run on the board with it yet.
+On the model the `dev` replay with the guard (branch `usb-guard`, ac382d2)
+gives the same requests, re-stage count (1) and wire packets as at c5ee980,
 at both speeds; the pad timing moves (one clock more on IN → DATA), so a board
 replay with the guard needs fresh plans
 (`evidence/model-usb-guard-20261104/`).
@@ -1363,7 +1369,7 @@ own pads.
 
 > **Firmware.** Every board figure in this section (the throughput, the
 > zero-length runs, the attach and stall counts) was measured with the
-> firmware before the got_in guard (`usb_fs_dev` 141 words, bc98a97 and
+> firmware before the got_in guard (`usb_fs_dev` 141 words, c5ee980 and
 > earlier); not re-measured on the board yet. The guard (branch `usb-guard`,
 > 142 words) is tested on the model and the RTL only; the board run for it is
 > `host/usb_guard_run.py` (200 attaches, 1000 zero-length writes, 10 + 200
@@ -1415,7 +1421,7 @@ the device software running over SPI concurrently with the bus) the stale
 ZLP, a DATA0, answers a later request's status stage, or that request's INs
 go unanswered; the model does not show where Linux's `-32` came from.
 
-On the board with the fixed software (branch `usbfs-zlp` at 6dc8c93; RTL in
+On the board with the fixed software (branch `usbfs-zlp` at 06b0dd4; RTL in
 FPGA fabric: KV260, protoemu48 RTL 60b0692, one host (the ZynqMP's xHCI),
 one hub (USB5744); orchestrator runs, 2026-11-03; logs and sha256s in
 `evidence/kv260-usbfs-zlp-20261103/`):
@@ -1466,7 +1472,7 @@ Two more `pe.usbdev` races of the same kind, evidence model only
   restarts the core. In the model every hold point and every one of the 26
   SPI accesses from the re-stage decision, both resumes, gives 0 unanswered
   INs (`test_no_restage_after_a_setup`, `test_restage_held_at_every_access`;
-  on bc98a97 the same tests give 2, 8 and 1 at accesses 8, 9 and 10), and
+  on c5ee980 the same tests give 2, 8 and 1 at accesses 8, 9 and 10), and
   `test_usb_in_guard.py` checks the NAK at both speeds.
 * **Closed too (branch `usb-ls-restage`, evidence model and RTL tests; not
   on the board):** the same race in two more places. (1) A normal stage,
@@ -1504,7 +1510,7 @@ transfer, nor with `usb_enum`, which answers without the software's delay. The
 cause is not proved: nothing here sees the bus between the xHCI controller, the
 hub's transaction translator and the device.
 
-With the fixed software (6dc8c93; RTL in FPGA fabric, the setup above;
+With the fixed software (06b0dd4; RTL in FPGA fabric, the setup above;
 `evidence/kv260-usbfs-zlp-20261103/`): 6 of 200 attaches stalled
 (`fix200.log`), about the rate before, and 2 of 200 with the usbcore quirk
 `1209:5634:m` (`quirkm200.log`), not a significant difference. All 8 stalls
@@ -1525,8 +1531,8 @@ SET_CONFIGURATION 569 us later), against `pe.usbfsdata` running over a
 modelled SPI port concurrently with the bus at 20 to 100 us per transaction,
 with pauses of 0.2 to 2 ms in the service loop: SET_CONFIGURATION's status
 stage was answered with one zero-length DATA1 in all 160 enumerations with
-the software before the fixes above (c184dd6), and all 160 with them, at
-8c71177 and again with the re-stage checks of 64b59c2 (the `usbdev.py` of
+the software before the fixes above (9e244cf), and all 160 with them, at
+ea810f8 and again with the re-stage checks of d14f094 (the `usbdev.py` of
 this branch's head). (At 200 us per transaction, 6 of 40 failed earlier, at
 SET_ADDRESS, the same 6 runs at all three commits: the model's host sent it
 0.1 to 3 ms after the port reset, before software that slow had restarted
@@ -1551,7 +1557,7 @@ what the board can test. The A/B run for the orchestrator (not run yet):
 
     sudo python3 B/fpga/kv260/host/usb_prestage_ab.py --a A --b B [--pairs 300]
 
-A = a checkout without the pre-stage (improve-2026-11 at f8eed52), B = this
+A = a checkout without the pre-stage (improve-2026-11 at fe3c7ab), B = this
 branch, each copied whole as `install.sh` does. It alternates single attaches
 ABBA (300 per arm by default), with usb_guard_run.py's capture, stop and
 no-device rules, refuses arms the wrong way round, and prints each arm's
@@ -1567,8 +1573,8 @@ D- low as a level; 241 words, one more than the transcripts recorded on
 2026-10-07; 246 since the ACK tail guard of 2026-10-13). The bitstream is unchanged (no `src/` change); the Kria's
 `~/protoemu48/{tools,firmware,fpga/kv260/host}` were refreshed from `main`
 the same day (nothing loaded), and `make -C fpga/kv260/sim` passed 5/5 with
-the 241-word build. Rerun 2026-10-14 on runner1 with `main` a1561d6's
-firmware (246-word `usb_enum`; checkout `beddbe2`, which adds only release
+the 241-word build. Rerun 2026-10-14 on runner1 with `main` ee3dd25's
+firmware (246-word `usb_enum`; checkout `9254b9e`, which adds only release
 tooling): 5/5 (test_bringup_steps, test_spim, test_lab, test_usb_demo,
 test_usb_demo_wiring), 321 s of Icarus, `test_usb_demo` again 27
 transactions in 168540 cycles with the device at address 7, configured.

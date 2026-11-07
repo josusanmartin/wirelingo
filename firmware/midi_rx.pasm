@@ -1,5 +1,5 @@
 ; MIDI 1.0 receiver and message parser: written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Pin RX: the opto-isolator's output (IN_BASE = RX; idle high, 8N1, LSB
 ; first, 31250 baud +-1 %). TB ticks per bit (define, 128): CLKDIV =

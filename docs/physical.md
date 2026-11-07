@@ -23,15 +23,15 @@ diodes within the fanout limit (see "Antenna diodes and the fanout limit"
 below). It passes signoff and the physical part of
 `flow/release_check.py` with no exception at any corner: 50 MHz setup and
 hold everywhere, no slew, capacitance or fanout violation. Everything up to
-detailed routing is t48ba's, bit for bit. With software `d916d40` (`main`,
+detailed routing is t48ba's, bit for bit. With software `00dfa75` (`main`,
 2026-10-13) as the validation root, `flow/release_check.py` passes with no
 waiver: `RELEASE PASSED (SDF profile v2, slow target 50 MHz)`; it passes again
-with `f1cb7c9` (2026-10-14, tag `rc-f1cb7c9-fo6`), and with `7685aba`
-(2026-10-14, the certified software: `main` `a1561d6`'s firmware, tools
+with `4f5179d` (2026-10-14, tag `rc-4f5179d-fo6`), and with `5457d8e`
+(2026-10-14, the certified software: `main` `ee3dd25`'s firmware, tools
 and tests, the third post-freeze round and the `ws2812`/`can_rx` fixes
 included; [release-evidence.md](release-evidence.md)). Firmware, tools or
-tests changed after `7685aba` are not covered. A capped
-clean checkout of `d916d40` reproduces it (run ci7). A run is a commit:
+tests changed after `5457d8e` are not covered. A capped
+clean checkout of `00dfa75` reproduces it (run ci7). A run is a commit:
 `flow/harden.sh NAME` refuses a dirty tree, `flow/gen_config.py --check`
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
@@ -304,7 +304,7 @@ Each mechanism was measured; the first versions failed:
 | fo5 | odb edit, net kept | stopped by the step's own pin check (same open) |
 | **fo6** | net re-created | **signoff passes, no electrical exception** |
 
-fo6 (commit f6b8ca0, the `gen_config.py` defaults): net3483 keeps 5 cells,
+fo6 (commit d890596, the `gen_config.py` defaults): net3483 keeps 5 cells,
 1 diode and the buffer (7 loads); `antfo_buf_1` drives `_37093_/D`,
 `_26873_/A1` and their 3 diodes (5 loads), 0.8 µm from their centroid. The
 final netlist differs from t48ba's in exactly that: one buffer, one net, five
@@ -474,24 +474,24 @@ instructions per bit against a 5-clock bit. The host already checks the FCS.
 | g4 | a907d4a: fixed banks, latch FIFOs, dual-edge line receiver, host-port reset guard; PnR latch SDC, hold uncertainty 0.1 ns, all three corners repaired, `GRT_ADJUSTMENT` 0.10, density 44 | 0 | 0 | clean | 0 | 0 (met) / −2.88 ns | +0.15 ns (slow +0.30, fast +0.05) | 2 / 0 |
 | m10 | g4's RTL, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | 0 (met) / −2.98 ns | +0.17 ns (slow +0.32, fast +0.08) | 0 / 0 |
 | v2c | cbeae96: + NRZI half-cycle sample, `SYNC_BYPASS`, WAIT kind 7, CALL/RET; density 34, post-GRT hold margin 0.10 ns | 0 | 0 | clean | 0 | **0 (met) / −1.57 ns** | +0.10 ns (slow +0.20, fast +0.04) | 0 / 0 |
-| **t48ba** | v2 RTL (digest cd25b1c1…), software 93c2137; SRAM clock advance, pin registers 6 clock stages late, clock-fanout fix, PnR setup margin, SRAM pin buffers, repair with electrical margins, post-GRT hold margin 0.13 ns | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0** (1 fanout, see below) |
-| **fo6** | t48ba + `Project.DetailedRouting` (antenna diodes within the fanout limit), commit f6b8ca0 | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0**, 0 fanout at every corner |
+| **t48ba** | v2 RTL (digest cd25b1c1…), software 01ce16d; SRAM clock advance, pin registers 6 clock stages late, clock-fanout fix, PnR setup margin, SRAM pin buffers, repair with electrical margins, post-GRT hold margin 0.13 ns | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0** (1 fanout, see below) |
+| **fo6** | t48ba + `Project.DetailedRouting` (antenna diodes within the fanout limit), commit d890596 | 0 | 0 | clean | 0 | **0 (met) / 0 (met)** | +0.19 ns (slow +0.36, fast +0.095) | **0 / 0**, 0 fanout at every corner |
 
 **Physical candidate: fo6** (netlist sha256
 `a94a948b70591b221be4e272ab4aaaa9a2f636e073676fa98657e12475330f81`, GDS
 `e67697034da6cd34acb16c7ab6c0f85dc6d752fdc755439e6bdd21d872ac0707`;
 runner1:~/protoemu-flow/protoemu-exp-fo6). t48ba plus one buffer that keeps
 net3483 within the fanout limit. `flow/release_check.py --validation-root`
-`d916d40` passes with no waiver (2026-10-13; again with `f1cb7c9` and with
-`7685aba` on 2026-10-14): every timing and electrical
+`00dfa75` passes with no waiver (2026-10-13; again with `4f5179d` and with
+`5457d8e` on 2026-10-14): every timing and electrical
 item at every corner, and receipts for this netlist: functional GL 29/29
 (main suite 25, compiled PIO 2, Ethernet capture 2), the SDF standard set
 and v2 set at typ/slow/fast with the overclocked control failing as
 required, autonomous USB enumeration at low and full speed with real
 delays at all three corners (48 MHz; the firmware with the bus-reset fix),
-and Tiny Tapeout's precheck of this GDS. Run fo7 (the docs commit de39d45
+and Tiny Tapeout's precheck of this GDS. Run fo7 (the docs commit e008197
 on top, same `gen_config.py` defaults) and run ci7 (a clean checkout of
-`main` at `d916d40`, container capped to 4 CPUs and 16 GB, 1 h 46 min)
+`main` at `00dfa75`, container capped to 4 CPUs and 16 GB, 1 h 46 min)
 reproduced it: the same netlist, and the same GDS once the timestamps in
 its BGNLIB/BGNSTR records are zeroed (`5e0e3c6e…` for all three; the same
 normalization gives t48ba's recorded `23f7538c…`).
@@ -501,7 +501,7 @@ normalization gives t48ba's recorded `23f7538c…`).
 global routing ended with 12 overflows, Metal3 63.9 %). Setup is met at
 20 ns at all three corners (the 0 is the FIFO latches' borrowing floor; every
 flop and SRAM path has positive slack), hold at every corner, and no slew or
-capacitance violation anywhere. A clean checkout of 93c2137 hardened with its
+capacitance violation anywhere. A clean checkout of 01ce16d hardened with its
 container capped to 4 CPUs and 16 GB (run ci6, 1 h 57 min) reproduced the
 netlist exactly and the GDS exactly apart from its timestamps.
 `flow/release_check.py` verifies the receipts for this netlist (precheck,
@@ -599,10 +599,10 @@ slow setup −7.12 ns, i.e. about 37 MHz at the slow corner. Fixed in 32d4480.
   one more module (default `test_post_freeze`) the same way, one simulator
   per test, outputs outside the run, with a hash-bound receipt;
   `--sdf-corner` sends each test through `flow/gl_sdf_test.sh`'s single-case
-  mode. On fo6 (2026-10-14, validation `beddbe2`): functional 16/16; SDF
+  mode. On fo6 (2026-10-14, validation `9254b9e`): functional 16/16; SDF
   typ 14/16 in that run; `pf_dmx512` and `pf_wiegand` failed only on
   exact-picosecond assertions (pad rise/fall delays differ by 50–170 ps) and
-  pass at SDF typ after a 1 ns tolerance (8dd249a;
+  pass at SDF typ after a 1 ns tolerance (dfdaa27;
   [post-freeze-protocols.md](post-freeze-protocols.md)). Supplementary:
   `flow/release_check.py` does not read these receipts.
 

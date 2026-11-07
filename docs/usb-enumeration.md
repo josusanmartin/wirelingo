@@ -287,9 +287,9 @@ pytest test/model/test_usb_autonomous.py          65 passed
   sigrok (full speed): 81 packets, identical to the host model's, no errors
 pytest test/model/test_timing_check.py            usb_enum: in_ta_any PASS, 10-21 clk (was FAIL, 10-30);
   the forced lost-ACK IN on the bus: 18.65, 18.77, 18.36, 19.02, 18.93 clocks (5 sessions); none later than 26
-pytest test/model                                  355 passed (whole suite, on v2 c49f973)
+pytest test/model                                  355 passed (whole suite, on v2 6ec574a)
 
-make COCOTB_TEST_FILTER=test_usb_autonomous        (RTL, Icarus; run before the rebase onto c49f973,
+make COCOTB_TEST_FILTER=test_usb_autonomous        (RTL, Icarus; run before the rebase onto 6ec574a,
                                                     which changed no firmware words and no RTL)
   autonomous USB (low speed): 47 transactions, 256640 cycles (5.3 ms), turnaround 2.16-2.16 bit times
     (the IN after a lost status ACK: 2.16), host port idle throughout; state {'address': 9, 'configured': True, ...}
@@ -305,8 +305,8 @@ make COCOTB_TEST_MODULES=test_sigrok COCOTB_TEST_FILTER=sigrok_usb_autonomous
 Gate level was not run on this branch. It has run since: run fo6's release
 receipts include `test_usb_autonomous` and `test_usb_autonomous_fs` on the
 netlist with SDF at typ, slow and fast at 20.834 ns (48 MHz), validation root
-`f1cb7c9` and again `7685aba` ([release-evidence.md](release-evidence.md)).
-That was the 246-word `usb_enum.pasm` of `7685aba`. The 253-word one from
+`4f5179d` and again `5457d8e` ([release-evidence.md](release-evidence.md)).
+That was the 246-word `usb_enum.pasm` of `5457d8e`. The 253-word one from
 `fault-fixes` has not run at gate level, and needs a gate-level rerun
 before that result applies to it.
 

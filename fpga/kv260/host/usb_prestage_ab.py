@@ -2,7 +2,7 @@
 """Board A/B for SET_CONFIGURATION's status stage (branch usb-config-prestage,
 backlog item F): single attaches of usb_fs_data_demo alternating between two
 checkouts, A without the pre-stage (the baseline, e.g. improve-2026-11 at
-f8eed52) and B with it (this branch: usb_fs_dev answers SET_CONFIGURATION's
+fe3c7ab) and B with it (this branch: usb_fs_dev answers SET_CONFIGURATION's
 status IN itself), counting the attaches that stall at SET_CONFIGURATION in
 each. For the orchestrator; run as root on the Kria with protoemu48 the one
 active app, each checkout copied whole (tools, firmware, fpga/kv260/host):

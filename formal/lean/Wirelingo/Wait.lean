@@ -1,6 +1,6 @@
 import Std
 
-/-! WAIT's resolved-condition execution boundary, from v2 93c2137:
+/-! WAIT's resolved-condition execution boundary, from v2 01ce16d:
 docs/isa.md §4.2/§5.2, tools/pe/sim.py Core._op_wait/Core.step,
 src/pe_core.sv OP_WAIT and pc_seq. No edge tracker or RTL refinement is assumed.
 Natural budgets are accompanied by a proved 16-bit range invariant.

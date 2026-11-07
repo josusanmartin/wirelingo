@@ -18,7 +18,7 @@ lists what the runs can't show.
 > three corners, and its release receipts run `test_usb_fs_device` and the
 > autonomous enumeration on the netlist with SDF at 20.834 ns (48 MHz) at typ,
 > slow and fast ([release-evidence.md](release-evidence.md)). Those receipts
-> are for software `7685aba`: the autonomous enumeration ran with the
+> are for software `5457d8e`: the autonomous enumeration ran with the
 > 246-word `usb_enum` from before `fault-fixes`, and the 253-word one needs a
 > gate-level rerun before they apply to it.
 
@@ -28,7 +28,7 @@ lists what the runs can't show.
 > staged DATA, by one instruction before `data_wait`. Re-derived (logs and
 > sha256s: [evidence/model-usb-guard-20261104/](../evidence/model-usb-guard-20261104/)):
 >
-> | Turnaround | before (bc98a97) | with the guard (c4003a2) | level |
+> | Turnaround | before (c5ee980) | with the guard (ac382d2) | level |
 > |---|---|---|---|
 > | ACK / NAK / DATA1 | 10.5 / 13.4 / 14.9 clocks | 10.5 / 13.4 / **15.9** clocks (3.98 bit times; margin 10.1) | RTL, `test_usb_fs_device` |
 > | ACK / NAK / IN → DATA | 10.9 / 12.7 / 14.7 clocks | 10.9 / 12.7 / **15.7** clocks | model, `test_usb_fs.py` |
@@ -71,12 +71,12 @@ lists what the runs can't show.
 > still 3) and none when the packet ends, so the ACK path starts as before
 > (`test_setup_capture_keeps_up`); and IN → NAK takes one more clock:
 >
-> | Turnaround | before (f8eed52) | with the pre-stage | level |
+> | Turnaround | before (fe3c7ab) | with the pre-stage | level |
 > |---|---|---|---|
 > | IN → NAK, checker (pads) | 10–16 clocks | 11–17 clocks | `pe.timing` |
 > | IN → the firmware's ZLP, checker (pads) | — | 11–17 clocks | `pe.timing` |
 > | ACK / IN → staged DATA, checker | 8–16 / 13–18 | unchanged | `pe.timing` |
-> | ACK / NAK / staged DATA1 / the firmware's ZLP | 10.5 / 13.4 / 15.9 / — clocks | 10.5 / **14.4** / 15.9 / 14.1 clocks (3.52 bit times; margin 11.9) | RTL, `test_usb_fs_device`, `test_usb_fs_config_zlp` (988746a) |
+> | ACK / NAK / staged DATA1 / the firmware's ZLP | 10.5 / 13.4 / 15.9 / — clocks | 10.5 / **14.4** / 15.9 / 14.1 clocks (3.52 bit times; margin 11.9) | RTL, `test_usb_fs_device`, `test_usb_fs_config_zlp` (f7369a9) |
 > | IN → NAK / IN → ZLP, measured on the bus | 12.77–13.37 / — clocks | 13.42–15.03 / 13.77–14.53 clocks | model, `test_timing_check.py` (8 sessions; the new session set adds SET_CONFIGURATION, so the two runs differ in more than the firmware) |
 >
 > Whether this changes the board's stall rate is not known: in all 8 stalls

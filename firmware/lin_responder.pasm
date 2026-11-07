@@ -1,5 +1,5 @@
 ; LIN responder (slave node) with sync-field bit-rate detection: written after
-; the RTL freeze (tag rc-93c2137-t48ba), firmware only
+; the RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md).
 ;
 ; Pins: RX = the transceiver's RXD (the bus), IN_BASE = RX; TX = its TXD

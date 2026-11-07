@@ -1,7 +1,7 @@
 # OCaml and Hardcaml port parity run, 2026-11-04
 
 The two result files of one run of `ocaml/scripts/evidence.sh` on runner1, at
-commit 89675b6 (branch `ocaml-parity2`, base 9dd256e), as the script wrote
+commit a167455 (branch `ocaml-parity2`, base 8c9599c), as the script wrote
 them. [docs/hardcaml-port.md](../../docs/hardcaml-port.md) takes its numbers
 from them.
 
@@ -21,7 +21,7 @@ Every step exited 0: `dune_test`, `equiv`, `cocotb_a` to `cocotb_e`, `model`,
 The rest of the output directory (step logs, cocotb work trees, the
 equivalence work files, 558 MB) is kept on runner1 at
 `~/protoemu-flow/ocaml-port/ev-89675b6`, and the earlier run of the unchanged
-port on a clean checkout of 9dd256e, which also passed every step, at
+port on a clean checkout of 8c9599c, which also passed every step, at
 `~/protoemu-flow/ocaml-port/ev-9dd256e`. Neither is in git.
 
 ## Redactions

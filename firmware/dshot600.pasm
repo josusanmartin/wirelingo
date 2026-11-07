@@ -1,5 +1,5 @@
 ; DShot600 ESC protocol transmitter: written after the RTL freeze (tag
-; rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; Frame: 16 bits MSB first: 11-bit throttle, telemetry request bit, 4-bit
 ; checksum = (v ^ v >> 4 ^ v >> 8) & 15 with v = throttle << 1 | telemetry,

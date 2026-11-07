@@ -1,5 +1,5 @@
 ; HDMI-CEC device (initiator and follower) on one open-drain line: written
-; after the RTL freeze (tag rc-93c2137-t48ba), firmware only
+; after the RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md). HDMI 1.3a, Supplement 1 (CEC).
 ;
 ; Pin CEC: a uio pin in open-drain mode (OD_MASK) with the bus's pull-up;

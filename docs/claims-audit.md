@@ -7,9 +7,9 @@ since been acted on, it says so.*
 
 An adversarial read of what the documentation claims against what the
 repository's evidence shows, as a skeptical judge would do it. Base: `main`
-at `0c459b9`. Physical candidate: run fo6, tags `rc-d916d40-fo6` and
-`rc-f1cb7c9-fo6`. `main` has changed firmware, tests and tools since
-`f1cb7c9`; `src/*.v` has not changed since `rc-93c2137-t48ba`.
+at `d61f548`. Physical candidate: run fo6, tags `rc-00dfa75-fo6` and
+`rc-4f5179d-fo6`. `main` has changed firmware, tests and tools since
+`4f5179d`; `src/*.v` has not changed since `rc-01ce16d-t48ba`.
 
 Scope: README.md, docs/info.md, methodology.md, physical.md,
 release-evidence.md, verification.md, review.md, guide.md,
@@ -48,13 +48,17 @@ Severities:
   `test/` and `tools/` since each tag. Also the commit counts in
   methodology.md (184 commits at 19ebe98, 164 co-authored by Claude: correct)
   and the first commit's date (2026-09-30, as the author says).
+  For the public history: `19ebe98` is on branches that are not published (`swd`,
+  `t48-margin`, `t48-rtl`), so that commit and its count can't be checked from this
+  repository; the same figure at the public `main` tip (this remap commit included)
+  is 496 of 574 commits carrying the Claude `Co-Authored-By` trailer.
 
 ## Findings
 
 | # | Sev. | Where | Claim | Evidence | Action |
 |---|---|---|---|---|---|
-| 1 | wrong | README, post-freeze bullet | "`src/` unchanged since" `rc-93c2137-t48ba` | `src/config.json` changed (f6b8ca0, fo6's antenna repair). `src/*.v` is unchanged | Fixed: "the chip's Verilog `src/*.v` unchanged since; only `src/config.json` changed for fo6" |
-| 2 | wrong | post-freeze-protocols.md:9 | `git diff rc-93c2137-t48ba -- src/` is empty; `tools/pe/{asm,timing}.py` "as on `main`" | the same `config.json` change; `asm.py` `/` became integer division (2673606); `timing.py`'s command line changed (34de7a0) | Fixed: past tense, both changes named |
+| 1 | wrong | README, post-freeze bullet | "`src/` unchanged since" `rc-01ce16d-t48ba` | `src/config.json` changed (d890596, fo6's antenna repair). `src/*.v` is unchanged | Fixed: "the chip's Verilog `src/*.v` unchanged since; only `src/config.json` changed for fo6" |
+| 2 | wrong | post-freeze-protocols.md:9 | `git diff rc-01ce16d-t48ba -- src/` is empty; `tools/pe/{asm,timing}.py` "as on `main`" | the same `config.json` change; `asm.py` `/` became integer division (71a0af0); `timing.py`'s command line changed (12c21d1) | Fixed: past tense, both changes named |
 | 3 | wrong | README, "Physical design" | "44 % standard-cell utilization, 50 % with the macros", next to "47 % … 53 %" for fo6 | 44/50 % are g4's and v2c's numbers (physical.md); t48ba and fo6 are 47/53 % | Fixed: the stale figure removed |
 | 4 | wrong | README, "What runs on it" key | "RTL" rows: "the same suites pass on the signed-off gate-level netlist" | gate level runs only test, test_pio and test_eth_service. test_post_freeze, test_usb_uart_rtl, test_spi_packed_host and test_uart_capture_host have never run on a netlist | Fixed: only the main suite is gate level; the others are RTL only |
 | 5 | wrong | formal-hostport.md:113 | `pe_hostport.sv` "as taped out" | nothing has been taped out | Fixed: "as in the release candidate, run fo6 (not yet taped out)" |
@@ -64,9 +68,9 @@ Severities:
 | 9 | overclaim | fpga/kv260/README.md:3 | "Hardware validation of the chip RTL … before silicon" | FPGA fabric, inferred RAM, FPGA pads and timing; not the IHP netlist, its pads or the TT mux | Fixed: says what it validates and what not, links "FPGA vs ASIC differences" |
 | 10 | overclaim | spi-packed-host.md:159 | "This proves bounded capacity/silence" | one finite run | Fixed: "This run shows" |
 | 11 | overclaim | README, "Where it stands" | "Measured against the RP2040 PIO's reference programs" | pio-comparison.md: cycle model and a PIO model, no hardware | Fixed: "Measured in simulation" |
-| 12 | stale | README, release bullet | "Release candidate: run fo6 (software `d916d40`)" | a second recorded release, `f1cb7c9` (tag `rc-f1cb7c9-fo6`). `main` has since added the round-3 firmware and fixed `ws2812` and `can_rx`; neither receipt covers them (release-evidence.md: any change to `firmware/` needs a new run) | Fixed: both validation roots named, and the release says it does not cover `main` |
-| 13 | stale | release-evidence.md, `f1cb7c9` record | does not say that `main` has moved past it | as #12 | Fixed: one sentence; GDS hashes labelled raw versus timestamp-normalized (the tag message gives `5e0e3c6e`, the doc gave `e6769703`) |
-| 14 | stale | physical.md, status and fo6 paragraph | only the `d916d40` receipt | `f1cb7c9` passed too (2026-10-14) | Fixed |
+| 12 | stale | README, release bullet | "Release candidate: run fo6 (software `00dfa75`)" | a second recorded release, `4f5179d` (tag `rc-4f5179d-fo6`). `main` has since added the round-3 firmware and fixed `ws2812` and `can_rx`; neither receipt covers them (release-evidence.md: any change to `firmware/` needs a new run) | Fixed: both validation roots named, and the release says it does not cover `main` |
+| 13 | stale | release-evidence.md, `4f5179d` record | does not say that `main` has moved past it | as #12 | Fixed: one sentence; GDS hashes labelled raw versus timestamp-normalized (the tag message gives `5e0e3c6e`, the doc gave `e6769703`) |
+| 14 | stale | physical.md, status and fo6 paragraph | only the `00dfa75` receipt | `4f5179d` passed too (2026-10-14) | Fixed |
 | 15 | stale | README, v2 bullet | "(signed off as run v2c) … v2c meets 48 MHz at the typical corner, slow about 46 MHz" | fo6 has the same v2 RTL and meets 50 MHz at all corners | Fixed |
 | 16 | stale | guide.md, "routed netlist" row | v2c: 24 tests; SDF at typ/50 and slow/43.5 MHz, control at slow/80 MHz | fo6: 29/29 functional; SDF at typ/slow/fast 20 ns with a slow/10 ns control; v2 set and autonomous USB at all three corners (`flow/gl_sdf_test.sh`, release-evidence.md) | Fixed |
 | 17 | stale | guide.md, "Physical signoff" row and "Known limits" | v2c, slow ≈ 46 MHz, fast hold +0.04 ns | fo6: 50 MHz at every corner, fast hold +0.095 ns, release gate passes | Fixed |
@@ -81,9 +85,9 @@ Severities:
 | 26 | stale | review.md, ACK follow-up | "do not qualify the updated ACK paths on native RTL, a board or silicon" | the KV260 `ack` scenario ran the malformed ACKs at both speeds on the FPGA build. No RTL or gate-level simulation covers them (none in `test/*.py`) | Fixed: says exactly that |
 | 27 | stale | review.md, "Still open" | the KV260 list stops at UART and quad SPI | replayed-host USB and the post-freeze protocols ran since | Fixed |
 | 28 | stale | methodology.md, record sections (not the author's statement) | "Hardware" bullet; sigrok list; "Limits": pads and latch FIFOs "only covered by static timing analysis" | KV260 ran much more; sigrok decodes the post-freeze protocols; SDF gate level also covers exercised paths | Fixed, minimal; the author's section is byte-identical |
-| 29 | stale | usb-enumeration.md | "Not run: gate level"; "one word (241)"; "65 tests" | fo6 receipts (`f1cb7c9`, current `usb_enum`) run both autonomous tests with SDF at all corners; 246 words; 71 tests | Fixed |
+| 29 | stale | usb-enumeration.md | "Not run: gate level"; "one word (241)"; "65 tests" | fo6 receipts (`4f5179d`, current `usb_enum`) run both autonomous tests with SDF at all corners; 246 words; 71 tests | Fixed |
 | 30 | stale | usb-full-speed.md (4 places) | 48 MHz "up to its own signoff"; g4 STA as current; "16 tests"; 135/241 words as current | fo6 meets 50 MHz; 19 tests; 141/246 words | Fixed |
-| 31 | stale | uart-capture-host.md, uart-rx-timing.md (4), usb-uart-coexist.md | "pending integration", "integrate those files first" | all on `main`; coexist re-run at 0c459b9: 3 passed | Fixed |
+| 31 | stale | uart-capture-host.md, uart-rx-timing.md (4), usb-uart-coexist.md | "pending integration", "integrate those files first" | all on `main`; coexist re-run at d61f548: 3 passed | Fixed |
 | 32 | stale | post-freeze-protocols.md:47 | round-1 model tests: 78 | 79 since the DShot test is parametrized at 48 and 50 MHz | Fixed |
 | 33 | stale | fpga/kv260/README.md, USB section | full speed "not simulated on this design" | it has since run against the replayed host (not a real one) | Fixed |
 | 34 | unclear | README, "Not yet on … silicon" bullet | one line, fifth bullet | — | Fixed: says what levels the evidence is at, and that no protocol has met a real external device or host. Placement: recommendation A |
@@ -148,13 +152,13 @@ Severities:
 * **D. Typography.** Missing spaces between words and digits recur in those
   docs. A regex fix could break identifiers (`uio0`, `F0`), so it needs a
   reviewed pass.
-* **E. A new release receipt.** The two receipts certify `d916d40` and
-  `f1cb7c9`, but `main` now ships different `ws2812` and `can_rx` firmware
+* **E. A new release receipt.** The two receipts certify `00dfa75` and
+  `4f5179d`, but `main` now ships different `ws2812` and `can_rx` firmware
   and the round-3 protocols. The netlist doesn't change, but any submission
   that claims "release-checked software" should either:
   * re-run `flow/release_evidence.py` on the shipping commit (about an hour
     on runner1);
-  * or name `f1cb7c9` as the certified software.
+  * or name `4f5179d` as the certified software.
 * **F. Post-freeze protocols at gate level.** (Done later the same day:
   functional 16/16 and SDF typical 16/16 on fo6's netlist, as supplementary
   receipts outside the release gate; [release-evidence.md](release-evidence.md).)
@@ -172,7 +176,7 @@ Severities:
 * **Physical numbers.** Slacks, utilization and hashes need fo6's run
   directory on runner1; they were checked for consistency across docs and
   tags only.
-* **Recorded results.** The 34-of-34 mutant kills, "1,194 tests at 85991cd",
+* **Recorded results.** The 34-of-34 mutant kills, "1,194 tests at dcbb33d",
   "517 tests on that branch" and the per-run clock counts and wall times in
   the USB/UART logs would need the mutation runner or full suites, which
   are too heavy for this review.

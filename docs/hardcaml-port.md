@@ -11,16 +11,16 @@ itself. Its use is narrower: anything already established for `src/` at RTL leve
 over to the generated Verilog through the proof, and the OCaml tools can stand in for the
 Python ones where they were compared.
 
-All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 89675b6,
-base 9dd256e, except where Stage 3 compares it with a second run. The commit after it only
+All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit a167455,
+base 8c9599c, except where Stage 3 compares it with a second run. The commit after it only
 changes this file and `evidence/README.md`, and adds the run's `summary.txt` and `rc.txt` in
 [evidence/ocaml-parity-20261104/](../evidence/ocaml-parity-20261104/README.md). The generated
-tapeout Verilog has sha256 `3b9a573559b1a1c1…`, as at the earlier run (2dddff7, base 61af9b2).
+tapeout Verilog has sha256 `3b9a573559b1a1c1…`, as at the earlier run (9220637, base af2c097).
 
 Since that run `src/`, `asm.py`, `isa.py`, `sim.py` and `line.py` have not changed; firmware
-and tests have. The same script, unchanged, passed every gate on a clean checkout of 9dd256e:
+and tests have. The same script, unchanged, passed every gate on a clean checkout of 8c9599c:
 the 10 new firmware files assemble byte for byte, and the new model tests show no model
-difference. Three things had lost coverage, and 89675b6 restores them, in `ocaml/` only:
+difference. Three things had lost coverage, and a167455 restores them, in `ocaml/` only:
 CI's test job had gained `test_bench_fw` and `test_pps`, which the cocotb gate did not run;
 108 new model tests write into their chips, which were then compared only up to the write
 (Stage 3); and the coverage floors were still the old counts.
@@ -165,7 +165,7 @@ is not reproduced. An exception `asm.py` does not catch compares by type.
 | corpus: `assemble_all()` calls of the model suite, 366 distinct of 9350 | 342 | 24 | 0 | 0 |
 
 Every one of the 67 files assembled under at least one define set. 367,348 relocated bytes
-were compared. The 10 files added since the 2dddff7 run are `ata_pio`, `eth10_reply`,
+were compared. The 10 files added since the 9220637 run are `ata_pio`, `eth10_reply`,
 `eth10_tx_cs`, `hd44780_4bit`, `mdio_master`, `mdio_phy`, `pps_capture`, `rmii_match`,
 `rmii_rx` and `rmii_tx`; the changed ones include `usb_fs_dev` (142 words), `usb_ls_dev`
 (130) and `usb_ls_tx` (56). The assembler needed no change for any of them. The error row of the firmware set is mostly arbitrary define values that do
@@ -210,9 +210,9 @@ Three comparisons, each at a stated level:
 In the model suite's first pass the state was compared 2,500,279 times, and at stride 1
 7,136,021 times, plus pins and bus read every cycle.
 
-The first-pass figure varies by run: treat it as about 155.1M. The run at 9dd256e, whose
+The first-pass figure varies by run: treat it as about 155.1M. The run at 8c9599c, whose
 model and wrapper are the same at stride 64, gave 155,135,208, with the same 19,602 chips.
-(At 2dddff7, before the new tests, it was about 63.7M on 1262 chips.) One cause is found:
+(At 9220637, before the new tests, it was about 63.7M on 1262 chips.) One cause is found:
 `test_usb_uart_pairs.py` keeps runs in a per-process `lru_cache`, so under plain `-n 8` a run
 repeats in each worker that needs it; the script uses `--dist loadfile` for that. Some
 variation remains, with the same chip count and different coverage counts, so some test's run
@@ -224,14 +224,14 @@ the first pass (5,258,220) are not counted there; those chips are the stride-1 r
 `test_call.py` and `test_rmii.py`. At stride 1 every one of them is the test writing into a
 chip: popping `core.rxf` directly (the ATA, PPS and fault harnesses, the capture tests),
 setting `core.rxf` by hand (`test_rmii.py`), fast-forwarding a wait by setting registers and
-`chip.cycle` (`test_pps.py`), and setting `lr` (`test_lr_survives_restart`). At the 2dddff7
+`chip.cycle` (`test_pps.py`), and setting `lr` (`test_lr_survives_restart`). At the 9220637
 run such a chip was compared only up to the write; there were 10. Now `lock_chip.py` sends
 the written state to `wl_simcheck` as an `L` line, `Chip.load_state` loads it, `wl_simcheck`
 checks that it prints back as the same line, and the comparison goes on. Up to the write the
 two models were equal every cycle, so a load hides nothing the OCaml model computed; what it
 does not check is the written values themselves, which the test chose. So the 342
 written-into chips are compared to their end, coverage counters included, with 9050 loads:
-7,135,772 cycles, 0 mismatches. Under the old rule (`WL_LOCK_RESYNC=0`; the run at 9dd256e)
+7,135,772 cycles, 0 mismatches. Under the old rule (`WL_LOCK_RESYNC=0`; the run at 8c9599c)
 the same pass compared 3,833,185 cycles. 12 deep copies of chips, made by USB and SPI tests,
 are not compared after the copy. `test_swd.py` is excluded. Of the 29 skips, the suite's own
 summary line says 28 are sigrok checks (runner1 has no sigrok-cli on its path); the skips
@@ -272,7 +272,7 @@ form, with enable flops in place of the latches and clock gates that the proved 
 `self_check.sh` plants 5 RTL bugs for these tests, all caught. The first run missed one, a
 swap of the two edge ages; the frame-end test above was added for it. It also checks that
 promoting a failed assertion leaves `dune test` failing, and that the dune rule is what makes
-it fail; at 2dddff7 that case was run alone, and at the commit above it ran in the whole
+it fail; at 9220637 that case was run alone, and at the commit above it ran in the whole
 `evidence.sh`: failing with the rule, passing with it removed.
 
 ## Stage 4: host tools
@@ -297,7 +297,7 @@ the parity scripts, the model suite and lockstep fail below floors on their coun
 
 ## Reproduce
 
-On runner1, from a checkout of commit 89675b6 or later:
+On runner1, from a checkout of commit a167455 or later:
 
 ```
 ocaml/scripts/setup_runner.sh ~/protoemu-flow/ocaml-port/sysroot    # once
@@ -309,7 +309,7 @@ scripts/evidence.sh OUT         # every gate above, including self_check.sh; OUT
 ```
 
 `evidence.sh` took 32 minutes (1899 s) at the commit above, with runner1's load at about 10 to 16
-when it started, and 41 minutes (2450 s) at 9dd256e; at 2dddff7 it took 66 minutes with
+when it started, and 41 minutes (2450 s) at 8c9599c; at 9220637 it took 66 minutes with
 runner1 busy (load 20 to 50). One gate at a time:
 `formal/equiv_port.sh -j 4 --mutants OUT`,
 `scripts/run_cocotb.sh WORK test test_post_freeze test_bench_fw test_pps lockstep`,

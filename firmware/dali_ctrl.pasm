@@ -1,5 +1,5 @@
 ; DALI application controller (IEC 62386-101 forward frames out, backward
-; frames in): written after the RTL freeze (tag rc-93c2137-t48ba), firmware
+; frames in): written after the RTL freeze (tag rc-01ce16d-t48ba), firmware
 ; only (docs/post-freeze-protocols.md).
 ;
 ; Pins: TX = the bus level we drive (OUT_BASE = TX, OUT_COUNT = 1; 1 = idle /

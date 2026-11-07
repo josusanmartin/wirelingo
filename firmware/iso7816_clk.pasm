@@ -1,5 +1,5 @@
 ; ISO 7816-3 card clock for firmware/iso7816.pasm: written after the RTL
-; freeze (tag rc-93c2137-t48ba), firmware only (docs/post-freeze-protocols.md).
+; freeze (tag rc-01ce16d-t48ba), firmware only (docs/post-freeze-protocols.md).
 ;
 ; One instruction: pin CLK toggles every tick, so f_CLK = f_clk / (2 *
 ; CLKDIV). It takes the second core: a protoemu core cannot make a

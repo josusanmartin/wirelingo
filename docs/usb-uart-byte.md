@@ -266,7 +266,7 @@ COCOTB_TEST_FILTER=test_byte_rtl` in `test/`.
 ## Run history
 
 This feature was developed on 2026-10-13 by a team of agents working in
-numbered tickets (C18, C21, C23, C24) and integrated on `main` as `5131faa`.
+numbered tickets (C18, C21, C23, C24) and integrated on `main` as `c065d86`.
 Each ticket ran the scenario at most once, with fixed firmware and oracles.
 
 * **C18**: the first attempt failed before the model was built (a Python
@@ -287,11 +287,11 @@ Each ticket ran the scenario at most once, with fixed firmware and oracles.
   same scenario once without it, on 2026-10-13: 1 passed, 237290 `Chip.step`
   calls, 19.35 s wall. The raw trace it wrote was byte-identical to C23's
   (both SHA-256 `ad5baab5…`). The team lead accepted it; the five files of
-  that accepted commit are the ones in `5131faa`. An earlier version of this
+  that accepted commit are the ones in `c065d86`. An earlier version of this
   page, written before C24 ran, called its result pending. The team's
   records (`evidence/sol-atlas/C24-ATLAS-PYTEST-DEFAULT/` and the lead's
   acceptance, not part of this repository) show it ran and passed.
 
 Since then the test has gained the line-echo attribution, runs the three
 corruption controls itself, and accepts `rx_pin=` for the board build
-(`a2b79fd`, `708a64a`, `8c889f1`); it runs in the model suite.
+(`861140d`, `5c5ee5d`, `a789782`); it runs in the model suite.

@@ -1,5 +1,5 @@
 ; Philips RC-5 infrared remote transmitter with its 36 kHz carrier: written
-; after the RTL freeze (tag rc-93c2137-t48ba), firmware only
+; after the RTL freeze (tag rc-01ce16d-t48ba), firmware only
 ; (docs/post-freeze-protocols.md).
 ;
 ; Pin IR: the LED driver (active high): OUT_BASE = IR (OUT_COUNT 1) and the
