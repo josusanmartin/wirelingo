@@ -109,6 +109,9 @@ module pe_core #(
 `ifdef V3_CRC32
   reg [31:0] crc;
   reg        crc_w32;
+`ifdef V8_CRCW
+  reg [15:0] crc_poly_hi;
+`endif
 `else
   reg [15:0] crc;
 `endif
@@ -432,6 +435,18 @@ module pe_core #(
 
   // CRC tap (docs/isa.md §4.5): 1-bit IN/OUT feed one bit; MOV/OUT to CRC set it
 `ifdef V3_CRC32
+`ifdef V8_CRCW
+  // 8x4 study: any width 1..32 ({W32, W} = width - 1) and any 32-bit polynomial
+  // (POLY_HI is a 16-bit host-written configuration register)
+  wire [4:0]  crc_w5 = {crc_w32, crc_w};
+  wire [31:0] crc_mask = 32'hFFFF_FFFF >> (5'd31 - crc_w5);
+  wire [31:0] poly_full = {crc_poly_hi, crc_poly};
+  reg         crc_feed, crc_bit, crc_set;
+  reg  [31:0] crc_set_val;
+  function automatic [31:0] crc_step(input [31:0] cv, input b);
+    crc_step = ((cv << 1) & crc_mask) ^ ((cv[crc_w5] ^ b) ? (poly_full & crc_mask) : 32'd0);
+  endfunction
+`else
   // CRC-32: W32 widens the register, POLY's top half fixed at 0x04C1
   wire [31:0] crc_mask = crc_w32 ? 32'hFFFF_FFFF : {16'd0, 16'hFFFF >> (4'd15 - crc_w)};
   wire [31:0] poly_full = crc_w32 ? {16'h04C1, crc_poly} : {16'd0, crc_poly};
@@ -441,6 +456,7 @@ module pe_core #(
   function automatic [31:0] crc_step(input [31:0] cv, input b);
     crc_step = ((cv << 1) & crc_mask) ^ (((crc_w32 ? cv[31] : cv[crc_w]) ^ b) ? (poly_full & crc_mask) : 32'd0);
   endfunction
+`endif
   wire [31:0] crc_fed1 = crc_step(crc, crc_bit);
 `else
   wire [15:0] crc_mask = 16'hFFFF >> (4'd15 - crc_w);
@@ -968,6 +984,14 @@ module pe_core #(
   always @(posedge cfg_gclk[6] or negedge rst_n)
     if (!rst_n) crc_w32 <= 1'b0;
     else crc_w32 <= bus_wdata[23];
+`endif
+`ifdef V8_CRCW
+  // POLY_HI at core offset 0x11 (host-written, like CRCCFG)
+  wire polyhi_gclk;
+  pe_cg u_cg_polyhi (.clk(clk), .en(bus_sel && bus_we && bus_off == 5'h11), .gclk(polyhi_gclk));
+  always @(posedge polyhi_gclk or negedge rst_n)
+    if (!rst_n) crc_poly_hi <= 16'd0;
+    else crc_poly_hi <= bus_wdata[15:0];
 `endif
 
   // ---------------------------------------------------------------- sequential

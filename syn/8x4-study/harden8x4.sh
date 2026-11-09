@@ -69,6 +69,18 @@ open(p, "w").write(s)
 PY
 PRESET=submission
 if [ "$NC" != 2 ] || [ -n "${STOP:-}" ]; then PRESET=experiment; fi
+# PROTO="DEFINE ..." (study runs only): the run worktree's src/pe_core.sv and
+# src/pe_chip.sv become syn/8x4-study/pe_core_x.sv and pe_chip_x.sv, built
+# with these defines (VERILOG_DEFINES); the linter is off, since the
+# prototypes are unverified RTL. For routability and timing, nothing else.
+if [ -n "${PROTO:-}" ]; then
+  [[ $PROTO =~ ^[A-Z0-9_\ ]+$ ]] || { echo "bad PROTO"; exit 2; }
+  cp syn/8x4-study/pe_core_x.sv src/pe_core.sv
+  cp syn/8x4-study/pe_chip_x.sv src/pe_chip.sv
+  PRESET=experiment
+  # shellcheck disable=SC2086
+  set -- "$@" --set "VERILOG_DEFINES=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1:]))' $PROTO)" --set RUN_LINTER=0
+fi
 python3 "$G" --preset "$PRESET" --banks "$NC" --output src/config.json "$@"
 sed -i "s/^\`define PE_NCORES [0-9]\$/\`define PE_NCORES $NC/" src/project.v
 grep -q "^\`define PE_NCORES $NC\$" src/project.v || { echo "could not set PE_NCORES in src/project.v"; exit 2; }
@@ -90,7 +102,7 @@ fi
 {
   echo "flow exit status: $rc"
   git log --oneline -1
-  echo "tiles: $(grep '^  tiles:' info.yaml), cores $NC, FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}"
+  echo "tiles: $(grep '^  tiles:' info.yaml), cores $NC, FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}, PROTO ${PROTO:-none}"
   python3 -c 'import json; d=json.load(open("src/config.json")); print("macros", {k[18:24]: v["location"] for k, v in d["MACROS"]["RM_IHPSG13_1P_256x32_c2_bm_bist"]["instances"].items()}, "period", d["CLOCK_PERIOD"], "density", d["PL_TARGET_DENSITY_PCT"])'
   grep -E "Flow complete|flow failed|ERROR" exp.log | grep -v PSM-0069 | tail -3 || true
   grep -E "GPL-0019|design__instance__utilization" exp.log | tail -2 || true

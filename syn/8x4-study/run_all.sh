@@ -22,6 +22,7 @@ sh $S 2 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG
 sh $S 2 V3_CRC32
 sh $S 2 V3_MULTI
 sh $S 2 V3_CRC32 V3_MULTI
+sh $S 2 V3_CRC32 V8_CRCW
 echo "## (f) data RAM / registers, (g) other core additions, 2 cores"
 sh $S 2 V8_DRAM
 sh $S 2 V8_XCH
@@ -31,10 +32,12 @@ sh $S 2 V8_TXCLR
 sh $S 2 V8_SHV
 echo "## (g) chip-level: two PWM / clock outputs"
 sh $S 2 X_PWM
-echo "## packages"
+echo "## packages (bundle + any-width CRC + tick counter + TX clear + parity = PKG)"
 B="V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG"
-sh $S 3 $B V3_CRC32 V8_TICK V8_TXCLR V8_PAR
-sh $S 3 $B V3_CRC32 V8_TICK V8_TXCLR V8_PAR X_PWM
-sh $S 3 $B V3_CRC32 V8_TICK V8_TXCLR V8_PAR X_LINE1 V8_LINE1
-sh $S 2 $B V3_CRC32 V8_TICK V8_TXCLR V8_PAR
-sh $S 4 $B V3_CRC32 V8_TICK V8_TXCLR V8_PAR PE_FIFO_LOG2=2
+PKG="$B V3_CRC32 V8_CRCW V8_TICK V8_TXCLR V8_PAR"
+sh $S 2 $PKG
+sh $S 3 $PKG
+sh $S 3 $PKG X_LINE1 V8_LINE1
+sh $S 3 $PKG X_LINE1 V8_LINE1 X_PWM
+sh $S 3 $B V3_CRC32 V8_CRCW V8_TICK
+sh $S 4 $PKG PE_FIFO_LOG2=2
