@@ -1,0 +1,62 @@
+# syn/8x4-study/run_all.sh: chip-level yosys+abc, IHP SG13CMOS5L typ, SRAMs as black boxes; area in um^2
+# Yosys 0.69+158 (git sha1 a1a0ad7d4-dirty, Release, Clang /usr/bin/clang++ 21.1.8)
+## (a) core count (8-deep FIFOs)
+[2] cells 20155 flops 1647 latches 1078 area 295218
+   own area: pe_chip 19449, pe_core[0] 73070, pe_core[1] 73848, pe_hostport 24805, pe_line 40981
+[3] cells 27670 flops 2079 latches 1615 area 400690
+   own area: pe_chip 21051, pe_core[0] 73115, pe_core[1] 73694, pe_core[2] 72517, pe_hostport 24760, pe_line 41122
+[4] cells 34991 flops 2511 latches 2152 area 509008
+   own area: pe_chip 22681, pe_core[0] 73950, pe_core[1] 73059, pe_core[2] 73419, pe_core[3] 74232, pe_hostport 24805, pe_line 41067
+## control: the prototype files with no candidate enabled (= the 2-core row, within noise)
+[2 V8_NONE] cells 20210 flops 1647 latches 1078 area 295030
+   own area: pe_chip 19449, pe_core[0] 73602, pe_core[1] 72968, pe_hostport 24805, pe_line 41141
+[2 X_NONE] cells 20124 flops 1647 latches 1078 area 295158
+   own area: pe_chip 19144, pe_core[0] 73070, pe_core[1] 73848, pe_hostport 24805, pe_line 41227
+## (a) core count, 4-deep FIFOs (PE_FIFO_LOG2=2)
+[2 PE_FIFO_LOG2=2] cells 18919 flops 1635 latches 550 area 269495
+   own area: pe_chip 19449, pe_core[0] 73136, pe_core[1] 74223, pe_hostport 24805, pe_line 40904
+[3 PE_FIFO_LOG2=2] cells 25674 flops 2061 latches 823 area 361390
+   own area: pe_chip 21051, pe_core[0] 73042, pe_core[1] 73694, pe_core[2] 72403, pe_hostport 24776, pe_line 41122
+[4 PE_FIFO_LOG2=2] cells 32012 flops 2487 latches 1096 area 456139
+   own area: pe_chip 22706, pe_core[0] 73950, pe_core[1] 73059, pe_core[2] 73419, pe_core[3] 73427, pe_hostport 24805, pe_line 41150
+## (c) a line unit for core 1
+[2 X_LINE1 V8_LINE1] cells 23485 flops 1927 latches 1078 area 338021
+   own area: pe_chip 20828, pe_core[0] 73866, pe_core[1] 73268, pe_hostport 24805, pe_line 41095
+[3 X_LINE1 V8_LINE1] cells 31111 flops 2359 latches 1615 area 445704
+   own area: pe_chip 22957, pe_core[0] 73919, pe_core[1] 73778, pe_core[2] 73591, pe_hostport 24785, pe_line 41122
+## (d) the v3 cheap bundle, (e) CRC-32 and the multi-bit tap, 2 cores
+[2 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG] cells 20535 flops 1649 latches 1078 area 297127
+   own area: pe_chip 19449, pe_core[0] 74458, pe_core[1] 74436, pe_hostport 24805, pe_line 40914
+[2 V3_CRC32] cells 20465 flops 1681 latches 1078 area 299612
+   own area: pe_chip 19449, pe_core[0] 75826, pe_core[1] 75203, pe_hostport 24805, pe_line 41265
+[2 V3_MULTI] cells 22162 flops 1649 latches 1078 area 312598
+   own area: pe_chip 19449, pe_core[0] 82112, pe_core[1] 82230, pe_hostport 24805, pe_line 40937
+[2 V3_CRC32 V3_MULTI] cells 23167 flops 1683 latches 1078 area 323487
+   own area: pe_chip 19449, pe_core[0] 88267, pe_core[1] 87017, pe_hostport 24805, pe_line 40885
+## (f) data RAM / registers, (g) other core additions, 2 cores
+[2 V8_DRAM] cells 22250 flops 2159 latches 1078 area 333780
+   own area: pe_chip 19449, pe_core[0] 92579, pe_core[1] 92825, pe_hostport 24805, pe_line 41058
+[2 V8_XCH] cells 21079 flops 1775 latches 1078 area 307482
+   own area: pe_chip 19449, pe_core[0] 79939, pe_core[1] 79237, pe_hostport 24805, pe_line 40987
+[2 V8_TICK] cells 20374 flops 1679 latches 1078 area 297857
+   own area: pe_chip 19449, pe_core[0] 75035, pe_core[1] 74484, pe_hostport 24805, pe_line 41019
+[2 V8_PAR] cells 20333 flops 1647 latches 1078 area 295620
+   own area: pe_chip 19449, pe_core[0] 73697, pe_core[1] 73597, pe_hostport 24805, pe_line 41007
+[2 V8_TXCLR] cells 20090 flops 1649 latches 1078 area 295043
+   own area: pe_chip 19449, pe_core[0] 73332, pe_core[1] 73386, pe_hostport 24805, pe_line 41006
+[2 V8_SHV] cells 20321 flops 1647 latches 1078 area 296109
+   own area: pe_chip 19449, pe_core[0] 73838, pe_core[1] 73929, pe_hostport 24805, pe_line 41023
+## (g) chip-level: two PWM / clock outputs
+[2 X_PWM] cells 20764 flops 1755 latches 1078 area 305742
+   own area: pe_chip 29883, pe_core[0] 73070, pe_core[1] 73826, pe_hostport 24805, pe_line 41094
+## packages
+[3 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG V3_CRC32 V8_TICK V8_TXCLR V8_PAR] cells 28916 flops 2184 latches 1615 area 416546
+   own area: pe_chip 21051, pe_core[0] 77970, pe_core[1] 78800, pe_core[2] 78497, pe_hostport 24805, pe_line 40992
+[3 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG V3_CRC32 V8_TICK V8_TXCLR V8_PAR X_PWM] cells 29710 flops 2292 latches 1615 area 426019
+   own area: pe_chip 31729, pe_core[0] 77957, pe_core[1] 77826, pe_core[2] 78353, pe_hostport 24805, pe_line 40918
+[3 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG V3_CRC32 V8_TICK V8_TXCLR V8_PAR X_LINE1 V8_LINE1] cells 32279 flops 2464 latches 1615 area 458261
+   own area: pe_chip 22957, pe_core[0] 78052, pe_core[1] 78154, pe_core[2] 78451, pe_hostport 24805, pe_line 40706
+[2 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG V3_CRC32 V8_TICK V8_TXCLR V8_PAR] cells 21069 flops 1717 latches 1078 area 304644
+   own area: pe_chip 19449, pe_core[0] 77970, pe_core[1] 78319, pe_hostport 24805, pe_line 41036
+[4 V3_CMPW V3_CMPW_SPLIT V3_NT V3_TBL V3_TBL_OSR V3_BANKREL V3_TOG V3_CRC32 V8_TICK V8_TXCLR V8_PAR PE_FIFO_LOG2=2] cells 33783 flops 2627 latches 1096 area 475608
+   own area: pe_chip 22706, pe_core[0] 78424, pe_core[1] 78245, pe_core[2] 78681, pe_core[3] 78070, pe_hostport 24805, pe_line 41055
