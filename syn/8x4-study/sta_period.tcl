@@ -17,19 +17,12 @@ report_worst_slack -max -digits 3
 report_tns -max -digits 3
 report_worst_slack -min -digits 3
 report_tns -min -digits 3
-# setup violators, and the worst flop/SRAM endpoint (a latch D that borrows
-# shows slack 0; signoff.py's 'worst flop' excludes those)
-set nv 0
-set worst_reg 1e9
-foreach pin [sta::endpoints] {
-  set s [sta::pin_slack $pin max]
-  if {$s < 0} { incr nv }
-  set inst [$pin instance]
-  if {$inst ne "NULL"} {
-    set cell [[$inst liberty_cell] name]
-    if {![string match "*dlhq*" $cell] && ![string match "*dllr*" $cell] && $s < $worst_reg} { set worst_reg $s }
-  }
+# setup violators, and the worst flop/SRAM endpoint (a FIFO latch D that
+# borrows shows slack 0 and holds WS at 0; physical.md's 'worst flop'
+# excludes the latches)
+if {[catch {puts "setup_violating_endpoints [sta::endpoint_violation_count max]"}]} {
+  puts "setup_violating_endpoints (not available)"
 }
-puts "setup_violating_endpoints $nv"
-puts "setup_worst_flop_or_sram [format %.3f [expr {$worst_reg * 1e9}]]"
-report_checks -path_delay max -group_path_count 1 -format end
+set regs [concat [all_registers -edge_triggered -data_pins] [get_pins -hierarchical */sram/A_*]]
+puts "--- worst flop or SRAM endpoint"
+report_checks -path_delay max -to $regs -format end -group_path_count 1 -digits 3

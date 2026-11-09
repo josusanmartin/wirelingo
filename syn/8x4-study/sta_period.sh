@@ -22,5 +22,5 @@ for c in "typ_1p20V_25C typ_1p20V_25C" "slow_1p08V_125C slow_1p08V_125C" "fast_1
     -v "$HERE:/x:ro" $ENV -e CLOCK_PERIOD="$P" \
     -e STDLIB="sg13cmos5l_stdcell_$1.lib" -e SRAMLIB="RM_IHPSG13_1P_256x32_c2_bm_bist_$2.lib" \
     ghcr.io/librelane/librelane:3.1.0.dev3 sta -no_splash -exit /x/sta_period.tcl 2>&1 \
-    | grep -E "^(period|worst slack|tns|setup_)|^ *(Endpoint|-----|[^ ].* -?[0-9]+\.[0-9]+ *\(VIOLATED\)|[^ ].* [0-9]+\.[0-9]+ *\(MET\))" | head -12
+    | grep -E "^(period|worst slack|tns|setup_|max_delay/setup group|---)|\((MET|VIOLATED)\)$"
 done
