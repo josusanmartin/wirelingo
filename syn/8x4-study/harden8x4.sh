@@ -103,7 +103,7 @@ fi
   echo "flow exit status: $rc"
   git log --oneline -1
   echo "tiles: $(grep '^  tiles:' info.yaml), cores $NC, FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}, PROTO ${PROTO:-none}"
-  python3 -c 'import json; d=json.load(open("src/config.json")); print("macros", {k[18:24]: v["location"] for k, v in d["MACROS"]["RM_IHPSG13_1P_256x32_c2_bm_bist"]["instances"].items()}, "period", d["CLOCK_PERIOD"], "density", d["PL_TARGET_DENSITY_PCT"])'
+  python3 -c 'import json; d=json.load(open("src/config.json")); print("macros", {"bank" + k.split("[")[1][0]: v["location"] for k, v in d["MACROS"]["RM_IHPSG13_1P_256x32_c2_bm_bist"]["instances"].items()}, "period", d["CLOCK_PERIOD"], "density", d["PL_TARGET_DENSITY_PCT"])'
   grep -E "Flow complete|flow failed|ERROR" exp.log | grep -v PSM-0069 | tail -3 || true
   grep -E "GPL-0019|design__instance__utilization" exp.log | tail -2 || true
   grep -A10 "Final congestion report" exp.log | grep -E "Metal[234] |Total " | tail -4 || true
