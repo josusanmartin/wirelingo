@@ -631,7 +631,9 @@ it arrives one clock later:
   it is in the OSR. That clock belongs to the read: if it is one of the
   core's ticks, the core spends it there (no instruction is attempted and a
   delay doesn't count down). So at CLKDIV 1 a table read takes 2 + *delay*
-  ticks; at INT ≥ 2 the clock is never a tick and it takes 1 + *delay*;
+  ticks; at INT ≥ 2 (or 0) the clock is never a tick and it takes 1 + *delay*;
+  at INT 1 with a fraction it is a tick unless the divider's carry
+  stretched that period;
 * the write happens whether or not the core is enabled in that clock. A
   restart in that clock wins (the OSR is cleared), and a host write to the
   core's PC in the MOV's own clock cancels it (the OSR keeps its value; the
@@ -641,10 +643,10 @@ it arrives one clock later:
 Other `dst` values with op 3 are reserved and behave as OSR; the assembler
 only emits `mov osr, [src]`. Only the OSR: a register load is
 `mov osr, [r1]` then `mov r0, osr`. A table word is any 32-bit value, written
-with `.data` (docs/asm.md). Why this shape: the address goes out on the jump path MOV PC already
-has (bank-relative, so the address multiplexer in front of the SRAM is
-v0.2's), and the only new datapath is the OSR's input from the SRAM output,
-one more load on each of its 32 bits.
+with `.data` (docs/asm.md). Why this shape: the address goes out on the
+jump path MOV PC already has (bank-relative, so the address multiplexer in
+front of the SRAM is v0.2's), and the only new datapath is the OSR's input
+from the SRAM output, one more load on each of its 32 bits.
 
 **SET pins|pindirs, v.** Write `v` to `SET_COUNT` pins from `SET_BASE`.
 
