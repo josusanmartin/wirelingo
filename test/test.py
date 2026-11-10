@@ -1303,6 +1303,47 @@ async def usb_autonomous(dut, speed):
                   f"host port idle throughout; state {st}")
 
 
+@cocotb.test()
+async def test_usb_autonomous_ep1_fs(dut):
+    """v0.3: firmware/usb_enum_ep1 at full speed: enumerate to Configured (with
+    the configuration's endpoint descriptor), then interrupt INs to endpoint 1
+    report ui[4:0] with alternating DATA0/DATA1, a lost host ACK repeats the
+    toggle, and endpoint 0 still answers. The host port stays idle."""
+    from pe import usb, usbenum
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "model"))
+    import test_usb_enum_ep1 as ep1
+    spi = await setup(dut, clock_ns=20.834)       # 48 MHz
+    dut.pull_up.value = 0b10
+    prog = usbenum.assemble("full", (FW / "usb_enum_ep1.pasm").read_text())
+    await spi.apply(usbenum.load_writes(prog, "full"))
+    await ClockCycles(dut.clk, 100)
+    h = rtl_control_host(dut, bit=usbenum.CLOCKS_PER_BIT["full"], keepalive=False)
+    await bridge(lambda: ep1.configure(h, 7))()
+    toggle, got = [0], []
+    for ui, lose in ((0x15, False), (0x0A, True), (0x1F, False), (0x03, False)):
+        dut.ui_in.value = (int(dut.ui_in.value) & 0xE0) | ui
+        await ClockCycles(dut.clk, 20)            # through the synchronizer
+
+        def one(lose=lose):
+            if lose:
+                h.faults["lose_host_ack"] = 1     # the device misses our ACK: it repeats
+            got.append(h.data_in(7, toggle[0], endp=1))
+            toggle[0] ^= 1
+            if lose:                              # the repeat is ACKed and dropped, then the next
+                got.append(h.data_in(7, toggle[0], endp=1))
+                toggle[0] ^= 1
+        await bridge(one)()
+    assert got == [bytes([0x15, 0]), bytes([0x0A, 0]), bytes([0x0A, 0]), bytes([0x1F, 0]), bytes([0x03, 0])], got
+    assert await bridge(lambda: h.get_descriptor(7, 1, 18))() == ep1.DEV
+    assert all(2.0 <= t <= 6.5 for t in h.turnarounds), (min(h.turnarounds), max(h.turnarounds))
+    st = usbenum.decode_state((await spi.read(sim.A_FSET))[0] & 0x3F,
+                              (await spi.read(sim.core_reg(0, sim.C_R0 + 3)))[0])
+    assert st == dict(address=7, configured=True, pending_address=False, stalled=False), st
+    dut._log.info(f"usb_enum_ep1 (full speed): {len(h.log)} transactions, turnaround "
+                  f"{min(h.turnarounds):.2f}-{max(h.turnarounds):.2f} bit times")
+
+
 # ------------------------------------------------------------------ USB full speed (study)
 
 async def usb_fs_session(dut, config_zlp=False):
@@ -2025,6 +2066,55 @@ async def test_eth10_common_clock_loopback(dut):
             collected.extend(await spi.qxfer(0x4B, sim.core_reg(0, sim.C_FIFO), nread=n))
         assert not (await spi.read(sim.A_LINESTAT))[0] & (1 << 19), "RX overflow"
     assert [eth.frame_from_bits(b) for b in eth.rx_bits(collected) if len(b) > 64] == frames
+
+
+@cocotb.test()
+async def test_eth10_fcs_in_engine_loopback(dut):
+    """v0.3: the 802.3 FCS appended by eth10_tx_fcs on core 1 and checked by
+    eth10_rx_fcs on core 0 (the 32-bit CRC tap with POLY_HI, docs/isa.md §4.5),
+    at 50 MHz over virtual pins; the host writes DA .. payload only and reads
+    each frame back with its FCS and the engine's verdict."""
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "model"))
+    import test_eth10 as eth
+    import test_eth10_fcs as fcs
+    await setup(dut)
+    spi = QuadSpi(dut, period=2*CLK_NS, cs_setup=CLK_NS, cs_hold=CLK_NS, cs_gap=4*CLK_NS)
+    await spi.write(sim.A_HOSTCFG, [1])
+    await spi.apply(host.pin_owner_writes({24: 1, 25: 1}, profile=PROFILE))
+    await spi.write(sim.A_LINEDIV, [5 << 16])
+    await spi.write(sim.A_LINEPINS, [24 << 8])
+    await spi.write(sim.A_LINECFG, [0x4005])
+    await run_program(spi, 0, load_fw("eth10_rx_fcs"), clkdiv=256)
+    await run_program(spi, 1, load_fw("eth10_tx_fcs", F_GO=0), clkdiv=320, side_pins=24)
+    for c, crc in ((0, fcs.RX_CRC), (1, fcs.TX_CRC)):
+        await spi.apply(fcs.crc_writes(c, crc))
+    collected, frames = [], [eth.frame(46), eth.frame(200, seed=5)]
+    for fr in frames:
+        words = eth.words(fr[:-4])                    # no FCS from the host
+        await spi.write(sim.core_reg(1, sim.C_R0), [8 * (len(fr) - 4) - 1])
+        await spi.qxfer(0x4A, sim.core_reg(1, sim.C_FIFO), words=words[:16])
+        sent = min(16, len(words))
+        await spi.write(sim.A_FSET, [1])
+        for _ in range(20000):
+            n = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0] >> 4 & 15
+            if n:
+                collected.extend(await spi.qxfer(0x4B, sim.core_reg(0, sim.C_FIFO), nread=n))
+            tx = (await spi.read(sim.core_reg(1, sim.C_STATUS)))[0]
+            n = min(4, 8 - (tx & 15), len(words) - sent)
+            if n:
+                await spi.qxfer(0x4A, sim.core_reg(1, sim.C_FIFO), words=words[sent:sent + n])
+                sent += n
+            if sent == len(words) and not (await spi.read(sim.A_FSET))[0] & 1:
+                break
+        else:
+            assert False, "frame did not finish"
+        await ClockCycles(dut.clk, 1000)
+        n = (await spi.read(sim.core_reg(0, sim.C_STATUS)))[0] >> 4 & 15
+        if n:
+            collected.extend(await spi.qxfer(0x4B, sim.core_reg(0, sim.C_FIFO), nread=n))
+        assert not (await spi.read(sim.A_LINESTAT))[0] & (1 << 19), "RX overflow"
+    assert [(r[0], r[1]) for r in fcs.records(collected)] == [(fr, True) for fr in frames]
 
 
 @cocotb.test()
