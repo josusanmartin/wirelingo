@@ -39,12 +39,14 @@ proposed as written.
 * **Baseline (harden):** today's RTL on 8x4 routes with room to spare
   (Metal3 45.7 % at global routing, against fo6's 63.9 %), but with fo6's
   settings the slow corner misses 50 MHz by 0.643 ns; 48 MHz is met at
-  every corner (+0.19 ns); 60 MHz misses by 3.98 ns at the slow corner and
+  every corner (the slow corner, the tightest, by +0.19 ns); 60 MHz misses by 3.98 ns at the slow corner and
   closes at typical and fast. One step of a settings search (pin clocks 8 buffers late) gained only 0.02 ns. The area relieves routing, not the
   critical path.
 * **Left out:** a fourth core (global routing did not converge), a line
-  unit for core 1 (its main use, USB and 10BASE-T at once, needs 60 MHz,
-  which this chip does not close),
+  unit for core 1 (the 3-core package with it did not route; its headline
+  use, full-speed USB and 10BASE-T at once, needs 60 MHz, which this chip
+  does not close, though low speed plus 10BASE-T at 50 MHz looks feasible
+  on paper),
   512-word banks (+1.25 ns on the critical path's first cell), data RAM,
   the multi-bit CRC tap.
 * Any 8x4 tapeout needs `flow/` edits (the generator hardcodes the 6x4
@@ -179,7 +181,7 @@ predicts 376,827 µm², and the 8x4 harden measured 378,074 µm² (+0.3 %).
 The control rows (`V8_NONE`, `X_NONE`: the prototype files with nothing
 enabled) land within 0.2K µm² of the 2-core row, so the prototypes start from
 the taped-out RTL; synthesis noise between equivalent netlists is about
-±0.5K µm² (the v3 study measured the same).
+±0.5K µm² here (the v3 study gave ±0.4K).
 
 ## Candidates
 
@@ -242,10 +244,10 @@ A fourth core (runs `grt4f2`, `grt4f2d58`: four cores, 4-deep FIFOs,
 banks spread 16 µm apart) does not get that far. At fo6's density setting
 detailed placement failed after post-placement repair added 6,478 buffers
 (3 cells could not be legalized; placement utilization 52.5 %). At density
-58 it placed, but global routing had not finished after 107 minutes: 1001
+58 it placed, but global routing had not finished after 107 minutes: 1000
 extra overflow iterations (`grt3` needed 344 to end at 46 overflows, the
 `grt3pkg` superset 736 to end at 518), then the router began dropping the
-non-default rules of clock nets to relieve congestion (25 nets). It was
+non-default rules of clock nets to relieve congestion (20 nets). It was
 stopped there; no final congestion report exists. 
 
 **The recommended package, hardened (run `pkg3`).** Three cores with the
@@ -272,8 +274,10 @@ core 0's RX FIFO input register; every failing hold path ends at bank 0's
 SRAM inputs, where physical.md already notes a 0.52 ns address hold that
 needs buffers. Signs of the congestion: post-GRT repair re-routed for
 minutes where base took seconds, the router dropped the non-default rules
-of 65 clock nets (base and fo6: none), and the harden took **3 h 06 min**
-against base's 43 minutes.
+of 18 distinct clock nets (65 `GRT-0273` warnings in the step logs, 66 in
+`exp.log`, repeated across the global-routing and post-GRT repair steps;
+`grt3` already dropped 6 and `grt3pkg` 14; base and fo6 none), and the
+harden took **3 h 06 min** against base's 43 minutes.
 
 How to read it: this is the state v2c was in at 6x4 (slow −1.57 ns, slew
 and fanout exceptions), which 25–30 runs of settings (SRAM clock advance,
@@ -290,7 +294,9 @@ CI already runs the lockstep on a 4-core flop build next to the tapeout one
 (`.github/workflows/test.yaml`, `lockstep_4core.xml`). What is new: a
 3-core SRAM-build lockstep in the regression, the RTL tests' core spreading
 (`test/test.py` takes `PE_NCORES`), the formal Lean testbenches fixed at
-`NCORES(2)` (`formal/lean/*_tb.sv`), host tools and docs that assume two
+`NCORES(2)` (2 of the 4: `formal/lean/rtl_fetch_ownership_tb.sv` and
+`rtl_rx_autopush_tb.sv`; the other two instantiate `pe_core` alone), host
+tools and docs that assume two
 cores, a new ID value so software can tell the builds apart, and the
 per-netlist receipts. No ISA change.
 
@@ -347,8 +353,16 @@ so 48 MHz; 10BASE-T needs 10 Mbit/s, so 5 clocks at 50 MHz or 4 at 40. No
 clock gives both today. **60 MHz gives 5 and 6**, so USB FS plus 10BASE-T at
 once needs the chip to close at 60 MHz (see the baseline), or a fractional
 receive period (a line-unit change), or a test showing the Manchester
-tracker tolerates 4.8 clocks per bit at 48 MHz (not tried). Low-speed USB
-(32 clocks per bit at 48 MHz, 40 at 60) plus 10BASE-T has the same issue.
+tracker tolerates 4.8 clocks per bit at 48 MHz (not tried).
+
+Low-speed USB is different, by a reading of the spec (not a test): the
+NRZ/NRZI receiver re-syncs its sample counter on every transition
+(`docs/isa.md` §4.7, the counter reloads to P/2), and bit stuffing bounds
+the run between transitions to 7 bits. At 50 MHz low speed is P = 33
+against 33.33 clocks per bit, −1.0 %: about 2.3 clocks of drift over 7
+bits against a half-bit margin of about 16. With 10BASE-T at exactly 5
+clocks, **LS USB plus 10BASE-T at 50 MHz looks feasible on paper**. At
+48 MHz 10BASE-T is again 4.8 clocks, so not there.
 
 More modes for the same unit (infrared bi-phase with bit times above 4095
 clocks and a carrier, item 18; HDLC flags; other stuffing rules): the record
@@ -384,8 +398,8 @@ bank-relative PC writes ([v3-study.md](v3-study.md) has the encodings).
 **Flexibility (model, v3 study).** −37 words across the library;
 `usb_enum` 241 → 213 then; an autonomous USB device with an interrupt IN
 endpoint fits one core (243 words; 280 without the bundle); lookups for
-LIN's PID parity and DShot's GCR decoding (item 4, 15); items 1, 2 (compares)
-and 25 (compares) addressed. The model, assembler, checker and 39 model
+LIN's PID parity and DShot's GCR decoding (both item 4); `jmp !t` fixes
+item 1; CMPW covers the compares of items 2 and 25. The model, assembler, checker and 39 model
 tests for it exist on the unmerged `v3-study` branch.
 
 **Area (synth).** +1.9K µm² for two cores (+0.95K per core), 2 flops.
@@ -396,8 +410,9 @@ set the slow corner. The v3 verdict ("no respin") was about congestion at
 6x4, which the baseline shows is gone; the DOUT load is a timing risk that
 only a harden measures.
 
-**Verification.** Port the v3 model/assembler/checker work (on that branch: about a
-hundred changed lines in `tools/pe/`, and 39 model tests) as new commits on the public base;
+**Verification.** Port the v3 model/assembler/checker work (on that branch,
+against its base: 9 files in `tools/pe/`, +152 −37, and 39 model tests) as
+new commits on the public base;
 RTL; lockstep coverage goals for each instruction; the formal "a disabled
 core's state is frozen" assertion must allow the table read's write one
 clock after its tick (the v3 study's note); mutants; the OCaml port.
@@ -416,7 +431,9 @@ than 16 bits, so a tap of **any width to 32 with a programmable polynomial**
 covers more unknown protocols than v3's CRC-32 with the polynomial's top half
 fixed at 0x04C1.
 
-**Area (synth).** v3's CRC-32: +2.2K µm² per core, 17 flops. Any width with a
+**Area (synth).** v3's CRC-32 (top half fixed): +2.2K µm² per core in this
+study's synthesis (the `2 V3_CRC32` row, 4,394 over two cores; the v3 study
+reported +2.06K), 17 flops. Any width with a
 32-bit polynomial (`V8_CRCW`, a POLY_HI register at core offset 0x11):
 +4.4K per core, 33 flops. Multi-bit tap (up to 8 bits per shift): +8.7K per
 core; it speeds CRC loops that already meet their deadlines and unlocks no
@@ -424,8 +441,8 @@ measured protocol (the RMII receiver's `in pins, 5` carries a tag bit, so it
 would not feed a tap directly).
 
 **Routing and timing.** Inside the core; the CRC register and its readback
-widen to 32 bits. The v3 study's core_route measurement: +1.5 % of core wire
-for CRC-32.
+widen to 32 bits. physical.md's `core_route.sh` measurement ("What the v2
+additions cost", the 32-bit CRC row): +1.5 % of core wire for CRC-32.
 
 **Verification.** Model and assembler (CRCCTRL fields), lockstep comparing
 the 32-bit CRC, the CRC-tap mutant extended, firmware `eth10_rx_fcs` (port
@@ -466,7 +483,7 @@ Measured (synth, per core unless chip-level):
 | Free-running tick counter, MOV source 15 (`V8_TICK`) | +1.3K, 16 flops | 11, 23 | Time between any two events, not only inside a WAIT: pulse widths, inter-frame gaps, timestamps; removes DALI's and CEC's hand-padded paths |
 | Parity of a register into C (`par rN`, `V8_PAR`) | +0.2K (noise) | 13, 21 | 1 instruction instead of an 11-instruction fold per character (UART with parity, ISO 7816) |
 | Core-side TX FIFO clear (`pull clear`, `V8_TXCLR`) | noise, 1 flop | 19 | Drop a lost frame's queued words (CEC arbitration, any half-duplex bus) |
-| Shift count from a register (`V8_SHV`) | +0.45K | 5 | Variable-length fields (Wiegand formats, length-prefixed frames) |
+| Shift count from a register (`V8_SHV`) | +0.45K | 5 | Wiegand's formats (the item); by extension other variable-length fields |
 | Two PWM / clock outputs on any pin (`X_PWM`, chip-level) | +10.5K for the chip | 17 | A card clock, an I2S MCLK, a servo or LED PWM without spending a core |
 
 Not prototyped: configurable sampling (a majority-of-N input filter per
@@ -488,10 +505,10 @@ says so) and the verification work above.
 | Rank | Candidate | Flexibility gain (evidence) | Area, synth | Routing / timing at 8x4 | Verification cost | Schedule risk | Verdict |
 |---|---|---|---|---|---|---|---|
 | 1 | (a) third core and bank | A protocol next to every two-core pair; 3 at once; both roles plus USB (record) | +105.5K + SRAM | routes (grt3: 65.4 %, 46 overflows; pkg3 harden: routing clean) but fails signoff untuned (slow −1.57 ns, hold −0.32 ns) | Low: a parameter in spec, RTL, model, port; 4-core lockstep already in CI | High (layout) | **in**, with a Dec 6 gate |
-| 2 | (e) CRC of any width to 32, programmable polynomial | 10BASE-T FCS in the engine both ways (model, v3); CAN FD, FlexRay CRCs | +8.7K | inside the core; +1.5 % core wire for CRC-32 (v3 core_route) | Moderate | Low | **in** |
+| 2 | (e) CRC of any width to 32, programmable polynomial | 10BASE-T FCS in the engine both ways (model, v3); CAN FD, FlexRay CRCs | +8.7K | inside the core; +1.5 % core wire for CRC-32 (physical.md, core_route) | Moderate | Low | **in** |
 | 3 | (d) the v3 bundle | −37 words; autonomous USB device with a data endpoint (model, v3); lookups | +1.9K | inside the core; one more load on each IMEM output bit | Moderate, done once on `v3-study` | Low | **in** |
 | 4 | (g) tick counter | Interval timing anywhere (items 11, 23) | +2.6K | inside the core | Low | Low | **in** |
-| 5 | (c) line unit for core 1 | USB and 10BASE-T at once with on-chip coding, **if** a common clock (60 MHz, not closed) or a fractional RX period | +42.8K (+45.0K on 3 cores) | with 3 cores and the ISA set: Metal3 73.3 %, 518 overflows (global route) | Moderate | High | out |
+| 5 | (c) line unit for core 1 | USB and 10BASE-T at once with on-chip coding: full speed needs 60 MHz (not closed) or a fractional RX period; low speed at 50 MHz feasible on paper (spec reading) | +42.8K (+45.0K on 3 cores) | with 3 cores and the ISA set: Metal3 73.3 %, 518 overflows (global route) | Moderate | High | out |
 | 6 | (g) parity, TX clear, register shift counts | 1 instruction each where firmware spends 3–11 (items 5, 13, 19, 21) | +0.2K, ~0, +0.9K | inside the core | Low each, but each is ISA surface | Low | optional |
 | 7 | (g) two PWM / clock outputs | A card clock or MCLK without a core (item 17) | +10.5K | chip level, near the pins | Low–moderate | Low | optional; a third core covers item 17 too |
 | 8 | (f) shadow registers (`xch`) / 16×16 data RAM | The most-repeated limit (items 3, 14, 22) | +12.3K / +38.6K | inside the core | Moderate–high | Moderate | out (late extra at most) |
@@ -527,7 +544,7 @@ Why this and not more:
   OCaml port and FPGA profile already have, and a 4-core build is already
   in the lockstep regression. The four additions are each inside the core
   (no chip-level wire), each has a record item or a FAQ line behind it
-  (on-chip Ethernet CRC; items 1, 2, 4, 11, 15, 23, 25), and two of them
+  (on-chip Ethernet CRC; items 1, 2, 4, 11, 23, 25), and two of them
   were already implemented once on the model with tests.
 * **It is the largest addition that routes.** A third core put Metal3 back
   at fo6's level (65.4 % against 63.9 %), and the package routed clean in
@@ -538,10 +555,11 @@ Why this and not more:
   recovered only 0.02 ns, and the package's runs take about three hours.
   That is the risk the release-clock rule (48 MHz if 50 is out of reach)
   and the Dec 6 gate exist for.
-* **The second line unit's headline use, USB and 10BASE-T at once, has no
-  common clock** in the range this chip closes (48 MHz yes, 60 MHz no at
-  the slow corner). Without it, a second unit is a second USB or Manchester
-  line, which nothing in the record asks for.
+* **The second line unit did not route with the third core** (`grt3pkg`:
+  518 overflows, though that run carries the whole ISA set too), and its
+  headline use, full-speed USB and 10BASE-T at once, has no common clock
+  this chip closes (60 MHz misses at the slow corner). Low-speed USB plus
+  10BASE-T at 50 MHz looks feasible by a reading of the spec, untested.
 
 ### The fallback: the same four additions on two cores
 
@@ -555,8 +573,8 @@ so the fallback loses one engine, not the work.
 
 | Left out | Reason |
 |---|---|
-| A fourth core | Global routing did not converge (stopped after 107 minutes and 1001 extra iterations), and placement failed at fo6's density; estimate 57.6 % utilization even with 4-deep FIFOs |
-| A line unit for core 1 | No clock that serves USB and 10BASE-T together; +45K on top of the third core, and the 3-core package with it did not route (518 overflows at global routing) |
+| A fourth core | Global routing did not converge (stopped after 107 minutes and 1000 extra iterations), and placement failed at fo6's density; estimate 57.6 % utilization even with 4-deep FIFOs |
+| A line unit for core 1 | The 3-core package with it did not route (518 overflows at global routing; +45K on top of the third core); full-speed USB and 10BASE-T together need 60 MHz, which is not closed (low speed at 50 MHz looks feasible on paper) |
 | 512-word banks | +1.25 ns on the slow-corner critical path, an address-map and ISA change, one program near the limit |
 | Data RAM, shadow registers | ISA and checker work at 6–19K per core, times three cores; the most-repeated limit, but not the cheapest win |
 | Multi-bit CRC tap | Speed only, no protocol measured |
@@ -587,7 +605,7 @@ the fallback. Weeks run Monday to Sunday.
 | 3 | Nov 23–29 | Harden settings search at 8x4 (target: 50 MHz at every corner, no exception; else 48 MHz, below). Firmware: `eth10_rx_fcs`, an FCS-appending `eth10_tx`, `usb_enum` with table reads, `usb_enum_ep1`; host tools for three cores | A candidate netlist; firmware on the model and RTL |
 | 4 | Nov 30–Dec 6 | Gate-level functional suite, netlist-to-RTL equivalence, SDF standard and v2 sets at three corners, autonomous USB with delays, precheck, `release_check.py` | **Go / fallback decision** (below) |
 | 5 | Dec 7–13 | KV260 bitstream (3 cores), orchestrator board runs (smoke, USB with Linux, Ethernet); concurrency demo: three protocols at once on model, RTL and FPGA | Board smoke passes |
-| 6 | Dec 14–20 | Write-up: README, summary, physical.md, isa.md §7 defaults, explain-wirelingo.md (27 files mention 6x4 or two cores today); verifier rounds | Docs verified |
+| 6 | Dec 14–20 | Write-up: README, summary, physical.md, isa.md §7 defaults, explain-wirelingo.md: `git grep -l -i -E "6x4|two cores"` finds 41 tracked files besides this study's own (38 outside `evidence/`; 23 in `docs/`, README and info.yaml); verifier rounds | Docs verified |
 | 7–8 | Dec 21–Jan 3 | Buffer (holidays), verifier FAILs, re-harden only if a bug is found | — |
 | 9 | Jan 4–10 | Release candidate tag, receipts, record copies (item AL); **freeze Jan 11**; deadline Jan 18 | Freeze |
 
@@ -635,7 +653,8 @@ package it needs:
   clock as `CLKOUT2_DIVIDE(CLK_DIV / 8)` (8 per chip clock), which
   truncates to 2 (600 MHz) instead of 480. A 60 MHz build needs another VCO
   (for example 1440 MHz: 60 MHz is /24, 480 MHz is /3), and the device
-  clock's crossings met with +0.28 to +0.52 ns at 400 MHz, so 480 MHz may
+  clock's crossings met with +0.196 to +0.474 ns at 400 MHz (the domain
+  itself +0.520 ns; fpga/kv260/README.md), so 480 MHz may
   not meet timing. Not tried.
 * **Board runs** stay the orchestrator's: the smoke, USB and Ethernet runs
   of [fpga/kv260/README.md](../fpga/kv260/README.md) on the new bitstream,
