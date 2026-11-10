@@ -1,0 +1,46 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (lin64) Build 6511674 Tue Jun 16 11:01:26 MDT 2026
+| Date         : Tue Nov 10 21:41:39 2026
+| Host         : <build host>
+| Command      : report_utilization -hierarchical -hierarchical_depth 3 -file <build>/out/utilization_hier.rpt
+| Design       : kv260_top
+| Device       : xck26-sfvc784-2LV-c
+| Speed File   : -2LV
+| Design State : Routed
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++-----------------------------+------------------------------+------------+------------+---------+------+------+--------+--------+------+------------+
+|           Instance          |            Module            | Total LUTs | Logic LUTs | LUTRAMs | SRLs |  FFs | RAMB36 | RAMB18 | URAM | DSP Blocks |
++-----------------------------+------------------------------+------------+------------+---------+------+------+--------+--------+------+------------+
+| kv260_top                   |                        (top) |      10151 |       9427 |     678 |   46 | 6154 |      4 |      2 |    0 |          0 |
+|   (kv260_top)               |                        (top) |         17 |         17 |       0 |    0 |   64 |      0 |      0 |    0 |          0 |
+|   u_lab                     |                       pe_lab |       1245 |        605 |     640 |    0 |  674 |      0 |      0 |    0 |          0 |
+|   u_pe                      | tt_um_josusanmartin_protoemu |       6637 |       6637 |       0 |    0 | 2647 |      0 |      2 |    0 |          0 |
+|     u_host                  |                  pe_hostport |        574 |        574 |       0 |    0 |  312 |      0 |      0 |    0 |          0 |
+|     u_chip                  |                      pe_chip |       6066 |       6066 |       0 |    0 | 2333 |      0 |      2 |    0 |          0 |
+|       (u_chip)              |                      pe_chip |         78 |         78 |       0 |    0 |  200 |      0 |      0 |    0 |          0 |
+|       g_core[0].g_on.u_core |                      pe_core |       1276 |       1276 |       0 |    0 |  928 |      0 |      0 |    0 |          0 |
+|       g_core[1].g_on.u_core |      pe_core__parameterized0 |       1248 |       1248 |       0 |    0 |  928 |      0 |      0 |    0 |          0 |
+|       u_imem                |                      pe_imem |       2502 |       2502 |       0 |    0 |    0 |      0 |      2 |    0 |          0 |
+|       u_line                |                      pe_line |        988 |        988 |       0 |    0 |  277 |      0 |      0 |    0 |          0 |
+|   u_ps                      |                pe_ps_wrapper |       1674 |       1590 |      38 |   46 | 2228 |      0 |      0 |    0 |          0 |
+|     (u_ps)                  |                pe_ps_wrapper |         57 |         57 |       0 |    0 |    0 |      0 |      0 |    0 |          0 |
+|     pe_ps_i                 |                        pe_ps |       1617 |       1533 |      38 |   46 | 2228 |      0 |      0 |    0 |          0 |
+|       gpio0                 |                pe_ps_gpio0_0 |         92 |         92 |       0 |    0 |  382 |      0 |      0 |    0 |          0 |
+|       gpio1                 |                pe_ps_gpio1_0 |         90 |         90 |       0 |    0 |  318 |      0 |      0 |    0 |          0 |
+|       ic                    |                   pe_ps_ic_0 |       1419 |       1336 |      38 |   45 | 1491 |      0 |      0 |    0 |          0 |
+|   u_spim                    |                      pe_spim |        581 |        581 |       0 |    0 |  541 |      4 |      0 |    0 |          0 |
++-----------------------------+------------------------------+------------+------------+---------+------+------+--------+--------+------+------------+
+* Note: The sum of lower-level cells may be larger than their parent cells total, due to cross-hierarchy LUT combining
+
+

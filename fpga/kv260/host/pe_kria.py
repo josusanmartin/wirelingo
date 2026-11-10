@@ -11,14 +11,21 @@ board's `tt` object (ui_in.value / uo_out.value), so the demo-board driver
 tools/micropython/protoemu.py bit-bangs the SPI host port unmodified:
 
     board = Board(); board.reset()
-    pe = board.protoemu()                 # tools/micropython/protoemu.ProtoEmu
-    assert pe.read(0x800) == 0x50450002
+    g = board.identify()                  # the chip ID: a KV260 build's, or ValueError
+    pe = board.protoemu(ncores=g.ncores, nbanks=g.nbanks)   # tools/micropython/protoemu.ProtoEmu
+
+The KV260 builds and their ID registers (docs/isa.md §6.2): v0.2 0x50450002
+(2 cores; the bitstreams up to 2026-11), v0.3 2-core 0x50452203 and 3-core
+0x50453303 (build.sh --cores 2 or 3, the 8x4 package and its fallback). Any
+other value, including other v0.3 geometries, is refused: build.sh makes no
+other chip.
 
 `QuadTransport` adds the quad host port (docs/isa.md §6.1) as a ProtoEmu
 transport. ui_in[4:0] are protocol inputs: the board drives them from
 `Board.ui_low`, so SPI traffic doesn't disturb them (except ui[4:2] during
 quad transactions, which the quad port borrows).
 """
+import collections
 import mmap
 import os
 import pathlib
@@ -36,7 +43,54 @@ CS, SCK, MOSI = 7, 6, 5
 RST_N = 8
 UIO = 16
 LOCKED = 24
-ID = 0x50450002
+ID_V2 = 0x50450002
+
+
+class Geometry(collections.namedtuple("Geometry", "id version ncores nbanks")):
+    """A KV260 build's chip, as its ID register gives it."""
+
+    def __str__(self):
+        return f"0x{self.id:08X}: {self.version}, {self.ncores} cores, {self.nbanks} banks"
+
+
+BUILDS = {ID_V2: Geometry(ID_V2, "v0.2", 2, 2),
+          0x50452203: Geometry(0x50452203, "v0.3", 2, 2),
+          0x50453303: Geometry(0x50453303, "v0.3", 3, 3)}
+
+
+def geometry(v, cores=None):
+    """The build an ID register value belongs to, or ValueError for any other value.
+    cores: the core count the caller expects (an app's, --cores); another one refuses."""
+    g = BUILDS.get(v)
+    if g is None:
+        raise ValueError(f"chip ID 0x{v:08X} is not a KV260 build's (v0.2 0x{ID_V2:08X}, "
+                         f"v0.3 0x50452203 or 0x50453303)")
+    if cores is not None and g.ncores != cores:
+        raise ValueError(f"chip ID {g}, expected a {cores}-core build")
+    return g
+
+
+def any_geometry(v):
+    """The Geometry of any protoemu ID (pe.sim.known_id: v0.2's, or any v0.3 geometry,
+    such as the cycle model's 4-core profile behind fabric_ping's fake board), or
+    ValueError. For tools that also run on that model (v2_demo.Hw); the board-side
+    checks of a KV260 build use geometry()."""
+    from pe import sim
+    if v in BUILDS:
+        return BUILDS[v]
+    if not sim.known_id(v):
+        raise ValueError(f"chip ID 0x{v:08X} is not a protoemu ID")
+    return Geometry(v, "v0.3", (v >> 8) & 15, (v >> 12) & 15)
+
+
+def app_cores(cores=None):
+    """On the board: (the active app, the core count it holds: fabric_guard.APP_BUILD).
+    cores: a count asked for on the command line; another one than the app's refuses."""
+    app = fabric_guard.require_app()
+    n = fabric_guard.APP_BUILD[app][0]
+    if cores is not None and cores != n:
+        raise ValueError(f"--cores {cores}, but the active app {app} holds a {n}-core build")
+    return app, n
 
 
 class DevMem:
@@ -144,6 +198,11 @@ class Board:
     def protoemu(self, **kw):
         import protoemu
         return protoemu.ProtoEmu(self, **kw)
+
+    def identify(self, cores=None):
+        """Read the chip ID over the GPIO path (no reset) and return its Geometry;
+        ValueError for an ID no KV260 build has, or another core count than `cores`."""
+        return geometry(self.protoemu().read(0x800), cores)
 
 
 class _UiIn:

@@ -484,7 +484,9 @@ def test_a_refusal_for_another_app_gives_the_load_one_step_at_a_time(run):
 
 def test_hw_day_knows_the_guards_apps():
     import fabric_guard
-    assert tuple(hw_day.APPS) == fabric_guard.KNOWN
+    # hw_day's steps are for the 2-core apps; the guard also knows protoemu3c (board_smoke.py's)
+    assert tuple(hw_day.APPS) + ("protoemu3c",) == fabric_guard.KNOWN
+    assert hw_day.APPS == {a: fabric_guard.APP_BUILD[a][1] for a in hw_day.APPS}
 
 
 def test_the_launcher_has_no_override():

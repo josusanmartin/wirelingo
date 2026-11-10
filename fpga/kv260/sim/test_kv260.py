@@ -1,7 +1,9 @@
 """Run fpga/kv260/host/bringup_kria.py's steps on the RTL of the KV260 design
 (kv260_top.v + the flow/fpga_profile.py staging of src/), through the same
 GPIO words the Kria writes. pl_clk 100 MHz, protoemu clk 50 MHz, asynchronous.
-Wall-clock steps (clock, UART on pins) are hardware-only and skipped."""
+Wall-clock steps (clock, UART on pins) are hardware-only and skipped.
+KV260_CORES (the Makefile's, default 3) is the staged chip's core count; the
+tests expect its ID (0x50453303 or 0x50452203)."""
 import pathlib
 import sys
 
@@ -24,6 +26,7 @@ import os  # noqa: E402
 CLOCKS = os.environ.get("SPIM_CLOCKS", "shared alt").split()
 DIVS = [int(d) for d in os.environ.get("SPIM_DIVS", "4 2 1").split()]
 GPIO_CLKS = 3   # pl_clk cycles per GPIO access: SCK half period 30 ns, 1.5 protoemu clk
+CORES = int(os.environ.get("KV260_CORES", "3"))   # the Makefile's staging (fpga_profile.py --cores)
 
 
 class SimRegs:
@@ -135,6 +138,7 @@ async def test_bringup_steps(dut):
         ctx.board.reset(hold_s=0)
         ctx.pe = ctx.board.protoemu()
         ctx.f_nominal = ctx.f_clk = 50e6
+        ctx.cores = CORES                    # as the active app's count on the board
         for name, fn in bringup_kria.STEPS:
             if name in ("build", "clock", "uart_tx_pin", "uart_rx_pin"):
                 continue
@@ -142,9 +146,15 @@ async def test_bringup_steps(dut):
                 fn(ctx, n=3)
             elif name == "quad":
                 fn(ctx, n=5)
+            elif name == "loopback":
+                fn(ctx, msg=b"KV260 ring")
+            elif name == "crc32":
+                fn(ctx, nwords=12)
             else:
                 fn(ctx)
             dut._log.info(f"{name}: PASS")
+        assert ctx.geom.ncores == CORES and ctx.geom.id == (0x50453303 if CORES == 3 else 0x50452203), ctx.geom
+        dut._log.info(f"chip {ctx.geom}")
     await bridge(run)()
 
 
@@ -159,14 +169,14 @@ async def test_spim(dut):
         board = Board(SimRegs(dut))
         board.reset(hold_s=0)
         spim = Spim(SimSpimMem(dut))
-        ctx = spim_test.Ctx(board, spim, 50e6, log=dut._log.info)
-        dut._log.info(f"pe_spim version 0x{spim.mem.rd(0x802C):08X}")
+        ctx = spim_test.Ctx(board, spim, 50e6, log=dut._log.info, cores=CORES)
+        dut._log.info(f"pe_spim version 0x{spim.mem.rd(0x802C):08X}; chip {ctx.geom}")
         spim.select(fabric=True)
         for div in DIVS:
             spim.div = div
             got = ctx.fab.read(0x800)
             dut._log.info(f"fabric 1-bit ID at SCK = mclk/{div}: 0x{got:08X}, CS low {spim.last_pcyc} clk")
-            assert got == 0x50450002
+            assert got == ctx.geom.id and ctx.geom.ncores == CORES
         ok = spim_test.run(ctx, CLOCKS, DIVS, 16, 1, [16, 1, 5])
         assert ok, [n for n, good in ctx.results if not good]
     await bridge(run)()

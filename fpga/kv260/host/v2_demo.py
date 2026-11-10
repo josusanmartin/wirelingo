@@ -75,7 +75,13 @@ class Hw:
         self.spim.select(fabric=True)                 # host port at SCK = clk, 1-bit
         self.pe = self.board.protoemu()
         self.pe.transport = self.spim
-        check(sim.known_id(self.pe.read(sim.A_ID)), "ID over the fabric master")
+        import pe_kria
+        try:                                          # a protoemu ID (as sim.known_id), or stop
+            self.geom = pe_kria.any_geometry(self.pe.read(sim.A_ID))
+        except ValueError as e:
+            raise AssertionError(f"ID over the fabric master: {e}") from None
+        self.pe = self.board.protoemu(ncores=self.geom.ncores, nbanks=self.geom.nbanks)
+        self.pe.transport = self.spim
 
     def load(self, core, prog, **cfg):
         for addr, words in host.coalesce(host.load_program(core, prog, core * 256, **cfg)):
@@ -493,7 +499,7 @@ def main():
         demo_la_model(a.demos[1])
         return
     hw = Hw()
-    print(f"protoemu clk {hw.f_clk / 1e6:.4f} MHz; host port via pe_spim at SCK = clk")
+    print(f"protoemu clk {hw.f_clk / 1e6:.4f} MHz; host port via pe_spim at SCK = clk; chip {hw.geom}")
     failed = 0
     for name in a.demos:
         print(f"[{name}]")

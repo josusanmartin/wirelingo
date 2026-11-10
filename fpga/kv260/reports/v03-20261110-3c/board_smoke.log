@@ -1,0 +1,313 @@
+board_smoke.py 2026-11-10 21:57:44 UTC, phases install,load,smoke
+[check] protoemu3c from <scratch>/out3c
+checkout RTL revision 5ff5e083d352
+bitstream RTL revision 5ff5e083d352, 3 cores, clk_div 24
+[install]
+$ LOAD=0 APP=protoemu3c OUT_DIR=<scratch>/out3c fpga/kv260/install.sh
+  | checkout RTL revision 5ff5e083d352
+  | bitstream RTL revision 5ff5e083d352, 3 cores, clk_div 24
+  | installed protoemu3c (not loaded). On the Kria, one command at a time, reading each:
+  |   sudo xmutil unloadapp
+  |   sudo xmutil loadapp protoemu3c
+  |   sudo xmutil listapps
+[load]
+$ uptime
+  |  21:58:24 up 7 days, 19:18,  1 user,  load average: 0.14, 0.04, 0.01
+  (status 0)
+$ pgrep -af fpga/kv260/host/ || true
+  | 603799 bash -c pgrep -af fpga/kv260/host/ || true
+  (status 0)
+$ sudo xmutil listapps
+  |                    Accelerator  Accel_type                    Base    Pid   Base_type  #slots(RPU+PL+AIE)    slot->handle
+  |               kv260-tmma-mmult    XRT_FLAT        kv260-tmma-mmult  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d128_gbpd-150    XRT_FLATkv260-q5-full-pq5-g32d128_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d128_gb2p-150    XRT_FLATkv260-q5-full-pq5-g64d128_gb2p-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |        kv260-q4-gemv-4lane-200    XRT_FLAT kv260-q4-gemv-4lane-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |    kv260-q3-k-ffn-fused-r8-100    XRT_FLATkv260-q3-k-ffn-fused-r8-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                     protoemu40    XRT_FLAT              protoemu40  id_ok    XRT_FLAT             (0+0+0)              -1
+  |   kv260-q5-full-g16d8_wdg2-150    XRT_FLATkv260-q5-full-g16d8_wdg2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-200    XRT_FLATkv260-q4-gemv-8lane-burst18-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |        kv260-q3-k-ffn-gate-125    XRT_FLAT kv260-q3-k-ffn-gate-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q8-0-gemma-lmhead-q8act-pair-170    XRT_FLATkv260-q8-0-gemma-lmhead-q8act-pair-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-alignedargs-200    XRT_FLATkv260-q4-gemv-8lane-burst18-alignedargs-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |              kv260-q4-gemv-200    XRT_FLAT       kv260-q4-gemv-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                     protoemu48    XRT_FLAT              protoemu48  id_ok    XRT_FLAT             (0+0+0)           0->0,
+  |      kv260-q4-gemv-cacheq8-210    XRT_FLATkv260-q4-gemv-cacheq8-210  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_wd2k2-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2k2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |            kv260-q8-0-gemv-173    XRT_FLAT     kv260-q8-0-gemv-173  id_ok    XRT_FLAT             (0+0+0)              -1
+  |       kv260-q3-k-ffn-fused-100    XRT_FLATkv260-q3-k-ffn-fused-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-balign-l4-100    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               kv260-mem-bw-165    XRT_FLAT        kv260-mem-bw-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d64_gbpd-150    XRT_FLATkv260-q5-full-pq5-g64d64_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-guardless-200    XRT_FLATkv260-q4-gemv-8lane-burst18-guardless-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |     kv260-q5-full-pq5-g4d4-150    XRT_FLATkv260-q5-full-pq5-g4d4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               kv260-vadd-smoke    XRT_FLAT        kv260-vadd-smoke  id_ok    XRT_FLAT             (0+0+0)              -1
+  |    kv260-q3-k-ffn-gate-r16-125    XRT_FLATkv260-q3-k-ffn-gate-r16-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d32_bm32-150    XRT_FLATkv260-q5-full-pq5-g8d32_bm32-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |     kv260-q5-full-pq5-g1d4-150    XRT_FLATkv260-q5-full-pq5-g1d4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-fastscale-100    XRT_FLATkv260-q3-k-ffn-fused-r8-fastscale-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-alignedargs-200-hpc    XRT_FLATkv260-q4-gemv-8lane-burst18-alignedargs-200-hpc  id_ok    XRT_FLAT             (0+0+0)              -1
+  |         kv260-q6-k-lm-head-125    XRT_FLAT  kv260-q6-k-lm-head-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  |  kv260-q5-0-gemma-ffn-gate-170    XRT_FLATkv260-q5-0-gemma-ffn-gate-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d128_pdf-150    XRT_FLATkv260-q5-full-pq5-g64d128_pdf-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |      kv260-q4-gemv-cacheq8-200    XRT_FLATkv260-q4-gemv-cacheq8-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-balign-l4-150    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               k24-starter-kits    XRT_FLAT        k24-starter-kits  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                       protoemu    XRT_FLAT                protoemu  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-intacc-200    XRT_FLATkv260-q4-gemv-8lane-intacc-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gateup-q8pack-brow-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-brow-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  |          kv260-benchmark-b4096    XRT_FLAT   kv260-benchmark-b4096  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g4d16_wd2k2np-150    XRT_FLATkv260-q5-full-pq5-g4d16_wd2k2np-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_wd2k2np-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2k2np-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d64_gbpd-150    XRT_FLATkv260-q5-full-pq5-g32d64_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r16-balign-l4-dgu-150    XRT_FLATkv260-q3-k-ffn-fused-r16-balign-l4-dgu-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-balign-l4-125    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gate-q8pack-170    XRT_FLATkv260-q5-0-gemma-ffn-gate-q8pack-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  |     kv260-q3-k-ffn-gate-r8-125    XRT_FLATkv260-q3-k-ffn-gate-r8-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d128_gbso-150    XRT_FLATkv260-q5-full-pq5-g64d128_gbso-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gateup-q8pack-r48s8-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-r48s8-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  |            kv260-q8-0-gemv-170    XRT_FLAT     kv260-q8-0-gemv-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               k26-starter-kits    XRT_FLAT        k26-starter-kits  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d32_gb-150    XRT_FLATkv260-q5-full-pq5-g32d32_gb-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |  kv260-rnn34-int8-pingpong-232    XRT_FLATkv260-rnn34-int8-pingpong-232  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r16-balign-l4-150    XRT_FLATkv260-q3-k-ffn-fused-r16-balign-l4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gateup-q8pack-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-fastscale-l2-100    XRT_FLATkv260-q3-k-ffn-fused-r8-fastscale-l2-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d64_gb-150    XRT_FLATkv260-q5-full-pq5-g32d64_gb-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_r64lut-150    XRT_FLATkv260-q5-full-pq5-g8d8_r64lut-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_wd2-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                     protoemu3c    XRT_FLAT              protoemu3c  id_ok    XRT_FLAT             (0+0+0)              -1
+  (status 0)
+  active now: protoemu48
+$ sudo xmutil unloadapp
+  | remove from slot 0 returns: 0 (Ok)
+  (status 0)
+$ sudo xmutil loadapp protoemu3c
+  | protoemu3c: Loaded with slot_handle 0
+  (status 0)
+$ sudo xmutil listapps
+  |                    Accelerator  Accel_type                    Base    Pid   Base_type  #slots(RPU+PL+AIE)    slot->handle
+  |               kv260-tmma-mmult    XRT_FLAT        kv260-tmma-mmult  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d128_gbpd-150    XRT_FLATkv260-q5-full-pq5-g32d128_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d128_gb2p-150    XRT_FLATkv260-q5-full-pq5-g64d128_gb2p-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |        kv260-q4-gemv-4lane-200    XRT_FLAT kv260-q4-gemv-4lane-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |    kv260-q3-k-ffn-fused-r8-100    XRT_FLATkv260-q3-k-ffn-fused-r8-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                     protoemu40    XRT_FLAT              protoemu40  id_ok    XRT_FLAT             (0+0+0)              -1
+  |   kv260-q5-full-g16d8_wdg2-150    XRT_FLATkv260-q5-full-g16d8_wdg2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-200    XRT_FLATkv260-q4-gemv-8lane-burst18-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |        kv260-q3-k-ffn-gate-125    XRT_FLAT kv260-q3-k-ffn-gate-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q8-0-gemma-lmhead-q8act-pair-170    XRT_FLATkv260-q8-0-gemma-lmhead-q8act-pair-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-alignedargs-200    XRT_FLATkv260-q4-gemv-8lane-burst18-alignedargs-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |              kv260-q4-gemv-200    XRT_FLAT       kv260-q4-gemv-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                     protoemu48    XRT_FLAT              protoemu48  id_ok    XRT_FLAT             (0+0+0)              -1
+  |      kv260-q4-gemv-cacheq8-210    XRT_FLATkv260-q4-gemv-cacheq8-210  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_wd2k2-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2k2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |            kv260-q8-0-gemv-173    XRT_FLAT     kv260-q8-0-gemv-173  id_ok    XRT_FLAT             (0+0+0)              -1
+  |       kv260-q3-k-ffn-fused-100    XRT_FLATkv260-q3-k-ffn-fused-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-balign-l4-100    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               kv260-mem-bw-165    XRT_FLAT        kv260-mem-bw-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d64_gbpd-150    XRT_FLATkv260-q5-full-pq5-g64d64_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-guardless-200    XRT_FLATkv260-q4-gemv-8lane-burst18-guardless-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  |     kv260-q5-full-pq5-g4d4-150    XRT_FLATkv260-q5-full-pq5-g4d4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               kv260-vadd-smoke    XRT_FLAT        kv260-vadd-smoke  id_ok    XRT_FLAT             (0+0+0)              -1
+  |    kv260-q3-k-ffn-gate-r16-125    XRT_FLATkv260-q3-k-ffn-gate-r16-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d32_bm32-150    XRT_FLATkv260-q5-full-pq5-g8d32_bm32-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |     kv260-q5-full-pq5-g1d4-150    XRT_FLATkv260-q5-full-pq5-g1d4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-fastscale-100    XRT_FLATkv260-q3-k-ffn-fused-r8-fastscale-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-burst18-alignedargs-200-hpc    XRT_FLATkv260-q4-gemv-8lane-burst18-alignedargs-200-hpc  id_ok    XRT_FLAT             (0+0+0)              -1
+  |         kv260-q6-k-lm-head-125    XRT_FLAT  kv260-q6-k-lm-head-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  |  kv260-q5-0-gemma-ffn-gate-170    XRT_FLATkv260-q5-0-gemma-ffn-gate-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d128_pdf-150    XRT_FLATkv260-q5-full-pq5-g64d128_pdf-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |      kv260-q4-gemv-cacheq8-200    XRT_FLATkv260-q4-gemv-cacheq8-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-balign-l4-150    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               k24-starter-kits    XRT_FLAT        k24-starter-kits  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                       protoemu    XRT_FLAT                protoemu  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q4-gemv-8lane-intacc-200    XRT_FLATkv260-q4-gemv-8lane-intacc-200  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gateup-q8pack-brow-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-brow-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  |          kv260-benchmark-b4096    XRT_FLAT   kv260-benchmark-b4096  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g4d16_wd2k2np-150    XRT_FLATkv260-q5-full-pq5-g4d16_wd2k2np-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_wd2k2np-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2k2np-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d64_gbpd-150    XRT_FLATkv260-q5-full-pq5-g32d64_gbpd-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r16-balign-l4-dgu-150    XRT_FLATkv260-q3-k-ffn-fused-r16-balign-l4-dgu-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-balign-l4-125    XRT_FLATkv260-q3-k-ffn-fused-r8-balign-l4-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gate-q8pack-170    XRT_FLATkv260-q5-0-gemma-ffn-gate-q8pack-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  |     kv260-q3-k-ffn-gate-r8-125    XRT_FLATkv260-q3-k-ffn-gate-r8-125  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g64d128_gbso-150    XRT_FLATkv260-q5-full-pq5-g64d128_gbso-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gateup-q8pack-r48s8-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-r48s8-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  |            kv260-q8-0-gemv-170    XRT_FLAT     kv260-q8-0-gemv-170  id_ok    XRT_FLAT             (0+0+0)              -1
+  |               k26-starter-kits    XRT_FLAT        k26-starter-kits  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d32_gb-150    XRT_FLATkv260-q5-full-pq5-g32d32_gb-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |  kv260-rnn34-int8-pingpong-232    XRT_FLATkv260-rnn34-int8-pingpong-232  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r16-balign-l4-150    XRT_FLATkv260-q3-k-ffn-fused-r16-balign-l4-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-0-gemma-ffn-gateup-q8pack-165    XRT_FLATkv260-q5-0-gemma-ffn-gateup-q8pack-165  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q3-k-ffn-fused-r8-fastscale-l2-100    XRT_FLATkv260-q3-k-ffn-fused-r8-fastscale-l2-100  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g32d64_gb-150    XRT_FLATkv260-q5-full-pq5-g32d64_gb-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_r64lut-150    XRT_FLATkv260-q5-full-pq5-g8d8_r64lut-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  | kv260-q5-full-pq5-g8d8_wd2-150    XRT_FLATkv260-q5-full-pq5-g8d8_wd2-150  id_ok    XRT_FLAT             (0+0+0)              -1
+  |                     protoemu3c    XRT_FLAT              protoemu3c  id_ok    XRT_FLAT             (0+0+0)           0->0,
+  (status 0)
+  protoemu3c is the one active row
+[smoke]
+$ cd protoemu3c && sudo python3 fpga/kv260/host/pmod_state.py
+  | PMOD0 00000000 PMOD1 00000000 PMODIN f5
+  (status 0)
+[pmod before] PASS (4 s)
+$ cd protoemu3c && sudo python3 fpga/kv260/host/bringup_kria.py
+  | active app protoemu3c (3-core build)
+  | [build]
+  |   bitstream RTL revision 5ff5e083d352126e279928010908b3b353bc2250
+  |   built 2026-11-10 20:14:45 UTC from HEAD 38cf46ef67e8, RTL digest a3b41f96, clk_div 24
+  |   expected RTL revision 5ff5e083d352126e279928010908b3b353bc2250 (expected_build.json)
+  |   PASS (0.01 s)
+  | [clock]
+  |   protoemu clk measured 49.9983 MHz
+  |   PASS (0.50 s)
+  | [id]
+  |   ID (0x800) = 0x50453303
+  |   v0.3, 3 cores, 3 banks (expected 3 cores)
+  |   PASS (0.01 s)
+  | [regs]
+  |   200 rounds: R0..R3 of all 3 cores written and read back, single and burst
+  |   PASS (8.16 s)
+  | [pins]
+  |   inputs: ui[4:0] and undriven uio pads reach PINS through the synchronisers
+  |   outputs: PIN_OUT/PIN_OE drive uo_out/uio_out/uio_oe; open drain on P0 works
+  |   PASS (0.03 s)
+  | [loopback]
+  |   core 0 -> core 1: uart_tx (4 words) and uart_rx (14 words)
+  |   sent b'Hello from protoemu on a KV260!'
+  |   got  b'Hello from protoemu on a KV260!'
+  |   core 1 -> core 2: uart_tx (4 words) and uart_rx (14 words)
+  |   sent b'Hello from protoemu on a KV260!'
+  |   got  b'Hello from protoemu on a KV260!'
+  |   core 2 -> core 0: uart_tx (4 words) and uart_rx (14 words)
+  |   sent b'Hello from protoemu on a KV260!'
+  |   got  b'Hello from protoemu on a KV260!'
+  |   PASS (0.76 s)
+  | [uart_tx_pin]
+  |   53 edges on uo[0], decoded b'protoemu' at 9600 baud; worst edge 37.3 % of a bit off the grid (Python polling jitter)
+  |   PASS (0.05 s)
+  | [uart_rx_pin]
+  |   drove b'KV260 ok' on ui[0]; core 1 received b'KV260 ok'; framing error flag 0
+  |   PASS (0.06 s)
+  | [quad]
+  |   quad: ID = 0x50453303
+  |   quad: 50 burst write/read rounds on core 1 R0..R3, cross-checked over 1-bit
+  |   PASS (0.35 s)
+  | [crc32]
+  |   core 0: 24 words, CRC 0xDBA5645A, expected 0xDBA5645A
+  |   core 1: 24 words, CRC 0x4F54EE58, expected 0x4F54EE58
+  |   core 2: 24 words, CRC 0x981ADEAB, expected 0x981ADEAB
+  |   PASS (0.12 s)
+  | ALL PASS
+  (status 0)
+[bringup] PASS (14 s)
+$ cd protoemu3c && sudo python3 fpga/kv260/host/spim_test.py
+  | protoemu clk 49.9992 MHz (cycle counter); ID over GPIO 0x50453303
+  | active app protoemu3c: chip 0x50453303: v0.3, 3 cores, 3 banks
+  | shared SCK=mclk/4 1-bit: 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | shared SCK=mclk/4 1-bit: WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0xB966 ok (GPIO readback)
+  | shared SCK=mclk/4 1-bit: READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | shared SCK=mclk/4 1-bit: PASS  write   12.5 Mbit/s (524386 clk), read   12.5 Mbit/s (524418 clk)
+  | shared SCK=mclk/4 quad : 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | shared SCK=mclk/4 quad : WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x3106 ok (GPIO readback)
+  | shared SCK=mclk/4 quad : READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | shared SCK=mclk/4 quad : PASS  write   50.0 Mbit/s (131122 clk), read   50.0 Mbit/s (131154 clk)
+  | shared SCK=mclk/2 1-bit: 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | shared SCK=mclk/2 1-bit: WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0xEFA6 ok (GPIO readback)
+  | shared SCK=mclk/2 1-bit: READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | shared SCK=mclk/2 1-bit: PASS  write   25.0 Mbit/s (262196 clk), read   25.0 Mbit/s (262212 clk)
+  | shared SCK=mclk/2 quad : 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | shared SCK=mclk/2 quad : WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x9A99 ok (GPIO readback)
+  | shared SCK=mclk/2 quad : READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | shared SCK=mclk/2 quad : PASS  write  100.0 Mbit/s (65564 clk), read   99.9 Mbit/s (65580 clk)
+  | shared SCK=mclk/1 1-bit: 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | shared SCK=mclk/1 1-bit: WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x0AD9 ok (GPIO readback)
+  | shared SCK=mclk/1 1-bit: READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | shared SCK=mclk/1 1-bit: PASS  write   50.0 Mbit/s (131101 clk), read   50.0 Mbit/s (131109 clk)
+  | shared SCK=mclk/1 quad : 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | shared SCK=mclk/1 quad : WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x6B70 ok (GPIO readback)
+  | shared SCK=mclk/1 quad : READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | shared SCK=mclk/1 quad : PASS  write  199.9 Mbit/s (32785 clk), read  199.8 Mbit/s (32793 clk), 64-word write 193.6 Mbit/s (529 clk)
+  | alt    SCK=mclk/4 1-bit: 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | alt    SCK=mclk/4 1-bit: WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0xC1D1 ok (GPIO readback)
+  | alt    SCK=mclk/4 1-bit: READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | alt    SCK=mclk/4 1-bit: PASS  write   11.5 Mbit/s (570816 clk), read   11.5 Mbit/s (570850 clk)
+  | alt    SCK=mclk/4 quad : 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | alt    SCK=mclk/4 quad : WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x8615 ok (GPIO readback)
+  | alt    SCK=mclk/4 quad : READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | alt    SCK=mclk/4 quad : PASS  write   45.9 Mbit/s (142732 clk), read   45.9 Mbit/s (142767 clk)
+  | alt    SCK=mclk/2 1-bit: 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | alt    SCK=mclk/2 1-bit: WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x3F6C ok (GPIO readback)
+  | alt    SCK=mclk/2 1-bit: READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | alt    SCK=mclk/2 1-bit: PASS  write   23.0 Mbit/s (285412 clk), read   23.0 Mbit/s (285429 clk)
+  | alt    SCK=mclk/2 quad : 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | alt    SCK=mclk/2 quad : WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x6E48 ok (GPIO readback)
+  | alt    SCK=mclk/2 quad : READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | alt    SCK=mclk/2 quad : PASS  write   91.8 Mbit/s (71369 clk), read   91.8 Mbit/s (71387 clk)
+  | alt    SCK=mclk/1 1-bit: 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | alt    SCK=mclk/1 1-bit: WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x2D63 ok (GPIO readback)
+  | alt    SCK=mclk/1 1-bit: READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | alt    SCK=mclk/1 1-bit: PASS  write   45.9 Mbit/s (142709 clk), read   45.9 Mbit/s (142717 clk)
+  | alt    SCK=mclk/1 quad : 50 rounds R0..R3 x3 cores, GPIO cross-checks; 64x READ_FIXED ID ok
+  | alt    SCK=mclk/1 quad : WRITE_FIXED 4096 words to TXF0: sink count 4096, sum 0x1498 ok (GPIO readback)
+  | alt    SCK=mclk/1 quad : READ_FIXED bursts [4096, 1, 7, 1000, 64] from RXF1: 5168 words in sequence, next word over GPIO ok
+  | alt    SCK=mclk/1 quad : PASS  write  183.6 Mbit/s (35688 clk), read  183.6 Mbit/s (35696 clk), 64-word write 177.8 Mbit/s (576 clk)
+  | ALL PASS
+  (status 0)
+[spim] PASS (7 s)
+$ cd protoemu3c && sudo python3 fpga/kv260/host/v2_demo.py call la spi i2c
+  | protoemu clk 49.9998 MHz; host port via pe_spim at SCK = clk; chip 0x50453303: v0.3, 3 cores, 3 banks
+  | [call]
+  |   directed CALL/RET program: hardware R0..R3 = ['0x65', '0x6', '0x2', '0x2'], model ['0x65', '0x6', '0x2', '0x2'], halted True
+  |   PASS (0.0 s)
+  | [la]
+  |   synchronous run: 435 entries, generator ran 2346076 clk; 422 records drained in 1087 READ_FIXED bursts
+  |   timestamps: 160 edges on 4 channels, 7-430 ticks apart (unwatched channels toggling): capture tick - drive tick = [58837] for every edge
+  |   close edges (ch1 d ticks after ch0; lateness of ch1's timestamp, ticks): d=1: [-1], d=2: [5], d=3: [4], d=4: [3], d=5: [2], d=6: [1], d=7: [0], d=8: [0], d=9: [0], d=10: [0]
+  |   square waves on ch0: edge every 7 ticks: 35 of 35 edges captured, edge every 6 ticks: 30 of 40 edges captured
+  |   async: 240 edges on channel 0, >= 9 alt cycles apart, all captured; capture tick - ideal time spans 0.995 ticks
+  |   async histogram (capture - ideal, ticks above the minimum: count): {0.0: 11, 0.1: 23, 0.2: 20, 0.3: 23, 0.4: 29, 0.5: 22, 0.6: 21, 0.7: 20, 0.8: 31, 0.9: 28, 1.0: 12}
+  |   PASS (0.1 s)
+  | [spi]
+  |   spi_master_fast, CLKDIV 1, 8 x 8 random bytes per cell; MOSI always right (device log); SCK rise-to-rise [32] dclk = 4 clocks
+  |   DELAY  MISO after the chip's SCK edge  no bypass      SYNC_BYPASS
+  |       0     5.0 ns                       ok             ok
+  |       1     7.5 ns                       ok             ok
+  |       2    10.0 ns                       ok             ok
+  |       3    12.5 ns                       ok             ok
+  |       4    15.0 ns                       ok             ok
+  |       5    17.5 ns                       ok             ok
+  |       6    20.0 ns                       1 bit late     ok
+  |       7    22.5 ns                       1 bit late     ok
+  |       8    25.0 ns                       1 bit late     ok
+  |       9    27.5 ns                       1 bit late     ok
+  |      10    30.0 ns                       1 bit late     ok
+  |      11    32.5 ns                       1 bit late     ok
+  |      12    35.0 ns                       1 bit late     ok
+  |      13    37.5 ns                       1 bit late     ok
+  |      14    40.0 ns                       1 bit late     1 bit late
+  |      15    42.5 ns                       1 bit late     1 bit late
+  |      16    45.0 ns                       1 bit late     1 bit late
+  |      17    47.5 ns                       1 bit late     1 bit late
+  |      18    50.0 ns                       1 bit late     1 bit late
+  |      19    52.5 ns                       1 bit late     1 bit late
+  |   correct reads: no bypass up to DELAY 5 (17.5 ns), SYNC_BYPASS up to DELAY 13 (37.5 ns)
+  |   PASS (0.1 s)
+  | [i2c]
+  |   i2c_device: 88 words, 6 CALLs (opcode 13; the bit loop, the event push with its stretch, the START/STOP check are subroutines); i2c_master at 100 kHz
+  |   write 0x10, read 8   master replies ['0x0', '0x0', '0x0', '0xf1', '0x3f', '0xa6', '0xd', '0xe6', '0x28', '0x1c', '0x5f']
+  |   write 0x20: CA FE    master replies ['0x0', '0x0', '0x0', '0x0']
+  |   write 0x20, read 2   master replies ['0x0', '0x0', '0x0', '0xca', '0xfe']
+  |   address 0x51         master replies ['0x1']
+  |   device log (pe.i2cdev): [('W', [16]), ('R', [241, 63, 166, 13, 230, 40, 28, 95]), ('W', [32, 202, 254]), ('W', [32]), ('R', [202, 254])]; 10 read bytes served by the host; 14 ms
+  |   same answers as an EEPROM: CALL/RET firmware works on the bitstream
+  |   PASS (0.0 s)
+  | ALL PASS
+  (status 0)
+[v2 demos] PASS (5 s)
+$ cd protoemu3c && sudo python3 fpga/kv260/host/pmod_state.py
+  | PMOD0 00000000 PMOD1 00000000 PMODIN f5
+  (status 0)
+[pmod after] PASS (4 s)
+ALL PASS: pmod before, bringup, spim, v2 demos, pmod after
