@@ -35,7 +35,9 @@ proposed as written.
   needs a settings search like the one that took v2c to fo6, at about
   three hours a run.
 * **Fallback: the same four additions on two cores** (+13.6K µm²,
-  **estimate** 35.5 %), decided at a Dec 6 gate.
+  **estimate** 35.5 %), decided at a Dec 6 gate. It needs its own settings
+  search and receipts; the plan runs its search first (under a day), so it
+  is ready at the gate.
 * **Baseline (harden):** today's RTL on 8x4 routes with room to spare
   (Metal3 45.7 % at global routing, against fo6's 63.9 %), but with fo6's
   settings the slow corner misses 50 MHz by 0.643 ns; 48 MHz is met at
@@ -567,7 +569,10 @@ If the 3-core netlist is not through `release_check.py` by Dec 6, drop the
 third bank and keep everything else: 308,777 µm² synthesized (+13.6K),
 **estimate** 35.5 % utilization, with the baseline's routing margin (Metal3
 45.7 %, no overflow). Every model, firmware and tool change carries over,
-so the fallback loses one engine, not the work.
+so the fallback loses one engine, not the work. It is not free either: the
+untuned 2-core layout misses 50 MHz at the slow corner by 0.643 ns, so it
+gets its own short search and its own receipts, scheduled first (plan,
+week 3).
 
 ### Left out, and why
 
@@ -592,19 +597,26 @@ netlist.
 
 ## Plan to the freeze (2027-01-11)
 
-Nine weeks, for the recommended package. A full harden at 8x4 took 43
-minutes for the 2-core RTL and 3 h 06 min for the 3-core package (`pkg3`;
-runner1, one at a time), so a search of the 25–30 runs t48 needed is three
-to four days of continuous runner time for the package, and under a day for
-the fallback. Weeks run Monday to Sunday.
+Nine weeks, for the recommended package, with the fallback carried along so
+it is ready at the gate. A full harden at 8x4 took 43 minutes for the
+2-core RTL and 3 h 06 min for the 3-core package (`pkg3`). runner1 runs
+one harden at a time, so both searches share it. Both layouts miss 50 MHz
+at the slow corner untuned (two cores −0.643 ns, the package −1.571 ns), so
+**each needs its own settings search and its own receipts** (gate level,
+SDF, equivalence, precheck, `release_check.py`). A search of the 25–30 runs
+t48 needed is under a day for two cores and three to four days of
+continuous runner time for the package. So the 2-core search goes first:
+it is short, and it makes the fallback real before the package's search
+begins. The fallback's RTL is the package's with `PE_NCORES` 2, so it
+exists at the end of week 2. Weeks run Monday to Sunday.
 
 | Week | Dates | Work | Gate at the end of the week |
 |---|---|---|---|
 | 1 | Nov 9–15 | Author picks. The orchestrator allows the `flow/` edits AN needs (`gen_config.py`'s 8x4 corner and 3-bank layout, `fpga_profile.py`'s gate conversion), which RULES.md forbids today. Spec text in `docs/isa.md` for every addition; model, assembler and checker (port the v3 work, add the any-width CRC and the tick counter); model tests | Model suite green; spec reviewed by the verifier |
 | 2 | Nov 16–22 | RTL: `PE_NCORES` 3, the core additions, a new ID value. Lockstep coverage goals per instruction, the 3-core SRAM lockstep in the regression, formal properties (the table read's late write), mutants for each addition. Decide the OCaml port: port the additions, or date its equivalence claim to v2 | Lockstep (2-, 3-, 4-core), formal, mutants green |
-| 3 | Nov 23–29 | Harden settings search at 8x4 (target: 50 MHz at every corner, no exception; else 48 MHz, below). Firmware: `eth10_rx_fcs`, an FCS-appending `eth10_tx`, `usb_enum` with table reads, `usb_enum_ep1`; host tools for three cores | A candidate netlist; firmware on the model and RTL |
-| 4 | Nov 30–Dec 6 | Gate-level functional suite, netlist-to-RTL equivalence, SDF standard and v2 sets at three corners, autonomous USB with delays, precheck, `release_check.py` | **Go / fallback decision** (below) |
-| 5 | Dec 7–13 | KV260 bitstream (3 cores), orchestrator board runs (smoke, USB with Linux, Ethernet); concurrency demo: three protocols at once on model, RTL and FPGA | Board smoke passes |
+| 3 | Nov 23–29 | **Day 1: the fallback's search** (two cores with the additions, about 45 minutes a run; target 50 MHz at every corner, else 48 MHz, below), then its receipts start. **Days 2–7: the package's search** (about three hours a run). The receipts are simulations and checks, not hardens, so they can run beside the one harden. Firmware: `eth10_rx_fcs`, an FCS-appending `eth10_tx`, `usb_enum` with table reads, `usb_enum_ep1`; host tools for three cores | Fallback netlist with its receipts under way; a package candidate; firmware on the model and RTL |
+| 4 | Nov 30–Dec 6 | The package's receipts: gate-level functional suite, netlist-to-RTL equivalence, SDF standard and v2 sets at three corners, autonomous USB with delays, precheck, `release_check.py`. The fallback's receipts finish | **Go / fallback decision** (below): either way a netlist with complete receipts exists |
+| 5 | Dec 7–13 | KV260 bitstream (3 cores, or 2 after a fallback), orchestrator board runs (smoke, USB with Linux, Ethernet); concurrency demo: three protocols at once on model, RTL and FPGA | Board smoke passes |
 | 6 | Dec 14–20 | Write-up: README, summary, physical.md, isa.md §7 defaults, explain-wirelingo.md: `git grep -l -i -E "6x4|two cores"` finds 41 tracked files besides this study's own (38 outside `evidence/`; 23 in `docs/`, README and info.yaml); verifier rounds | Docs verified |
 | 7–8 | Dec 21–Jan 3 | Buffer (holidays), verifier FAILs, re-harden only if a bug is found | — |
 | 9 | Jan 4–10 | Release candidate tag, receipts, record copies (item AL); **freeze Jan 11**; deadline Jan 18 | Freeze |
@@ -621,8 +633,12 @@ tolerance. The orchestrator decides which clock the release claims.
 **The go / fallback gate (Dec 6).** If the 3-core netlist has not passed
 `release_check.py` at 48 MHz or better by then, take the fallback: two
 cores on 8x4 with the same ISA additions, which keeps every firmware and
-tool change and drops only the third bank, and starts from a layout that
-already meets 48 MHz.
+tool change and drops only the third bank. Because its search ran first
+(week 3, day 1) and its receipts ran beside the package's search, it is
+already through `release_check.py` at the gate, so week 5 is not spent
+redoing gate level, SDF, equivalence and precheck. The untuned 2-core
+layout already meets 48 MHz at every corner (base), so the fallback's
+worst case is a 48 MHz release.
 
 ## The KV260 FPGA build
 
