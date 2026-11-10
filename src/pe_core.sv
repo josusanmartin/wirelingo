@@ -1,5 +1,5 @@
 /*
- * protoemu core: one protocol-engine lane. Implements docs/isa.md §4–5.
+ * protoemu core: one protocol-engine lane. Implements docs/isa.md §4–5 (v0.3).
  * SPDX-License-Identifier: Apache-2.0
  */
 `default_nettype none
@@ -62,6 +62,7 @@ module pe_core #(
 
   localparam L_PINS = 4'd4, L_PINDIRS = 4'd5, L_ISR = 4'd6, L_OSR = 4'd7;
   localparam L_STATUS = 4'd9, L_FLAGS = 4'd10, L_PC = 4'd11, L_CRC = 4'd12, L_LINE = 4'd13, L_LR = 4'd14;
+  localparam L_TICKS = 4'd15;
 
   localparam W_PIN1 = 3'd0, W_PIN0 = 3'd1, W_RISE = 3'd2, W_FALL = 3'd3, W_EDGE = 3'd4;
   localparam W_FLAG1 = 3'd5, W_FLAG0 = 3'd6, W_DIFF = 3'd7;
@@ -77,7 +78,8 @@ module pe_core #(
   reg [4:0]  pull_thresh, push_thresh;
   reg [9:0]  entry, wrap_bottom, wrap_top;
   reg [15:0] crc_poly;
-  reg [3:0]  crc_w;
+  reg [15:0] crc_poly_hi;        // POLY_HI (core offset 0x11): POLY[31:16], for widths > 16
+  reg [4:0]  crc_w;              // width - 1 (CRCCTRL {[23], [19:16]})
   reg        in_tap, out_tap;
 
   // ---------------------------------------------------------------- state
@@ -91,8 +93,10 @@ module pe_core #(
   reg [15:0] cnt;
   reg [7:0]  facc;
   reg        halted, fault, stalled;
-  reg [15:0] crc;
+  reg [31:0] crc;
   reg [9:0]  lr;                 // link register: CALL's return address (docs/isa.md §5.2)
+  reg [15:0] tcnt;               // the tick counter, source 15 (docs/isa.md §4.1)
+  reg        tbl_pend;           // a table read last clock: instr is its word, not an instruction
 
   // ---------------------------------------------------------------- FIFOs
   wire        host_push = bus_sel && bus_we && bus_off == 5'h10;
@@ -210,7 +214,8 @@ module pe_core #(
   wire        active  = enable && !restart;
   wire        attempt = active && tick && !halted && !fault && dcnt == 8'd0;
   wire        bank_ok = pc[9:8] == IDX;          // a core runs from its own bank (§3)
-  assign      exec    = attempt && bank_ok;
+  // the clock after a table read is the read's: the fetch port holds its word (§5.2)
+  assign      exec    = attempt && bank_ok && !tbl_pend;
 
   // side-set / delay split
   wire [2:0]  sc    = (side_count > 3'd4) ? 3'd4 : side_count;
@@ -235,8 +240,9 @@ module pe_core #(
       L_STATUS: src_val = {21'd0, status16[10:0]};
       L_FLAGS:  src_val = {24'd0, flags};
       L_PC:     src_val = {22'd0, pc};
-      L_CRC:    src_val = {16'd0, crc};
+      L_CRC:    src_val = crc;
       L_LR:     src_val = {22'd0, lr};
+      L_TICKS:  src_val = {16'd0, tcnt};
       default:  src_val = 32'd0;
     endcase
   end
@@ -282,10 +288,13 @@ module pe_core #(
   wire [1:0]  mop = x[14:13];
   wire [31:0] mov_val = (mop == 2'd1) ? ~src_val : (mop == 2'd2) ? rev32(src_val) : src_val;
 
-  // ALU
-  wire [2:0]  aop = x[18:16];
+  // ALU; CMPW (LDI with [18], §5.2) is a cmp with rd in the ALU's [15:14] and the
+  // immediate {x[17:16], x[13:0]}: the same register selector, a wider immediate
+  wire        is_cmpw = op == OP_LDI && x[18];
+  wire [2:0]  aop = is_cmpw ? 3'd7 : x[18:16];
   wire [15:0] alu_a = rsel(x[15:14], r0, r1, r2, r3);
-  wire [15:0] alu_s = x[13] ? {3'd0, x[12:0]} : rsel(x[1:0], r0, r1, r2, r3);
+  wire [15:0] alu_imm = {is_cmpw ? x[17:16] : 2'd0, x[13] && is_cmpw, x[12:0]};
+  wire [15:0] alu_s = (x[13] || is_cmpw) ? alu_imm : rsel(x[1:0], r0, r1, r2, r3);
   reg  [16:0] alu_res;
   always @(*) begin
     case (aop)
@@ -306,7 +315,7 @@ module pe_core #(
   reg         cond_ok;
   always @(*) begin
     case (cond)
-      4'd0:  cond_ok = 1'b1;
+      4'd0:  cond_ok = jsel != 5'd1 || !t;      // sel 1: `!t` (§5.2); else always
       4'd1:  cond_ok = jr == 16'd0;
       4'd2:  cond_ok = jr != 16'd0;
       4'd3:  cond_ok = jr != 16'd0;
@@ -343,12 +352,13 @@ module pe_core #(
   wire [15:0] w_tr = rsel(w_treg, r0, r1, r2, r3);
   wire        w_timeout = !wbase && w_to && w_tr == 16'd0;
 
-  // CRC tap (docs/isa.md §4.5): 1-bit IN/OUT feed one bit; MOV/OUT to CRC set it
-  wire [15:0] crc_mask = 16'hFFFF >> (4'd15 - crc_w);
+  // CRC tap (docs/isa.md §4.5): any width 1..32; 1-bit IN/OUT feed one bit; MOV/OUT to CRC set it
+  wire [31:0] crc_mask = 32'hFFFF_FFFF >> (5'd31 - crc_w);
+  wire [31:0] crc_poly_m = {crc_poly_hi, crc_poly} & crc_mask;
   reg         crc_feed, crc_bit, crc_set;
-  reg  [15:0] crc_set_val;
+  reg  [31:0] crc_set_val;
   wire        crc_fb = crc[crc_w] ^ crc_bit;
-  wire [15:0] crc_fed = ((crc << 1) & crc_mask) ^ (crc_fb ? (crc_poly & crc_mask) : 16'd0);
+  wire [31:0] crc_fed = ((crc << 1) & crc_mask) ^ (crc_fb ? crc_poly_m : 32'd0);
 
   // the PC after a completed instruction that doesn't jump (also CALL's link)
   wire [9:0]  pc_seq = (pc == wrap_top) ? wrap_bottom : (pc + 10'd1);
@@ -409,7 +419,7 @@ module pe_core #(
     crc_feed = 1'b0;
     crc_bit = 1'b0;
     crc_set = 1'b0;
-    crc_set_val = 16'd0;
+    crc_set_val = 32'd0;
     lr_we = 1'b0;
     lr_nv = pc_seq;
 
@@ -498,13 +508,13 @@ module pe_core #(
               isr_nv = out_data;
               isr_cnt_nv = n;
             end
-            L_PC: begin
+            L_PC: begin                           // bank-relative (§5.1)
               jump = 1'b1;
-              jump_target = out_data[9:0];
+              jump_target = {pc[9:8], out_data[7:0]};
             end
             L_CRC: begin
               crc_set = 1'b1;
-              crc_set_val = out_data[15:0];
+              crc_set_val = out_data;
             end
             default: ;
           endcase
@@ -547,7 +557,12 @@ module pe_core #(
       end
 
       OP_MOV: begin
-        case (dst)
+        if (mop == 2'd3) begin
+          // table read (§5.2): the word's address goes out on MOV PC's jump path, the
+          // PC continues at pc_seq (below), and the word lands in the OSR next clock
+          jump = 1'b1;
+          jump_target = {pc[9:8], mov_val[7:0]};
+        end else case (dst)
           4'd0, 4'd1, 4'd2, 4'd3: begin
             reg_we = 1'b1;
             reg_sel = dst[1:0];
@@ -565,13 +580,13 @@ module pe_core #(
             osr_nv = mov_val;
             osr_cnt_nv = 6'd0;
           end
-          L_PC: begin
+          L_PC: begin                             // bank-relative (§5.1)
             jump = 1'b1;
-            jump_target = mov_val[9:0];
+            jump_target = {pc[9:8], mov_val[7:0]};
           end
           L_CRC: begin
             crc_set = 1'b1;
-            crc_set_val = mov_val[15:0];
+            crc_set_val = mov_val;
           end
           L_LR: begin
             lr_we = 1'b1;
@@ -590,9 +605,12 @@ module pe_core #(
       end
 
       OP_LDI: begin
-        reg_we = 1'b1;
-        reg_sel = x[17:16];
-        reg_val = x[15:0];
+        if (x[18]) z_we = 1'b1;                     // CMPW: flags only
+        else begin
+          reg_we = 1'b1;
+          reg_sel = x[17:16];
+          reg_val = x[15:0];
+        end
       end
 
       OP_ALU: begin
@@ -617,7 +635,8 @@ module pe_core #(
       end
 
       OP_FLAG: begin
-        if (x[18]) fclr = 8'd1 << x[2:0];
+        // [17]: toggle, as a set or a clear of the flag as this core sees it (§5.2)
+        if (x[17] ? flags[x[2:0]] : x[18]) fclr = 8'd1 << x[2:0];
         else fset = 8'd1 << x[2:0];
       end
 
@@ -661,13 +680,16 @@ module pe_core #(
   assign fetch_addr = restart ? entry :
                       host_pc_w ? bus_wdata[9:0] :
                       commit ? (jump ? jump_target : pc_seq) : pc;
+  // a table read fetches its word but the PC moves on as for any MOV; a host PC
+  // write in the same clock takes the fetch port and cancels the read (§5.3)
+  wire        tbl_issue = commit && op == OP_MOV && mop == 2'd3 && !host_pc_w;
 
   // ---------------------------------------------------------------- bus read
   // Configuration registers (0x00-0x06) are write-only: their read mux was a
   // third of the chip's global-routing overflow (docs/physical.md).
   always @(*) begin
     case (bus_off)
-      5'h07: bus_rdata = {16'd0, crc};
+      5'h07: bus_rdata = crc;
       5'h08: bus_rdata = {22'd0, pc};
       5'h09: bus_rdata = {16'd0, status16};
       5'h0A: bus_rdata = {16'd0, r0};
@@ -720,8 +742,14 @@ module pe_core #(
     else {wrap_bottom, wrap_top} <= {bus_wdata[9:0], bus_wdata[25:16]};
 
   always @(posedge cfg_gclk[6] or negedge rst_n)
-    if (!rst_n) {crc_poly, crc_w, in_tap, out_tap} <= 22'd0;
-    else {crc_poly, crc_w, in_tap, out_tap} <= {bus_wdata[15:0], bus_wdata[19:16], bus_wdata[20], bus_wdata[21]};
+    if (!rst_n) {crc_poly, crc_w, in_tap, out_tap} <= 23'd0;
+    else {crc_poly, crc_w, in_tap, out_tap} <= {bus_wdata[15:0], bus_wdata[23], bus_wdata[19:16], bus_wdata[20], bus_wdata[21]};
+
+  // POLY_HI: an enable flop rather than an eighth clock gate, so the FPGA
+  // profile's conversion of the seven gated registers above stays as it is
+  always @(posedge clk or negedge rst_n)
+    if (!rst_n) crc_poly_hi <= 16'd0;
+    else if (bus_sel && bus_we && bus_off == 5'h11) crc_poly_hi <= bus_wdata[15:0];
 
   // ---------------------------------------------------------------- sequential
   always @(posedge clk or negedge rst_n) begin
@@ -747,10 +775,19 @@ module pe_core #(
       halted <= 1'b0;
       fault <= 1'b0;
       stalled <= 1'b0;
-      crc <= 16'd0;
+      crc <= 32'd0;
       lr <= 10'd0;
+      tcnt <= 16'd0;
+      tbl_pend <= 1'b0;
     end else begin
-      pc <= fetch_addr;
+      pc <= tbl_issue ? pc_seq : fetch_addr;
+      tbl_pend <= tbl_issue;
+      // the table word (§5.2), straight from the bank's output: first here, so a
+      // restart (and nothing else, the core doesn't execute this clock) overrides it
+      if (tbl_pend) begin
+        osr <= instr;
+        osr_cnt <= 6'd0;
+      end
 
       if (restart) begin
         isr <= 32'd0;
@@ -769,9 +806,13 @@ module pe_core #(
         halted <= 1'b0;
         fault <= 1'b0;
         stalled <= 1'b0;
+        tcnt <= 16'd0;
       end else if (active) begin
         cnt <= cnt_next;
-        if (tick) facc <= fsum[7:0];
+        if (tick) begin
+          facc <= fsum[7:0];
+          tcnt <= tcnt + 16'd1;
+        end
 
         if (in_wait) begin
           wevent <= edge_done;
@@ -779,7 +820,9 @@ module pe_core #(
         end
 
         if (tick && !halted && !fault) begin
-          if (dcnt != 8'd0) begin
+          if (tbl_pend) begin
+            // the table read's tick: no instruction, no delay countdown
+          end else if (dcnt != 8'd0) begin
             dcnt <= dcnt - 8'd1;
           end else if (!bank_ok) begin
             fault <= 1'b1;
@@ -831,7 +874,7 @@ module pe_core #(
           5'h0B: r1 <= bus_wdata[15:0];
           5'h0C: r2 <= bus_wdata[15:0];
           5'h0D: r3 <= bus_wdata[15:0];
-          5'h07: crc <= bus_wdata[15:0];
+          5'h07: crc <= {crc_w[4] ? bus_wdata[31:16] : 16'd0, bus_wdata[15:0]};   // v0.2: 16 bits
           default: ;
         endcase
       end
@@ -858,6 +901,8 @@ module pe_core #(
       // side effects only on an executing tick
       if (!exec) assert (wr_out_en == 32'd0 && wr_oe_en == 32'd0 && flag_set == 8'd0 && flag_clr == 8'd0);
       if (exec) assert (tick && !halted && dcnt == 8'd0 && bank_ok);
+      // the clock after a table read never executes its word (§5.2)
+      if (tbl_pend) assert (!exec && !commit);
     end
   end
 
@@ -869,7 +914,12 @@ module pe_core #(
   reg [15:0] p_cnt, p_r0, p_r1, p_r2, p_r3;
   reg        p_in_wait, p_link;
   reg [9:0]  p_lr, p_pc_seq;
+  reg        p_tbl_issue, p_tbl_pend, p_active, p_tick;
+  reg [31:0] p_instr;
+  reg [15:0] p_tcnt;
   always @(posedge clk) begin
+    p_tbl_issue <= tbl_issue; p_tbl_pend <= tbl_pend; p_instr <= instr;
+    p_active <= active; p_tick <= tick; p_tcnt <= tcnt;
     p_link <= commit && op == OP_CALL && cond_ok; p_lr <= lr; p_pc_seq <= pc_seq;
     p_rst_n <= rst_n; p_halted <= halted; p_fault <= fault; p_restart <= restart;
     p_host_pc_w <= host_pc_w; p_commit <= commit; p_enable <= enable; p_host_w <= host_w;
@@ -888,12 +938,23 @@ module pe_core #(
       // and restart don't touch it), and a taken CALL links the next PC
       if (!p_commit) assert (lr == p_lr);
       if (p_link) assert (lr == p_pc_seq);
-      // a disabled core's execution state is frozen (host writes aside)
+      // a disabled core's execution state is frozen (host writes aside), except
+      // a table read's word, which lands in the clock after the read (§5.2)
       if (!p_enable && !p_restart && !p_host_w) begin
-        assert (pc == p_pc && isr == p_isr && osr == p_osr);
-        assert (dcnt == p_dcnt && cnt == p_cnt && in_wait == p_in_wait);
+        assert (pc == p_pc && isr == p_isr && (osr == p_osr || p_tbl_pend));
+        assert (dcnt == p_dcnt && cnt == p_cnt && in_wait == p_in_wait && tcnt == p_tcnt);
         assert (r0 == p_r0 && r1 == p_r1 && r2 == p_r2 && r3 == p_r3);
       end
+      // table read: the word follows its read, the PC moved on as for a MOV, and
+      // the word, from the bank's output, is in the OSR one clock later unless a
+      // restart came then
+      if (p_tbl_issue) assert (tbl_pend && pc == p_pc_seq);
+      if (tbl_pend) assert (p_tbl_issue);
+      if (p_tbl_pend && !p_restart) assert (osr == p_instr && osr_cnt == 6'd0);
+      // the tick counter counts the ticks of an active core; restart clears it
+      if (p_restart) assert (tcnt == 16'd0);
+      else if (p_active) assert (tcnt == p_tcnt + {15'd0, p_tick});
+      else assert (tcnt == p_tcnt);
     end
   end
 `endif
