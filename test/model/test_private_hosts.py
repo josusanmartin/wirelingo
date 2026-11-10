@@ -68,9 +68,11 @@ def tailnet(text):
     return any(m.group() not in CLASS_ONLY for m in TAILNET.finditer(text.lower()))
 
 
-def python_constant_lines(source):
+def python_constant_lines(source, match=None):
     """First line of each str or bytes constant in Python source that holds a
-    tailnet name (none if the file does not parse)."""
+    tailnet name, or whatever match(bytes) finds (test_home_paths.py); none if
+    the file does not parse."""
+    match = match or tailnet
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")    # invalid escapes in a file under test
         try:
@@ -81,7 +83,7 @@ def python_constant_lines(source):
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
             value = node.value if isinstance(node.value, bytes) else node.value.encode("utf-8", "surrogatepass")
-            if tailnet(value):
+            if match(value):
                 lines.add(node.lineno)
     return lines
 

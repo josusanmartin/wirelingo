@@ -52,6 +52,8 @@ def ETH(selection):
 HW_TESTS = pytest("test/model/test_hw_day.py test/model/test_fabric_guard.py")
 FAB = pytest("test/model/test_fabric_ping.py test/model/test_fabric_guard.py")
 PRIVACY_SCAN = pytest("test/model/test_private_hosts.py -k no_tailnet")
+HOME_SCAN = pytest("test/model/test_home_paths.py -k no_home")
+HOME_SELF = pytest("test/model/test_home_paths.py -k 'planted or allowlist'")
 
 
 def REPLY(selection):
@@ -561,6 +563,17 @@ MUTANTS = {
         pytest("test/model/test_private_hosts.py -k planted")),
     "privacy-scan-v6-prefix-only": ("test/model/test_private_hosts.py",
         '[:][0-9a-f:]*(?:/[0-9]+)?")', '[:]")', pytest("test/model/test_private_hosts.py -k planted")),
+    # a home path in a tracked file (test_home_paths.py; made-up user, split with + as above):
+    # a checkout's path as install.sh's default, a scratch path in a verbatim-looking record,
+    # and the scan weakened (the dashed form dropped; any /home name allowed)
+    "privacy-home-path-default": ("fpga/kv260/install.sh", 'out=${OUT_DIR:-$here/out}',
+        'out=${OUT_DIR:-/ho' + 'me/jdoe/dev/protoemu/fpga/kv260/out}', HOME_SCAN),
+    "privacy-home-scratch-in-readme": ("fpga/kv260/README.md", "written `<scratch>/out3c`",
+        "written `/tmp/cla" + "ude-1000/-ho" + "me-jdoe/0f1e/scratchpad/out3c`", HOME_SCAN),
+    "privacy-home-scan-no-dashed": ("test/model/test_home_paths.py",
+        '                  + rb"|(?<![A-Za-z0-9])-ho" rb"me-([A-Za-z0-9_.]+)-"\n', '', HOME_SELF),
+    "privacy-home-scan-any-name": ("test/model/test_home_paths.py", "            if name in ALLOWED:",
+        "            if name:", HOME_SELF),
     # any other default host: install.sh must still refuse with no host given
     "privacy-kria-other-default": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
         'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.local}}', pytest("test/model/test_private_hosts.py -k install")),
