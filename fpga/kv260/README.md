@@ -325,8 +325,8 @@ log:
 * PMOD0 and PMOD1 `00000000` before and after
 * bringup: identity matches `expected_build.json`; clock 49.9983 MHz; ID
   `0x50453303` (v0.3, 3 cores, 3 banks); 200 register rounds on all 3
-  cores; pins; the UART ring 0 -> 1 -> 2 -> 0 at 115200; uart_tx_pin and
-  uart_rx_pin at 9600; quad (ID `0x50453303`); crc32 on all 3 cores at once,
+  cores; pins; the UART ring 0 -> 1 -> 2 -> 0 (the log shows the three pairs and their messages; the rate, 115200, is `bringup_kria.py`'s `step_loopback`, not in the log); uart_tx_pin and
+  uart_rx_pin (the log gives 9600 baud for uart_tx_pin; uart_rx_pin is 9600 too, in the code); quad (ID `0x50453303`); crc32 on all 3 cores at once,
   CRC `0xDBA5645A`, `0x4F54EE58`, `0x981ADEAB`, each the expected (zlib-checked)
   value
 * spim_test: all 12 configurations PASS, R0..R3 on 3 cores; quad at

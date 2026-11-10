@@ -6,6 +6,7 @@ command sequence against a stand-in Kria. Nothing here touches a board."""
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import types
@@ -335,19 +336,35 @@ def test_build_sh_stages_the_asked_core_count(tmp_path, argv, cores, clk_div):
     assert not any(ln.startswith("rsync") and "protoemu.bit.bin" in ln for ln in log.splitlines())   # FETCH=0
 
 
+def leaves_cores_to_default(line):
+    """A build.sh command line without --cores: a clk_div right after build.sh, a line that
+    starts with the command (a code block), or one that also installs."""
+    if "build.sh" not in line or "--cores" in line:
+        return False
+    s = line.strip()
+    return bool(re.search(r"build\.sh\s+\d", line) or re.match(r"(\S+=\S+\s+)*[\w./]*build\.sh(\s|$)", s)
+                or "install.sh" in line)
+
+
 def test_documented_build_commands_name_the_core_count():
     """Verifier 076 finding 2: build.sh's default is the 3-core package now, so every
     build.sh command the docs give says --cores (records of past builds aside: they
     are quoted as they were run, before the option existed)."""
-    import re
     past = ("REMOTE_DIR=protoemu-flow/fpga-kusb",)         # the 2026-10-07 48 MHz build, as run
     found = []
     for doc in (ROOT / "fpga/kv260/README.md", ROOT / "docs/hardware-day.md"):
-        for n, line in enumerate(doc.read_text().splitlines(), 1):
-            # a clk_div straight after build.sh: the core count left to the (now 3-core) default
-            if re.search(r"build\.sh\s+\d", line) and not any(p in line for p in past):
-                found.append(f"{doc.name}:{n}: {line.strip()}")
+        found += [f"{doc.name}:{n}: {line.strip()}" for n, line in enumerate(doc.read_text().splitlines(), 1)
+                  if leaves_cores_to_default(line) and not any(p in line for p in past)]
     assert not found, found
+    # not vacuous: 076's cases, and prose that only names the tool
+    for bad in ("    fpga/kv260/build.sh              # stage, rsync to runner1",
+                "    fpga/kv260/build.sh 25 && APP=protoemu48 fpga/kv260/install.sh",
+                "`PMOD_DRIVE=12 fpga/kv260/build.sh 24` would make it",
+                "build.sh && APP=protoemu40 install.sh"):
+        assert leaves_cores_to_default(bad), bad
+    for ok in ("`build.sh` runs `build_id.py`, which writes", "    fpga/kv260/build.sh --cores 2    # 2-core",
+               "OUT_DIR=out3c fpga/kv260/build.sh --cores 3"):
+        assert not leaves_cores_to_default(ok), ok
     assert "build.sh --cores 2 25 && APP=protoemu48" in (ROOT / "fpga/kv260/README.md").read_text()
 
 
