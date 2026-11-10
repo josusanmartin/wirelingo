@@ -226,4 +226,37 @@ def test_tx_fcs_word_count():
     tx = asm.assemble((FW / "eth10_tx_fcs.pasm").read_text(), {"F_GO": F_GO})
     base = asm.assemble((FW / "eth10_tx.pasm").read_text(), {"F_GO": F_GO})
     print(f"eth10_rx_fcs {len(rx.words)} words, eth10_tx_fcs {len(tx.words)} (eth10_tx {len(base.words)})")
-    assert len(rx.words) == 27 and len(tx.words) <= 64
+    assert len(rx.words) == 27 and len(tx.words) == 53
+
+
+def _next_link_pulse_ms(ln, since, limit_ms=30):
+    """Step the line until the next link pulse (idle, then H) after trace index
+    `since`; its time from `since` in ms (25 ns ticks: 40 MHz, CLKDIV 1), or None."""
+    ticks_per_ms = 40_000
+    i = since
+    while True:
+        while i + 1 < len(ln.trace):
+            if ln.trace[i] == test_eth10.IDLE and ln.trace[i + 1] == test_eth10.H:
+                return (i + 1 - since) / ticks_per_ms
+            i += 1
+        if len(ln.trace) - since > limit_ms * ticks_per_ms:
+            return None
+        ln.step(256)
+
+
+@pytest.mark.parametrize("fcs_in_engine", [False, True])
+def test_link_pulse_within_8_to_24_ms_after_a_frame(fcs_in_engine):
+    """802.3 clause 14: while idle, normal link pulses every 16 +- 8 ms. After a
+    frame the first one must come 8..24 ms after its end. eth10_tx_fcs reuses
+    r1, the pulse count, for the FCS bits and reloads it in TP_IDL (without the
+    reload the next pulse came 104.86 ms later). eth10_tx keeps its count
+    across the frame, so it is checked only against 24 ms."""
+    ln = FcsLine() if fcs_in_engine else test_eth10.Line()
+    ln.step(100)
+    fr = frame(46)
+    start = ln.send(fr[:-4] if fcs_in_engine else fr)
+    _, _, end = test_eth10.decode(ln.trace, start)       # the end of TP_IDL
+    ms = _next_link_pulse_ms(ln, end)
+    assert ms is not None, "no link pulse within 30 ms of the frame"
+    assert ms <= 24 and (ms >= 8 or not fcs_in_engine), ms
+    print(f"{'eth10_tx_fcs' if fcs_in_engine else 'eth10_tx'}: frame end -> link pulse {ms:.2f} ms")

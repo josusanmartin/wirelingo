@@ -190,6 +190,11 @@ def test_deadlines_static_and_sound():
     assert not chk.errors
     assert st["in_ta_any"].status == "PASS" and st["data_ta"].status == "PASS"
     assert st["ep1_ta"].status == "PASS (conditional)" and st["rx_bit"].status == "PASS (conditional)"
+    # Endpoint 1 has one clock of static margin at full speed (max 26): pin the
+    # bounds, so a change that costs it a clock fails here instead of eroding
+    # it silently (verifier 072, finding 2). A deliberate change updates them.
+    assert st["ep1_ta"].total() == (19, 25) and st["in_ta_any"].total() == (10, 25)
+    assert st["ep1_ta"].deadline.max == 26
     mh = ModelHost()
     mh.apply(usbenum.load_writes(program("full"), "full"))
     tr = timing.Tracer(mh.chip, 0, 0)

@@ -20,7 +20,9 @@
 ; first bit; the FCS blocks send each bit inverted (`fone` for a CRC 0, `fzero`
 ; for a CRC 1), so no tick is needed for the complement. r1 counts the 32 FCS
 ; bits (`jmp r1--`: test and count in one tick); its free tick is a second jump
-; that closes the FCS loop (the wrap closes the data loop).
+; that closes the FCS loop (the wrap closes the data loop). r1 is also the idle
+; loop's link-pulse count, so TP_IDL reloads it: the first link pulse after a
+; frame comes 16 ms after its end (802.3: 16 +- 8 ms).
 .program eth10_tx_fcs
 .side_set 2
 .shift_out right autopull 32
@@ -87,8 +89,9 @@ fz2:
     jmp fone                  side 2       ; L
 fz_z:
     jmp fzero                 side 2       ; L
-tp_idl:
-    nop                       side 1 [9]
+tp_idl:                                    ; TP_IDL, 10 ticks H, and the link-pulse count
+    ldi r1, 9999              side 1       ; back at 16 ms (the FCS count left r1 at 0xFFFF:
+    nop                       side 1 [8]   ; without this the next pulse came 105 ms later)
     flag clr F_GO             side 0
     jmp !osre, flush          side 0       ; (the FCS used the whole OSR: never taken)
     jmp idle_wait             side 0
