@@ -48,21 +48,6 @@ def random_instr(rng, bank, bank_words, profile="mixed"):
     sd = _sd(rng)
     if op in (isa.OP_JMP, isa.OP_CALL):
         x = (rng.randrange(16) << 15) | (rng.randrange(32) << 10) | _target(rng, bank, bank_words)
-        if rng.random() < 0.12:
-            x = (isa.C_ALWAYS << 15) | (isa.XC_NT << 10) | (x & 0x3FF)      # v0.3 `!t`
-    elif op == isa.OP_MOV and rng.random() < 0.12:
-        # v0.3 table read: mostly a register (small values: near the program), any dst
-        src = rng.randrange(4) if rng.random() < 0.8 else rng.randrange(16)
-        dst = isa.OSR if rng.random() < 0.85 else rng.randrange(16)
-        x = (dst << 15) | (isa.M_TBL << 13) | (src << 9)
-    elif op in (isa.OP_MOV, isa.OP_IN) and rng.random() < 0.05:
-        x = ((rng.randrange(4) << 15) | (isa.TICKS << 9)) if op == isa.OP_MOV else \
-            (isa.TICKS << 15) | rng.randrange(32)                           # v0.3 tick counter
-    elif op == isa.OP_LDI and rng.random() < 0.3:
-        imm = rng.randrange(12) if rng.random() < 0.5 else rng.getrandbits(16)
-        x = isa.cmpw_fields(rng.randrange(4), imm)                          # v0.3 CMPW
-    elif op == isa.OP_FLAG and rng.random() < 0.3:
-        x = isa.FLAG_TOG | (rng.getrandbits(1) << 18) | rng.randrange(8)    # v0.3 toggle
     elif op == isa.OP_MOV and rng.random() < 0.25:
         # the link register: RET (mov pc, lr), saving and restoring it
         x = rng.choice([(isa.PC << 15) | (isa.LR << 9), (rng.randrange(4) << 15) | (isa.LR << 9),
@@ -97,11 +82,40 @@ def random_instr(rng, bank, bank_words, profile="mixed"):
     return isa.enc(op, sd, x)
 
 
-def random_program(rng, bank, bank_words, profile="mixed"):
-    """One random instruction word for `bank` (call once per word)."""
+def v03_variant(rng, word):
+    """Sometimes the v0.3 form of a word of the same opcode (docs/isa.md §5.2):
+    `!t`, a table read, a ticks source, CMPW, a flag toggle. Its own random
+    stream, so the v0.2 programs a seed generates stay what they were."""
+    op, sd, x = isa.fields(word)
+    if rng.random() >= 0.15:
+        return word
+    if op in (isa.OP_JMP, isa.OP_CALL):
+        x = (isa.C_ALWAYS << 15) | (isa.XC_NT << 10) | (x & 0x3FF)
+    elif op == isa.OP_MOV and rng.random() < 0.7:
+        src = rng.randrange(4) if rng.random() < 0.8 else rng.randrange(16)   # mostly a register
+        dst = isa.OSR if rng.random() < 0.85 else rng.randrange(16)          # others behave as OSR
+        x = (dst << 15) | (isa.M_TBL << 13) | (src << 9)
+    elif op == isa.OP_MOV:
+        x = (x & ~(0xF << 9)) | (isa.TICKS << 9)
+    elif op == isa.OP_IN:
+        x = (isa.TICKS << 15) | (x & 31)
+    elif op == isa.OP_LDI:
+        imm = rng.randrange(12) if rng.random() < 0.6 else rng.getrandbits(16)  # registers are mostly small
+        x = isa.cmpw_fields(rng.randrange(4), imm)
+    elif op == isa.OP_FLAG:
+        x = isa.FLAG_TOG | (x & (1 << 18)) | (x & 7)
+    else:
+        return word
+    return isa.enc(op, sd, x)
+
+
+def random_program(rng, bank, bank_words, profile="mixed", v03=None):
+    """One random instruction word for `bank` (call once per word); with `v03` (a
+    random.Random of its own), some words take their v0.3 forms."""
     if rng.random() < 0.02:
         return rng.getrandbits(32)  # completely random word
-    return random_instr(rng, bank, bank_words, profile)
+    word = random_instr(rng, bank, bank_words, profile)
+    return v03_variant(v03, word) if v03 is not None else word
 
 
 def random_config_writes(rng, bank_words):

@@ -233,10 +233,11 @@ async def test_random_lockstep(dut):
             h.stats[k] = h.stats.get(k, 0) + n
         await h.reset()
         # programs + config, all while cores are disabled (bank b is core b's)
+        v03 = random.Random(seed + 0x3C30)                # the v0.3 forms: their own stream
         for b in range(4):
             profile = random_profile(rng)
             for w in range(BANK_WORDS):
-                word = random_program(rng, b, BANK_WORDS, profile)
+                word = random_program(rng, b, BANK_WORDS, profile, v03)
                 await h.write((b << 8) | w, word)
         for addr, data in random_config_writes(rng, BANK_WORDS):
             await h.write(addr, data)
@@ -347,7 +348,7 @@ def coverage_goals():
         "fifo:clear_nonempty", "fifo:join_move",
         "ctrl:restart_mid_instruction", "core:bank_fault",
         # v0.3 (docs/isa.md §5.2); the table read's rare corners: test_v03_corners
-        "table:read", "table:extra_tick", "cmpw:eq", "cmpw:lt", "cmpw:gt",
+        "table:read", "table:extra_tick", "cmpw:lt", "cmpw:gt",           # cmpw:eq: test_v03_corners
         "jmp:not_t_taken", "jmp:not_t_fallthrough", "flag:tog_set", "flag:tog_clear", "ticks:read",
         "line:out_entry", "line:tx_bit", "line:tx_stuff", "line:tx_manchester_half", "line:tx_frame_end",
         "line:rx_bit", "line:rx_stuff", "line:rx_frame_end", "line:in_bits", "line:in_frame_end",
@@ -602,6 +603,9 @@ async def test_v03_corners(dut):
     """)]
     divs = [1 << 8, (1 << 8) | 0x40, 2 << 8, 1 << 8]
     cores = list(range(min(NCORES, NBANKS)))
+    for b in range(NBANKS):                       # the SRAM keeps the last test's words:
+        for w in range(BANK_WORDS):               # a table read beyond the program must
+            await h.write((b << 8) | w, 0)        # see the model's (r0 is kept on restart)
     for c in cores:
         for addr, data in host.load_program(c, progs[min(c, 1)], c * 256, profile=prof, clkdiv=divs[c]):
             await h.write(addr, data)
