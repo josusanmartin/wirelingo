@@ -147,7 +147,7 @@ async def test_generated_uart_virtual_loopback(dut):
     bundle = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bundle)
     await spi.write(sim.A_CTRL, [3 << 16])
-    await spi.apply(host.pin_owner_writes({24: 0}))
+    await spi.apply(host.pin_owner_writes({24: 0}, profile=PROFILE))
     for image in (bundle.UART_RX_V24, bundle.UART_TX_V24):
         await spi.write(image["base"], image["words"])
         settings = [image[k] for k in ("clkdiv", "pinctrl0", "pinctrl1", "shiftctrl", "base", "wrap")]
@@ -367,7 +367,7 @@ async def test_spi_master(dut):
     pin {MOSI}, lo
     halt
 """)
-    await spi.apply(host.pin_owner_writes({SCK: core(2), MOSI: core(2), MISO: core(2)}))
+    await spi.apply(host.pin_owner_writes({SCK: core(2), MOSI: core(2), MISO: core(2)}, profile=PROFILE))
     await run_program(spi, core(2), pro)
     await ClockCycles(dut.clk, 20)
     await spi.write(sim.A_CTRL, [0])
@@ -398,7 +398,7 @@ async def test_spi_master_fast(dut):
     spi = await setup(dut)
     SCK, MOSI, MISO = UIO(2), UIO(3), UIO(4)
     c = core(2)
-    await spi.apply(host.pin_owner_writes({SCK: c, MOSI: c, MISO: c}))
+    await spi.apply(host.pin_owner_writes({SCK: c, MOSI: c, MISO: c}, profile=PROFILE))
     await run_program(spi, c, asm.assemble(f"pin {SCK}, lo\npin {MOSI}, lo\nhalt"))
     await ClockCycles(dut.clk, 20)
     tx, resp = [0xA5, 0x0F, 0xFF, 0x00, 0x3C], [0xC3, 0x5A, 0x01, 0x80, 0xE7]
@@ -552,7 +552,7 @@ async def test_i2c_master(dut):
     dut.pull_up.value = 0b11
     await spi.write(sim.A_POUT, [0b11])  # released
     await spi.write(sim.A_OD, [0b11])
-    await spi.apply(host.pin_owner_writes({SDA: core(3), SCL: core(3)}))
+    await spi.apply(host.pin_owner_writes({SDA: core(3), SCL: core(3)}, profile=PROFILE))
     eeprom = I2cEeprom(dut, SDA, SCL, stretch=int(os.environ.get("I2C_STRETCH", "40")))
     await run_program(spi, core(3), prog, out_pins=(SDA, 1), in_pins=SDA, clkdiv=4 << 8)
     if os.environ.get("TRACE"):
@@ -626,7 +626,7 @@ async def test_i2c_master_bus_fault(dut):
     dut.pull_up.value = 0b11
     await spi.write(sim.A_POUT, [0b11])
     await spi.write(sim.A_OD, [0b11])
-    await spi.apply(host.pin_owner_writes({SDA: core(3), SCL: core(3)}))
+    await spi.apply(host.pin_owner_writes({SDA: core(3), SCL: core(3)}, profile=PROFILE))
     bus = OdBus([SDA, SCL])                   # the EEPROM and a stuck-SDA driver, wired-AND
     eeprom = BusEeprom(dut, bus, SDA, SCL)
     await run_program(spi, core(3), prog, out_pins=(SDA, 1), in_pins=SDA, clkdiv=4 << 8)
@@ -1070,7 +1070,7 @@ async def test_usb_ls_device(dut):
     dut.pull_up.value = 0b10  # D- pull-up: J when idle
     rx = load_fw("usb_ls_rx", **usbdev.defines())
     tx = load_fw("usb_ls_tx", **usbdev.defines())
-    await spi.apply(host.pin_owner_writes({0: 1, 1: 1}))
+    await spi.apply(host.pin_owner_writes({0: 1, 1: 1}, profile=PROFILE))
     await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [usbdev.CRCCTRL])
     await run_program(spi, 0, rx, clkdiv=1 << 8)
     await run_program(spi, 1, tx, out_pins=(0, 2), clkdiv=1 << 8)
@@ -2217,11 +2217,11 @@ async def test_usb_concurrent_service(dut):
         rx = load_fw("usb_ls_rx" if variant == "two-core" else "usb_ls_dev", **usbdev.defines())
         await spi.write(sim.core_reg(0, sim.C_CRCCTRL), [usbdev.CRCCTRL])
         if variant == "two-core":
-            await spi.apply(host.pin_owner_writes({0: 1, 1: 1}))
+            await spi.apply(host.pin_owner_writes({0: 1, 1: 1}, profile=PROFILE))
             await run_program(spi, 1, load_fw("usb_ls_tx", **usbdev.defines()), out_pins=(0, 2))
             tx = 1
         else:
-            await spi.apply(host.pin_owner_writes({0: 0, 1: 0}))
+            await spi.apply(host.pin_owner_writes({0: 0, 1: 0}, profile=PROFILE))
             await spi.write(sim.A_LINEDIV, [(32 << 16) | (32 << 8)])
             await spi.write(sim.A_LINEPINS, [0])
             await spi.write(sim.A_LINECFG, [0x49F3])
