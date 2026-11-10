@@ -40,6 +40,10 @@ grep -q '^8x4: "0 0 1724.16 710.64"' "$TT/tech/ihp-sg13cmos5l/tile_sizes.yaml" \
 if [ -n "$(git -C "$REPO" status --porcelain)" ]; then
   echo "source tree is dirty: commit what you want hardened (a run is a commit)"; exit 2
 fi
+if grep -q '^TILES = ' "$REPO/flow/gen_config.py"; then
+  echo "flow/ supports 8x4 at this commit (gen_config.py reads info.yaml's tile, --layout spread):"
+  echo "use flow/harden.sh; this wrapper reproduces the study's runs from its own commits (6f8242f)"; exit 2
+fi
 
 git -C "$REPO" worktree add -q --detach "$W" HEAD
 cd "$W"
