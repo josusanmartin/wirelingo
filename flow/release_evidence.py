@@ -113,8 +113,10 @@ def parse_args(argv=None):
 
 def slow_period(mhz):
     """The slow corner's clock period for a release at `mhz` there: 1000/mhz ns
-    rounded down to the picosecond (48 MHz: 20.833 ns), never slower than claimed."""
-    return math.floor(1000 / mhz * 1000 + 1e-9) / 1000
+    rounded down to an even number of picoseconds (48 MHz: 20.832 ns), so never
+    slower than claimed, and a period the testbench's cocotb Clock can halve at
+    the simulators' 1 ps precision (20.833 ns is refused: "Bad `period`")."""
+    return math.floor(1000 / mhz * 1000 / 2 + 1e-9) * 2 / 1000
 
 
 def default_paths(a, rev, now):
