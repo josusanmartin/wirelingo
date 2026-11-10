@@ -354,7 +354,7 @@ def main():
     spim.select(fabric=True)
     pe = board.protoemu()
     pe.transport = spim
-    if pe.read(sim.A_ID) != sim.ID_VALUE:
+    if not sim.known_id(pe.read(sim.A_ID)):
         sys.exit("FAIL: chip ID over the fabric master")
 
     if a.dry_run:

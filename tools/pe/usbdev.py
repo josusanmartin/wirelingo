@@ -82,7 +82,10 @@ def filter_write(rx_prog, rx_base, addr, endp=0):
     else:
         a = rx_base + rx_prog.labels["filter"]
         word = rx_prog.relocate(rx_base)[rx_prog.labels["filter"]]
-    return a, (word & ~0xFFFF) | usb.token_filter(addr, endp)
+    f = usb.token_filter(addr, endp)
+    if word >> 27 == 8 and word & (1 << 18):    # a v0.3 CMPW: imm16 = {[17:16], [13:0]} (isa.with_imm16)
+        return a, (word & ~0x33FFF) | ((f >> 14) << 16) | (f & 0x3FFF)
+    return a, (word & ~0xFFFF) | f
 
 
 class DeviceSoftware:

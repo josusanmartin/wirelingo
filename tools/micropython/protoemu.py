@@ -7,7 +7,7 @@ PIO/DMA backend (docs/board-transport.md).
 
     from protoemu import ProtoEmu
     pe = ProtoEmu(tt)
-    assert pe.read(0x800) == 0x50450002
+    assert known_id(pe.read(0x800))      # 0x50450002 (v0.2) or 0x5045BC03 (v0.3)
     pe.load(core=0, words=[...], base=0, clkdiv=..., pinctrl0=..., pinctrl1=..., shiftctrl=..., wrap=...)
     pe.start(0b0001)
     pe.push(0, ord('A'))
@@ -23,6 +23,12 @@ CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = range(8)
 C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
 ST_HALTED, ST_FAULT = 1 << 13, 1 << 14   # STATUS bits
+
+
+def known_id(v):
+    """0x50450002 (v0.2), or a v0.3 build's 0x5045BC03 (B banks, C cores): as pe.sim.known_id."""
+    nc, nb = (v >> 8) & 15, (v >> 12) & 15
+    return v == 0x50450002 or (v >> 16 == 0x5045 and v & 0xFF == 3 and 1 <= nb <= nc <= 4)
 
 MOSI, SCK, CS = 5, 6, 7
 

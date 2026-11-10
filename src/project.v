@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Pins: ui[5]=MOSI ui[6]=SCK ui[7]=CS_n uo[7]=MISO (host SPI port);
- * everything else belongs to the protocol cores (docs/isa.md §2; NCORES = 2
- * on the IHP tapeout, up to 4 in the RTL).
+ * everything else belongs to the protocol cores (docs/isa.md §2; NCORES = 3
+ * on the IHP 8x4 tapeout, 2 on its fallback and on the 6x4 one, up to 4 in the RTL).
  */
 `default_nettype none
 // IMEM: SRAM macros (256 words/bank) by default. Define PE_FLOP_IMEM (and
@@ -19,10 +19,10 @@
 `define PE_BANK_AW 8
 `endif
 // Number of cores and IMEM banks in this build (the ISA allows up to 4 of each).
-// The IHP 6x4 tapeout has 2 of each: 4 cores don't route on this tile's single
-// horizontal routing layer (docs/physical.md).
+// The IHP 8x4 tapeout has 3 of each (docs/8x4-study.md: a fourth core did not
+// route); its Dec 6 fallback is the same RTL with 2, as on the 6x4 tapeout.
 `ifndef PE_NCORES
-`define PE_NCORES 2
+`define PE_NCORES 3
 `endif
 `ifndef PE_NBANKS
 `define PE_NBANKS `PE_NCORES

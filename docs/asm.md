@@ -45,6 +45,7 @@ writes = host.load_program(core=1, prog=prog, in_pins=16, clkdiv=host.clkdiv_for
 | `.shift_out right\|left [autopull] [thresh]`, `.shift_in right\|left [autopush] [thresh]` | default shift configuration |
 | `.fifo join_tx` | set SHIFTCTRL.FJOIN_TX: RXF becomes a second TX stage (2·D words of TX buffering) |
 | `.word value` | raw 32-bit instruction word |
+| `.data value` | a 32-bit table word for `mov osr, [src]` (v0.3): never relocated, and the loader doesn't check it as a jump |
 
 Pin and shift directives are defaults. `host.load_program(..., out_pins=…)`
 and friends override them.
@@ -60,23 +61,28 @@ instruction.
 
 ```
 jmp [cond,] target
-    cond: !rN  rN  rN--  pin p  !pin p  z  !z  c  !c  t  !osre  txne  rxf  f k  !f k
+    cond: !rN  rN  rN--  pin p  !pin p  z  !z  c  !c  t  !t  !osre  txne  rxf  f k  !f k
+          (`!t`: v0.3)
 call [cond,] target       ; as jmp; when taken, LR = the next PC (one level: save LR to nest)
 ret                       ; mov pc, lr
 wait 1|0 pin p   [if pin q == v] [timeout rN]
 wait rise|fall|edge p   [if pin q == v] [timeout rN]
 wait 1 flag k [clear] [timeout rN]      wait 0 flag k
 wait pins != rN [mask m] [timeout rT]   ; the 8 pins from IN_BASE, masked (default 0xFF), differ from rN's low byte
-in  src, n        ; src: r0-r3 pins isr osr null status flags pc crc lr
+in  src, n        ; src: r0-r3 pins isr osr null status flags pc crc lr ticks
 out dst, n        ; dst: r0-r3 pins pindirs isr pc crc null
 push [iffull] [block|noblock]
 pull [ifempty] [block|noblock]
 mov dst, [~|::]src        ; ~ invert, :: bit-reverse; `mov crc, ~null` presets the CRC tap; `mov lr, rN` / `mov rN, lr`
+mov osr, [src]            ; v0.3 table read: OSR = the own bank's word at src[7:0] (one more clock)
 set pins|pindirs, v       ; v = 0..31
 ldi rN, imm16
 add|sub|and|or|xor|shl|shr|cmp rN, rM|imm13
+cmp rN, imm16             ; v0.3: K >= 8192 assembles as CMPW (Z, C; no write)
+cmpw rN, imm16            ; v0.3: always CMPW
 pin p, lo|hi|toggle|hiz
 flag set|clr k
+flag tog k                ; v0.3: set if this core sees it clear, else clear
 halt
 nop
 ```
@@ -84,7 +90,14 @@ nop
 `x`/`y` are accepted as aliases of `r0`/`r1`. JMP and CALL targets are
 relative to the program start and are relocated by `Program.relocate(base)`.
 Computed jumps (`out pc`, `mov pc`) are not relocated; RET returns to the
-absolute address CALL linked.
+absolute address CALL linked. In v0.3 a computed jump keeps the core's bank
+(docs/isa.md §5.1), so a value from `ldi rN, label` works on any core when
+the program starts at its bank's first word. A table index is a bank index
+the same way: `ldi r1, table` then `mov osr, [r1]` reads the `.data` word at
+`table` if the program is loaded at a multiple of 256 (the default base);
+loaded elsewhere, add the base's low byte. `ticks` is the core's tick
+counter (docs/isa.md §4.1). The v0.3 forms need a v0.3 chip: on a v0.2 chip
+they mean something else (docs/isa.md §8).
 
 ## Example
 

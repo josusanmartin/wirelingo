@@ -11,7 +11,13 @@ module rtl_fetch_ownership_tb;
   reg [31:0] bus_wdata = 0;
   wire [6:0] uo_out;
   wire [7:0] uio_out, uio_oe;
-  pe_chip #(.NCORES(2), .NBANKS(2), .BANK_AW(8), .FIFO_LOG2(3)) dut (
+  // The 8x4 tapeout build (3 cores, 3 banks). `inactive_writes` below ORs the
+  // write enables of cores 2-3 with their values masked by those enables: a
+  // present but disabled core 2's value buses carry X from its unloaded bank
+  // while its enables stay 0 (unmasked, the check failed at clock 0 at 3 cores;
+  // verifier report 071, finding 2). Cores 0 and 1 are observed by name; core 2's
+  // own fetch is covered by the 3-core lockstep, not here.
+  pe_chip #(.NCORES(3), .NBANKS(3), .BANK_AW(8), .FIFO_LOG2(3)) dut (
     .clk(clk), .rst_n(rst_n), .ui_in(5'd0), .uio_in(8'd0),
     .uo_out(uo_out), .uio_out(uio_out), .uio_oe(uio_oe),
     .bus_addr(bus_addr), .bus_we(bus_we), .bus_wdata(bus_wdata),
@@ -64,7 +70,7 @@ module rtl_fetch_ownership_tb;
         pre_cnt0, pre_cnt1, pre_exec0, pre_exec1, pre_done0, pre_done1,
         pre_en[31:0], pre_val[31:0], pre_en[63:32], pre_val[63:32],
         pre_oe_en[31:0], pre_oe_en[63:32],
-        (pre_en[127:64] | pre_val[127:64] | pre_oe_en[127:64] | pre_oe_val[127:64]),
+        (pre_en[127:64] | (pre_val[127:64] & pre_en[127:64]) | pre_oe_en[127:64] | (pre_oe_val[127:64] & pre_oe_en[127:64])),
         pre_line, dut.pin_out, dut.pin_oe, uo_out,
         dut.g_core[0].g_on.u_core.pc, dut.g_core[1].g_on.u_core.pc,
         dut.bank_rdata[31:0], dut.bank_rdata[63:32],

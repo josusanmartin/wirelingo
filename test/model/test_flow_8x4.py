@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -28,10 +29,31 @@ def info_with(tmp_path, tiles):
     return p
 
 
-def generate(tmp_path, *options, name="config.json"):
+def generate(tmp_path, *options, name="config.json", cores=None):
+    """Run the generator; with `cores`, a copy of it beside a src/project.v of that
+    many cores (the generator reads PE_NCORES next to itself), so the 2-core
+    cases below hold whatever this repository's project.v says (3 on next-8x4)."""
+    gen = GEN
+    if cores is not None:
+        root = tmp_path / f"root-{cores}"
+        if not root.exists():
+            (root / "flow").mkdir(parents=True)
+            (root / "src").mkdir()
+            (root / "flow/gen_config.py").write_text(GEN.read_text())
+            (root / "info.yaml").write_text((ROOT / "info.yaml").read_text())
+            project = (ROOT / "src/project.v").read_text()
+            n = len(re.findall(r"^`define PE_NCORES [0-9]$", project, re.M))
+            assert n == 1
+            (root / "src/project.v").write_text(
+                re.sub(r"^`define PE_NCORES [0-9]$", f"`define PE_NCORES {cores}", project, flags=re.M))
+        gen = root / "flow/gen_config.py"
     dst = tmp_path / name
-    r = subprocess.run([sys.executable, str(GEN), *options, "--output", str(dst)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, str(gen), *options, "--output", str(dst)], capture_output=True, text=True)
     return r, dst
+
+
+def project_cores():
+    return int(re.search(r"^`define PE_NCORES ([0-9])$", (ROOT / "src/project.v").read_text(), re.M).group(1))
 
 
 def banks(path):
@@ -40,14 +62,14 @@ def banks(path):
 
 
 def test_6x4_info_gives_fo6_config_byte_for_byte(tmp_path):
-    r, dst = generate(tmp_path, "--info", str(info_with(tmp_path, "6x4")))
+    r, dst = generate(tmp_path, "--info", str(info_with(tmp_path, "6x4")), cores=2)
     assert r.returncode == 0, r.stderr
     assert hashlib.sha256(dst.read_bytes()).hexdigest() == FO6_CONFIG
 
 
 def test_8x4_moves_only_the_right_bank(tmp_path):
-    r6, c6 = generate(tmp_path, "--info", str(info_with(tmp_path, "6x4")), name="c6.json")
-    r8, c8 = generate(tmp_path, "--info", str(info_with(tmp_path, "8x4")), name="c8.json")
+    r6, c6 = generate(tmp_path, "--info", str(info_with(tmp_path, "6x4")), name="c6.json", cores=2)
+    r8, c8 = generate(tmp_path, "--info", str(info_with(tmp_path, "8x4")), name="c8.json", cores=2)
     assert r6.returncode == r8.returncode == 0
     a, b = json.loads(c6.read_text()), json.loads(c8.read_text())
     assert {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)} == {"//", "MACROS"}
@@ -67,8 +89,8 @@ def test_committed_config_is_the_8x4_submission(tmp_path):
 @pytest.mark.parametrize("tiles", ["6x4", "8x4"])
 def test_spread_with_two_banks_is_corners_swap(tmp_path, tiles):
     info = str(info_with(tmp_path, tiles))
-    _, swap = generate(tmp_path, "--info", info, "--layout", "corners-swap", name="swap.json")
-    _, spread = generate(tmp_path, "--info", info, "--layout", "spread", name="spread.json")
+    _, swap = generate(tmp_path, "--info", info, "--layout", "corners-swap", name="swap.json", cores=2)
+    _, spread = generate(tmp_path, "--info", info, "--layout", "spread", name="spread.json", cores=2)
     a, b = json.loads(swap.read_text()), json.loads(spread.read_text())
     assert a["//generator"].pop("layout") == "corners-swap" and b["//generator"].pop("layout") == "spread"
     assert a == b
@@ -110,11 +132,14 @@ def test_6x4_defaults_unchanged_for_other_bank_counts(tmp_path, n):
     assert r.returncode != 0 and "do not fit" in r.stderr
 
 
-def test_submission_bank_count_follows_project_cores(tmp_path):
-    r, _ = generate(tmp_path, "--preset", "submission", "--banks", "3")
+@pytest.mark.parametrize("cores", [None, 2, 3])
+def test_submission_bank_count_follows_project_cores(tmp_path, cores):
+    n = project_cores() if cores is None else cores          # None: this repository's project.v
+    other = 3 if n == 2 else 2
+    r, _ = generate(tmp_path, "--preset", "submission", "--banks", str(other), cores=cores)
     assert r.returncode != 0 and "PE_NCORES" in r.stderr
-    r, dst = generate(tmp_path, "--preset", "submission")
-    assert r.returncode == 0 and len(banks(dst)) == 2      # src/project.v: PE_NCORES 2
+    r, dst = generate(tmp_path, "--preset", "submission", cores=cores)
+    assert r.returncode == 0 and len(banks(dst)) == n
 
 
 @pytest.mark.parametrize("line", ['  tiles: "7x4"', '  tiles: 8x4', ''])

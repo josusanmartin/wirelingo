@@ -14,7 +14,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, RisingEdge, Timer
 
 from pe import isa, sim
-from pe.randprog import random_profile, random_program, random_config_writes, random_bypass_writes
+from pe.randprog import random_profile, random_program, random_config_writes, random_bypass_writes, random_v03_writes
 
 BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
@@ -52,7 +52,7 @@ def line_state_model(l):
     )
 
 
-CONFIG = ["div_int", "div_frac", "out_base", "out_count", "set_base", "set_count", "side_base", "side_count", "side_opt", "side_pindir", "in_base", "out_shr", "in_shr", "autopull", "autopush", "fjoin", "pull_thresh", "push_thresh", "entry", "wrap_bottom", "wrap_top", "crc_poly", "crc_w", "in_tap", "out_tap"]
+CONFIG = ["div_int", "div_frac", "out_base", "out_count", "set_base", "set_count", "side_base", "side_count", "side_opt", "side_pindir", "in_base", "out_shr", "in_shr", "autopull", "autopush", "fjoin", "pull_thresh", "push_thresh", "entry", "wrap_bottom", "wrap_top", "crc_poly", "crc_poly_hi", "crc_w", "in_tap", "out_tap"]
 
 
 def core_state_rtl(core):
@@ -63,6 +63,7 @@ def core_state_rtl(core):
         halted=v(core.halted), fault=v(core.fault), stalled=v(core.stalled),
         cnt=v(core.cnt), facc=v(core.facc), lr=v(core.lr),
         txl=v(core.u_fifos.txf.cnt), rxl=v(core.u_fifos.rxf.cnt), crc=v(core.crc),
+        ticks=v(core.tcnt), tbl=v(core.tbl_pend),
         wprev=v(core.wprev), wevent=v(core.wevent), res=reservations(v(core.res_n), v(core.res_v)),
         # FIFO heads (when occupied): every entry is compared as it reaches the head
         txh=v(core.txf_head) if v(core.u_fifos.txf.cnt) else None,
@@ -79,6 +80,7 @@ def core_state_model(m):
         z=m.z, c=m.c, t=m.t, dcnt=m.dcnt, in_wait=m.in_wait,
         halted=m.halted, fault=m.fault, stalled=m.stalled,
         cnt=m.cnt, facc=m.facc, lr=m.lr, txl=len(m.txf), rxl=len(m.rxf), crc=m.crc,
+        ticks=m.ticks, tbl=int(m.tbl is not None),
         wprev=m.wprev, wevent=m.wevent, res=reservations(len(m.res), sum(b << i for i, b in enumerate(m.res))),
         txh=m.txf[0] if m.txf else None, rxh=m.rxf[0] if m.rxf else None,
         **{k: getattr(m, k) for k in CONFIG},
@@ -202,13 +204,13 @@ async def test_registers(dut):
     """Directed: ID, reset values, config readback."""
     h = await start(dut)
     await h.cycle_step(addr=sim.A_ID)
-    assert v(dut.bus_rdata) == sim.ID_VALUE
+    assert v(dut.bus_rdata) == sim.id_value(NCORES, NBANKS)
     for c in range(4):
         for off in range(0x20):
             await h.cycle_step(addr=sim.core_reg(c, off))
     rng = random.Random(1)
     for c in range(4):
-        for off in (0, 1, 2, 3, 4, 5, 6, 7, 0xA, 0xB, 0xC, 0xD):
+        for off in (0, 1, 2, 3, 4, 5, 6, 7, 0xA, 0xB, 0xC, 0xD, 0x11, 6, 7):
             await h.write(sim.core_reg(c, off), rng.getrandbits(32))
             await h.cycle_step(addr=sim.core_reg(c, off))
     for a in (sim.A_SYNCBYP, sim.A_POWN_LO, sim.A_POWN_HI, sim.A_OD, sim.A_FSET, sim.A_FCLR):
@@ -231,16 +233,19 @@ async def test_random_lockstep(dut):
             h.stats[k] = h.stats.get(k, 0) + n
         await h.reset()
         # programs + config, all while cores are disabled (bank b is core b's)
+        v03 = random.Random(seed + 0x3C30)                # the v0.3 forms: their own stream
         for b in range(4):
             profile = random_profile(rng)
             for w in range(BANK_WORDS):
-                word = random_program(rng, b, BANK_WORDS, profile)
+                word = random_program(rng, b, BANK_WORDS, profile, v03)
                 await h.write((b << 8) | w, word)
         for addr, data in random_config_writes(rng, BANK_WORDS):
             await h.write(addr, data)
         for addr, data in random_line_writes(rng):
             await h.write(addr, data)
         for addr, data in random_bypass_writes(random.Random(seed + 0xB1A5)):
+            await h.write(addr, data)
+        for addr, data in random_v03_writes(random.Random(seed + 0x3C3)):
             await h.write(addr, data)
         await h.write(sim.A_CTRL, 15 if rng.random() < 0.7 else rng.randrange(1, 16))
         # run
@@ -342,6 +347,9 @@ def coverage_goals():
         "fifo:host_push_to_full_dropped", "fifo:pop_suppressed_by_snapshot",   # push+pop: test_fifo_races
         "fifo:clear_nonempty", "fifo:join_move",
         "ctrl:restart_mid_instruction", "core:bank_fault",
+        # v0.3 (docs/isa.md §5.2); the table read's rare corners: test_v03_corners
+        "table:read", "table:extra_tick", "cmpw:lt", "cmpw:gt",           # cmpw:eq: test_v03_corners
+        "jmp:not_t_taken", "jmp:not_t_fallthrough", "flag:tog_set", "flag:tog_clear", "ticks:read",
         "line:out_entry", "line:tx_bit", "line:tx_stuff", "line:tx_manchester_half", "line:tx_frame_end",
         "line:rx_bit", "line:rx_stuff", "line:rx_frame_end", "line:in_bits", "line:in_frame_end",
         "line:rx_overflow", "line:rx_edge_first_half", "line:rx_edge_second_half",
@@ -549,3 +557,88 @@ async def test_call_ret(dut):
             "ctrl:restart_mid_instruction"]
     missing = [g for g in want if not h.model.stats.get(g)]
     assert not missing, (missing, {k: v for k, v in h.model.stats.items() if "call" in k})
+
+
+@cocotb.test()
+async def test_v03_corners(dut):
+    """Directed, compared every cycle: the v0.3 additions (docs/isa.md §5.2) on every
+    core with a bank, table reads at CLKDIV 1, 1.25 and 2, while the host restarts
+    cores, writes their PCs and disables them at random, so each lands in a table
+    read's clock: restart wins, a PC write in the MOV's clock cancels it, the word
+    lands in a disabled clock. Also CMPW, `jmp/call !t`, `flag tog`, the ticks, a
+    bank-relative computed jump, and CRCs of 32 and 21 bits with POLY_HI."""
+    from pe import asm, host
+    from pe.profile import Profile
+    h = await start(dut)
+    prof = Profile("lockstep", NCORES, NBANKS, BANK_WORDS)
+    progs = [asm.assemble("""
+    top:
+        ldi r1, t
+        mov osr, [r1]
+        mov r0, osr
+        cmpw r0, 0xBEEF
+        jmp !z, top
+        mov osr, [r1] [2]
+        mov r2, ticks
+        in ticks, 16
+        push noblock
+        flag tog 2
+        ldi r3, 2
+        wait 1 flag 3 timeout r3
+        jmp !t, top
+        call !t, top
+        jmp top
+    t:  .data 0xBEEF
+    """), asm.assemble("""
+    loop:
+        mov osr, [r0]
+        mov r1, osr
+        cmp r1, 0x4000
+        in r1, 1
+        mov r0, ticks
+        and r0, 7
+        flag tog 3
+        ldi r2, loop
+        mov pc, r2
+    """)]
+    divs = [1 << 8, (1 << 8) | 0x40, 2 << 8, 1 << 8]
+    cores = list(range(min(NCORES, NBANKS)))
+    for b in range(NBANKS):                       # the SRAM keeps the last test's words:
+        for w in range(BANK_WORDS):               # a table read beyond the program must
+            await h.write((b << 8) | w, 0)        # see the model's (r0 is kept on restart)
+    for c in cores:
+        for addr, data in host.load_program(c, progs[min(c, 1)], c * 256, profile=prof, clkdiv=divs[c]):
+            await h.write(addr, data)
+    for c in cores:
+        ctrl, hi = isa.crcctrl(*((0x04C11DB7, 32) if c % 2 else (0x102899, 21)), in_tap=1)
+        for off, val in ((sim.C_CRCCTRL, ctrl), (sim.C_POLY_HI, hi), (sim.C_CRC, 0xFFFFFFFF)):
+            await h.write(sim.core_reg(c, off), val)
+    await h.write(sim.core_reg(0, sim.C_CRCCTRL), 0)          # back to a v0.2 width: 16 bits kept
+    await h.write(sim.core_reg(0, sim.C_CRC), 0xFFFFFFFF)
+    mask = sum(1 << c for c in cores)
+    await h.write(sim.A_CTRL, mask | (mask << 8))
+    rng = random.Random(33)
+    enabled = mask
+    for _ in range(10000):
+        k = rng.random()
+        c = rng.choice(cores)
+        if k < 0.015:
+            await h.cycle_step(we=True, addr=sim.core_reg(c, sim.C_PC), wdata=c * 256)
+        elif k < 0.03:
+            await h.cycle_step(we=True, addr=sim.A_CTRL, wdata=enabled | (1 << (8 + c)))
+        elif k < 0.05:
+            enabled ^= 1 << c
+            if not enabled & (1 << c) and rng.random() < 0.3:
+                enabled |= 1 << c
+            await h.cycle_step(we=True, addr=sim.A_CTRL, wdata=enabled)
+        elif k < 0.053:
+            await h.cycle_step(we=True, addr=rng.choice([sim.A_FSET, sim.A_FCLR]), wdata=rng.getrandbits(8))
+        else:
+            await h.cycle_step(addr=sim.core_reg(c, rng.choice([sim.C_FIFO, sim.C_OSR, sim.C_PC])),
+                               snap=k < 0.2, commit=k < 0.2)
+    want = ["table:read", "table:extra_tick", "table:restart_wins", "table:cancelled_by_host_pc",
+            "table:write_while_disabled", "ticks:read", "cmpw:eq", "cmpw:lt", "cmpw:gt",
+            "jmp:not_t_taken", "jmp:not_t_fallthrough", "flag:tog_set", "flag:tog_clear"]
+    missing = [g for g in want if not h.model.stats.get(g)]
+    assert not missing, (missing, {k: v for k, v in h.model.stats.items() if k.split(":")[0] in
+                                   ("table", "ticks", "cmpw", "jmp", "flag")})

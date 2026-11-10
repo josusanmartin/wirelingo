@@ -246,12 +246,12 @@ class ControlHost(UsbHost):
                 return
         raise TimeoutError("SETUP not acknowledged")
 
-    def data_in(self, addr, toggle):
+    def data_in(self, addr, toggle, endp=0):
         """One IN transaction expecting DATA<toggle>; returns the payload."""
         want = usb.pid_byte(usb.PID_DATA1 if toggle else usb.PID_DATA0)
-        errors = 0
+        errors = repeats = 0
         while True:
-            self._send(usb.token(usb.PID_IN, addr, 0))
+            self._send(usb.token(usb.PID_IN, addr, endp))
             r = self._response()
             if r == usb.handshake(usb.PID_STALL):
                 self.log.append(("IN", addr, "STALL"))
@@ -278,7 +278,11 @@ class ControlHost(UsbHost):
             if r[0] == want:
                 return r[1:-2]
             # the old toggle: a retransmission of data we already have (our
-            # ACK was lost); acknowledged above and discarded
+            # ACK was lost); acknowledged above and discarded. A device whose
+            # toggle never advances would repeat forever: give up.
+            repeats += 1
+            if repeats > max(8, self.retries):
+                raise TimeoutError(f"IN to {addr}: the DATA toggle never advanced")
 
     def data_out(self, addr, pid, payload):
         for _ in range(self.retries + 1):

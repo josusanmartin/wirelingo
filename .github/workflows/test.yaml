@@ -25,12 +25,18 @@ jobs:
 
       # Each suite writes its own results file; check_results.py fails on a
       # missing file, a wrong test count, or any failure, error or skip.
-      - name: Top-level tests through the SPI port (tapeout config, SRAM model)
+      - name: Top-level tests through the SPI port (8x4 tapeout config, 3 cores, SRAM model)
         run: |
           cd test
           make clean
           make COCOTB_RESULTS_FILE=top.xml
           python3 check_results.py top.xml $(grep -c '^@cocotb.test()' test.py)
+
+      - name: Top-level tests through the SPI port (2-core fallback, SRAM model)
+        run: |
+          cd test
+          make PE_NCORES=2 PE_NBANKS=2 COCOTB_RESULTS_FILE=top2.xml
+          python3 check_results.py top2.xml $(grep -c '^@cocotb.test()' test.py)
 
       - name: Compiled RP2 PIO host transport through the SPI port
         run: |
@@ -64,28 +70,29 @@ jobs:
           make COCOTB_TEST_MODULES=test_pps SIM_BUILD=sim_build/pps COCOTB_RESULTS_FILE=pps.xml
           python3 check_results.py pps.xml 4 pps_record_paths pps_rollover_phases pps_train pps_fifo_full   # pps_one_second: PPS_LONG only
 
+      # these four measure the host transports on the 2-core profile they pin
       - name: Packed SPI framing through a serialized host
         run: |
           cd test
-          make COCOTB_TEST_MODULES=test_spi_packed_host SIM_BUILD=sim_build/spi_packed_host COCOTB_RESULTS_FILE=spi_packed_host.xml
+          make PE_NCORES=2 PE_NBANKS=2 COCOTB_TEST_MODULES=test_spi_packed_host SIM_BUILD=sim_build/spi_packed_host COCOTB_RESULTS_FILE=spi_packed_host.xml
           python3 check_results.py spi_packed_host.xml $(grep -c '^@cocotb.test()' test_spi_packed_host.py)
 
       - name: Preloaded SPI frames through a serialized host
         run: |
           cd test
-          make COCOTB_TEST_MODULES=test_spi_preloaded_host SIM_BUILD=sim_build/spi_preloaded_host COCOTB_RESULTS_FILE=spi_preloaded_host.xml
+          make PE_NCORES=2 PE_NBANKS=2 COCOTB_TEST_MODULES=test_spi_preloaded_host SIM_BUILD=sim_build/spi_preloaded_host COCOTB_RESULTS_FILE=spi_preloaded_host.xml
           python3 check_results.py spi_preloaded_host.xml $(grep -c '^@cocotb.test()' test_spi_preloaded_host.py)
 
       - name: Declared UART capture through a serialized host
         run: |
           cd test
-          make COCOTB_TEST_MODULES=test_uart_capture_host SIM_BUILD=sim_build/uart_capture_host COCOTB_RESULTS_FILE=uart_capture_host.xml
+          make PE_NCORES=2 PE_NBANKS=2 COCOTB_TEST_MODULES=test_uart_capture_host SIM_BUILD=sim_build/uart_capture_host COCOTB_RESULTS_FILE=uart_capture_host.xml
           python3 check_results.py uart_capture_host.xml $(grep -c '^@cocotb.test()' test_uart_capture_host.py)
 
       - name: UART/USB pair modes against the model, clock for clock
         run: |
           cd test
-          make COCOTB_TEST_MODULES=test_usb_uart_rtl SIM_BUILD=sim_build/usb_uart_rtl COCOTB_RESULTS_FILE=usb_uart_rtl.xml
+          make PE_NCORES=2 PE_NBANKS=2 COCOTB_TEST_MODULES=test_usb_uart_rtl SIM_BUILD=sim_build/usb_uart_rtl COCOTB_RESULTS_FILE=usb_uart_rtl.xml
           python3 check_results.py usb_uart_rtl.xml $(grep -c '^@cocotb.test()' test_usb_uart_rtl.py)
 
       - name: Firmware tests on the model, assembler and driver tests
@@ -95,12 +102,19 @@ jobs:
           PYTHONPATH=tools python -m pe.mpy_bundle --check
           python flow/gen_config.py --preset submission --check
 
-      - name: Lockstep RTL vs model, tapeout config (2 cores, 2 SRAM banks, 8-deep FIFOs)
+      - name: Lockstep RTL vs model, 8x4 tapeout config (3 cores, 3 SRAM banks, 8-deep FIFOs)
+        run: |
+          cd test
+          LOCKSTEP_SEEDS=40 LOCKSTEP_CYCLES=1000 PE_NCORES=3 PE_NBANKS=3 PE_FIFO_LOG2=3 \
+            make TB=chip COCOTB_RESULTS_FILE=lockstep_tapeout.xml
+          python3 check_results.py lockstep_tapeout.xml $(grep -c '^@cocotb.test()' test_lockstep.py)
+
+      - name: Lockstep RTL vs model, 2-core fallback (2 cores, 2 SRAM banks, 8-deep FIFOs)
         run: |
           cd test
           LOCKSTEP_SEEDS=40 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 \
-            make TB=chip COCOTB_RESULTS_FILE=lockstep_tapeout.xml
-          python3 check_results.py lockstep_tapeout.xml $(grep -c '^@cocotb.test()' test_lockstep.py)
+            make TB=chip COCOTB_RESULTS_FILE=lockstep_fallback.xml
+          python3 check_results.py lockstep_fallback.xml $(grep -c '^@cocotb.test()' test_lockstep.py)
 
       - name: Lockstep RTL vs model, 4-core flop build
         run: |
@@ -113,6 +127,7 @@ jobs:
         with:
           paths: |
             test/top.xml
+            test/top2.xml
             test/pio.xml
             test/eth_service.xml
             test/post_freeze.xml
@@ -122,6 +137,7 @@ jobs:
             test/uart_capture_host.xml
             test/usb_uart_rtl.xml
             test/lockstep_tapeout.xml
+            test/lockstep_fallback.xml
             test/lockstep_4core.xml
         if: always()
 

@@ -5,14 +5,15 @@ Everything reads start-of-cycle state; effects combine into the next state,
 mirroring the synchronous RTL.
 """
 from . import isa
-from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE, LR)
+from .isa import (PINS, PINDIRS, ISR, OSR, STATUS, FLAGS, PC, CRC, LINE, LR, TICKS)
 from .line import Line
 
 M32 = 0xFFFFFFFF
 M16 = 0xFFFF
 NCORES = 4
 FIFO_DEPTH = 4
-ID_VALUE = 0x50450002
+ID_V2 = 0x50450002     # the v2 builds (the 6x4 tapeout and its KV260 bitstreams)
+ID_VALUE = ID_V2       # what the board tools check today (a v2 bitstream); see id_value()
 IMEM_WORDS = 1024
 
 # Register map
@@ -20,7 +21,19 @@ A_ID, A_CTRL, A_FSET, A_FCLR, A_SYNCBYP, A_POWN_LO, A_POWN_HI, A_OD, A_PINS, A_P
 A_LINECFG, A_LINEDIV, A_LINEPINS, A_LINESTAT = range(0x80C, 0x810)
 CORE_BASE, CORE_STRIDE = 0x400, 0x20
 C_CLKDIV, C_PINCTRL0, C_PINCTRL1, C_SHIFTCTRL, C_ENTRY, C_WRAP, C_CRCCTRL, C_CRC = 0, 1, 2, 3, 4, 5, 6, 7
-C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO = 8, 9, 0xA, 0xE, 0xF, 0x10
+C_PC, C_STATUS, C_R0, C_ISR, C_OSR, C_FIFO, C_POLY_HI = 8, 9, 0xA, 0xE, 0xF, 0x10, 0x11
+
+
+def id_value(ncores, nbanks):
+    """The ID register of a v0.3 build (docs/isa.md §6.2): 'PE', NBANKS, NCORES, version 3."""
+    return 0x50450003 | (ncores << 8) | (nbanks << 12)
+
+
+def known_id(v):
+    """A protoemu ID: v0.2's, or a v0.3 build's (any geometry with 1 <= NBANKS <= NCORES <= 4).
+    Board tools check this, so they work with a v0.2 bitstream and a v0.3 one."""
+    nc, nb = (v >> 8) & 15, (v >> 12) & 15
+    return v == ID_V2 or (v >> 16 == 0x5045 and v & 0xFF == 3 and 1 <= nb <= nc <= 4)
 
 
 def core_reg(c, off):
@@ -51,9 +64,11 @@ class Core:
         self.fjoin = 0  # SHIFTCTRL.FJOIN_TX: RXF becomes a second TX stage (TXF -> RXF -> OSR)
         self.entry, self.wrap_bottom, self.wrap_top = 256 * idx, 0, 1023
         self.crc_poly = self.crc_w = self.in_tap = self.out_tap = 0
-        self.crc = 0
+        self.crc_poly_hi = 0  # POLY_HI (core offset 0x11): the polynomial's top half, widths > 16
+        self.crc = 0          # 32 bits; v2 configurations (width <= 16) use the low 16
         self.r = [0, 0, 0, 0]
         self.lr = 0          # link register: kept on restart, like R0-R3
+        self.tbl = None      # a table read's word, written to the OSR at the end of the next clock
         self.txf, self.rxf = [], []
         self.res = []  # host read reservations, oldest first: True if a real RXF entry (<= 2)
         self.restart()
@@ -67,6 +82,8 @@ class Core:
         self.in_wait = self.wprev = self.wevent = 0
         self.cnt = self.facc = 0
         self.halted = self.fault = self.stalled = 0
+        self.ticks = 0       # the tick counter (MOV/IN source 15): cleared by restart
+        self.tbl = None      # a restart in the clock after a table read wins over its write
 
     def status(self):
         return (len(self.txf) | (len(self.rxf) << 4) | (self.z << 8) | (self.c << 9)
@@ -112,10 +129,12 @@ class Core:
         elif off == C_WRAP:
             self.wrap_bottom, self.wrap_top = v & 1023, (v >> 16) & 1023
         elif off == C_CRCCTRL:
-            self.crc_poly, self.crc_w = v & M16, (v >> 16) & 15
+            self.crc_poly, self.crc_w = v & M16, ((v >> 16) & 15) | (((v >> 23) & 1) << 4)
             self.in_tap, self.out_tap = (v >> 20) & 1, (v >> 21) & 1
-        elif off == C_CRC:
-            self.crc = v & M16
+        elif off == C_POLY_HI:
+            self.crc_poly_hi = v & M16
+        elif off == C_CRC:              # the top half only for widths above 16 (v2: 16 bits)
+            self.crc = v & (M32 if self.crc_w >= 16 else M16)
         elif off == C_PC:
             self.pc = v & 1023
             self.dcnt = 0
@@ -130,7 +149,12 @@ class Core:
         e = _Exec(self, chip, pins_in, flags, x)
         tick = self._divider()
         self._track_wait(e)
+        if tick:
+            self.ticks = (self.ticks + 1) & M16     # this tick's instruction reads e.ticks
         if not tick or self.halted or self.fault:
+            return e.fx
+        if self.tbl is not None:              # the clock after a table read: its word, not an
+            e.chip.cover("table:extra_tick")    # instruction, is on the fetch port (§5.2)
             return e.fx
         if self.dcnt:
             self.dcnt -= 1
@@ -221,7 +245,11 @@ class Core:
             return self.r[code]
         return {PINS: rotr32(e.pins_in, self.in_base), ISR: self.isr, OSR: self.osr,
                 STATUS: self.status() & 0x7FF, FLAGS: e.flags, PC: self.pc, CRC: self.crc,
-                LR: self.lr}.get(code, 0)
+                LR: self.lr, TICKS: self._ticks(e)}.get(code, 0)
+
+    def _ticks(self, e):
+        e.chip.cover("ticks:read")
+        return e.ticks
 
     def _crc_mask(self):
         return mask(self.crc_w + 1)
@@ -229,7 +257,8 @@ class Core:
     def _crc_feed(self, b):
         fb = ((self.crc >> self.crc_w) & 1) ^ b
         m = self._crc_mask()
-        self.crc = ((self.crc << 1) & m) ^ ((self.crc_poly & m) if fb else 0)
+        poly = (self.crc_poly_hi << 16) | self.crc_poly
+        self.crc = ((self.crc << 1) & m) ^ ((poly & m) if fb else 0)
 
     def _write_dst(self, e, dst, v, isr_count):
         """MOV/OUT destination write (OSR is MOV-only: OUT never passes it)."""
@@ -243,8 +272,8 @@ class Core:
             self.isr, self.isr_cnt = v, isr_count
         elif dst == OSR:
             self.osr, self.osr_cnt = v, 0
-        elif dst == PC:
-            e.jump = v & 1023
+        elif dst == PC:                  # bank-relative: a core runs in its own bank (§5.1)
+            e.jump = (self.pc & 0x300) | (v & 0xFF)
         elif dst == CRC:
             self.crc = v & self._crc_mask()
         elif dst == LR:                 # MOV only (OUT skips it)
@@ -257,7 +286,7 @@ class Core:
         rs = sel & 3
         rv = self.r[rs]
         ok = [
-            True, rv == 0, rv != 0, rv != 0,
+            sel != isa.XC_NT or self.t == 0, rv == 0, rv != 0, rv != 0,
             e.pin(sel) == 1, e.pin(sel) == 0,
             self.z == 1, self.z == 0, self.c == 1, self.c == 0, self.t == 1,
             self.osr_cnt < e.pull_th, len(e.pullq) > 0, e.rx_full,
@@ -265,6 +294,8 @@ class Core:
         ][cond]
         if cond == isa.C_DEC:
             self.r[rs] = (rv - 1) & M16
+        if cond == isa.C_ALWAYS and sel == isa.XC_NT:
+            e.chip.cover("jmp:not_t_taken" if ok else "jmp:not_t_fallthrough")
         if ok:
             e.jump = addr
         return ok
@@ -430,6 +461,11 @@ class Core:
     def _op_mov(self, e):
         dst, mop, src = isa.bits(e.x, 18, 15), isa.bits(e.x, 14, 13), isa.bits(e.x, 12, 9)
         v = self._src(e, src)
+        if mop == isa.M_TBL:            # table read: OSR = the own bank's word at v[7:0], at the
+            # end of the next clock, which the core spends on it (a tick at CLKDIV 1)
+            e.fx["tbl"] = e.chip.fetch((self.pc & 0x300) | (v & 0xFF))
+            e.chip.cover("table:read")
+            return
         if mop == isa.M_INV:
             v = ~v & M32
         elif mop == isa.M_REV:
@@ -447,6 +483,11 @@ class Core:
             tgt[(self.set_base + i) & 31] = (v >> i) & 1
 
     def _op_ldi(self, e):
+        if e.x & isa.LDI_CMPW:           # CMPW: cmp rd, #imm16 (flags only)
+            a, s = self.r[isa.bits(e.x, 15, 14)], isa.cmpw_imm(e.x)
+            self.z, self.c = int(a == s), int(a < s)
+            e.chip.cover("cmpw:eq" if a == s else "cmpw:lt" if a < s else "cmpw:gt")
+            return
         self.r[isa.bits(e.x, 17, 16)] = isa.bits(e.x, 15, 0)
 
     def _op_alu(self, e):
@@ -490,6 +531,10 @@ class Core:
 
     def _op_flag(self, e):
         b = 1 << isa.bits(e.x, 2, 0)
+        if e.x & isa.FLAG_TOG:          # toggle, inside the core: a set or a clear of the
+            e.fx["fclr" if e.flags & b else "fset"] |= b      # flag as this core sees it
+            e.chip.cover("flag:tog_clear" if e.flags & b else "flag:tog_set")
+            return
         e.fx["fclr" if isa.bits(e.x, 18, 18) else "fset"] |= b
 
     def _op_halt(self, e):
@@ -510,7 +555,8 @@ class _Exec:
 
     def __init__(self, core, chip, pins_in, flags, x):
         self.chip, self.pins_in, self.flags, self.x = chip, pins_in, flags, x
-        self.fx = dict(out={}, oe={}, side_out={}, side_oe={}, fset=0, fclr=0, txpop=False, rxpush=None)
+        self.fx = dict(out={}, oe={}, side_out={}, side_oe={}, fset=0, fclr=0, txpop=False, rxpush=None, tbl=None)
+        self.ticks = core.ticks          # the tick counter at the start of the clock
         self.pull_th = core.pull_thresh or 32
         self.push_th = core.push_thresh or 32
         self.pullq = core.rxf if core.fjoin else core.txf
@@ -600,7 +646,7 @@ class Chip:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
             return self.cores[c].read_reg(off) if c < self.ncores else 0
         return {
-            A_ID: ID_VALUE,
+            A_ID: id_value(self.ncores, self.nbanks),
             A_CTRL: self.enable,
             A_FSET: self.flags,
             A_FCLR: self.flags,
@@ -632,11 +678,13 @@ class Chip:
         fset = fclr = 0
         new_out, new_oe = self.pin_out, self.pin_oe
         fifo_ops = []
+        tbl = [None] * NCORES
         for c, core in enumerate(self.cores):
             if c >= self.ncores or (restart >> c) & 1 or not (self.enable >> c) & 1:
                 fifo_ops.append((False, None))
                 continue
             fx = core.step(self, pins_in, flags)
+            tbl[c] = fx["tbl"]
             fset |= fx["fset"]
             fclr |= fx["fclr"]
             fifo_ops.append((fx["txpop"], fx["rxpush"]))
@@ -663,6 +711,7 @@ class Chip:
         if in_cores:
             c, off = divmod(addr - CORE_BASE, CORE_STRIDE)
         res_op = None                # this cycle's reservation change: (core, op, real)
+        host_pc = c if we and in_cores and off == C_PC else None
         if in_cores and off == C_FIFO:
             core = self.cores[c]
             if commit and core.res:
@@ -739,10 +788,25 @@ class Chip:
                 self.cover("fifo:host_push_to_full_dropped")
             core.txf, core.rxf = tx, rx
 
+        # table reads (§5.2): last clock's word reaches the OSR now, enabled or not (a
+        # restart, below, wins); this clock's is cancelled by a host PC write
+        prev_tbl = [core.tbl is not None for core in self.cores]
+        for c, core in enumerate(self.cores):
+            if core.tbl is not None:
+                if not (self.enable >> c) & 1:
+                    self.cover("table:write_while_disabled")
+                core.osr, core.osr_cnt, core.tbl = core.tbl, 0, None
+            if tbl[c] is not None:
+                if host_pc == c:
+                    self.cover("table:cancelled_by_host_pc")
+                else:
+                    core.tbl = tbl[c]
         for c in range(NCORES):
             if (restart >> c) & 1:
                 if self.cores[c].in_wait or self.cores[c].dcnt:
                     self.cover("ctrl:restart_mid_instruction")
+                if prev_tbl[c]:
+                    self.cover("table:restart_wins")
                 self.cores[c].restart()
 
         if res_op:

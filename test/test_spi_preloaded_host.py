@@ -100,7 +100,7 @@ async def cold_load(dut, spi, program):
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 5)
-    assert (await spi.read(sim.A_ID))[0] == sim.ID_VALUE
+    assert (await spi.read(sim.A_ID))[0] == sim.id_value(2, 2)   # the 2-core profile it pins
     await spi.write(sim.A_CTRL, [1 << 16])  # Only cold reset clears FIFO state.
     await load_bursts(spi, [(sim.A_POUT, 1 << CS),
                            (sim.A_POE, (1 << MOSI) | (1 << SCK) | (1 << CS))])

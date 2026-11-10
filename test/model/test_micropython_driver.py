@@ -127,7 +127,7 @@ def test_driver_uart_tx_bundle():
     mh.step = step
     tt = FakeTT(mh)
     pe = protoemu.ProtoEmu(tt, fifo_depth=4)
-    assert pe.read(protoemu.A_ID) == sim.ID_VALUE
+    assert pe.read(protoemu.A_ID) == mh.chip.read(sim.A_ID) and protoemu.known_id(pe.read(protoemu.A_ID))
     pe.load(**protoemu_fw.UART_TX)
     pe.start(1)
     msg = b"Hi!"
@@ -182,7 +182,7 @@ def test_bringup_uart_loopback_and_errors():
     import pytest
     mh = ModelHost()
     pe = protoemu.ProtoEmu(FakeTT(mh))
-    assert pe.read(protoemu.A_ID) == bringup.ID
+    assert bringup.known_id(pe.read(protoemu.A_ID))
     assert bringup.uart_loopback(pe, b"Hi!") == b"Hi!"
     halt = {"core": 0, "base": 0, "words": [12 << 27], "clkdiv": 1 << 8, "pinctrl0": 0,
             "pinctrl1": 0, "shiftctrl": 0, "wrap": 0}
@@ -215,7 +215,10 @@ def test_driver_register_map_matches_the_model():
         assert getattr(protoemu, n) == getattr(sim, n), n
     for n in ("CMD_WRITE", "CMD_READ", "CMD_WRITE_FIXED", "CMD_READ_FIXED"):
         assert getattr(protoemu, n) == getattr(host, n), n
-    assert bringup.ID == sim.ID_VALUE
+    assert bringup.ID == sim.ID_VALUE == sim.ID_V2
+    for v in (sim.ID_V2, 0x50452203, 0x50453303, 0x50454403, 0x50450003, 0x50453203, 0x50450102, 0x50453304):
+        assert protoemu.known_id(v) == sim.known_id(v), hex(v)
+    assert sim.known_id(sim.id_value(3, 3)) and not sim.known_id(0x50450003)
 
 
 def test_board_modules_avoid_cpython_only_features():

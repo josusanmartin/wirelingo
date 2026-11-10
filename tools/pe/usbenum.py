@@ -44,10 +44,18 @@ def load_writes(prog, speed="low", start=True):
     return w
 
 
-def table(prog, label):
+def table(prog, label, length=None):
     """The descriptor bytes in the table entry pairs (`ldi r1, x` / `call send2`)
-    from `label` up to the next label."""
+    from `label` up to the next label; or in the `.data` words there (v0.3 table reads),
+    four bytes each, cut to `length` (the descriptor's bLength / wTotalLength)."""
     out, pc = bytearray(), prog.labels[label]
+    if pc in prog.data:
+        starts = set(prog.labels.values())
+        while pc < len(prog.words) and pc in prog.data and (pc == prog.labels[label] or pc not in starts):
+            out += prog.words[pc].to_bytes(4, "little")
+            pc += 1
+        n = length if length is not None else (out[2] | out[3] << 8 if out[1] == 2 else out[0])
+        return bytes(out[:n])
     send2, starts = prog.labels["send2"], set(prog.labels.values())
     while pc + 1 < len(prog.words) and (pc == prog.labels[label] or pc not in starts):
         ldi, call = prog.words[pc], prog.words[pc + 1]

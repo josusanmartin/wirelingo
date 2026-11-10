@@ -3,6 +3,7 @@
 This tests its digital wire protocol with quantized PIO cycle intervals and
 FIFO starvation; it does not emulate RP2350 DMA, pin pads or input synchronizers.
 """
+import os
 import pathlib
 import random
 import sys
@@ -18,6 +19,9 @@ from pio_support import PioMachine
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tools/micropython'))
 import quad_spi as quad
+
+NCORES = int(os.environ.get("PE_NCORES", "2"))
+BUILD_ID = sim.id_value(NCORES, int(os.environ.get("PE_NBANKS", str(NCORES))))   # docs/isa.md §6.2
 
 
 def reverse_four(value):
@@ -97,7 +101,7 @@ class PioSpi:
 
     async def enable_quad(self):
         await self.legacy(host.spi_frame(host.CMD_WRITE, sim.A_HOSTCFG, [1]))
-        assert (await self.read(sim.A_ID))[0] == sim.ID_VALUE
+        assert (await self.read(sim.A_ID))[0] == BUILD_ID
 
     async def write(self, addr, words, fixed=False):
         await self.transfer(*quad.write_frame(addr, words, fixed))
@@ -124,7 +128,7 @@ async def test_compiled_pio_quad_bursts(dut):
         spi = PioSpi(dut, out_reverse, in_reverse)
         await spi.enable_quad()
         legacy = await spi.legacy(host.spi_frame(host.CMD_READ, sim.A_ID, nread=1))
-        assert int.from_bytes(legacy[4:], 'big') == sim.ID_VALUE
+        assert int.from_bytes(legacy[4:], 'big') == BUILD_ID
         rng = random.Random(27)
         for n in (1, 2, 3, 8, 31, 256):
             words = [rng.getrandbits(32) for _ in range(n)]
@@ -144,7 +148,7 @@ async def test_compiled_pio_quad_bursts(dut):
             regs = [rng.getrandbits(16) for _ in range(4)]
             await spi.write(sim.core_reg(1, sim.C_R0), regs)
             assert await spi.read(sim.core_reg(1, sim.C_R0), 4) == regs
-            assert await spi.read(sim.A_ID, n, fixed=True) == [sim.ID_VALUE] * n
+            assert await spi.read(sim.A_ID, n, fixed=True) == [BUILD_ID] * n
 
 
 @cocotb.test()

@@ -30,7 +30,9 @@ module pe_chip #(
     output reg  [31:0] bus_rdata,
     output wire        quad_en       // HOSTCFG.QUAD_EN
 );
-  localparam [31:0] ID_VALUE = 32'h5045_0002;
+  // ID (docs/isa.md §6.2): "PE", NBANKS, NCORES, ISA version 3 (v0.2 read 0x50450002)
+  localparam [3:0]  ID_NB = NBANKS, ID_NC = NCORES;
+  localparam [31:0] ID_VALUE = {16'h5045, ID_NB, ID_NC, 8'h03};
 
   // ---------------------------------------------------------------- global state
   reg [3:0]  enable;

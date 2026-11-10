@@ -78,7 +78,7 @@ def load_program(core, prog, base=None, *, profile=TAPEOUT, **cfg_kw):
         raise ValueError("program has no wrap top")
     words = prog.relocate(base)
     wrap = (base + prog.wrap_bottom) | ((base + prog.wrap_top) << 16)
-    validate_image(core, words, base, wrap, profile)
+    validate_image(core, words, base, wrap, profile, data=prog.data)   # `.data` tables are not jumps
     w = [(base + i, word) for i, word in enumerate(words)]
     c = core_config(prog, **cfg_kw)
     reg = lambda off: sim.core_reg(core, off)

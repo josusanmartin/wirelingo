@@ -1,9 +1,16 @@
-# protoemu — architecture & ISA specification (v0.2)
+# protoemu — architecture & ISA specification (v0.3)
 
 This document is normative: the RTL (`src/`), the golden model
 (`tools/pe/sim.py`) and the assembler (`tools/pe/asm.py`) implement exactly
 what is written here. When they disagree, this document wins and the other
 two get fixed.
+
+v0.3 is the 8x4 build's ISA (backlog item AO; the choice is in
+[8x4-study.md](8x4-study.md)): a 32-bit CRC of any width (§4.5), a tick
+counter (§4.1), a table read, a 16-bit compare, `jmp !t`, `flag tog` and
+bank-relative PC writes (§5.2), and a new ID (§6.2). Every addition uses
+encoding space that v0.2 reserved or ignored; §8 lists what that changes for
+v0.2 programs.
 
 ## 1. Overview
 
@@ -117,7 +124,9 @@ path; docs/physical.md.)
 
 IMEM is loaded by the host and is write-only from the host's side. Fetches
 are registered (SRAM-like): the core presents its next PC every cycle, so
-there's no branch penalty. Two host-side rules follow from this:
+there's no branch penalty. A core can also read a word of its own bank as
+data, through the same port (the table read, §5.2). A host-side rule
+follows from this:
 
 * Write a bank only while its core is disabled.
 
@@ -135,6 +144,8 @@ Per-core architectural state:
 | OSR          | 32    | 0                                |
 | OSR_CNT      | 6     | 32 (bits shifted out; 32 = empty) |
 | Z, C, T      | 1 each| 0                                |
+| TICKS        | 16    | 0 (the tick counter, §4.1)       |
+| CRC          | 32    | 0 at reset; kept on restart (§4.5) |
 | TXF          | D×32  | empty at reset; kept on restart (host → core) |
 | RXF          | D×32  | empty at reset; kept on restart (core → host) |
 
@@ -156,6 +167,15 @@ else:         tick = 0; cnt = cnt - 1
 Restart clears `cnt` and `facc`, so the first enabled cycle after a restart
 is a tick.
 
+**Tick counter.** `TICKS` counts the core's ticks: every tick while the core
+is enabled adds 1 (mod 2^16), whether the core runs, waits, delays, is
+halted or has faulted. Reset and restart clear it, and a disabled core's
+counter holds. An instruction reads it as source 15 (`MOV r, ticks`,
+`IN ticks, n`) and sees the count before its own tick: the first instruction
+after a restart reads 0. So the time between two events anywhere in a
+program, not only inside a WAIT, is one subtraction (mod 2^16), in ticks.
+The host can't read or write it.
+
 ### 4.2 Execution
 
 On each tick, a core is in one of these states:
@@ -169,7 +189,9 @@ On each tick, a core is in one of these states:
   instruction is retried on the next tick.
 * **HALTED / FAULT**: nothing happens until the host restarts the core.
 
-An instruction with delay *d* takes at least 1 + *d* ticks.
+An instruction with delay *d* takes at least 1 + *d* ticks. A table read
+(§5.2) also takes the clock after its tick: if that clock is a tick, the core
+spends it on the read (no instruction, no delay countdown).
 
 **Next PC** after a completed instruction is the jump target if a jump was
 taken. Otherwise it's `WRAP_BOTTOM` if `PC == WRAP_TOP`, else
@@ -228,10 +250,14 @@ pins starting at `SIDE_BASE` (mod 32). If `SIDE_PINDIR` is set, it writes
 
 ### 4.5 CRC tap
 
-Each core has a 16-bit CRC register fed by its shift registers, for protocols
-that append a CRC (USB CRC5/CRC16, CAN CRC15, CRC-CCITT, Modbus, ...).
-`CRCCTRL` sets the polynomial `POLY` (without the top term), the width
-`W = CRC_W + 1` (1–16), and which shifts feed it:
+Each core has a 32-bit CRC register fed by its shift registers, for protocols
+that append a CRC (USB CRC5/CRC16, CAN CRC15, CAN FD CRC17/CRC21, CRC-CCITT,
+Modbus, the 802.3 FCS, ...). `CRCCTRL` sets the polynomial's low half
+`POLY[15:0]`, the width `W = CRC_W + 1` (1–32; `CRC_W` is 5 bits, its top bit
+at CRCCTRL[23]) and which shifts feed it; `POLY_HI` (core offset 0x11) sets
+`POLY[31:16]`. `POLY` is the polynomial without its top term (CRC-32:
+0x04C11DB7). Only the low W bits of `POLY` are used, so for W ≤ 16, POLY_HI
+doesn't matter and the tap is v0.2's 16-bit one. The shifts that feed it:
 
 * `IN_TAP`: every `IN src, 1` feeds the bit shifted into the ISR.
 * `OUT_TAP`: every `OUT dst, 1` feeds the bit shifted out of the OSR.
@@ -243,12 +269,18 @@ fb  = CRC[W-1] ^ b
 CRC = ((CRC << 1) & CRC_MASK) ^ (fb ? POLY & CRC_MASK : 0)      CRC_MASK = 2^W - 1
 ```
 
-This is the non-reflected LFSR over bits in time order (for USB, the order
-they appear on the wire). `MOV crc, ~null` presets all ones, and `MOV r, crc`
-reads the CRC back for a compare. Over a correct USB DATA packet (payload plus
-its inverted CRC16) the register ends at the residue 0x800D; over a correct
-token it ends at 0b01100. The CRC is not changed by restart; the host can
-write it through `CRC` (core block 0x07).
+This is the non-reflected LFSR over bits in time order (for USB and
+Ethernet, the order they appear on the wire). `MOV crc, ~null` presets all
+ones, and `MOV r, crc` reads the CRC back for a compare (`MOV isr, crc` or
+`IN crc, 32` all 32 bits). Over a correct USB DATA packet (payload plus its
+inverted CRC16) the register ends at the residue 0x800D; over a correct
+token it ends at 0b01100; over a correct 802.3 frame (DA to FCS, W = 32,
+POLY = 0x04C11DB7, preset all ones) at 0xC704DD7B. The FCS to send is the
+complement of the register after the data, its most significant bit first.
+The CRC is not changed by restart or by a CRCCTRL write; the host can write it
+through `CRC` (core block 0x07), which stores `value[15:0]`, and
+`value[31:16]` too when W > 16 (so with v0.2 settings it is v0.2's 16-bit
+register).
 
 ### 4.6 Flags
 
@@ -408,15 +440,21 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 3  | `OUT`    | `[18:15] dst  [4:0] count (0 = 32)`                                        |
 | 4  | `PUSH`   | `[18] iffull  [17] block`                                                  |
 | 5  | `PULL`   | `[18] ifempty  [17] block`                                                 |
-| 6  | `MOV`    | `[18:15] dst  [14:13] op  [12:9] src`                                      |
+| 6  | `MOV`    | `[18:15] dst  [14:13] op  [12:9] src`; op 3: table read                    |
 | 7  | `SET`    | `[18] pindirs  [4:0] value`                                                |
-| 8  | `LDI`    | `[17:16] rd  [15:0] imm`                                                   |
+| 8  | `LDI`    | `[18] 0  [17:16] rd  [15:0] imm`                                           |
+| 8  | `CMPW`   | `[18] 1  [17:16] imm[15:14]  [15:14] rd  [13:0] imm[13:0]`                 |
 | 9  | `ALU`    | `[18:16] aop  [15:14] rd  [13] imm  [12:0] imm13 / [1:0] rs`               |
 | 10 | `PIN`    | `[18:17] action  [4:0] pin`                                                |
-| 11 | `FLAG`   | `[18] clear  [2:0] idx`                                                    |
+| 11 | `FLAG`   | `[18] clear  [17] toggle  [2:0] idx`                                       |
 | 12 | `HALT`   | —                                                                          |
 | 13 | `CALL`   | as JMP: `[18:15] cond  [14:10] sel  [9:0] addr`                            |
-| 14–31 | —     | reserved (v0.3 serial pipeline)                                            |
+| 14–31 | —     | reserved                                                                   |
+
+v0.3's additions (CMPW, `jmp !t`, the table read, `flag tog`, source 15)
+take bits that v0.2 marked reserved or ignored: LDI's `[18]`, FLAG's `[17]`,
+MOV op 3, JMP/CALL `sel` with cond 0, operand code 15 as a source. Opcodes
+14–31 stay reserved.
 
 ### 5.1 Operand codes (`src` / `dst`)
 
@@ -430,11 +468,19 @@ ignores them. Reserved opcodes execute as NOP and complete.
 | 8    | NULL     | 0                                          | discard                                      |
 | 9    | STATUS   | `[3:0]` TXF level, `[7:4]` RXF level, `[8]` Z, `[9]` C, `[10]` T | discard            |
 | 10   | FLAGS    | `{24'b0, F7..F0}`                          | discard                                      |
-| 11   | PC       | `{22'b0, PC}`                              | jump to `value[9:0]`                         |
-| 12   | CRC      | `{16'b0, CRC}`                             | `CRC = value[15:0] & CRC_MASK` (§4.5)        |
+| 11   | PC       | `{22'b0, PC}`                              | jump to `{PC[9:8], value[7:0]}`: in the core's own bank |
+| 12   | CRC      | `CRC` (32 bits)                            | `CRC = value & CRC_MASK` (§4.5)              |
 | 13   | LINE     | IN: received bits (§4.7; core 0)           | OUT: queue bits to transmit (§4.7; core 0); MOV: discard |
 | 14   | LR       | `{22'b0, LR}`                              | MOV: `LR = value[9:0]`; OUT: discard (the assembler rejects it) |
-| 15   | —        | 0                                          | discard                                      |
+| 15   | TICKS    | `{16'b0, TICKS}` (§4.1)                    | discard (the assembler rejects OUT)          |
+
+A PC write by MOV or OUT is **bank-relative**: it keeps the bank bits of the
+PC, so a computed jump or a RET from a table assembled at address 0 works on
+any core. (v0.2 jumped to `value[9:0]` and faulted outside the bank.) RET
+(`MOV PC, LR`) is unchanged whenever the CALL's link is in its bank: for
+every CALL except one in the bank's last word with no wrap there, whose link
+is the next bank's first word (core 3's word 1023: word 0). v0.2's RET went
+there and faulted; v0.3's goes to word 0 of the core's own bank.
 
 For a PINS/PINDIRS destination, pin `(OUT_BASE + i) mod 32` gets `value[i]`
 for `0 ≤ i < OUT_COUNT`.
@@ -445,7 +491,8 @@ for `0 ≤ i < OUT_COUNT`.
 
 | cond | Syntax     | Holds when                                                  |
 |------|------------|-------------------------------------------------------------|
-| 0    | (none)     | always                                                      |
+| 0    | (none)     | always (`sel` = 0; any `sel` other than 1)                  |
+| 0    | `!t`       | `sel` = 1: T == 0                                           |
 | 1    | `!rN`      | `R[sel[1:0]] == 0`                                          |
 | 2    | `rN`       | `R[sel[1:0]] != 0`                                          |
 | 3    | `rN--`     | `R[sel[1:0]] != 0`; the register is decremented either way (0 → 0xFFFF) |
@@ -461,6 +508,9 @@ for `0 ≤ i < OUT_COUNT`.
 | 13   | `rxf`      | RXF full                                                    |
 | 14   | `f k`      | `F[sel[2:0]] == 1`                                          |
 | 15   | `!f k`     | `F[sel[2:0]] == 0`                                          |
+
+All 16 conditions were taken, so `!t` (the inverse of `t`, for "the WAIT was
+met") lives in cond 0, whose `sel` field v0.2 ignored. `call !t` is the same.
 
 **CALL cond, sel, addr** (opcode 13). Exactly JMP: the same fields and
 conditions, and `rN--` decrements either way. When the condition holds it also
@@ -570,12 +620,48 @@ happens and `data` is discarded, as for NULL. The assembler rejects them.
 3. Otherwise `OSR = pop(TXF)` and `OSR_CNT = 0`.
 
 **MOV dst, op src.** `value = op(src)`, where op 0 = none, 1 = invert (`~`,
-32-bit), 2 = bit-reverse (`::`, 32-bit) and 3 = reserved (behaves as none).
-The value is then written to `dst` (§5.1). MOV does not touch flags.
+32-bit) and 2 = bit-reverse (`::`, 32-bit). The value is then written to
+`dst` (§5.1). MOV does not touch flags. Op 3 is the table read.
+
+**Table read: `MOV OSR, [src]`** (MOV op 3, `dst` = 7). It reads the word at
+`{PC[9:8], src[7:0]}`, that is index `src[7:0]` of the core's own bank, into
+the OSR, with `OSR_CNT = 0`. The word comes through the core's fetch port, so
+it arrives one clock later:
+
+* the MOV completes on its tick as any MOV does (side-set, delay, next PC);
+  it writes nothing else;
+* on the next clock the bank returns the word, and at the end of that clock
+  it is in the OSR. That clock belongs to the read: if it is one of the
+  core's ticks, the core spends it there (no instruction is attempted and a
+  delay doesn't count down). So at CLKDIV 1 a table read takes 2 + *delay*
+  ticks; at INT ≥ 2 (or 0) the clock is never a tick and it takes 1 + *delay*;
+  at INT 1 with a fraction it is a tick unless the divider's carry
+  stretched that period;
+* the write happens whether or not the core is enabled in that clock. A
+  restart in that clock wins (the OSR is cleared), and a host write to the
+  core's PC in the MOV's own clock cancels it (the OSR keeps its value; the
+  fetch port serves the host's PC);
+* a host read of the OSR in that clock returns the old value.
+
+Other `dst` values with op 3 are reserved and behave as OSR; the assembler
+only emits `mov osr, [src]`. Only the OSR: a register load is
+`mov osr, [r1]` then `mov r0, osr`. A table word is any 32-bit value, written
+with `.data` (docs/asm.md). Why this shape: the address goes out on the
+jump path MOV PC already has (bank-relative, so the address multiplexer in
+front of the SRAM is v0.2's), and the only new datapath is the OSR's input
+from the SRAM output, one more load on each of its 32 bits.
 
 **SET pins|pindirs, v.** Write `v` to `SET_COUNT` pins from `SET_BASE`.
 
-**LDI rd, imm16.** `R[rd] = imm16`.
+**LDI rd, imm16** (`[18]` = 0). `R[rd] = imm16`.
+
+**CMPW rd, imm16** (LDI with `[18]` = 1; assembler `cmp rN, K` for
+K ≥ 8192, or `cmpw rN, K`). `Z = (R[rd] == imm16)`, `C = (R[rd] < imm16)`,
+as ALU `cmp`; no register is written. The immediate is split,
+`imm16 = {x[17:16], x[13:0]}`, so that `rd` sits in `[15:14]` as in ALU and
+WAIT kind 7 and shares their register selector. It is for the 16-bit
+constants a 13-bit ALU immediate can't hold (USB token filters, the 802.3
+SFD pattern, LIN masks in compares).
 
 **ALU aop, rd, (rs | #imm13).** Compute on `a = R[rd]` and `s`, where
 `s = imm ? zext(imm13) : R[rs]`:
@@ -598,7 +684,14 @@ The value is then written to `dst` (§5.1). MOV does not touch flags.
 * 2 = `toggle`: `pin_out ^= 1`
 * 3 = `hiz`: `pin_oe = 0`
 
-**FLAG set|clr k.** Set or clear global flag `F[k]`.
+**FLAG set|clr k.** Set or clear global flag `F[k]` (`[17]` = 0).
+
+**FLAG tog k** (`[17]` = 1; `[18]` is ignored). A set of `F[k]` if this core
+sees it 0 at the start of the cycle, else a clear. It goes through the
+normal set and clear of §5.3, so it needs no new wire to the flag register,
+and it is not atomic against another core's or the host's write to the same
+flag in the same cycle (a set wins). Used for a per-endpoint DATA0/DATA1
+toggle in one word.
 
 **HALT.** The core stops with `STATUS.halted = 1` until it is restarted.
 
@@ -612,7 +705,7 @@ effects combine into the state for cycle *t + 1*.
   uses the old configuration during *t*.
 * A host write to R0–R3 or PC overrides the core's own write to that register
   in the same cycle. A host PC write also cancels any pending delay and any
-  in-progress WAIT.
+  in-progress WAIT, and a table read the core issues in the same cycle (§5.2).
 * A `CTRL` write is the exception: it is registered first, so a write in
   cycle *t* acts in cycle *t + 1*. Its restart or FIFO clear overrides
   everything that core (or that FIFO) would do in *t + 1*, and its enable
@@ -722,7 +815,7 @@ do not establish that physical sampling margin.
 |--------------------|--------------|--------|----------------------------------------------|
 | 0x0000–0x03FF      | IMEM         | W      | instruction words                            |
 | 0x0400 + 0x20·c    | core *c* block | —    | see below                                    |
-| 0x0800             | ID           | R      | `0x50450002`                                 |
+| 0x0800             | ID           | R      | `0x5045BC03`: B = NBANKS, C = NCORES, 03 = v0.3 (below) |
 | 0x0801             | CTRL         | RW     | `[3:0]` enable; write-only, self-clearing: `[11:8]` restart, `[19:16]` FIFO clear |
 | 0x0802             | FLAGS_SET    | RW     | R: flags; W: set bits where 1                |
 | 0x0803             | FLAGS_CLR    | RW     | R: flags; W: clear bits where 1              |
@@ -739,6 +832,12 @@ do not establish that physical sampling margin.
 | 0x080E             | LINEPINS     | W      | line unit pins (§4.7)                        |
 | 0x080F             | LINESTAT     | R      | line unit status (§4.7)                      |
 
+**ID.** `[31:16]` = 0x5045 ("PE"), `[15:12]` NBANKS, `[11:8]` NCORES,
+`[7:0]` the ISA version, 0x03. The 8x4 tapeout reads `0x50453303`, its
+two-core fallback `0x50452203`; v0.2 builds (the 6x4 tapeout and its FPGA
+bitstreams) read `0x50450002`, with no geometry. Host software can so tell a
+stale bitstream from the new one, and the core count from the ID.
+
 **Configuration registers are write-only** (W: reads return 0); the host
 keeps its own copy of what it wrote. State and status stay readable. Dropping
 the configuration read path took a third of the chip's routing congestion away
@@ -754,14 +853,15 @@ Core block (offset from `0x0400 + 0x20·c`):
 | 0x03 | SHIFTCTRL | W      | `[0]` OUT_SHIFT_RIGHT, `[1]` IN_SHIFT_RIGHT, `[2]` AUTOPULL, `[3]` AUTOPUSH, `[4]` FJOIN_TX (§4.4), `[12:8]` PULL_THRESH, `[20:16]` PUSH_THRESH |
 | 0x04 | ENTRY     | W      | `[9:0]` restart PC (reset 256·c)                                       |
 | 0x05 | WRAP      | W      | `[9:0]` WRAP_BOTTOM (reset 0), `[25:16]` WRAP_TOP (reset 1023)         |
-| 0x06 | CRCCTRL   | W      | `[15:0]` POLY, `[19:16]` CRC_W (width − 1), `[20]` IN_TAP, `[21]` OUT_TAP |
-| 0x07 | CRC       | RW     | `[15:0]` CRC register                                                  |
+| 0x06 | CRCCTRL   | W      | `[15:0]` POLY[15:0], `[19:16]` CRC_W[3:0], `[20]` IN_TAP, `[21]` OUT_TAP, `[23]` CRC_W[4] (width − 1 = CRC_W, §4.5) |
+| 0x07 | CRC       | RW     | `[31:0]` CRC register; a write stores `[31:16]` only when CRC_W ≥ 16 (§4.5) |
 | 0x08 | PC        | RW     | current PC; a write sets it                                            |
 | 0x09 | STATUS    | R      | `[3:0]` TXF lvl, `[7:4]` RXF lvl, `[8]` Z, `[9]` C, `[10]` T, `[12]` stalled, `[13]` halted, `[14]` fault |
 | 0x0A–0x0D | R0–R3 | RW   | registers                                                              |
 | 0x0E | ISR       | R      |                                                                        |
 | 0x0F | OSR       | R      |                                                                        |
 | 0x10 | FIFO      | RW     | W: push TXF (dropped if full); R: pop RXF (0 if empty)                 |
+| 0x11 | POLY_HI   | W      | `[15:0]` POLY[31:16], the CRC polynomial's top half (reset 0, §4.5)     |
 
 A host write to PIN_OUT or PIN_OE replaces the whole register, ignoring pin
 ownership and overriding every core's writes in that cycle. It is meant for
@@ -775,9 +875,10 @@ addresses read as 0 and ignore writes.
 
 A build may implement fewer than four cores (`NCORES`) and IMEM banks
 (`NBANKS`), and chooses the FIFO depth `D` (4 or 8 words per direction;
-"full" in this document means D entries). The IHP tapeout's values (2 cores,
-2 banks, D = 8) are the defaults in `src/project.v`. For the parts that don't
-exist:
+"full" in this document means D entries). The IHP 8x4 tapeout's values
+(3 cores, 3 banks, D = 8) are the defaults in `src/project.v`; its fallback
+is the same RTL with 2 cores and 2 banks (`PE_NCORES=2`), and the 6x4 v0.2
+tapeout had 2, 2 and 8. For the parts that don't exist:
 
 * **Missing core *c*:** its register block reads as 0 and ignores writes
   (including FIFO pushes). `CTRL.enable[c]` and `CTRL.restart[c]` are stored or
@@ -787,3 +888,26 @@ exist:
 * **Missing bank *b*:** host writes to it are ignored and fetches from it read
   instruction 0 (`jmp 0`), so a present core *b* without its bank jumps to 0
   and faults there (§3) unless *b* = 0.
+
+## 8. v0.3 against v0.2
+
+Every v0.3 addition takes encoding space v0.2 reserved ("should be 0", "the
+hardware ignores them") or left unused. Every word the v0.2 assembler can
+emit keeps its v0.2 meaning, except a PC write (MOV/OUT PC, RET) whose value
+leaves the core's bank, and the register reset values are unchanged
+(the new state, TICKS, the CRC's top half and POLY_HI, resets to 0). Every
+program in `firmware/` assembles to the same words as before (checked when
+the v0.3 assembler landed). What a v0.2 program can see differently:
+
+| v0.2 | v0.3 | Who notices |
+|---|---|---|
+| ID `0x50450002` | `0x5045BC03` (§6.2) | host software that checks the ID |
+| `MOV`/`OUT` PC: jump to `value[9:0]`, a fault outside the bank | `{PC[9:8], value[7:0]}` | only a computed jump that left its bank (which faulted) |
+| RET after a CALL in a bank's last word (no wrap there): LR is the next bank's first word, a fault | word 0 of the own bank | the same: a program whose CALL ends its bank (none in `firmware/`) |
+| LDI with `[18]` set: an LDI | CMPW | only a hand-made word (`.word`) with a reserved bit set |
+| FLAG with `[17]` set: a set or clear by `[18]` | a toggle | the same |
+| MOV op 3: a plain MOV | a table read | the same; the v0.2 assembler never emitted op 3 |
+| JMP/CALL cond 0 with `sel` = 1: always | `!t` | the same; the assembler emits `sel` = 0 |
+| source 15: 0 | TICKS | the same; v0.2 had no name for it |
+| CRCCTRL `[23]`, offset 0x11: ignored | CRC_W[4], POLY_HI | a host that wrote reserved bits or an unlisted address |
+| CRC reads `{16'b0, CRC[15:0]}` | 32 bits, the top half 0 unless W > 16 was set | the same |

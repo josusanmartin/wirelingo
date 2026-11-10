@@ -161,7 +161,7 @@ def _instr_lines(text, program=None):
             if not m:
                 break
             line = m.group(2)
-        if not line or (line.startswith(".") and not line.startswith(".word")):
+        if not line or (line.startswith(".") and not line.startswith((".word", ".data"))):
             out.append((lineno, None))
             continue
         out.append((lineno, raw))
@@ -528,7 +528,15 @@ class Checker:
         return self.wrap_bottom if pc == self.wrap_top else pc + 1
 
     def delay(self, pc):
-        return isa.fields(self.words[pc])[1] & self.dmask
+        """(min, max) ticks after the instruction's own: its delay field, plus the clock
+        after a table read when that clock is a tick (docs/isa.md §5.2): always at
+        CLKDIV 1, never with INT >= 2, and either way with INT 1 and a fraction."""
+        op, sd, x = isa.fields(self.words[pc])
+        d = sd & self.dmask
+        if not (op == OP_MOV and bits(x, 14, 13) == isa.M_TBL):
+            return d, d
+        i, f = self.clkdiv
+        return (d + int(i == 1 and f == 0), d + int(i == 1))
 
     def ticks_to_clk(self, n, up):
         if n == INF:
@@ -578,7 +586,10 @@ class Checker:
             cond, sel, addr = bits(x, 18, 15), bits(x, 14, 10), bits(x, 9, 0)
             rs = sel & 3
             rv = st.r[rs]
-            if cond == isa.C_ALWAYS:
+            xnt = cond == isa.C_ALWAYS and sel == isa.XC_NT          # `jmp !t`
+            if xnt:
+                poss = {t == 0 for t in st.t}
+            elif cond == isa.C_ALWAYS:
                 poss = {True}
             elif cond == isa.C_ZERO:
                 poss = _truth(rv, lambda v: v == 0)
@@ -614,6 +625,8 @@ class Checker:
                     nst = nst._replace(c=_const(int(taken == (cond == isa.C_C))))
                 elif cond == isa.C_T:
                     nst = nst._replace(t=_const(int(taken)))
+                elif xnt:
+                    nst = nst._replace(t=_const(int(not taken)))
                 elif cond == isa.C_TXNE and taken:
                     nst = nst._replace(txf_ne=True)
                 elif cond == isa.C_RXF and not taken:
@@ -751,11 +764,14 @@ class Checker:
 
         if op == OP_MOV:
             dst, mop, src = bits(x, 18, 15), bits(x, 14, 13), bits(x, 12, 9)
-            if src < 4:
+            if mop == isa.M_TBL:          # a table read: the word goes to the OSR (delay() adds its tick)
+                out(seq, st._replace(osr_cnt=_const(0)))
+                return outs
+            elif src < 4:
                 v = st.r[src]
             elif src == isa.LR:
                 v = st.lr
-            elif src in (isa.NULL, isa.PINDIRS, 15) or (src == isa.LINE):
+            elif src in (isa.NULL, isa.PINDIRS) or (src == isa.LINE):
                 v = _const(0)
             else:
                 v = None
@@ -780,6 +796,16 @@ class Checker:
                     what = "RET with an unknown link register" if src == isa.LR else "computed jump (mov pc)"
                     out(None, st, sink=f"{what} at {self.where(pc)} is not supported")
                 return outs
+            out(seq, nst)
+            return outs
+
+        if op == OP_LDI and x & isa.LDI_CMPW:          # CMPW: cmp rd, #imm16
+            a, sv = st.r[bits(x, 15, 14)], isa.cmpw_imm(x)
+            if _ints(a):
+                res = {_alu(isa.A_CMP, av, sv) for av in a}
+                nst = st._replace(z=frozenset(z for _, z, _ in res), c=frozenset(c for _, _, c in res))
+            else:
+                nst = st._replace(z=BOTH, c=BOTH)
             out(seq, nst)
             return outs
 
@@ -875,7 +901,7 @@ class Checker:
                         clob = pc
                 elif op == OP_JMP:
                     cond = bits(x, 18, 15)
-                    nxt = [bits(x, 9, 0)] + ([] if cond == isa.C_ALWAYS else nxt)
+                    nxt = [bits(x, 9, 0)] + ([] if cond == isa.C_ALWAYS and bits(x, 14, 10) != isa.XC_NT else nxt)
                 elif op == OP_MOV:
                     dst, src = bits(x, 18, 15), bits(x, 12, 9)
                     if dst == isa.PC:
@@ -889,8 +915,8 @@ class Checker:
                     if dst == isa.LR:
                         clob = None if (src < 4 and src in saved) else pc
                 elif op in (OP_LDI, OP_ALU):
-                    rd = bits(x, 17, 16) if op == OP_LDI else bits(x, 15, 14)
-                    if not (op == OP_ALU and bits(x, 18, 16) == isa.A_CMP):
+                    rd = bits(x, 17, 16) if op == OP_LDI else bits(x, 15, 14)   # (a CMPW writes nothing)
+                    if not (op == OP_ALU and bits(x, 18, 16) == isa.A_CMP) and not (op == OP_LDI and x & isa.LDI_CMPW):
                         saved = saved - {rd}
                 elif op == OP_OUT and bits(x, 18, 15) < 4:
                     saved = saved - {bits(x, 18, 15)}
@@ -1010,7 +1036,7 @@ class Checker:
         for s0 in S:
             if s0 not in self.entry_state:
                 continue
-            dS = self.delay(s0)
+            dS, dS_hi = self.delay(s0)
             if not cond and skind == "enter" and d.to.kind == "done" and s0 in B:
                 # the interval ends when this same instruction completes: its stall
                 outs = self.step(s0, self.entry_state[s0])
@@ -1029,17 +1055,17 @@ class Checker:
                         r.errors.append(o.sink)
                     continue
                 if skind == "done":
-                    a, b, note = 1 + dS, 1 + dS, None
+                    a, b, note = 1 + dS, 1 + dS_hi, None
                 else:
-                    a, b, note = o.wlo + 1 + dS, o.whi + 1 + dS, o.why
+                    a, b, note = o.wlo + 1 + dS, o.whi + 1 + dS_hi, o.why
                 node(o.npc, o.st, cnt0, 0, START, "add", a, b, s0, note)
         while work:
             key = work.pop()
             if key[0] == "X":
                 _, pc, st, cnt, _ = key
                 for o in self.step(pc, st):         # its completion comes from after=, not a stall
-                    dX = self.delay(pc)
-                    node(o.npc, o.st, cnt, 1, key, "reset", 1 + dX, 1 + dX, pc, None)
+                    dX, dX_hi = self.delay(pc)
+                    node(o.npc, o.st, cnt, 1, key, "reset", 1 + dX, 1 + dX_hi, pc, None)
                 continue
             pc, st, cnt, phase = key
             for o in self.step(pc, st):
@@ -1049,8 +1075,8 @@ class Checker:
                     if "not supported" in o.sink or o.sink.startswith("runs off"):
                         r.errors.append(o.sink)
                     continue
-                dp = self.delay(pc)
-                node(o.npc, o.st, cnt, phase, key, "add", o.wlo + 1 + dp, o.whi + 1 + dp, pc, o.why)
+                dp, dp_hi = self.delay(pc)
+                node(o.npc, o.st, cnt, phase, key, "add", o.wlo + 1 + dp, o.whi + 1 + dp_hi, pc, o.why)
 
         # nodes that reach END
         rev = {}

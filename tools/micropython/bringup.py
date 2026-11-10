@@ -17,10 +17,10 @@ none of them has run on a demo board yet.
 """
 import protoemu_fw as fw
 from protoemu import (ProtoEmu, A_ID, A_CTRL, A_FSET, A_FCLR, A_POUT, A_POE, C_R0, C_FIFO,
-                      ST_HALTED, ST_FAULT)
+                      ST_HALTED, ST_FAULT, known_id)
 
 PROJECT = "tt_um_josusanmartin_protoemu"
-ID = 0x50450002
+ID = 0x50450002                      # v0.2 (the 6x4 tapeout); v0.3 builds: known_id()
 
 
 def setup(clock_hz=48_000_000):
@@ -41,8 +41,9 @@ def setup(clock_hz=48_000_000):
     tt.reset_project(False)
     pe = ProtoEmu(tt)
     got = pe.read(A_ID)
-    if got != ID:
-        raise RuntimeError("ID %08x, expected %08x: wrong project, clock or SPI pins" % (got, ID))
+    if not known_id(got):
+        raise RuntimeError("ID %08x, expected %08x or a v0.3 0x5045BC03: wrong project, clock or SPI pins"
+                           % (got, ID))
     return pe
 
 

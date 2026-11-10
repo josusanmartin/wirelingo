@@ -75,7 +75,7 @@ class Hw:
         self.spim.select(fabric=True)                 # host port at SCK = clk, 1-bit
         self.pe = self.board.protoemu()
         self.pe.transport = self.spim
-        check(self.pe.read(sim.A_ID) == sim.ID_VALUE, "ID over the fabric master")
+        check(sim.known_id(self.pe.read(sim.A_ID)), "ID over the fabric master")
 
     def load(self, core, prog, **cfg):
         for addr, words in host.coalesce(host.load_program(core, prog, core * 256, **cfg)):

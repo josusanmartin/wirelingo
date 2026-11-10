@@ -34,6 +34,7 @@ class Program:
     name: str = ""
     words: list = field(default_factory=list)
     reloc: set = field(default_factory=set)  # indices of JMP words
+    data: set = field(default_factory=set)   # indices of `.data` words (tables for `mov osr, [src]`)
     labels: dict = field(default_factory=dict)
     origin: int = None
     wrap_bottom: int = 0
@@ -142,7 +143,7 @@ def _assemble_block(name, lines, defs):
                 prog.wrap_bottom = pc
             elif d == ".wrap":
                 prog.wrap_top = pc - 1
-            elif d == ".word":
+            elif d in (".word", ".data"):
                 items.append((lineno, line, raw))
                 pc += 1
             elif d == ".clkdiv":
@@ -183,6 +184,8 @@ def _assemble_block(name, lines, defs):
     for idx, (lineno, line, raw) in enumerate(items):
         w, is_jmp = _encode(line, prog, defs, lineno)
         prog.words.append(w)
+        if line.startswith(".data"):
+            prog.data.add(idx)
         if is_jmp:
             prog.reloc.add(idx)
         prog.source_lines.append((idx, raw))
@@ -191,15 +194,18 @@ def _assemble_block(name, lines, defs):
 
 def _split_suffix(line, lineno):
     delay, side = None, None
+
+    def operand(m):     # `mov osr, [src]` ends in a bracketed operand, not a delay
+        return line[: m.start()].rstrip().endswith(",") and m.group(1).strip().lower() in LOCS
     m = re.search(r"\[([^\]]+)\]\s*$", line)
-    if m:
+    if m and not operand(m):
         delay, line = m.group(1), line[: m.start()].rstrip()
     m = re.search(r"\s+side\s+(\S+)\s*$", line)
     if m:
         side, line = m.group(1), line[: m.start()].rstrip()
     if delay is None:  # allow "[d] side x" order too
         m = re.search(r"\[([^\]]+)\]\s*$", line)
-        if m:
+        if m and not operand(m):
             delay, line = m.group(1), line[: m.start()].rstrip()
     return line, side, delay
 
@@ -297,6 +303,8 @@ def _jmp(ln):
                 raise ln.err("flag index 0..7")
         elif cs in _JMP_SIMPLE:
             cond, sel = _JMP_SIMPLE[cs], 0
+        elif cs == "!t":                  # cond 0 with sel 1 (docs/isa.md §5.2)
+            cond, sel = isa.C_ALWAYS, isa.XC_NT
         else:
             raise ln.err("unknown jmp condition")
         if not 0 <= sel < 32:
@@ -381,6 +389,10 @@ def _push_pull(ln):
 def _mov(ln):
     dst, src = ln.need(2, "mov takes dst, src")
     mop = isa.M_NONE
+    if src.startswith("[") and src.endswith("]"):   # table read (docs/isa.md §5.2)
+        if ln.loc(dst) != isa.OSR:
+            raise ln.err("mov osr, [src]: a table read goes to the OSR")
+        return isa.OP_MOV, (ln.loc(dst) << 15) | (isa.M_TBL << 13) | (ln.loc(src[1:-1]) << 9)
     if src.startswith("::"):
         mop, src = isa.M_REV, src[2:]
     elif src[:1] in ("!", "~"):
@@ -402,9 +414,13 @@ def _ldi(ln):
 
 def _alu(ln):
     rd, src = ln.need(2, f"{ln.mn} rN, rM|value")
-    x = (isa.ALU_NAMES.index(ln.mn) << 16) | (ln.reg(rd) << 14)
+    x = (isa.ALU_NAMES.index("cmp" if ln.mn == "cmpw" else ln.mn) << 16) | (ln.reg(rd) << 14)
     if src.lower() in ("r0", "r1", "r2", "r3", "x", "y"):
         return isa.OP_ALU, x | ln.reg(src)
+    if ln.mn in ("cmp", "cmpw"):              # CMPW: a 16-bit compare in LDI's format
+        v = ln.ranged(src.lstrip("#"), 0, 65536, "cmp immediate")
+        if v >= 8192 or ln.mn == "cmpw":
+            return isa.OP_LDI, isa.cmpw_fields(ln.reg(rd), v)
     return isa.OP_ALU, x | (1 << 13) | ln.ranged(src.lstrip("#"), 0, 8192, "alu immediate")
 
 
@@ -417,6 +433,8 @@ def _pin(ln):
 
 def _flag(ln):
     toks = ln.rest.split()
+    if len(toks) >= 2 and toks[0].lower() == "tog":     # toggle (docs/isa.md §5.2)
+        return isa.OP_FLAG, isa.FLAG_TOG | ln.ranged(" ".join(toks[1:]), 0, 8, "flag index")
     if len(toks) < 2 or toks[0].lower() not in ("set", "clr", "clear"):
         raise ln.err("flag set|clr k")
     return isa.OP_FLAG, (int(toks[0].lower() != "set") << 18) | ln.ranged(" ".join(toks[1:]), 0, 8, "flag index")
@@ -429,13 +447,13 @@ _ENCODERS = {
     "in": _in_out, "out": _in_out, "push": _push_pull, "pull": _push_pull,
     "mov": _mov, "set": _set, "ldi": _ldi, "pin": _pin, "flag": _flag,
     "halt": lambda ln: (isa.OP_HALT, 0),
-    **{name: _alu for name in isa.ALU_NAMES},
+    **{name: _alu for name in isa.ALU_NAMES}, "cmpw": _alu,
 }
 
 
 def _encode(line, prog, defs, lineno):
     """(word, is_jump) for one source line; jumps are relocated later."""
-    if line.startswith(".word"):
+    if line.startswith(".word") or line.startswith(".data"):
         return _eval(line[5:], defs, lineno) & 0xFFFFFFFF, False
     line, side, delay = _split_suffix(line, lineno)
     ln = _Line(line, defs, lineno)
