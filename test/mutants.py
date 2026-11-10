@@ -662,6 +662,23 @@ MUTANTS = {
                             "            cond, sel = isa.C_ALWAYS, 0", pytest(V03_MODEL)),
     "timing-table-read-one-tick": ("tools/pe/timing.py", "        return (d + int(i == 1 and f == 0), d + int(i == 1))",
                                    "        return d, d", pytest(V03_MODEL)),
+    # v0.3 firmware: the 10BASE-T FCS in the engine, the USB device with endpoint 1
+    "fw-eth10-tx-fcs-not-reversed": ("firmware/eth10_tx_fcs.pasm",
+                                     "    mov osr, ::crc            side 1       ; H  OSR[0] = CRC[31]",
+                                     "    mov osr, crc              side 1       ; H", pytest("test/model/test_eth10_fcs.py -k tx_fcs_min")),
+    "fw-eth10-tx-fcs-no-preset": ("firmware/eth10_tx_fcs.pasm", "    mov crc, ~null            side 0       ; CRC-32 preset",
+                                  "    nop                       side 0", pytest("test/model/test_eth10_fcs.py -k tx_fcs_streamed")),
+    "fw-eth10-tx-fcs-31-bits": ("firmware/eth10_tx_fcs.pasm", "    ldi r1, 31                side 0",
+                                "    ldi r1, 30                side 0", pytest("test/model/test_eth10_fcs.py -k tx_fcs_min")),
+    "fw-eth10-rx-fcs-residue": ("firmware/eth10_rx_fcs.pasm", "    cmp r0, 0xDD7B                ; CMPW, low half",
+                                "    cmp r0, 0xDD7A                ; CMPW, low half",
+                                pytest("test/model/test_eth10_fcs.py -k good_frames_pass")),
+    "fw-usb-ep1-toggle-stuck": ("firmware/usb_enum_ep1.pasm", "    flag tog F_T1                  ; v0.3: the other DATA toggle",
+                                "    flag set F_T1                  ; v0.3: the other DATA toggle",
+                                pytest("test/model/test_usb_enum_ep1.py -k reports_pins")),
+    "fw-usb-ep1-data-as-ep0": ("firmware/usb_enum_ep1.pasm", "    jmp f F_SENT1, ep1_data        ; endpoint 1's DATA",
+                               "    nop                            ; endpoint 1's DATA",
+                               pytest("test/model/test_usb_enum_ep1.py -k reports_pins")),
 }
 
 
