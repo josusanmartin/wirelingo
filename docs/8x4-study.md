@@ -36,8 +36,9 @@ proposed as written.
   three hours a run.
 * **Fallback: the same four additions on two cores** (+13.6K µm²,
   **estimate** 35.5 %), decided at a Dec 6 gate. It needs its own settings
-  search and receipts; the plan runs its search first (under a day), so it
-  is ready at the gate.
+  search and receipts; the plan runs its search first (about a day), so it
+  is ready at the gate. Whether it keeps the base's 48 MHz margin with the
+  table read's extra load is for that search to measure.
 * **Baseline (harden):** today's RTL on 8x4 routes with room to spare
   (Metal3 45.7 % at global routing, against fo6's 63.9 %), but with fo6's
   settings the slow corner misses 50 MHz by 0.643 ns; 48 MHz is met at
@@ -362,7 +363,10 @@ NRZ/NRZI receiver re-syncs its sample counter on every transition
 (`docs/isa.md` §4.7, the counter reloads to P/2), and bit stuffing bounds
 the run between transitions to 7 bits. At 50 MHz low speed is P = 33
 against 33.33 clocks per bit, −1.0 %: about 2.3 clocks of drift over 7
-bits against a half-bit margin of about 16. With 10BASE-T at exactly 5
+bits from the period error alone, about 2.7–3.7 with the P/2 reload's
+rounding (16 or 15 against 16.67), and about 3.5 more for a device at the
+edge of low speed's ±1.5 % rate tolerance, against a half-bit margin of
+about 16. With 10BASE-T at exactly 5
 clocks, **LS USB plus 10BASE-T at 50 MHz looks feasible on paper**. At
 48 MHz 10BASE-T is again 4.8 clocks, so not there.
 
@@ -572,7 +576,9 @@ third bank and keep everything else: 308,777 µm² synthesized (+13.6K),
 so the fallback loses one engine, not the work. It is not free either: the
 untuned 2-core layout misses 50 MHz at the slow corner by 0.643 ns, so it
 gets its own short search and its own receipts, scheduled first (plan,
-week 3).
+week 3). Its 48 MHz margin is not measured: the base has +0.19 ns at the
+slow corner, and the table read adds a load on those paths. If it misses
+48 MHz, the table read is the addition to drop (plan, the gate).
 
 ### Left out, and why
 
@@ -604,8 +610,9 @@ one harden at a time, so both searches share it. Both layouts miss 50 MHz
 at the slow corner untuned (two cores −0.643 ns, the package −1.571 ns), so
 **each needs its own settings search and its own receipts** (gate level,
 SDF, equivalence, precheck, `release_check.py`). A search of the 25–30 runs
-t48 needed is under a day for two cores and three to four days of
-continuous runner time for the package. So the 2-core search goes first:
+t48 needed is about a day for two cores (25–30 runs at the measured 43–49
+minutes: 18–25 h) and three to four days of continuous runner time for the
+package. So the 2-core search goes first:
 it is short, and it makes the fallback real before the package's search
 begins. The fallback's RTL is the package's with `PE_NCORES` 2, so it
 exists at the end of week 2. Weeks run Monday to Sunday.
@@ -614,7 +621,7 @@ exists at the end of week 2. Weeks run Monday to Sunday.
 |---|---|---|---|
 | 1 | Nov 9–15 | Author picks. The orchestrator allows the `flow/` edits AN needs (`gen_config.py`'s 8x4 corner and 3-bank layout, `fpga_profile.py`'s gate conversion), which RULES.md forbids today. Spec text in `docs/isa.md` for every addition; model, assembler and checker (port the v3 work, add the any-width CRC and the tick counter); model tests | Model suite green; spec reviewed by the verifier |
 | 2 | Nov 16–22 | RTL: `PE_NCORES` 3, the core additions, a new ID value. Lockstep coverage goals per instruction, the 3-core SRAM lockstep in the regression, formal properties (the table read's late write), mutants for each addition. Decide the OCaml port: port the additions, or date its equivalence claim to v2 | Lockstep (2-, 3-, 4-core), formal, mutants green |
-| 3 | Nov 23–29 | **Day 1: the fallback's search** (two cores with the additions, about 45 minutes a run; target 50 MHz at every corner, else 48 MHz, below), then its receipts start. **Days 2–7: the package's search** (about three hours a run). The receipts are simulations and checks, not hardens, so they can run beside the one harden. Firmware: `eth10_rx_fcs`, an FCS-appending `eth10_tx`, `usb_enum` with table reads, `usb_enum_ep1`; host tools for three cores | Fallback netlist with its receipts under way; a package candidate; firmware on the model and RTL |
+| 3 | Nov 23–29 | **Days 1–2: the fallback's search** (two cores with the additions, 25–30 runs at 43–49 min, 18–25 h; target 50 MHz at every corner, else 48 MHz, below), then its receipts start. **Days 3–7: the package's search** (25–30 runs at about 3.1 h, 78–93 h, inside the 120 h left). The receipts are simulations and checks, not hardens, so they can run beside the one harden. Firmware: `eth10_rx_fcs`, an FCS-appending `eth10_tx`, `usb_enum` with table reads, `usb_enum_ep1`; host tools for three cores | Fallback netlist with its receipts under way; a package candidate; firmware on the model and RTL |
 | 4 | Nov 30–Dec 6 | The package's receipts: gate-level functional suite, netlist-to-RTL equivalence, SDF standard and v2 sets at three corners, autonomous USB with delays, precheck, `release_check.py`. The fallback's receipts finish | **Go / fallback decision** (below): either way a netlist with complete receipts exists |
 | 5 | Dec 7–13 | KV260 bitstream (3 cores, or 2 after a fallback), orchestrator board runs (smoke, USB with Linux, Ethernet); concurrency demo: three protocols at once on model, RTL and FPGA | Board smoke passes |
 | 6 | Dec 14–20 | Write-up: README, summary, physical.md, isa.md §7 defaults, explain-wirelingo.md: `git grep -l -i -E "6x4|two cores"` finds 41 tracked files besides this study's own (38 outside `evidence/`; 23 in `docs/`, README and info.yaml); verifier rounds | Docs verified |
@@ -623,7 +630,7 @@ exists at the end of week 2. Weeks run Monday to Sunday.
 
 **The release clock.** Aim for 50 MHz at every corner; accept 48 MHz if
 the search does not get there. The baseline already meets 48 MHz at every
-corner (+0.19 ns); the package does not yet (−0.738 ns at the slow corner,
+corner (the slow corner by +0.19 ns); the package does not yet (−0.738 ns at the slow corner,
 `pkg3`). At 48 MHz the USB demos are unchanged and 10BASE-T runs at 40 MHz
 (4 clocks per bit), where it tolerates ±12 ns of edge jitter against
 802.3's ±13.5 ns (a one-off model sweep, [guide.md](guide.md#known-limits)).
@@ -634,11 +641,19 @@ tolerance. The orchestrator decides which clock the release claims.
 `release_check.py` at 48 MHz or better by then, take the fallback: two
 cores on 8x4 with the same ISA additions, which keeps every firmware and
 tool change and drops only the third bank. Because its search ran first
-(week 3, day 1) and its receipts ran beside the package's search, it is
-already through `release_check.py` at the gate, so week 5 is not spent
+(week 3, days 1–2) and its receipts ran beside the package's search, it
+should already be through `release_check.py` at the gate if its search
+closed, so week 5 is not spent
 redoing gate level, SDF, equivalence and precheck. The untuned 2-core
-layout already meets 48 MHz at every corner (base), so the fallback's
-worst case is a 48 MHz release.
+The base meets 48 MHz at every corner (slow +0.19 ns); the fallback adds
+the bundle's load on the SRAM output paths (the table read's OSR mux, on
+the paths that set the slow corner), so its own search measures whether it
+keeps that margin. If the fallback misses 48 MHz too, drop the table read,
+the addition on that path, and keep the rest (CMPW, `jmp !t`, `flag tog`,
+bank-relative PC, the any-width CRC, the tick counter); the USB device
+with a data endpoint then probably no longer fits a bank (the v3 study
+measured 243 words with the whole bundle, 250 with the table read alone and
+280 with none of it; the bundle without the table read was not counted).
 
 ## The KV260 FPGA build
 
