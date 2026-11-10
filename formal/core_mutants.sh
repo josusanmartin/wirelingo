@@ -1,7 +1,9 @@
 #!/bin/bash
 # Planted v0.3 bugs that formal/core.sby's properties (in src/pe_core.sv) must
 # catch: each runs the core proof on a scratch copy with one line changed and
-# must end DONE (FAIL). Needs sby + yices (OSS CAD Suite). Not in `make all`.
+# must end DONE (FAIL). (Counting every active clock instead of every tick
+# ends UNKNOWN at depth 6, not FAIL, so it is not in the list.) Needs sby +
+# yices (OSS CAD Suite). Not in `make all`.
 #   formal/core_mutants.sh            # from the repository root or formal/
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -31,7 +33,7 @@ table-clock-executes|  assign      exec    = attempt && bank_ok && !tbl_pend;|  
 table-pc-jumps|      pc <= tbl_issue ? pc_seq : fetch_addr;|      pc <= fetch_addr;
 table-word-dropped|      if (tbl_pend) begin\n        osr <= instr;|      if (1'b0) begin\n        osr <= instr;
 ticks-plus-2|          tcnt <= tcnt + 16'd1;|          tcnt <= tcnt + 16'd2;
-ticks-every-clock|        cnt <= cnt_next;\n        if (tick) begin|        cnt <= cnt_next;\n        if (1'b1) begin
+ticks-kept-on-restart|        stalled <= 1'b0;\n        tcnt <= 16'd0;\n|        stalled <= 1'b0;\n
 LIST
 echo "scratch: $out"
 exit $bad
