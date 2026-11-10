@@ -29,6 +29,13 @@ def id_value(ncores, nbanks):
     return 0x50450003 | (ncores << 8) | (nbanks << 12)
 
 
+def known_id(v):
+    """A protoemu ID: v0.2's, or a v0.3 build's (any geometry with 1 <= NBANKS <= NCORES <= 4).
+    Board tools check this, so they work with a v0.2 bitstream and a v0.3 one."""
+    nc, nb = (v >> 8) & 15, (v >> 12) & 15
+    return v == ID_V2 or (v >> 16 == 0x5045 and v & 0xFF == 3 and 1 <= nb <= nc <= 4)
+
+
 def core_reg(c, off):
     return CORE_BASE + CORE_STRIDE * c + off
 

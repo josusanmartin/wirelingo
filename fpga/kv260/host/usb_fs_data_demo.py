@@ -479,7 +479,7 @@ def main():
         spim.select(fabric=True)
         pe = board.protoemu()
         pe.transport = spim
-        if pe.read(sim.A_ID) != sim.ID_VALUE:
+        if not sim.known_id(pe.read(sim.A_ID)):
             sys.exit("FAIL: chip ID over the fabric master")
         print(f"[identity] RTL revision {ident['rtl_rev'][:12]}, clock {board.clk_hz() / 1e6:.4f} MHz")
         print("[wiring]")

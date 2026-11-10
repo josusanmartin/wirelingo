@@ -263,7 +263,8 @@ class QuadSPI:
     def enable_quad(self):
         """Call after reset; does not infer or reset core/ownership state."""
         self.xfer(b'\x02\x08\x0b\x00\x00\x00\x01')
-        if self.read(0x800) != 0x50450002:
+        v = self.read(0x800)             # v0.2's ID, or a v0.3 build's 0x5045BC03
+        if v != 0x50450002 and not (v >> 16 == 0x5045 and v & 0xFF == 3):
             raise RuntimeError("quad ID check failed; check pins, clock and chip reset")
 
     def write(self, addr, words, fixed=False):
