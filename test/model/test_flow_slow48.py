@@ -201,6 +201,32 @@ def test_sta_receipt_rejects_changes_during_the_run(tmp_path, fault):
         rec.finish(out)
 
 
+@pytest.mark.parametrize("printed,ok", [("20.832001", True), ("20.831999", True), ("20.832000", True),
+                                        ("20.832010", False), ("20.833000", False)])
+def test_clock_report_in_single_precision(tmp_path, printed, ok):
+    # OpenSTA prints 20.832 ns as 20.832001 (the run apbase's rerun)
+    wt = sta_step(candidate(tmp_path))
+    rec = module("release_receipts")
+    out = tmp_path / "sta.manual"
+    rec.begin(wt, out, "sta", wt, dict(period_ns=20.832, step=STEP, image="fixture"))
+    config = json.loads((wt / "runs/wokwi" / STEP / "config.json").read_text())
+    (out / "config.json").write_text(json.dumps(dict(config, CLOCK_PERIOD=20.832)))
+    (out / "status.json").write_text('{"returncode":0}')
+    (out / "run.log").write_text("fixture\n")
+    for corner in CORNERS:
+        d = out / "sta" / corner
+        d.mkdir(parents=True)
+        (d / "sta.log").write_text("".join(f"%OL_METRIC_{'I' if 'count' in k else 'F'} {k}__corner:{corner} 0\n"
+                                           for k in rec.STA_METRICS))
+        (d / "clock.rpt").write_text(f"Clock: clk\nSources: clk\nPeriod: {printed}\n")
+    (out / "sta/state_out.json").write_text("{}")
+    if ok:
+        assert rec.finish(out).is_file()
+    else:
+        with pytest.raises(ValueError):
+            rec.finish(out)
+
+
 def test_sta_rerun_refuses_a_step_that_did_not_read_the_final_netlist(tmp_path, fake_docker):
     wt = sta_step(candidate(tmp_path), nl_text="module older; endmodule\n")
     rc, out = rerun(wt, 20.832, tmp_path / "sta-out")

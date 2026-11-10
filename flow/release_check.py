@@ -111,7 +111,7 @@ def main(argv=None):
             sta = receipts.one(run.glob("*-openroad-stapostpnr"), "final STA directory")
             report = (sta / corner / "clock.rpt").read_text()
             clock = re.search(receipts.CLOCK_PERIOD_RE, report, re.M | re.S)
-            if not clock or abs(float(clock[1]) - period) > 1e-6:
+            if not clock or abs(float(clock[1]) - period) > receipts.CLOCK_TOLERANCE_NS:
                 failures.append(f"{corner}: actual STA clock report missing or disagrees with CLOCK_PERIOD")
             timed, source = period, "actual constraint"
             timing = {k: m.get(f"{k}__corner:{corner}") for k in receipts.STA_METRICS}

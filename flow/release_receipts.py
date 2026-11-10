@@ -26,6 +26,9 @@ RUNNER_ROOT = Path(__file__).resolve().parent
 
 STA_METRICS = ("timing__setup__ws", "timing__hold__ws", "timing__setup_vio__count", "timing__hold_vio__count")
 CLOCK_PERIOD_RE = r"^Clock: clk\n(?:(?!^Clock:).)*?^Period: ([0-9.]+)\s*$"
+# OpenSTA holds a period in single precision: 20.832 ns prints as 20.832001
+# (1.0e-6 off). 5e-6 ns (0.005 ps) still pins the period.
+CLOCK_TOLERANCE_NS = 5e-6
 
 
 def runner_files(root):
@@ -322,7 +325,7 @@ def outputs(out, data):
         for corner in CORNERS:
             d = out / "sta" / corner
             clock = re.search(CLOCK_PERIOD_RE, (d / "clock.rpt").read_text(), re.M | re.S)
-            if not clock or abs(float(clock[1]) - period) > 1e-6:
+            if not clock or abs(float(clock[1]) - period) > CLOCK_TOLERANCE_NS:
                 raise ValueError(f"{corner}: STA clock report missing or not at {period} ns")
             sta_metrics(out, corner)
             files += [d / "sta.log", d / "clock.rpt"]
