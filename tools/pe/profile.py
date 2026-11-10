@@ -17,11 +17,12 @@ class Profile:
             raise ValueError("unsupported bank size")
 
 
-TAPEOUT = Profile("fixed-bank-v1-2c2b8f", 2, 2)
+TAPEOUT = Profile("fixed-bank-v1-2c2b8f", 2, 2)      # the 6x4 v0.2 tapeout (and the 8x4 fallback's geometry)
+PKG3 = Profile("fixed-bank-v1-3c3b8f", 3, 3)         # the 8x4 package: three cores and banks (docs/isa.md §7)
 FULL = Profile("fixed-bank-v1-4c4b8f", 4, 4)
 
 
-def validate_image(core, words, base, wrap, profile=TAPEOUT):
+def validate_image(core, words, base, wrap, profile=TAPEOUT, data=()):
     """Validate the whole image before a transport can perform any writes.
 
     Direct JMPs and CALLs must stay in the core's bank. Computed PC writes are checked
@@ -41,8 +42,8 @@ def validate_image(core, words, base, wrap, profile=TAPEOUT):
     bottom, top = wrap & 0xFFFF, wrap >> 16
     if not base <= bottom <= top < base + len(words):
         raise ValueError("wrap must lie inside the loaded image")
-    for word in words:
+    for i, word in enumerate(words):
         if not isinstance(word, int) or not 0 <= word <= 0xFFFFFFFF:
             raise ValueError("instruction must be a 32-bit word")
-        if word >> 27 in (0, 13) and not lo <= (word & 0x3FF) < hi:
+        if word >> 27 in (0, 13) and i not in data and not lo <= (word & 0x3FF) < hi:
             raise ValueError("JMP/CALL target leaves core's fixed instruction bank")

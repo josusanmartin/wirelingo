@@ -10,7 +10,7 @@ A staged packet is sent when the host has pushed it and set
 F_STAGED. DeviceSoftware is the reference device software (control requests,
 re-staging after a lost ACK, the address filter after SET_ADDRESS).
 """
-from . import sim, usb
+from . import isa, sim, usb
 
 FLAGS = dict(F_IN=0, F_ACK=1, F_EXP=2, F_SETUP=3, F_STAGED=4, F_GOTACK=5, F_RESET=6, F_SENT=7)
 F_SETUP, F_STAGED, F_GOTACK, F_SENT = (1 << FLAGS[k] for k in ("F_SETUP", "F_STAGED", "F_GOTACK", "F_SENT"))
@@ -82,7 +82,7 @@ def filter_write(rx_prog, rx_base, addr, endp=0):
     else:
         a = rx_base + rx_prog.labels["filter"]
         word = rx_prog.relocate(rx_base)[rx_prog.labels["filter"]]
-    return a, (word & ~0xFFFF) | usb.token_filter(addr, endp)
+    return a, isa.with_imm16(word, usb.token_filter(addr, endp))   # the filter is an LDI or a CMPW
 
 
 class DeviceSoftware:

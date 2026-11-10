@@ -246,12 +246,12 @@ class ControlHost(UsbHost):
                 return
         raise TimeoutError("SETUP not acknowledged")
 
-    def data_in(self, addr, toggle):
+    def data_in(self, addr, toggle, endp=0):
         """One IN transaction expecting DATA<toggle>; returns the payload."""
         want = usb.pid_byte(usb.PID_DATA1 if toggle else usb.PID_DATA0)
         errors = 0
         while True:
-            self._send(usb.token(usb.PID_IN, addr, 0))
+            self._send(usb.token(usb.PID_IN, addr, endp))
             r = self._response()
             if r == usb.handshake(usb.PID_STALL):
                 self.log.append(("IN", addr, "STALL"))
