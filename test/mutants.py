@@ -23,7 +23,18 @@ import xml.etree.ElementTree as ET
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 LOCKSTEP = ("cd test && LOCKSTEP_SEEDS=40 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 "
-            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; python3 check_results.py m.xml 6")
+            "make TB=chip COCOTB_RESULTS_FILE=m.xml > m.log 2>&1; "
+            "python3 check_results.py m.xml $(grep -c '^@cocotb.test()' test_lockstep.py)")
+
+
+def lockstep3(test):
+    """One lockstep test on the 8x4 package's build (3 cores, 3 SRAM banks, 8-deep FIFOs)."""
+    return (f"cd test && PE_NCORES=3 PE_NBANKS=3 PE_FIFO_LOG2=3 make TB=chip TESTCASE={test} "
+            "COCOTB_RESULTS_FILE=m.xml > m.log 2>&1")
+
+
+V03 = lockstep3("test_v03_corners")              # the v0.3 additions, every corner of the table read
+V03_MODEL = "test/model/test_v03_isa.py"
 
 
 def top(test):
@@ -609,6 +620,48 @@ MUTANTS = {
         "            if f is None:", FAB),
     "fab-port-not-given-back": ("fpga/kv260/host/postfreeze_demo.py", "        self.spim.select(fabric=False)\n",
         "        pass\n", FAB),
+    # v0.3 (docs/isa.md §4.1, §4.5, §5.2, §6.2): the RTL against the model, the model,
+    # assembler and checker against test_v03_isa
+    "rtl-cmpw-as-ldi": ("src/pe_core.sv", "        if (x[18]) z_we = 1'b1;                     // CMPW: flags only",
+                        "        if (1'b0) z_we = 1'b1;", V03),
+    "rtl-cmpw-imm-top-bits": ("src/pe_core.sv", "{is_cmpw ? x[17:16] : 2'd0, x[13] && is_cmpw, x[12:0]}",
+                              "{2'd0, x[13] && is_cmpw, x[12:0]}", V03),
+    "rtl-not-t-always": ("src/pe_core.sv", "cond_ok = jsel != 5'd1 || !t;", "cond_ok = 1'b1;", V03),
+    "rtl-table-word-executes": ("src/pe_core.sv", "assign      exec    = attempt && bank_ok && !tbl_pend;",
+                                "assign      exec    = attempt && bank_ok;", V03),
+    "rtl-table-pc-jumps": ("src/pe_core.sv", "      pc <= tbl_issue ? pc_seq : fetch_addr;", "      pc <= fetch_addr;", V03),
+    "rtl-table-not-cancelled-by-host": ("src/pe_core.sv", "mop == 2'd3 && !host_pc_w;", "mop == 2'd3;", V03),
+    "rtl-table-no-extra-tick": ("src/pe_core.sv", "          if (tbl_pend) begin\n            // the table read's tick",
+                                "          if (1'b0) begin\n            // the table read's tick", V03),
+    "rtl-table-word-not-written": ("src/pe_core.sv", "      if (tbl_pend) begin\n        osr <= instr;",
+                                   "      if (1'b0) begin\n        osr <= instr;", V03),
+    "rtl-tog-as-set-clear": ("src/pe_core.sv", "if (x[17] ? flags[x[2:0]] : x[18]) fclr", "if (x[18]) fclr", V03),
+    "rtl-pc-write-absolute": ("src/pe_core.sv", "            jump_target = {pc[9:8], mov_val[7:0]};\n          end\n          L_CRC",
+                              "            jump_target = mov_val[9:0];\n          end\n          L_CRC", V03),
+    "rtl-ticks-read-divider": ("src/pe_core.sv", "L_TICKS:  src_val = {16'd0, tcnt};", "L_TICKS:  src_val = {16'd0, cnt};", V03),
+    "rtl-ticks-kept-on-restart": ("src/pe_core.sv", "        stalled <= 1'b0;\n        tcnt <= 16'd0;\n",
+                                  "        stalled <= 1'b0;\n", V03),
+    "rtl-crc-poly-hi-ignored": ("src/pe_core.sv", "wire [31:0] crc_poly_m = {crc_poly_hi, crc_poly} & crc_mask;",
+                                "wire [31:0] crc_poly_m = {16'd0, crc_poly} & crc_mask;", V03),
+    "rtl-crc-width-4-bits": ("src/pe_core.sv", "{bus_wdata[15:0], bus_wdata[23], bus_wdata[19:16],",
+                             "{bus_wdata[15:0], 1'b0, bus_wdata[19:16],", V03),
+    "rtl-crc-host-write-32": ("src/pe_core.sv", "5'h07: crc <= {crc_w[4] ? bus_wdata[31:16] : 16'd0, bus_wdata[15:0]};",
+                              "5'h07: crc <= bus_wdata;", V03),
+    "rtl-id-v02": ("src/pe_chip.sv", "{16'h5045, ID_NB, ID_NC, 8'h03}", "32'h5045_0002", lockstep3("test_registers")),
+    "model-table-no-extra-tick": ("tools/pe/sim.py", "        if self.tbl is not None:              # the clock after",
+                                  "        if False:              # the clock after", pytest(V03_MODEL)),
+    "model-table-word-at-once": ("tools/pe/sim.py", "                else:\n                    core.tbl = tbl[c]",
+                                 "                else:\n                    core.osr, core.osr_cnt = tbl[c], 0", pytest(V03_MODEL)),
+    "model-crc-poly-hi-ignored": ("tools/pe/sim.py", "        poly = (self.crc_poly_hi << 16) | self.crc_poly",
+                                  "        poly = self.crc_poly", pytest(V03_MODEL)),
+    "model-ticks-read-after": ("tools/pe/sim.py", "        self.ticks = core.ticks          # the tick counter",
+                               "        self.ticks = core.ticks + 1      # the tick counter", pytest(V03_MODEL)),
+    "isa-cmpw-imm-low-only": ("tools/pe/isa.py", "    return (((x >> 16) & 3) << 14) | (x & 0x3FFF)",
+                              "    return x & 0x3FFF", pytest(V03_MODEL)),
+    "asm-not-t-as-always": ("tools/pe/asm.py", "            cond, sel = isa.C_ALWAYS, isa.XC_NT",
+                            "            cond, sel = isa.C_ALWAYS, 0", pytest(V03_MODEL)),
+    "timing-table-read-one-tick": ("tools/pe/timing.py", "        return (d + int(i == 1 and f == 0), d + int(i == 1))",
+                                   "        return d, d", pytest(V03_MODEL)),
 }
 
 

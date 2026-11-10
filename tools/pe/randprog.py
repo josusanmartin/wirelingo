@@ -48,6 +48,21 @@ def random_instr(rng, bank, bank_words, profile="mixed"):
     sd = _sd(rng)
     if op in (isa.OP_JMP, isa.OP_CALL):
         x = (rng.randrange(16) << 15) | (rng.randrange(32) << 10) | _target(rng, bank, bank_words)
+        if rng.random() < 0.12:
+            x = (isa.C_ALWAYS << 15) | (isa.XC_NT << 10) | (x & 0x3FF)      # v0.3 `!t`
+    elif op == isa.OP_MOV and rng.random() < 0.12:
+        # v0.3 table read: mostly a register (small values: near the program), any dst
+        src = rng.randrange(4) if rng.random() < 0.8 else rng.randrange(16)
+        dst = isa.OSR if rng.random() < 0.85 else rng.randrange(16)
+        x = (dst << 15) | (isa.M_TBL << 13) | (src << 9)
+    elif op in (isa.OP_MOV, isa.OP_IN) and rng.random() < 0.05:
+        x = ((rng.randrange(4) << 15) | (isa.TICKS << 9)) if op == isa.OP_MOV else \
+            (isa.TICKS << 15) | rng.randrange(32)                           # v0.3 tick counter
+    elif op == isa.OP_LDI and rng.random() < 0.3:
+        imm = rng.randrange(12) if rng.random() < 0.5 else rng.getrandbits(16)
+        x = isa.cmpw_fields(rng.randrange(4), imm)                          # v0.3 CMPW
+    elif op == isa.OP_FLAG and rng.random() < 0.3:
+        x = isa.FLAG_TOG | (rng.getrandbits(1) << 18) | rng.randrange(8)    # v0.3 toggle
     elif op == isa.OP_MOV and rng.random() < 0.25:
         # the link register: RET (mov pc, lr), saving and restoring it
         x = rng.choice([(isa.PC << 15) | (isa.LR << 9), (rng.randrange(4) << 15) | (isa.LR << 9),
@@ -116,6 +131,18 @@ def random_config_writes(rng, bank_words):
     w.append((sim.A_POWN_LO, rng.getrandbits(32)))
     w.append((sim.A_POWN_HI, rng.getrandbits(32)))
     w.append((sim.A_OD, rng.getrandbits(8)))
+    return w
+
+
+def random_v03_writes(rng):
+    """v0.3 configuration (its own generator call, so the other streams stay as they
+    were): the CRC's width to 32 bits (CRCCTRL[23]) with POLY_HI, then a 32-bit CRC."""
+    w = []
+    for c in range(4):
+        if rng.random() < 0.5:
+            w.append((sim.core_reg(c, sim.C_CRCCTRL), rng.getrandbits(24)))
+            w.append((sim.core_reg(c, sim.C_POLY_HI), rng.getrandbits(32)))
+            w.append((sim.core_reg(c, sim.C_CRC), rng.getrandbits(32)))
     return w
 
 

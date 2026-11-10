@@ -21,6 +21,7 @@ BANK_AW = int(os.environ.get("PE_BANK_AW", "4"))
 NCORES = int(os.environ.get("PE_NCORES", "4"))
 core = lambda i: i % NCORES  # tests spread over the cores that exist
 PROFILE = Profile("simulation", NCORES, int(os.environ.get("PE_NBANKS", str(NCORES))), 1 << BANK_AW)
+BUILD_ID = sim.id_value(PROFILE.ncores, PROFILE.nbanks)   # docs/isa.md §6.2
 CLK_NS = float(os.environ.get("PE_CLK_NS", "20"))  # 50 MHz (flow/gl_sdf_test.sh varies it)
 SCK_HALF = 4  # SPI SCK half period in clk cycles: clk/8 (the port allows up to clk; test_host_port_fast)
 
@@ -181,7 +182,7 @@ async def test_generated_uart_virtual_loopback(dut):
 @cocotb.test()
 async def test_id(dut):
     spi = await setup(dut)
-    assert (await spi.read(sim.A_ID))[0] == sim.ID_VALUE
+    assert (await spi.read(sim.A_ID))[0] == BUILD_ID
     await spi.write(sim.core_reg(core(2), sim.C_R0), [0x1234, 0xBEEF], fixed=False)
     assert await spi.read(sim.core_reg(core(2), sim.C_R0), 2) == [0x1234, 0xBEEF]
     # FIFO: push 3 words to core 1's TXF, check level
@@ -1798,7 +1799,7 @@ async def test_host_port_fast(dut):
         # quad: ignored while QUAD_EN = 0, then works
         assert await spi.qxfer(0x43, sim.A_ID, nread=1) == [0]
         await spi.write(sim.A_HOSTCFG, [1])
-        assert await spi.qxfer(0x43, sim.A_ID, nread=1) == [sim.ID_VALUE]
+        assert await spi.qxfer(0x43, sim.A_ID, nread=1) == [BUILD_ID]
         await spi.qxfer(0x42, sim.core_reg(1, sim.C_R0), regs[::-1])
         assert await spi.qxfer(0x43, sim.core_reg(1, sim.C_R0), nread=4) == regs[::-1], period
         await spi.qxfer(0x4A, fifo, words)

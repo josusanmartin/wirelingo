@@ -184,7 +184,7 @@ async def run(dut, mode):
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 5)
-    assert await spi.read(sim.A_ID) == sim.ID_VALUE
+    assert await spi.read(sim.A_ID) == sim.id_value(2, 2)   # the 2-core profile run() pins
     t_load = get_sim_time(unit="ps")
     writes = spec.helper.load_writes()
     await spi.load(writes)

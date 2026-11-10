@@ -11,7 +11,9 @@ module rtl_fetch_ownership_tb;
   reg [31:0] bus_wdata = 0;
   wire [6:0] uo_out;
   wire [7:0] uio_out, uio_oe;
-  pe_chip #(.NCORES(2), .NBANKS(2), .BANK_AW(8), .FIFO_LOG2(3)) dut (
+  // the 8x4 tapeout build (3 cores, 3 banks); the corpora never enable core 2, so
+  // its outputs stay 0 and every observed field is as with 2 cores
+  pe_chip #(.NCORES(3), .NBANKS(3), .BANK_AW(8), .FIFO_LOG2(3)) dut (
     .clk(clk), .rst_n(rst_n), .ui_in(5'd0), .uio_in(8'd0),
     .uo_out(uo_out), .uio_out(uio_out), .uio_oe(uio_oe),
     .bus_addr(bus_addr), .bus_we(bus_we), .bus_wdata(bus_wdata),
