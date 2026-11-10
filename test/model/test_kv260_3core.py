@@ -53,6 +53,15 @@ def test_another_core_count_than_expected_is_refused():
         pe_kria.geometry(sim.ID_V2, cores=3)
 
 
+def test_v2_demo_takes_any_protoemu_id_with_its_geometry():
+    """v2_demo.Hw also runs on the cycle model's 4-core profile (fabric_ping's fake board)."""
+    assert pe_kria.any_geometry(ID3) == pe_kria.geometry(ID3)
+    assert pe_kria.any_geometry(sim.id_value(4, 4)) == (0x50454403, "v0.3", 4, 4)
+    for v in (0, 0x50450003, 0x4C414231):
+        with pytest.raises(ValueError, match="not a protoemu ID"):
+            pe_kria.any_geometry(v)
+
+
 def test_no_board_tool_asserts_the_v02_id_alone():
     for p in list(HOST.glob("*.py")) + [ROOT / "fpga/kv260/sim/test_kv260.py"]:
         text = p.read_text()

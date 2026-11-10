@@ -76,8 +76,8 @@ class Hw:
         self.pe = self.board.protoemu()
         self.pe.transport = self.spim
         import pe_kria
-        try:                                          # a KV260 build's ID, or stop
-            self.geom = pe_kria.geometry(self.pe.read(sim.A_ID))
+        try:                                          # a protoemu ID (as sim.known_id), or stop
+            self.geom = pe_kria.any_geometry(self.pe.read(sim.A_ID))
         except ValueError as e:
             raise AssertionError(f"ID over the fabric master: {e}") from None
         self.pe = self.board.protoemu(ncores=self.geom.ncores, nbanks=self.geom.nbanks)

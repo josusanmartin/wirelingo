@@ -70,6 +70,19 @@ def geometry(v, cores=None):
     return g
 
 
+def any_geometry(v):
+    """The Geometry of any protoemu ID (pe.sim.known_id: v0.2's, or any v0.3 geometry,
+    such as the cycle model's 4-core profile behind fabric_ping's fake board), or
+    ValueError. For tools that also run on that model (v2_demo.Hw); the board-side
+    checks of a KV260 build use geometry()."""
+    from pe import sim
+    if v in BUILDS:
+        return BUILDS[v]
+    if not sim.known_id(v):
+        raise ValueError(f"chip ID 0x{v:08X} is not a protoemu ID")
+    return Geometry(v, "v0.3", (v >> 8) & 15, (v >> 12) & 15)
+
+
 def app_cores(cores=None):
     """On the board: (the active app, the core count it holds: fabric_guard.APP_BUILD).
     cores: a count asked for on the command line; another one than the app's refuses."""
