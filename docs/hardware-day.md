@@ -109,7 +109,7 @@ From the USB breadboard: 3 x 1 kohm (only `rx` borrows them), 6 x 10 ohm, jumper
   this branch. Setting up has the command. Merging that branch here would conflict in
   `README.md` and `test/mutants.py`; copying the five files doesn't.
 * **Whether `ping` is worth a new bitstream.** A 50 MHz app with 12 mA pins doesn't exist;
-  `PMOD_DRIVE=12 fpga/kv260/build.sh 24` would make it, as a Vivado run on runner1.
+  `PMOD_DRIVE=12 fpga/kv260/build.sh --cores 2 24` would make it (`--cores 2` since 2026-11-10: the default is now the 3-core package), as a Vivado run on runner1.
 * **How to reach the Pi on the isolated cable.** Wi-Fi if it has it, otherwise the
   file-writing watch this runbook uses.
 * **Which I2C part.** A 24C02-style EEPROM or an 8-bit-register sensor. A 24C32 or larger

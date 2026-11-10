@@ -3,10 +3,11 @@
 **v0.3 builds (2026-11-10, branch `ar-kv260-3core`).** `build.sh --cores 3`
 builds the 8x4 package's chip (3 cores, a 256-word bank each, 8-deep FIFOs,
 ID `0x50453303`) and `--cores 2` its fallback (`0x50452203`); the host tools
-accept those IDs and v0.2's `0x50450002`. Evidence so far: Vivado place and
+accept those IDs and v0.2's `0x50450002`. Evidence: Vivado place and
 route with timing met on both, RTL simulation of the KV260 design at both
-core counts, and the host tools on the cycle model. **No v0.3 bitstream has
-run on the board yet: board results are pending** ([v0.3 status](#v03-status)).
+core counts, the host tools on the cycle model, and, **RTL in FPGA fabric**,
+the 3-core bitstream on the KV260 (2026-11-10, `board_smoke.py`: ALL PASS,
+exit 0). The 2-core v0.3 bitstream has not run on the board ([v0.3 status](#v03-status)).
 Everything below that section is v0.2 (2 cores) and was measured on the
 board as its dates say.
 
@@ -43,7 +44,7 @@ host port exactly like the TT demo board's RP2350:
 | gpio1 ch1 in `0xA0010000` | Gray-coded count of protoemu clk cycles |
 
 protoemu's clock is an MMCM output from pl_clk0 (100 MHz): 1200 MHz VCO / 24 =
-50 MHz (`build.sh 25` for 48 MHz, `build.sh 30` for 40 MHz; `build.sh` takes no
+50 MHz (`build.sh --cores 2 25` for the 48 MHz app, `build.sh --cores 2 30` for the 40 MHz one; `build.sh` takes no
 other divider). It is asynchronous to the AXI side, as the
 chip is to its host. The SPI device's clock is `CLKOUT2_DIVIDE(CLK_DIV / 8)`,
 an integer division that truncates: 24 / 8 = 3 gives 400 MHz, exactly 8 per
@@ -126,10 +127,10 @@ this repository that reaches the board from another machine uses
 `"$WL_KRIA"`, and `install.sh` reads it too, stopping with a one-line message
 if it is unset.
 
-    fpga/kv260/build.sh              # stage, rsync to runner1, Vivado batch, bootgen; fetch to out/
+    fpga/kv260/build.sh --cores 2    # stage, rsync to runner1, Vivado batch, bootgen; fetch to out/ (the 2-core apps)
     export WL_KRIA=ubuntu@<kria-host>
     fpga/kv260/install.sh            # copy to the Kria, dtc the overlay, xmutil loadapp protoemu
-    fpga/kv260/build.sh 25 && APP=protoemu48 fpga/kv260/install.sh   # the 48 MHz build (USB) as a second app
+    fpga/kv260/build.sh --cores 2 25 && APP=protoemu48 fpga/kv260/install.sh   # the 48 MHz build (USB) as a second app
     ssh "$WL_KRIA" sudo python3 protoemu/fpga/kv260/host/bringup_kria.py
     ssh "$WL_KRIA" sudo python3 protoemu/fpga/kv260/host/spim_test.py
     ssh "$WL_KRIA" sudo python3 protoemu/fpga/kv260/host/v2_demo.py call la spi i2c --save la.json
@@ -153,8 +154,9 @@ them apart, and the tools check it against the active app's core count.
 
 `board_smoke.py` runs on another machine and reaches the board only through
 `ssh "$WL_KRIA"`, one command per ssh call. It checks the build record against
-the app, installs with `LOAD=0`, reads `uptime`, `pgrep` (no board tool
-running) and `xmutil listapps`, then does the load as three separate commands,
+the app, reads `uptime` and `pgrep -af 'xmutil|fpga/kv260/host/'` (nothing of
+ours running) before anything else reaches the board, installs with
+`LOAD=0`, reads `xmutil listapps`, then does the load as three separate commands,
 `sudo xmutil unloadapp`, then `sudo xmutil loadapp protoemu3c`, then
 `sudo xmutil listapps`, printing and reading each before the next: any error
 line or status stops it, and the last table must show protoemu3c as its one
@@ -162,8 +164,10 @@ active row (`fabric_guard`'s parser). Then, one at a time from `~/protoemu3c`:
 `pmod_state.py` (read-only: every PMOD pin disabled), `bringup_kria.py`,
 `spim_test.py`, `v2_demo.py call la spi i2c`, `pmod_state.py` again; the
 first failure stops the run. None of them enables a PMOD pin. Exit status 0
-all passed, 1 a test failed, 2 refused. Proved only against a stand-in board
-(`test/model/test_kv260_3core.py`); not run on the Kria.
+all passed, 1 a test failed, 2 refused; `--phases install` alone stops, exit 0,
+after the read-only table. Tested against a stand-in board
+(`test/model/test_kv260_3core.py`), and run once on the Kria by the
+orchestrator (below).
 
 `build.tcl` is a non-project batch flow (in-memory project for the block
 design): PS + AXI interconnect + 2 AXI GPIO, then synth/place/route of
@@ -229,9 +233,10 @@ fabric master at SCK = mclk/4, /2, /1, 1-bit and quad, on both clocks.
 
 Evidence levels: **Vivado place and route** (timing reports; not the
 board), **RTL simulation** of the KV260 design (cocotb, Icarus), the host
-tools on the **cycle model** and on **stand-ins**. **Board: pending.** No v0.3
-bitstream has been loaded on the Kria; the rows below say nothing about pads,
-the board's clocks or Linux. FPGA is not silicon (below).
+tools on the **cycle model** and on **stand-ins**, and **RTL in FPGA fabric**
+for the 3-core bitstream (the board run below; the 2-core v0.3 bitstream has
+not been on the board). The build and simulation rows say nothing about
+pads, the board's clocks or Linux. FPGA is not silicon (below).
 
 ### Build (Vivado 2026.1, runner1, 4 threads at `nice -n 10`, clk_div 24 = 50 MHz)
 
@@ -263,7 +268,12 @@ bitstreams stay on the build host (`~/protoemu-flow/ar-kv260-3core/fpga-{3c,2c}/
 The 3-core build's worst path is the SPI device's MISO into the line unit's
 falling-edge flop (+0.133 ns of a 2.5 ns budget); the smallest hold slack is
 on pl_clk0 (+0.012 ns). Both are met; they are one placement each, and the
-2.5 ns crossings move by a few hundred ps between builds (this table).
+2.5 ns crossings move by a few hundred ps between builds (this table). A
+rebuild from the same staged sources is not the same netlist: `build_id.vh`
+puts the checkout's HEAD and the build time into pe_lab's readback constants,
+so another commit or another minute gives different logic there (the
+verifier's 3-core rebuild at `b3a019a`, item 076: 13240 LUTs against 13147,
+pe_lab +88, FFs and BRAM equal, WNS +0.202 against +0.133, met).
 
 | Utilization | 3 cores | 2 cores (v0.3) | v2 build |
 |---|---|---|---|
@@ -294,14 +304,41 @@ chip lines read `0x50453303: v0.3, 3 cores, 3 banks` and `0x50452203: v0.3,
 against a stand-in board: `test/model/test_kv260_3core.py` (model suite
 3088 passed, 29 skipped at `0e4e6f0`).
 
-### Board (pending)
+### Board (2026-11-10, the orchestrator; RTL in FPGA fabric)
 
-To run, by the orchestrator only: `OUT_DIR=out3c fpga/kv260/build.sh
---cores 3` (or fetch the bitstream above), then `python3
-fpga/kv260/board_smoke.py --app protoemu3c --out-dir out3c`. Expected on a
-good board: the load table with protoemu3c as the one active row, then
-`ALL PASS` from bringup (with `crc32` and the 3-core ring), spim_test and
-v2_demo, and both PMOD reads all zero. Not yet run.
+The 3-core build above (`build.sh --cores 3` from `38cf46e`, RTL revision
+`5ff5e08`, digest `a3b41f96`, built 2026-11-10 20:14:45 UTC;
+`protoemu.bit.bin` sha256
+`ba67001fc2dbd21da1f72f6dbc704687214c5528ea0bbf617097847b35f6e8ca`),
+installed and loaded as `protoemu3c` by `board_smoke.py` (phases install,
+load, smoke): **ALL PASS, exit 0.** The record is
+[reports/v03-20261110-3c/board_smoke.log](reports/v03-20261110-3c/board_smoke.log),
+verbatim except the local output directory's path, written `<scratch>/out3c`
+(2 lines). The run used the script from before the reorder fix (install
+before `uptime`/`pgrep`, as the log shows; verifier 076 finding 1), so the
+orchestrator read `uptime`, `pgrep` and `listapps` by hand first. From the
+log:
+
+* load: `protoemu48` was active; `unloadapp` printed `remove from slot 0
+  returns: 0 (Ok)`, `loadapp` printed `protoemu3c: Loaded with slot_handle
+  0`, and `listapps` showed protoemu3c as the one active row
+* PMOD0 and PMOD1 `00000000` before and after
+* bringup: identity matches `expected_build.json`; clock 49.9983 MHz; ID
+  `0x50453303` (v0.3, 3 cores, 3 banks); 200 register rounds on all 3
+  cores; pins; the UART ring 0 -> 1 -> 2 -> 0 at 115200; uart_tx_pin and
+  uart_rx_pin at 9600; quad (ID `0x50453303`); crc32 on all 3 cores at once,
+  CRC `0xDBA5645A`, `0x4F54EE58`, `0x981ADEAB`, each the expected (zlib-checked)
+  value
+* spim_test: all 12 configurations PASS, R0..R3 on 3 cores; quad at
+  SCK = clk 199.9 / 199.8 Mbit/s, 64-word quad write 193.6 Mbit/s (529 clk);
+  alt clock 183.6 Mbit/s, 64-word write 177.8 Mbit/s (576 clk), the same
+  figures as the v2 build's run (2026-10-07)
+* v2_demo: call (registers equal the model's), la (synchronous: one constant
+  capture - drive offset for all 160 edges; async: 240 of 240 edges), spi
+  (no bypass correct up to DELAY 5, SYNC_BYPASS up to 13), i2c (EEPROM
+  answers): all PASS
+
+The 2-core v0.3 build (`fd72725a`) has not been on the board.
 
 ## Status (2026-10-07): v2 RTL, branch `kv260-v2`
 
@@ -1281,7 +1318,7 @@ the Kria's own USB-A ports. After the host software has loaded the firmware
 and started the core, nothing touches the chip's host port: the Kria's Linux
 USB stack (xHCI, through the carrier's USB5744 hub) enumerates and configures
 the device, and `lsusb`/`dmesg` show it. Low speed (1.5 Mbit/s) first. The
-build must run protoemu at exactly 48 MHz: `build.sh 25`, installed as the
+build must run protoemu at exactly 48 MHz: `build.sh --cores 2 25`, installed as the
 separate app `protoemu48` (the 50 MHz app `protoemu` stays installed).
 
 ### Wiring (three connections; silkscreen numbers)
