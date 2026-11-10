@@ -77,6 +77,51 @@ def test_app_cores_follows_the_active_app(monkeypatch):
     assert pe_kria.app_cores() == ("protoemu", 2)
 
 
+# ---------------------------------------------------------------- flow/fpga_profile.py at 3 and 2 cores
+
+def preprocessed(text, defines):
+    """The lines a Verilog preprocessor keeps for these defines (ifdef/ifndef/else/endif only)."""
+    keep, stack, out = True, [], []
+    for line in text.splitlines():
+        t = line.split()
+        if t[:1] in (["`ifdef"], ["`ifndef"]):
+            stack.append(keep)
+            keep = keep and ((t[1] in defines) == (t[0] == "`ifdef"))
+        elif t[:1] == ["`else"]:
+            keep = stack[-1] and not keep
+        elif t[:1] == ["`endif"]:
+            keep = stack.pop()
+        elif keep:
+            out.append(line)
+            if t[:1] == ["`define"]:
+                defines = defines | {t[1]}
+    return "\n".join(out)
+
+
+@pytest.mark.parametrize("ncores", [3, 2])
+def test_the_fpga_profile_leaves_no_clock_gate(tmp_path, ncores):
+    """Every clock-gated register of the v0.3 RTL (AO's POLY_HI is an enable flop) is
+    converted: after staging, nothing is clocked by anything but clk, the host port's
+    SCK and CS_n, and no clock gate or latch is instantiated (pe_cg.sv itself remains)."""
+    import importlib.util
+    import re
+    spec = importlib.util.spec_from_file_location("fpga_profile", ROOT / "flow/fpga_profile.py")
+    prof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(prof)
+    prof.stage(tmp_path / "s", ncores=ncores, fifo_log2=3)
+    src = tmp_path / "s/src"
+    assert f"`define PE_NCORES {ncores}\n" in (src / "project.v").read_text()
+    edges, gates = set(), []
+    for p in sorted(src.glob("*.sv")):
+        if p.name == "pe_cg.sv":
+            continue
+        text = preprocessed(p.read_text(), {"PE_FIFO_NO_CG", "PE_FLOP_IMEM"})
+        edges |= set(re.findall(r"\b(?:pos|neg)edge\s+([A-Za-z_][\w\[\]]*)", text))
+        gates += [p.name for _ in re.finditer(r"^\s*(pe_cg|pe_latch)\s", text, re.M)]
+    assert edges == {"clk", "rst_n", "sck", "cs_n"} and not gates, (edges, gates)
+    assert "crc_poly_hi <= bus_wdata[15:0]" in (src / "pe_core.sv").read_text()
+
+
 # ---------------------------------------------------------------- bringup_kria.py on the model
 
 def model_ctx(regs, cores=None):

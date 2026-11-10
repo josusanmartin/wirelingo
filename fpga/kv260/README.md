@@ -286,7 +286,12 @@ the bring-up steps (`id` reads `0x50453303` / `0x50452203`; `regs` on every
 core; the loopback ring 0 -> 1 -> 2 -> 0 at 3 cores; `quad`; `crc32` on every
 core at once, so POLY_HI passes through the staged RTL), `spim_test.py`'s
 checks through the fabric master, pe_lab's identity and v2_demo's demos, and
-both USB demo tests at 48 MHz. Results in the next subsection.
+both USB demo tests at 48 MHz. **3 cores: TESTS=5 PASS=5** (16.3 ms
+simulated, 724 s); **2 cores: TESTS=5 PASS=5** (12.9 ms, 525 s). The log's
+chip lines read `0x50453303: v0.3, 3 cores, 3 banks` and `0x50452203: v0.3,
+2 cores, 2 banks`. The host tools on the cycle model and the board script
+against a stand-in board: `test/model/test_kv260_3core.py` (model suite
+3086 passed, 29 skipped at `e0c0584`).
 
 ### Board (pending)
 
