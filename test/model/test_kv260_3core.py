@@ -335,6 +335,22 @@ def test_build_sh_stages_the_asked_core_count(tmp_path, argv, cores, clk_div):
     assert not any(ln.startswith("rsync") and "protoemu.bit.bin" in ln for ln in log.splitlines())   # FETCH=0
 
 
+def test_documented_build_commands_name_the_core_count():
+    """Verifier 076 finding 2: build.sh's default is the 3-core package now, so every
+    build.sh command the docs give says --cores (records of past builds aside: they
+    are quoted as they were run, before the option existed)."""
+    import re
+    past = ("REMOTE_DIR=protoemu-flow/fpga-kusb",)         # the 2026-10-07 48 MHz build, as run
+    found = []
+    for doc in (ROOT / "fpga/kv260/README.md", ROOT / "docs/hardware-day.md"):
+        for n, line in enumerate(doc.read_text().splitlines(), 1):
+            # a clk_div straight after build.sh: the core count left to the (now 3-core) default
+            if re.search(r"build\.sh\s+\d", line) and not any(p in line for p in past):
+                found.append(f"{doc.name}:{n}: {line.strip()}")
+    assert not found, found
+    assert "build.sh --cores 2 25 && APP=protoemu48" in (ROOT / "fpga/kv260/README.md").read_text()
+
+
 @pytest.mark.parametrize("argv,msg", [(("--cores", "4"), "--cores must be 2 or 3"), (("--cores", "1"), "2 or 3"),
                                       (("20",), "clk_div must be 24"), (("--cores", "3", "16"), "clk_div must be"),
                                       (("--fast",), "unknown option"), (("24", "25"), "usage")])
@@ -396,6 +412,7 @@ def smoke(tmp_path, kria, phases=("load", "smoke"), built=None, dirty=False):
     return s.run(), lines
 
 
+PGREP = "pgrep -af 'xmutil|fpga/kv260/host/' || true"
 LOAD = ["sudo xmutil unloadapp", "sudo xmutil loadapp protoemu3c", "sudo xmutil listapps"]
 
 
@@ -404,7 +421,7 @@ def test_the_whole_sequence_on_a_good_board(tmp_path):
     rc, lines = smoke(tmp_path, kria)
     assert rc == 0 and lines[-1].startswith("ALL PASS")
     tests = [c.split("host/")[1] for c in kria.cmds if "fpga/kv260/host/" in c and not c.startswith("pgrep")]
-    assert kria.cmds[:3] == ["uptime", "pgrep -af fpga/kv260/host/ || true", "sudo xmutil listapps"]
+    assert kria.cmds[:3] == ["uptime", PGREP, "sudo xmutil listapps"]
     assert kria.cmds[3:6] == LOAD
     assert tests == ["pmod_state.py", "bringup_kria.py", "spim_test.py", "v2_demo.py call la spi i2c",
                      "pmod_state.py"]
@@ -437,12 +454,14 @@ def test_listapps_must_show_the_app_as_the_one_active_row(tmp_path, listing):
     assert not any("python3" in c for c in kria.cmds)
 
 
-def test_a_running_board_tool_refuses_before_the_load(tmp_path):
+@pytest.mark.parametrize("running", ["4242 python3 protoemu/fpga/kv260/host/usb_demo.py",
+                                     "4243 /usr/bin/python3 /usr/bin/xmutil loadapp protoemu48"])
+def test_a_running_board_tool_or_xmutil_refuses_before_the_load(tmp_path, running):
     kria = Kria()
-    kria.answers["pgrep"] = (0, "4242 python3 protoemu/fpga/kv260/host/usb_demo.py\n")
+    kria.answers["pgrep"] = (0, f"4241 bash -c {PGREP}\n{running}\n")
     rc, lines = smoke(tmp_path, kria)
     assert rc == board_smoke.EXIT_REFUSED and "one process at a time" in lines[-1]
-    assert not any("xmutil" in c for c in kria.cmds)
+    assert kria.cmds == ["uptime", PGREP]
 
 
 def test_a_board_that_doesnt_answer_is_never_loaded(tmp_path):
@@ -496,26 +515,61 @@ def test_smoke_alone_checks_the_loaded_app_first(tmp_path):
     assert rc == board_smoke.EXIT_REFUSED and not any("python3" in c for c in kria.cmds)
 
 
-def test_install_never_loads(tmp_path):
+def installing(tmp_path, kria, phases):
+    """A Smoke whose install.sh is a stand-in that records itself in kria.cmds, in order."""
     seen = []
 
     def local(cmd, env, **kw):
         seen.append((cmd, env))
+        kria.cmds.append("<install.sh>")
         return types.SimpleNamespace(returncode=0, stdout="installed protoemu3c (not loaded). On the Kria, ...\n",
                                      stderr="")
-    kria = Kria()
     out = tmp_path / "out3c"
-    out.mkdir()
+    out.mkdir(exist_ok=True)
     (out / "protoemu.bit.bin").write_bytes(b"x")
     (out / "build_info.json").write_text(json.dumps(dict(INFO, cores=3, clk_div=24)))
-    a = types.SimpleNamespace(app="protoemu3c", out_dir=str(out), phases=["install", "load", "smoke"], expect=None,
+    a = types.SimpleNamespace(app="protoemu3c", out_dir=str(out), phases=list(phases), expect=None,
                               timeout=5, kria="ubuntu@kria.example")
     s = board_smoke.Smoke(a, kria, local=local, say=lambda m: None)
     s.checkout_info = lambda: dict(INFO)
+    return s, seen, out
+
+
+def test_install_never_loads_and_comes_after_the_one_process_check(tmp_path):
+    """Verifier 076 finding 1: uptime and pgrep before install.sh touches the board."""
+    kria = Kria()
+    s, seen, out = installing(tmp_path, kria, ["install", "load", "smoke"])
     assert s.run() == 0
     (cmd, env), = seen
     assert cmd[0].endswith("fpga/kv260/install.sh") and env["LOAD"] == "0" and env["APP"] == "protoemu3c"
     assert env["OUT_DIR"] == str(out) and env["WL_KRIA"] == "ubuntu@kria.example"
+    assert kria.cmds[:5] == ["uptime", PGREP, "<install.sh>", "sudo xmutil listapps", "sudo xmutil unloadapp"]
+
+
+@pytest.mark.parametrize("answer", ["uptime", "pgrep"])
+def test_a_busy_or_silent_board_gets_no_install(tmp_path, answer):
+    kria = Kria()
+    kria.answers[answer] = ((255, "ssh: connect to host kria.example port 22: Connection timed out\n")
+                            if answer == "uptime" else (0, "4242 python3 protoemu/fpga/kv260/host/spim_test.py\n"))
+    s, seen, _ = installing(tmp_path, kria, ["install", "load", "smoke"])
+    assert s.run() == board_smoke.EXIT_REFUSED and not seen and "<install.sh>" not in kria.cmds
+
+
+def test_install_alone_stops_after_the_table(tmp_path):
+    """Verifier 076 finding 4: --phases install exits 0 with nothing loaded, not 2."""
+    kria = Kria()
+    s, seen, _ = installing(tmp_path, kria, ["install"])
+    assert s.run() == 0 and len(seen) == 1
+    assert kria.cmds == ["uptime", PGREP, "<install.sh>", "sudo xmutil listapps"]
+
+
+def test_a_timeout_names_xmutil_in_the_check_it_suggests(tmp_path):
+    """Verifier 076 finding 4: after a hung xmutil command, the suggested read-only check would show it."""
+    kria = Kria()
+    kria.answers["xmutil loadapp"] = (None, "")
+    rc, lines = smoke(tmp_path, kria)
+    assert rc == board_smoke.EXIT_REFUSED and "pgrep -af 'xmutil|fpga/kv260/host/'" in lines[-1]
+    assert kria.cmds[-1] == "sudo xmutil loadapp protoemu3c"
 
 
 def test_board_smoke_needs_wl_kria(monkeypatch):

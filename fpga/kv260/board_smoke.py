@@ -13,10 +13,13 @@ stops everything after it:
 check    (always, local) DIR/build_info.json is the build --app holds
          (fabric_guard.APP_BUILD: 3 cores, clk_div 24 for protoemu3c) and comes
          from this checkout's RTL, not dirty.
+board    (always, read-only, before anything reaches the board) `uptime`,
+         then `pgrep -af 'xmutil|fpga/kv260/host/'`: nothing of ours running
+         (one process at a time).
 install  `LOAD=0 APP=<app> OUT_DIR=DIR fpga/kv260/install.sh`: copies the
          bitstream, overlay and host software (~/<app>), loads nothing.
-load     read-only first: `uptime`, no board tool already running (one process
-         at a time), `sudo xmutil listapps` printing its table. Then the load,
+load     read-only first: `sudo xmutil listapps` printing its table (the app
+         must be in it). Then the load,
          one ssh command each, each output printed and read before the next:
          `sudo xmutil unloadapp` (stop on a non-zero status or any error line),
          `sudo xmutil loadapp <app>` (the same; xmutil can print Load Error and
@@ -32,7 +35,8 @@ smoke    on the board, one at a time from ~/<app>, each to its end before the
 
 Exit status: 0 all passed, 1 a test failed, 2 refused (nothing after it ran).
 --phases smoke alone runs the tests on an app already loaded (the load phase's
-listapps check still runs first, read-only). The record (--log) is the
+listapps check still runs first, read-only); --phases install alone stops after
+the read-only table, exit 0, nothing loaded. The record (--log) is the
 printed output, verbatim.
 """
 import argparse
@@ -55,6 +59,7 @@ PHASES = ("install", "load", "smoke")
 ERROR = re.compile(r"error|fail", re.I)
 EXIT_OK, EXIT_FAILED, EXIT_REFUSED = 0, 1, 2
 TOOLS = "fpga/kv260/host/"
+BUSY = f"xmutil|{TOOLS}"                  # pgrep -f pattern: a load in progress or a board tool running
 
 
 class Refused(Exception):
@@ -104,7 +109,7 @@ class Smoke:
             self.say(f"  | {line}")
         if rc is None:
             raise Refused(f"`{cmd}` didn't finish in {timeout} s; it may still be running on the board: "
-                          f"check with `pgrep -af {TOOLS}` (read-only) before anything else")
+                          f"check with `pgrep -af '{BUSY}'` (read-only) before anything else")
         self.say(f"  (status {rc})")
         return rc, out
 
@@ -142,15 +147,20 @@ class Smoke:
         if f"installed {self.a.app} (not loaded)" not in r.stdout:
             raise Refused("install.sh's output doesn't say the app was installed and not loaded: stop and read it")
 
-    def preflight(self):
+    def alive(self):
+        """Before anything reaches the board (install included): it answers, and nothing of
+        ours (a board tool, an xmutil command) is running on it: one process at a time."""
         rc, _ = self.remote_cmd("uptime")
         if rc != 0:
             raise Refused("the Kria doesn't answer: docs/hardware-day.md step 0 (recover); never power-cycle "
                           "a board that answers")
-        rc, out = self.remote_cmd(f"pgrep -af {shlex.quote(TOOLS)} || true")
-        mine = [ln for ln in out.splitlines() if TOOLS in ln and "pgrep" not in ln]
+        rc, out = self.remote_cmd(f"pgrep -af {shlex.quote(BUSY)} || true")
+        mine = [ln for ln in out.splitlines() if ("xmutil" in ln or TOOLS in ln) and "pgrep" not in ln]
         if rc != 0 or mine:
-            raise Refused(f"a board tool is already running ({len(mine)} line(s) above): one process at a time")
+            raise Refused(f"a board tool or xmutil is already running ({len(mine)} line(s) above): "
+                          f"one process at a time")
+
+    def preflight(self):
         rc, out = self.remote_cmd("sudo xmutil listapps")
         if rc != 0:
             raise Refused(f"`xmutil listapps` failed: {fabric_guard.STOP}")
@@ -201,11 +211,17 @@ class Smoke:
         try:
             self.say(f"[check] {a.app} from {a.out_dir}")
             self.check()
+            self.say("[board]")
+            self.alive()
             if "install" in a.phases:
                 self.say("[install]")
                 self.install()
-            self.say("[load]" if "load" in a.phases else "[already loaded?]")
+            self.say("[load]" if "load" in a.phases else "[installed]" if "smoke" not in a.phases
+                     else "[already loaded?]")
             self.preflight()
+            if "load" not in a.phases and "smoke" not in a.phases:
+                self.say(f"{a.app} installed, not loaded (no load or smoke phase)")
+                return EXIT_OK
             if "load" in a.phases:
                 self.load()
             else:
