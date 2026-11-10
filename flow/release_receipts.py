@@ -47,16 +47,13 @@ def sta_inputs(worktree):
     """Digests of every design file the run's final STA step read, by path in the worktree."""
     wt, base, step = Path(worktree), run_base(worktree), sta_step(worktree)
     state, config = read_json(step / "state_in.json"), read_json(step / "config.json")
-    paths = [step / "state_in.json", step / "config.json", state["nl"], state["sdc"], state["odb"],
-             *state["spef"].values()]
+    files = {f"runs/wokwi/{step.name}/{name}": digest(step / name) for name in ("state_in.json", "config.json")}
+    paths = [state["nl"], state["sdc"], state["odb"], *state["spef"].values()]
     paths += [config[k] for k in ("SIGNOFF_SDC_FILE", "STA_EXTRA_CORNER_TCL_FILE") if config.get(k)]
-    files = {}
-    for p in map(Path, paths):
-        if p.is_absolute():
-            if not p.is_relative_to(base):
-                raise ValueError(f"STA input outside the run's worktree: {p}")
-            p = wt / p.relative_to(base)
-        files[str(p.relative_to(wt))] = digest(p)
+    for p in map(Path, paths):   # LibreLane records absolute paths in the hardened worktree
+        if not p.is_absolute() or not p.is_relative_to(base):
+            raise ValueError(f"STA input outside the run's worktree: {p}")
+        files[str(p.relative_to(base))] = digest(wt / p.relative_to(base))
     return files
 
 
