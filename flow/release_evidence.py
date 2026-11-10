@@ -10,7 +10,10 @@ used (normally the validation clone itself):
 RUN is a completed hardening worktree (runs/wokwi/final). The command runs
 functional GL, the SDF standard and v2 sets, autonomous USB enumeration with
 SDF at typ/slow/fast (20.834 ns) and Tiny Tapeout precheck, each in its own
-fresh output directory, with at most --jobs simulator processes at once. It
+fresh output directory, with at most --jobs simulator processes at once. With
+--slow-mhz F below 50 (the 8x4 build accepts 48 MHz at the slow corner), the
+SDF sets run their slow cases at slow_period(F) and an eighth job re-times the
+run there (flow/sta_rerun.py); typical and fast stay at 50 MHz. It
 collects each receipt from that job's own output (never an older receipt),
 runs flow/release_check.py, writes verdict.json and release-check.log, and
 on a pass packs the evidence archive (flow/archive_evidence.py). Any failed
@@ -25,6 +28,7 @@ import argparse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -91,14 +95,26 @@ def parse_args(argv=None):
     ap.add_argument("--extra", action="append", default=[], metavar="FILE",
                     help="additional file for the archive, e.g. a reproduction comparison (repeatable)")
     ap.add_argument("--note", default="", help="paragraph for the archive README")
+    ap.add_argument("--slow-mhz", type=float, default=50,
+                    help="slow-corner rate to release (default 50). Below 50, a fresh STA of the run at "
+                         "slow_period(F) (flow/sta_rerun.py) times the slow corner and the SDF sets run "
+                         "their slow cases there; typical and fast stay at 50 MHz")
     a = ap.parse_args(argv)
     if a.jobs < 1:
         ap.error("--jobs must be at least 1")
+    if not (math.isfinite(a.slow_mhz) and 0 < a.slow_mhz <= 50):
+        ap.error("--slow-mhz must be finite, positive and no greater than 50")
     a.run = Path(a.run).resolve()
     if a.validation_root:
         a.validation_root = Path(a.validation_root).resolve()
     a.tt_root = Path(a.tt_root).resolve() if a.tt_root else a.run / "tt"
     return a
+
+
+def slow_period(mhz):
+    """The slow corner's clock period for a release at `mhz` there: 1000/mhz ns
+    rounded down to the picosecond (48 MHz: 20.833 ns), never slower than claimed."""
+    return math.floor(1000 / mhz * 1000 + 1e-9) / 1000
 
 
 def default_paths(a, rev, now):
@@ -130,7 +146,8 @@ def preflight(a, validation, work, archive):
                        (a.pdk_root, "--pdk-root")):
         if not Path(path).exists():
             problems.append(f"{what} not found: {path}")
-    for name in ("gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "release_check.py", "archive_evidence.py"):
+    for name in ("gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "release_check.py", "archive_evidence.py",
+                 *(("sta_rerun.py",) if a.slow_mhz < 50 else ())):
         if not (FLOW / name).is_file():
             problems.append(f"runner missing: {FLOW / name}")
     return problems
@@ -156,10 +173,13 @@ def runner_env(base, sim_path, **settings):
 
 
 def plan_jobs(a, view, validation, work, base_env=None):
-    """The seven receipt jobs, the long ones first (GL took ~65 min for fo6)."""
+    """The seven receipt jobs, the long ones first (GL took ~65 min for fo6), and
+    below 50 MHz at the slow corner an eighth: the fresh slow-corner STA."""
     base_env = dict(os.environ if base_env is None else base_env)
     sim = runner_env(base_env, a.sim_path)
+    slow = getattr(a, "slow_mhz", 50)
     sdf = lambda **extra: runner_env(base_env, a.sim_path, VALIDATION_ROOT=validation, **extra)
+    sets = dict(SLOW_CLK_NS=slow_period(slow)) if slow < 50 else {}
     repo_sim = FLOW.parent / "test/sim_build"
     jobs = [Job("gl", "gl", ["bash", str(FLOW / "gl_test.sh"), str(view), str(validation)], 1, sim,
                 out_parent=view / "test/sim_build")]
@@ -170,10 +190,14 @@ def plan_jobs(a, view, validation, work, base_env=None):
     jobs.append(Job("precheck", "precheck", [str(a.flow_python), str(FLOW / "precheck_test.py"), str(view),
                                              "--tt-root", str(a.tt_root), "--out", str(work / "precheck")],
                     1, pre_env, out=work / "precheck"))
-    jobs.append(Job("sdf_standard", "sdf", ["bash", str(FLOW / "gl_sdf_test.sh"), str(view), "standard"], 4, sdf(),
+    jobs.append(Job("sdf_standard", "sdf", ["bash", str(FLOW / "gl_sdf_test.sh"), str(view), "standard"], 4,
+                    sdf(**sets), out_parent=repo_sim))
+    jobs.append(Job("sdf_v2", "sdf", ["bash", str(FLOW / "gl_sdf_test.sh"), str(view), "v2"], 6, sdf(**sets),
                     out_parent=repo_sim))
-    jobs.append(Job("sdf_v2", "sdf", ["bash", str(FLOW / "gl_sdf_test.sh"), str(view), "v2"], 6, sdf(),
-                    out_parent=repo_sim))
+    if slow < 50:
+        jobs.append(Job("sta_slow", "sta", [sys.executable, str(FLOW / "sta_rerun.py"), str(view),
+                                            f"{slow_period(slow):g}", "--out-parent", str(repo_sim)],
+                        1, sim, out_parent=repo_sim))
     return jobs
 
 
@@ -259,11 +283,14 @@ def terminate(jobs):
                 pass
 
 
-def release_command(run, validation, receipt_paths, sdf_profile="v2"):
+def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50):
     cmd = [sys.executable, str(FLOW / "release_check.py"), str(run), "--validation-root", str(validation),
            "--sdf-profile", sdf_profile]
+    if slow_mhz != 50:
+        cmd += ["--slow-mhz", f"{slow_mhz:g}"]
     for kind, path in receipt_paths:
-        cmd += [{"gl": "--gl-receipt", "sdf": "--sdf-receipt", "precheck": "--precheck-receipt"}[kind], str(path)]
+        cmd += [{"gl": "--gl-receipt", "sdf": "--sdf-receipt", "precheck": "--precheck-receipt",
+                 "sta": "--slow-sta-receipt"}[kind], str(path)]
     return cmd
 
 
@@ -340,7 +367,7 @@ def main(argv=None):
                    receipts=collected, release_check=None, verdict=None, exit=None,
                    work=str(work), archive=None)
     if not failures:
-        cmd = release_command(a.run, validation, [(r["kind"], r["path"]) for r in collected])
+        cmd = release_command(a.run, validation, [(r["kind"], r["path"]) for r in collected], slow_mhz=a.slow_mhz)
         say("release check: " + " ".join(cmd))
         check = subprocess.run(cmd, cwd=FLOW.parent, capture_output=True, text=True)
         (work / "release-check.log").write_text(check.stdout + check.stderr)

@@ -140,6 +140,37 @@ by adding a period difference. A negative setup result needs fresh STA at the
 claimed operating condition. The checker does not infer that a slower clock
 fixes every path, including half-cycle and asynchronous paths.
 
+## 48 MHz at the slow corner (8x4)
+
+The 8x4 build aims for 50 MHz and accepts 48 MHz at the slow corner (the
+author's decision, 2026-11-10); typical and fast stay at 50 MHz. A run is
+hardened and timed at one `CLOCK_PERIOD` (20 ns), so its own STA cannot show
+48 MHz at the slow corner. `flow/sta_rerun.py RUN 20.833` gives the fresh STA:
+it re-runs the run's own LibreLane `OpenROAD.STAPostPNR` step (its step
+config and input state: final netlist, extracted SPEF, signoff SDC and corner
+Tcl) in the run's LibreLane image, with the run mounted read-only, no
+network, and only `CLOCK_PERIOD` changed (`src/protoemu.sdc` scales the I/O
+delays and the host port's SCK with it). Its receipt (kind `sta`) binds the
+candidate files, the digests of every design file the step read, the step
+config, and each corner's `sta.log` and `clock.rpt`; the timing is read from
+the fresh `sta.log`, never from inherited state. Then
+
+```sh
+python3 flow/release_check.py "$RUN" --slow-mhz 48 \
+  --slow-sta-receipt /path/to/sta.XXXXXX/receipt.json ...
+```
+
+times the slow corner from that receipt (its period must be at most
+1000/48 ns) and typical and fast from the run's own STA at 20 ns. The SDF
+sets' slow cases must also run at 20.833 ns or faster
+(`SLOW_CLK_NS=20.833 flow/gl_sdf_test.sh "$RUN" standard`, and `v2`). The one
+command does all of it with `flow/release_evidence.py RUN --slow-mhz 48 ...`:
+an eighth job (`sta_slow`), `SLOW_CLK_NS=20.833` for the two SDF sets, and
+the two options for `release_check.py`. 20.833 ns is 1000/48 rounded down to
+the picosecond, 0.3 ps faster than 48 MHz. A rerun at the run's own 20 ns
+reproduces the run's final STA metrics, which is how the tool was checked
+(docs/physical.md, 8x4).
+
 ## Why receipts replace pass logs
 
 The first release checker could accept one passing XML file even when two

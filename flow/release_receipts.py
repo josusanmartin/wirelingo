@@ -24,10 +24,52 @@ V2_TESTS = ("test_spi_master_fast", "test_la_capture_ticks", "test_call_ret")
 RUNNER_ROOT = Path(__file__).resolve().parent
 
 
+STA_METRICS = ("timing__setup__ws", "timing__hold__ws", "timing__setup_vio__count", "timing__hold_vio__count")
+CLOCK_PERIOD_RE = r"^Clock: clk\n(?:(?!^Clock:).)*?^Period: ([0-9.]+)\s*$"
+
+
 def runner_files(root):
     return {name: digest(Path(root) / name) for name in
-            ("release_receipts.py", "gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "sdf_prep.py")
+            ("release_receipts.py", "gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "sdf_prep.py", "sta_rerun.py")
             if (Path(root) / name).is_file()}
+
+
+def sta_step(worktree):
+    return one(Path(worktree).glob("runs/wokwi/*-openroad-stapostpnr"), "final STA directory")
+
+
+def run_base(worktree):
+    """The worktree the run was hardened in (a release view's entries are symlinks to it)."""
+    return Path(os.path.realpath(Path(worktree) / "runs/wokwi")).parents[1]
+
+
+def sta_inputs(worktree):
+    """Digests of every design file the run's final STA step read, by path in the worktree."""
+    wt, base, step = Path(worktree), run_base(worktree), sta_step(worktree)
+    state, config = read_json(step / "state_in.json"), read_json(step / "config.json")
+    paths = [step / "state_in.json", step / "config.json", state["nl"], state["sdc"], state["odb"],
+             *state["spef"].values()]
+    paths += [config[k] for k in ("SIGNOFF_SDC_FILE", "STA_EXTRA_CORNER_TCL_FILE") if config.get(k)]
+    files = {}
+    for p in map(Path, paths):
+        if p.is_absolute():
+            if not p.is_relative_to(base):
+                raise ValueError(f"STA input outside the run's worktree: {p}")
+            p = wt / p.relative_to(base)
+        files[str(p.relative_to(wt))] = digest(p)
+    return files
+
+
+def sta_metrics(out, corner):
+    """The fresh STA's own timing metrics for one corner (from its sta.log, never inherited state)."""
+    text = (Path(out) / "sta" / corner / "sta.log").read_text(errors="replace")
+    found = {}
+    for kind, key, value in re.findall(rf"^%OL_METRIC_([FI]) (\S+)__corner:{re.escape(corner)} (\S+)$", text, re.M):
+        found[key] = int(value) if kind == "I" else float(value)
+    metrics = {key: found.get(key) for key in STA_METRICS}
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in metrics.values()):
+        raise ValueError(f"{out}: incomplete or non-finite STA metrics for {corner}: {metrics}")
+    return metrics
 
 
 def digest(path):
@@ -146,8 +188,23 @@ def check_xml(path, names=None, expect="pass", *, allow_filtered=False):
 
 def begin(worktree, out, kind, validation_root, plan=None):
     wt, out, root = Path(worktree).resolve(), Path(out).resolve(), Path(validation_root).resolve()
-    if kind not in ("gl", "sdf", "precheck"):
+    if kind not in ("gl", "sdf", "precheck", "sta"):
         raise ValueError(f"unknown receipt kind {kind}")
+    if kind == "sta":
+        # a fresh STA of the run's own final step at plan["period_ns"]
+        if not isinstance(plan, dict) or set(plan) != {"period_ns", "step", "image"}:
+            raise ValueError("STA plan needs period_ns, step and image")
+        if type(plan["period_ns"]) not in (int, float) or not math.isfinite(plan["period_ns"]) or plan["period_ns"] <= 0:
+            raise ValueError("invalid STA period")
+        if plan["step"] != sta_step(wt).name:
+            raise ValueError("STA plan names another step")
+        plan = dict(plan, inputs=sta_inputs(wt))
+        state = read_json(sta_step(wt) / "state_in.json")
+        rel = lambda p: str(wt / Path(p).relative_to(run_base(wt)))
+        final_nl = one((wt / "runs/wokwi/final/nl").glob("*.nl.v"), "final netlist")
+        final_spef = one((wt / "runs/wokwi/final/spef/nom").glob("*.spef"), "final SPEF")
+        if digest(rel(state["nl"])) != digest(final_nl) or [digest(rel(p)) for p in state["spef"].values()] != [digest(final_spef)]:
+            raise ValueError("the final STA step did not read the final netlist and SPEF")
     if kind == "gl":
         plan = {m: test_names(root / "test" / f"{m}.py") for m in GL_MODULES}
         if hardware_files(wt) != hardware_files(root):
@@ -171,7 +228,9 @@ def begin(worktree, out, kind, validation_root, plan=None):
     out.mkdir(parents=True, exist_ok=True)
     data = dict(schema=SCHEMA, kind=kind, worktree=str(wt), validation_root=str(root), output_directory=str(out),
                 runner_root=str(RUNNER_ROOT), runner=runner_files(RUNNER_ROOT),
-                candidate=candidate_files(wt), validation=validation_files(root, include_hardware=kind in ("gl", "sdf")), plan=plan)
+                candidate=candidate_files(wt),
+                validation={} if kind == "sta" else validation_files(root, include_hardware=kind in ("gl", "sdf")),
+                plan=plan)
     if kind in ("gl", "sdf"):
         hardware = lambda files: {p: h for p, h in files.items() if p.startswith("src/") and Path(p).suffix in (".v", ".sv")}
         if hardware(data["candidate"]) != hardware(data["validation"]):
@@ -256,6 +315,21 @@ def outputs(out, data):
         files += [p for p in (out / "design").rglob("*") if p.is_file() and p != copy]
         files += [p for p in (out / "tt").rglob("*") if p.is_file()
                   and not {"reports", "__pycache__"}.intersection(p.relative_to(out / "tt").parts)]
+    elif kind == "sta":
+        rc = read_json(out / "status.json")["returncode"]
+        if type(rc) is not int or rc != 0:
+            raise ValueError("STA step failed")
+        period = plan["period_ns"]
+        if read_json(out / "config.json").get("CLOCK_PERIOD") != period:
+            raise ValueError("STA step config is not at the planned period")
+        for corner in CORNERS:
+            d = out / "sta" / corner
+            clock = re.search(CLOCK_PERIOD_RE, (d / "clock.rpt").read_text(), re.M | re.S)
+            if not clock or abs(float(clock[1]) - period) > 1e-6:
+                raise ValueError(f"{corner}: STA clock report missing or not at {period} ns")
+            sta_metrics(out, corner)
+            files += [d / "sta.log", d / "clock.rpt"]
+        files += [out / "config.json", out / "status.json", out / "run.log", out / "sta/state_out.json"]
     else:
         raise ValueError(f"unknown receipt kind {kind}")
     return {str(p.relative_to(out)): digest(p) for p in files}
@@ -268,7 +342,15 @@ def finish(out):
         raise ValueError("verification runner changed during execution")
     if candidate_files(data["worktree"]) != data["candidate"]:
         raise ValueError("candidate changed during verification")
-    if validation_files(data["validation_root"], include_hardware=data["kind"] in ("gl", "sdf")) != data["validation"]:
+    if data["kind"] == "sta":
+        if sta_inputs(data["worktree"]) != data["plan"]["inputs"]:
+            raise ValueError("STA inputs changed during verification")
+        # the step's own configuration with only the clock period changed
+        config = read_json(sta_step(data["worktree"]) / "config.json")
+        config["CLOCK_PERIOD"] = data["plan"]["period_ns"]
+        if read_json(out / "config.json") != config:
+            raise ValueError("STA step config differs from the run's beyond CLOCK_PERIOD")
+    elif validation_files(data["validation_root"], include_hardware=data["kind"] in ("gl", "sdf")) != data["validation"]:
         raise ValueError("validation inputs changed during verification")
     data["artifacts"] = outputs(out, data)
     data["status"] = "complete"

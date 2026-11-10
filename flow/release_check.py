@@ -4,6 +4,9 @@
 The minimum Tiny Tapeout check remains flow/signoff.py. This additionally
 requires finite, clean timing, explicit electrical waivers, complete functional
 GL, SDF coverage, and a precheck of the exact GDS. Free-form logs cannot release.
+A slow-corner rate below the run's constraint (--slow-mhz 48 on a 50 MHz run)
+needs a fresh STA of the run at that period (--slow-sta-receipt, from
+flow/sta_rerun.py); typical and fast stay at 50 MHz.
 """
 import argparse
 import math
@@ -58,6 +61,9 @@ def main(argv=None):
     ap.add_argument("worktree")
     ap.add_argument("--slow-mhz", type=float, default=50,
                     help="required slow-corner frequency (default 50); never extrapolates slack")
+    ap.add_argument("--slow-sta-receipt",
+                    help="fresh STA of this run at <= 1000/slow-mhz ns (flow/sta_rerun.py): "
+                         "the slow corner's timing is taken from it instead of the run's own STA")
     ap.add_argument("--waive", action="append", default=[], metavar="KIND=N")
     ap.add_argument("--waiver-reason", help="documented justification for all explicit electrical waivers")
     ap.add_argument("--gl-receipt", help="otherwise discover completed gl.*/receipt.json in this run")
@@ -96,26 +102,38 @@ def main(argv=None):
         period = receipts.read_json(run / "resolved.json")["CLOCK_PERIOD"]
         if not finite_number(period) or period <= 0:
             raise ValueError("invalid CLOCK_PERIOD in resolved.json")
+        fresh = None
+        if a.slow_sta_receipt:
+            fresh = receipts.verify(a.slow_sta_receipt, wt, "sta")
+            print(f"slow-corner STA verified: {a.slow_sta_receipt} ({fresh['plan']['period_ns']:g} ns)")
         for corner in signoff.CORNERS:
             target = a.slow_mhz if corner.startswith("nom_slow") else 50
             sta = receipts.one(run.glob("*-openroad-stapostpnr"), "final STA directory")
             report = (sta / corner / "clock.rpt").read_text()
-            clock = re.search(r"^Clock: clk\n(?:(?!^Clock:).)*?^Period: ([0-9.]+)\s*$", report, re.M | re.S)
+            clock = re.search(receipts.CLOCK_PERIOD_RE, report, re.M | re.S)
             if not clock or abs(float(clock[1]) - period) > 1e-6:
                 failures.append(f"{corner}: actual STA clock report missing or disagrees with CLOCK_PERIOD")
-            if period > 1000 / target + 1e-6:
-                failures.append(f"{corner}: STA constrained at {period:g} ns, does not establish {target:g} MHz")
+            timed, source = period, "actual constraint"
+            timing = {k: m.get(f"{k}__corner:{corner}") for k in receipts.STA_METRICS}
+            if fresh is not None and corner.startswith("nom_slow"):
+                # the run's own STA stays checked above; the slow corner's timing
+                # is the fresh STA's at its own (receipt-checked) period
+                timed, source = fresh["plan"]["period_ns"], "fresh STA"
+                timing = receipts.sta_metrics(Path(a.slow_sta_receipt).parent, corner)
+            if timed > 1000 / target + 1e-6:
+                failures.append(f"{corner}: STA constrained at {timed:g} ns, does not establish {target:g} MHz")
             for check in ("setup", "hold"):
-                ws = m.get(f"timing__{check}__ws__corner:{corner}")
-                count = m.get(f"timing__{check}_vio__count__corner:{corner}")
+                ws = timing[f"timing__{check}__ws"]
+                count = timing[f"timing__{check}_vio__count"]
                 if not finite_number(ws) or ws < 0 or not nonnegative_count(count) or count != 0:
-                    failures.append(f"{corner}: {check} slack {ws}, violators {count}; fresh STA required, no slack extrapolation")
+                    failures.append(f"{corner}: {check} slack {ws}, violators {count} at {timed:g} ns; "
+                                    "fresh STA required, no slack extrapolation")
             for kind, key in ELECTRICAL.items():
                 n = m.get(f"{key}__corner:{corner}")
                 if not nonnegative_count(n) or n > waive.get(kind, 0):
                     failures.append(f"{corner}: {n} max-{kind} violations (allowed {waive.get(kind, 0)})")
-            print(f"{corner}: actual constraint {period:g} ns; setup {m.get(f'timing__setup__ws__corner:{corner}')} ns; "
-                  f"hold {m.get(f'timing__hold__ws__corner:{corner}')} ns")
+            print(f"{corner}: {source} {timed:g} ns; setup {timing['timing__setup__ws']} ns; "
+                  f"hold {timing['timing__hold__ws']} ns")
         receipts.candidate_files(wt)
     except EVIDENCE_ERRORS as e:
         failures.append(f"invalid final run evidence: {e}")
