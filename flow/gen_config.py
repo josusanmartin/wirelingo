@@ -1,22 +1,56 @@
 #!/usr/bin/env python3
 """Generate src/config.json for the SRAM build.
 
-    python3 flow/gen_config.py --banks 2 [--density 44] [--grt-adjust 0.10]
+    python3 flow/gen_config.py [--banks N] [--density 44] [--grt-adjust 0.10]
 
-The submission preset uses swapped bottom corners; signoff times the real latch arcs.
+The tile (6x4 or 8x4) comes from info.yaml, the bank count defaults to
+src/project.v's PE_NCORES. The banks sit in the swapped bottom corners; on 8x4,
+three or four spread along the bottom edge. Signoff times the real latch arcs.
 Experimental overrides must be named and recorded separately from submission.
 """
 import argparse
 import collections
 import json
 import pathlib
+import re
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 M = "RM_IHPSG13_1P_256x32_c2_bm_bist"
 P = "pdk_dir::libs.ref/sg13cmos5l_sram"
 W, H = 416.64, 118.78
-CORE_X1, CORE_Y1 = 1286.40, 706.86  # core area top-right (6x4 tile)
 ROW = 3.78
 SITE = 0.48
+# Tiny Tapeout's IHP SG13CMOS5L die sizes (tt-support-tools
+# tech/ihp-sg13cmos5l/tile_sizes.yaml, d66cf17). The core area is the die less
+# the margins set below (LEFT/RIGHT_MARGIN_MULT 6 sites, TOP/BOTTOM 1 row).
+TILES = {"6x4": (1289.28, 710.64), "8x4": (1724.16, 710.64)}
+MARGIN_X, MARGIN_Y = 6 * SITE, ROW
+
+
+def tile_of(info):
+    """The tiles: value of a Tiny Tapeout info.yaml."""
+    found = re.findall(r'^  tiles: "([0-9]+x[0-9]+)"\s*(?:#.*)?$', pathlib.Path(info).read_text(), re.M)
+    if len(found) != 1 or found[0] not in TILES:
+        raise SystemExit(f"{info}: expected one tiles: line naming one of {sorted(TILES)}, found {found}")
+    return found[0]
+
+
+def core_corner(tile, tt=ROOT / "tt"):
+    """Top-right corner of the core area; checked against tt-support-tools when present."""
+    die_x, die_y = TILES[tile]
+    sizes = pathlib.Path(tt) / "tech/ihp-sg13cmos5l/tile_sizes.yaml"
+    if sizes.is_file():
+        line = re.findall(rf'^{tile}: "0 0 ([0-9.]+) ([0-9.]+)"$', sizes.read_text(), re.M)
+        if line[:1] != [(f"{die_x:.2f}", f"{die_y:.2f}")]:
+            raise SystemExit(f"{sizes}: tile {tile} is {line}, this generator assumes {die_x} x {die_y}")
+    return round(die_x - MARGIN_X, 2), round(die_y - MARGIN_Y, 2)
+
+
+def project_cores(project=ROOT / "src/project.v"):
+    found = re.findall(r"^`define PE_NCORES ([0-9])$", pathlib.Path(project).read_text(), re.M)
+    if len(found) != 1:
+        raise SystemExit(f"{project}: expected one `define PE_NCORES N")
+    return int(found[0])
 
 
 def inst(b):
@@ -31,13 +65,25 @@ def snap(v, g):
     return round(int(v / g) * g, 2)
 
 
-def placements(nbanks, layout="top"):
+def placements(nbanks, layout="top", core=(1286.40, 706.86)):
     """top:   banks 0-1 along the top edge from the right (pins down), banks 2-3
               along the bottom edge (mirrored, pins up).
     sides: macros rotated 90 degrees on the right and left die edges, pins facing
            inward, starting at the bottom (bank 0 right, 1 left, 2 right, 3 left);
            the top band stays free for the I/O pins (all at the top-left).
-    The top-left corner, where all the TT I/O pins are, stays free either way."""
+    spread: evenly along the bottom edge, mirrored (pins up); bank 0 leftmost,
+           bank 1 rightmost, banks 2 and 3 in between (with two banks, the
+           corners-swap positions).
+    The top-left corner, where all the TT I/O pins are, stays free either way.
+    core is the core area's top-right corner (core_corner)."""
+    CORE_X1, CORE_Y1 = core
+    if layout == "spread":
+        # core 0's line unit and the I/O pins (top left) pull bank 0's logic left
+        gap = (CORE_X1 - 2.88 - 6 * SITE - nbanks * W) / max(nbanks - 1, 1)
+        if gap < 6 * SITE:
+            raise SystemExit(f"spread: {nbanks} banks do not fit along this tile's bottom edge")
+        order = {1: [0], 2: [0, 1], 3: [0, 2, 1], 4: [0, 2, 3, 1]}[nbanks]
+        return {b: (snap(2.88 + 3 * SITE + order.index(b) * (W + gap), SITE), 3.78, "FS") for b in range(nbanks)}
     if layout == "row":
         # side by side along the bottom edge, centred, mirrored (pins up): the
         # logic sits in one block above them, close to every bank's pins
@@ -75,7 +121,10 @@ def main():
     ap.add_argument("--output", type=pathlib.Path,
                     default=pathlib.Path(__file__).resolve().parents[1] / "src/config.json")
     ap.add_argument("--check", action="store_true", help="fail if output differs; never write")
-    ap.add_argument("--banks", type=int, choices=range(1, 5), default=2)
+    ap.add_argument("--info", type=pathlib.Path, default=ROOT / "info.yaml",
+                    help="Tiny Tapeout info.yaml whose tiles: sets the die (default: this repository's)")
+    ap.add_argument("--banks", type=int, choices=range(1, 5), default=None,
+                    help="SRAM banks (default: src/project.v's PE_NCORES)")
     # Release candidate: run t48ba (2026-10-07); the clock-tree and repair
     # options below default to its settings. Earlier: v2c (2026-10-06). At GRT_ADJUSTMENT 0.15 global routing
     # reserved too much Metal3 and ended with ~100 overflows that detailed
@@ -86,7 +135,8 @@ def main():
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--every-other", action=argparse.BooleanOptionalAction, default=True,
                     help="extra SRAM array stripe pairs (prism's setting)")
-    ap.add_argument("--layout", choices=["top", "sides", "corners", "corners-swap", "row"], default="corners-swap")
+    ap.add_argument("--layout", choices=["top", "sides", "corners", "corners-swap", "row", "spread"], default=None,
+                    help="SRAM placement (default: corners-swap; spread for 3-4 banks on 8x4)")
     ap.add_argument("--post-grt-repair", action=argparse.BooleanOptionalAction, default=True,
                     help="slew/cap/fanout repair on global-routing parasitics (off in the Classic flow)")
     ap.add_argument("--max-wire", type=int, default=400, help="buffer wires longer than this (um, 0 = off)")
@@ -122,13 +172,21 @@ def main():
     ap.add_argument("--sram-clock-advance", action=argparse.BooleanOptionalAction, default=True,
                     help="clock each SRAM from the clock root (useful skew: reads launch earlier, flow/sram_clock_advance.tcl)")
     a = ap.parse_args()
+    tile = tile_of(a.info)
+    core = core_corner(tile)
+    cores = project_cores()
+    if a.banks is None:
+        a.banks = cores
+    if a.layout is None:
+        a.layout = "spread" if tile != "6x4" and a.banks >= 3 else "corners-swap"
     if a.pnr_latch_flops is None:
         # PnR times the FIFO latches like flops (protoemu_pnr.sdc); signoff
         # always times the real latch arcs. Same repair edits, ~20x faster
         # repair steps (docs/review.md).
         a.pnr_latch_flops = True
-    if a.preset == "submission" and (a.banks != 2 or a.grt_iters is not None):
-        ap.error("submission requires 2 banks and no truncated routing; use --preset experiment")
+    if a.preset == "submission" and (a.banks != cores or a.grt_iters is not None):
+        ap.error(f"submission requires {cores} banks (src/project.v's PE_NCORES) and no truncated routing; "
+                 "use --preset experiment")
     c = collections.OrderedDict()
     c["meta"] = {"flow": "Classic", "substituting_steps": {
         "+OpenROAD.GeneratePDN": "Project.ExtendPowerStripes",
@@ -150,9 +208,9 @@ def main():
         # Detailed routing's antenna repair runs after every resizer step, and
         # its diodes count as loads: split the nets they take over the limit.
         c["meta"]["substituting_steps"]["OpenROAD.DetailedRouting"] = "Project.DetailedRouting"
-    c["//"] = ("Generated by flow/gen_config.py. TT SG13CMOS5L 6x4 with IHP 256x32 SRAM IMEM banks; "
+    c["//"] = (f"Generated by flow/gen_config.py. TT SG13CMOS5L {tile} with IHP 256x32 SRAM IMEM banks; "
                "SRAM settings follow kdp1965/ihp-um-janestreet-prism.")
-    c["//generator"] = {k: v for k, v in vars(a).items() if k not in ("output", "check")
+    c["//generator"] = {k: v for k, v in vars(a).items() if k not in ("output", "check", "info")
                         and (k not in ("clock_fanout_fix", "sram_clock_advance", "final_design_repair", "pnr_electrical_margins", "sram_pin_buffers", "antenna_fanout_repair", "late_clock", "late_clock_oe", "late_clock_core", "pnr_setup_margin", "set") or v)}
     if a.clock_fanout_fix:
         c["CTS_SINK_CLUSTERING_SIZE"] = 8
@@ -231,7 +289,7 @@ def main():
         c["GRT_OVERFLOW_ITERS"] = a.grt_iters
     if a.grt_adjust is not None:
         c["GRT_ADJUSTMENT"] = a.grt_adjust
-    pl = placements(a.banks, a.layout)
+    pl = placements(a.banks, a.layout, core)
     c["MACROS"] = {M: {
         "instances": {inst(b): {"location": [x, y], "orientation": o} for b, (x, y, o) in pl.items()},
         "gds": [f"{P}/gds/{M}.gds"],
