@@ -17,7 +17,8 @@ import random
 import sys
 import time
 
-from pe_kria import ROOT, Board, ID
+import pe_kria
+from pe_kria import ROOT, Board
 from pe_spim import Spim
 from pe import asm, host, sim  # noqa: E402
 
@@ -38,10 +39,15 @@ def check(cond, msg):
 
 
 class Ctx:
-    def __init__(self, board, spim, f_clk, log=print):
+    def __init__(self, board, spim, f_clk, log=print, cores=None):
+        """Reads the chip ID over the GPIO path first: a KV260 build's (pe_kria.BUILDS)
+        with `cores` cores if given, or ValueError; both drivers get its geometry."""
         self.board, self.spim, self.f_clk, self.log = board, spim, f_clk, log
-        self.gpio = board.protoemu()           # GPIO path (no transport)
-        self.fab = board.protoemu()
+        self.gpio = board.protoemu()
+        self.geom = pe_kria.geometry(self.via_gpio(lambda pe: pe.read(sim.A_ID)), cores)
+        self.ncores = self.geom.ncores
+        self.gpio = board.protoemu(ncores=self.ncores, nbanks=self.geom.nbanks)    # GPIO path (no transport)
+        self.fab = board.protoemu(ncores=self.ncores, nbanks=self.geom.nbanks)
         self.fab.transport = spim
         self.rng = random.Random(7)
         self.results = []
@@ -66,23 +72,24 @@ def load(pe, name, core, **cfg):
 
 
 def t_regs(ctx, rounds):
-    fab, rng = ctx.fab, ctx.rng
+    fab, rng, cores = ctx.fab, ctx.rng, range(ctx.ncores)
+    fab_read = lambda: [v for c in cores for v in fab.read(R(c, 0), 4)]
     for k in range(rounds):
-        vals = [rng.getrandbits(16) for _ in range(8)]
-        fab.write(R(0, 0), vals[:4])
-        fab.write(R(1, 0), vals[4:])
-        back = fab.read(R(0, 0), 4) + fab.read(R(1, 0), 4)
+        vals = [rng.getrandbits(16) for _ in range(4 * ctx.ncores)]
+        for c in cores:
+            fab.write(R(c, 0), vals[4 * c:4 * c + 4])
+        back = fab_read()
         check(back == vals, f"fabric readback {back} != {vals}")
         if k % 10 == 0:                      # cross-check over the GPIO path, both ways
-            g = ctx.via_gpio(lambda pe: [pe.read(R(c, r)) for c in range(2) for r in range(4)])
+            g = ctx.via_gpio(lambda pe: [pe.read(R(c, r)) for c in cores for r in range(4)])
             check(g == vals, f"GPIO readback {g} != fabric-written {vals}")
-            vals = [rng.getrandbits(16) for _ in range(8)]
-            ctx.via_gpio(lambda pe: [pe.write(R(c, r), vals[4 * c + r]) for c in range(2) for r in range(4)])
-            back = fab.read(R(0, 0), 4) + fab.read(R(1, 0), 4)
+            vals = [rng.getrandbits(16) for _ in range(4 * ctx.ncores)]
+            ctx.via_gpio(lambda pe: [pe.write(R(c, r), vals[4 * c + r]) for c in cores for r in range(4)])
+            back = fab_read()
             check(back == vals, f"fabric readback {back} != GPIO-written {vals}")
     ids = fab.read(sim.A_ID, 64, fixed=True)
-    check(ids == [ID] * 64, "READ_FIXED of ID")
-    return f"{rounds} rounds R0..R3 x2 cores, GPIO cross-checks; 64x READ_FIXED ID ok"
+    check(ids == [ctx.geom.id] * 64, "READ_FIXED of ID")
+    return f"{rounds} rounds R0..R3 x{ctx.ncores} cores, GPIO cross-checks; 64x READ_FIXED ID ok"
 
 
 def t_tx_burst(ctx, nwords):
@@ -160,7 +167,7 @@ def run(ctx, clocks, divs, words, regs_rounds, rx_sizes):
                 spim.enable_quad(quad)
                 name = f"{clock:6s} SCK=mclk/{div} {'quad ' if quad else '1-bit'}"
                 try:
-                    check(ctx.fab.read(sim.A_ID) == ID, "ID")
+                    check(ctx.fab.read(sim.A_ID) == ctx.geom.id, "ID")
                     ctx.log(f"{name}: {t_regs(ctx, regs_rounds)}")
                     ptx, tx = t_tx_burst(ctx, words)
                     ctx.log(f"{name}: {tx}")
@@ -188,14 +195,17 @@ def main():
     ap.add_argument("--divs", nargs="*", type=int, default=[4, 2, 1])
     ap.add_argument("--words", type=int, default=4096)
     ap.add_argument("--regs", type=int, default=50)
+    ap.add_argument("--cores", type=int, choices=(2, 3), help="expected core count (default: the active app's)")
     a = ap.parse_args()
     board = Board()
+    app, cores = pe_kria.app_cores(a.cores)
     spim = Spim()
     spim.select(fabric=False)
     board.reset()
     f = board.clk_hz()
     print(f"protoemu clk {f / 1e6:.4f} MHz (cycle counter); ID over GPIO 0x{board.protoemu().read(0x800):08X}")
-    ctx = Ctx(board, spim, f)
+    ctx = Ctx(board, spim, f, cores=cores)
+    print(f"active app {app}: chip {ctx.geom}")
     ok = run(ctx, a.clocks, a.divs, a.words, a.regs, [a.words, 1, 7, 1000, 64])
     print("ALL PASS" if ok else "FAILURES")
     sys.exit(0 if ok else 1)

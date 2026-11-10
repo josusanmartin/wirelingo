@@ -141,7 +141,8 @@ def test_an_uninstalled_app_refuses(kernel):
 def test_the_real_paths_are_the_boards():
     assert fg.FIRMWARE_NAME == "/proc/device-tree/fpga-region/firmware-name"
     assert fg.FIRMWARE_DIR == "/lib/firmware/xilinx" and fg.FPGA_STATE == "/sys/class/fpga_manager/fpga0/state"
-    assert fg.KNOWN == ("protoemu", "protoemu40", "protoemu48")
+    assert fg.KNOWN == ("protoemu", "protoemu40", "protoemu48", "protoemu3c")
+    assert set(fg.APP_BUILD) == set(fg.KNOWN)
 
 
 def test_there_is_no_override(kernel, monkeypatch):
@@ -292,7 +293,10 @@ def test_require_app_expect_still_needs_every_check(monkeypatch, kernel):
 
 def test_app_names_for_the_clocks():
     assert fg.APP_FOR_MHZ == {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}
-    assert set(fg.APP_FOR_MHZ.values()) == set(fg.KNOWN)
+    # every 2-core app has its clock; protoemu3c (the 8x4 package's 3-core build) is the one more
+    assert set(fg.APP_FOR_MHZ.values()) | {"protoemu3c"} == set(fg.KNOWN)
+    assert {fg.APP_FOR_MHZ[mhz]: 1200 // mhz for mhz in fg.APP_FOR_MHZ} == {a: fg.APP_BUILD[a][1] for a in fg.APP_FOR_MHZ.values()}
+    assert {a: c for a, (c, _) in fg.APP_BUILD.items()} == {"protoemu": 2, "protoemu40": 2, "protoemu48": 2, "protoemu3c": 3}
 
 
 # ---------------------------------------------------------------- the board's whole table, verbatim

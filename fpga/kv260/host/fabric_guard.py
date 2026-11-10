@@ -46,8 +46,13 @@ import pathlib
 import re
 import subprocess
 
-KNOWN = ("protoemu", "protoemu40", "protoemu48")          # our apps, by exact name
-APP_FOR_MHZ = {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}   # install.sh's names for build.sh's clocks
+KNOWN = ("protoemu", "protoemu40", "protoemu48", "protoemu3c")   # our apps, by exact name
+APP_FOR_MHZ = {50: "protoemu", 40: "protoemu40", 48: "protoemu48"}   # install.sh's names for build.sh's 2-core clocks
+# What each app holds: (cores, build.sh's clk_div). install.sh refuses a bitstream that
+# doesn't match its app, and bringup_kria.py refuses a chip ID with another core count.
+# protoemu3c is the 8x4 package's 3-core build (v0.3, ID 0x50453303) at 50 MHz; the
+# 2-core apps hold a v0.2 bitstream (0x50450002) or a v0.3 2-core one (0x50452203).
+APP_BUILD = {"protoemu": (2, 24), "protoemu40": (2, 30), "protoemu48": (2, 25), "protoemu3c": (3, 24)}
 HEADER = ["Accelerator", "Accel_type", "Base", "Pid", "Base_type", "#slots(RPU+PL+AIE)", "slot->handle"]
 SLOTS = re.compile(r"\(\d+\+\d+\+\d+\)")
 ACTIVE = re.compile(r"\d+->\d+,")
