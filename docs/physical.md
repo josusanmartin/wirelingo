@@ -1,4 +1,4 @@
-# Physical design notes (IHP SG13CMOS5L, Tiny Tapeout 6x4)
+# Physical design notes (IHP SG13CMOS5L, Tiny Tapeout 6x4, then 8x4)
 
 A running log of what the flow taught us. The numbers come from local LibreLane
 3.1.0.dev3 runs. `flow/harden.sh NAME` hardens HEAD in its own worktree and
@@ -49,6 +49,51 @@ IHP buffers' fanout limit of eight and legalizes the added buffers.
   layer**, and Metal4 also carries the power stripes.
 * Cells: `dfrbpq_1` 49 µm², `mux2_1` 18, `mux4_1` 38, `dlhq_1` 31, `lgcp_1` 27 (ICG).
   There is no flop with an enable input, so every held flop costs a mux as well.
+
+## 8x4 (2026-11-10)
+
+The organizers confirmed 8x4 tiles; the 8x4 build lives on the branch
+`next-8x4`, where `info.yaml` says `tiles: "8x4"`. `main` stays the 6x4 fo6
+design until an 8x4 netlist has a full harden, precheck and release receipts.
+The study that chose what to add is [8x4-study.md](8x4-study.md).
+
+* **The die** is 1724.16 × 710.64 µm (tt-support-tools `d66cf17`,
+  `tt_block_8x4_pgvdd.def`): only wider. The pins are the same 43, in the same
+  top-left place; Metal3 is still the one horizontal layer, with 34 % longer
+  tracks.
+* **`flow/gen_config.py` reads the tile from `info.yaml`** (6x4 or 8x4; it
+  checks the size against `tt/`'s `tile_sizes.yaml` when present) and puts
+  the core corner at the die less the margins (6 sites, 1 row): 8x4
+  (1721.28, 706.86), 6x4 (1286.40, 706.86) as before. `flow/harden.sh`
+  refuses a `tt/` without that tile.
+* **Banks.** The bank count defaults to `src/project.v`'s `PE_NCORES`, and
+  the submission preset requires that count (`harden.sh` picks it for the
+  committed core count). Two banks sit in the swapped bottom corners (8x4:
+  x = 4.32 and 1302.72 µm). On 8x4, three or four default to `spread` (the
+  study's layout, now in the generator): along the bottom edge, mirrored,
+  bank 0 leftmost, bank 1 rightmost, banks 2 and 3 between (3 banks: 4.32,
+  1302.72, 653.28; 4 banks: 4.32, 1302.72, 436.8, 869.76). With two banks
+  `spread` is exactly corners-swap.
+* **6x4 is unchanged.** A 6x4 `info.yaml` gives fo6's `src/config.json` byte
+  for byte (`test/model/test_flow_8x4.py`), and 24 option sets gave the old
+  generator's output exactly; on 6x4 the default layout stays corners-swap
+  for every bank count.
+
+**Reproduction of the study's base through the real flow (run `apbase`,
+2026-11-10).** `flow/harden.sh apbase` at `a395f5b` (today's 2-core RTL,
+`src/*.sv` unchanged from fo6), on runner1, 1 h 44 min on a loaded
+machine (the study's run took 43 min). Its `src/config.json` differs from
+the study run's only in the comment line that names the tile (`8x4` against
+`6x4`). Result:
+netlist sha256 `982444c9e60151fc…`, the study's; the final `pnl`, DEF, odb
+and LEF are byte-identical to the study run's, the GDS is identical with
+its timestamps zeroed (`5cfd5256cb00634d…`; raw `c6144510eedcc628…`), the
+SPEF and SDFs differ only in their `DATE` header line, and all 225 final
+metrics are equal. All 14 step netlists, synthesis on, match too.
+So the signoff summary is the study's: `flow/signoff.py`
+PASSED; setup WS 0 / −0.643 / 0 ns (typ / slow / fast; slow 90 endpoints),
+hold +0.158 / +0.362 / +0.059 ns, no slew or capacitance violation, 0
+routing and KLayout DRC, LVS clean, 0 antenna.
 
 ## SRAM macros
 
