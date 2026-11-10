@@ -477,7 +477,10 @@ MOV op 3, JMP/CALL `sel` with cond 0, operand code 15 as a source. Opcodes
 A PC write by MOV or OUT is **bank-relative**: it keeps the bank bits of the
 PC, so a computed jump or a RET from a table assembled at address 0 works on
 any core. (v0.2 jumped to `value[9:0]` and faulted outside the bank.) RET
-(`MOV PC, LR`) is unchanged for every LR a CALL wrote.
+(`MOV PC, LR`) is unchanged whenever the CALL's link is in its bank: for
+every CALL except one in the bank's last word with no wrap there, whose link
+is the next bank's first word (core 3's word 1023: word 0). v0.2's RET went
+there and faulted; v0.3's goes to word 0 of the core's own bank.
 
 For a PINS/PINDIRS destination, pin `(OUT_BASE + i) mod 32` gets `value[i]`
 for `0 ≤ i < OUT_COUNT`.
@@ -890,7 +893,8 @@ tapeout had 2, 2 and 8. For the parts that don't exist:
 
 Every v0.3 addition takes encoding space v0.2 reserved ("should be 0", "the
 hardware ignores them") or left unused. Every word the v0.2 assembler can
-emit keeps its v0.2 meaning, and the register reset values are unchanged
+emit keeps its v0.2 meaning, except a PC write (MOV/OUT PC, RET) whose value
+leaves the core's bank, and the register reset values are unchanged
 (the new state, TICKS, the CRC's top half and POLY_HI, resets to 0). Every
 program in `firmware/` assembles to the same words as before (checked when
 the v0.3 assembler landed). What a v0.2 program can see differently:
@@ -899,6 +903,7 @@ the v0.3 assembler landed). What a v0.2 program can see differently:
 |---|---|---|
 | ID `0x50450002` | `0x5045BC03` (§6.2) | host software that checks the ID |
 | `MOV`/`OUT` PC: jump to `value[9:0]`, a fault outside the bank | `{PC[9:8], value[7:0]}` | only a computed jump that left its bank (which faulted) |
+| RET after a CALL in a bank's last word (no wrap there): LR is the next bank's first word, a fault | word 0 of the own bank | the same: a program whose CALL ends its bank (none in `firmware/`) |
 | LDI with `[18]` set: an LDI | CMPW | only a hand-made word (`.word`) with a reserved bit set |
 | FLAG with `[17]` set: a set or clear by `[18]` | a toggle | the same |
 | MOV op 3: a plain MOV | a table read | the same; the v0.2 assembler never emitted op 3 |
