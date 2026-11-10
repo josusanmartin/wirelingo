@@ -90,7 +90,9 @@ The host talks to the chip over SPI mode 0:
   Reads have 8 dummy SCK (one byte) after the address.
 * Transaction: `cmd addr[15:0] data…`. The commands are 0x02 write, 0x03 read,
   0x0A write-fixed and 0x0B read-fixed. Data is 32-bit big-endian words.
-* Reading address 0x0800 returns the ID `0x50450002`.
+* Reading address 0x0800 returns the ID: `0x50453303` on the 8x4 chip (3 cores),
+  `0x50452203` on its 2-core fallback, `0x50450002` on the 6x4 v0.2 chip
+  (docs/isa.md §6.2).
 
 On the demo board, copy `tools/micropython/protoemu.py`, `protoemu_fw.py` and
 `bringup.py` to the RP2350, then:

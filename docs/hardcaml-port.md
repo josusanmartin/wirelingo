@@ -4,6 +4,12 @@
 assembler, cycle model and main host tools in OCaml. The frozen chip stays the
 Verilog in `src/`, which this work does not edit.
 
+**Version.** The port is of the v0.2 RTL and ISA (the 6x4 tapeout). On the 8x4
+branch `src/` implements v0.3 (docs/isa.md §8: the third core, the 32-bit CRC,
+the tick counter, the table read and the rest), which the port does not have:
+everything below is about v0.2, and says nothing about the v0.3 RTL until the
+port is extended and the check rerun.
+
 **Evidence level.** Everything below is a statement about the port. "Equivalent" means
 the generated Verilog equals `src/` by a formal check; "lockstep" means simulation. None
 of it is silicon or FPGA evidence, and it adds nothing to what is known about the chip
