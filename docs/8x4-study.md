@@ -37,7 +37,7 @@ proposed as written.
 * **Fallback: the same four additions on two cores** (+13.6K µm²,
   **estimate** 35.5 %), decided at a Dec 6 gate. It needs its own settings
   search and receipts; the plan runs its search first (about a day), so it
-  is ready at the gate. Whether it keeps the base's 48 MHz margin with the
+  should be ready at the gate. Whether it keeps the base's 48 MHz margin with the
   table read's extra load is for that search to measure.
 * **Baseline (harden):** today's RTL on 8x4 routes with room to spare
   (Metal3 45.7 % at global routing, against fo6's 63.9 %), but with fo6's
@@ -578,7 +578,10 @@ untuned 2-core layout misses 50 MHz at the slow corner by 0.643 ns, so it
 gets its own short search and its own receipts, scheduled first (plan,
 week 3). Its 48 MHz margin is not measured: the base has +0.19 ns at the
 slow corner, and the table read adds a load on those paths. If it misses
-48 MHz, the table read is the addition to drop (plan, the gate).
+48 MHz, drop the table read first: it is the addition that loads the SRAM
+outputs directly. CMPW and `!t` also add a gate on decode paths, and the
+any-width CRC widens an endpoint register (v3-study.md, "Timing"), so
+whether that is enough is for a harden to measure (plan, the gate).
 
 ### Left out, and why
 
@@ -643,17 +646,19 @@ cores on 8x4 with the same ISA additions, which keeps every firmware and
 tool change and drops only the third bank. Because its search ran first
 (week 3, days 1–2) and its receipts ran beside the package's search, it
 should already be through `release_check.py` at the gate if its search
-closed, so week 5 is not spent
-redoing gate level, SDF, equivalence and precheck. The untuned 2-core
-The base meets 48 MHz at every corner (slow +0.19 ns); the fallback adds
-the bundle's load on the SRAM output paths (the table read's OSR mux, on
-the paths that set the slow corner), so its own search measures whether it
-keeps that margin. If the fallback misses 48 MHz too, drop the table read,
-the addition on that path, and keep the rest (CMPW, `jmp !t`, `flag tog`,
-bank-relative PC, the any-width CRC, the tick counter); the USB device
-with a data endpoint then probably no longer fits a bank (the v3 study
-measured 243 words with the whole bundle, 250 with the table read alone and
-280 with none of it; the bundle without the table read was not counted).
+closed, so week 5 is not spent redoing gate level, SDF, equivalence and
+precheck. The base meets 48 MHz at every corner (slow +0.19 ns); the
+fallback adds the bundle's load on the SRAM output paths (the table read's
+OSR mux, on the paths that set the slow corner), so its own search
+measures whether it keeps that margin. If the fallback misses 48 MHz too,
+drop the table read first: it is the addition that loads the SRAM outputs
+directly. CMPW and `!t` also add a gate on decode paths, and the
+any-width CRC widens an endpoint register ([v3-study.md](v3-study.md),
+"Timing"), so whether that is enough is for a harden to measure. Without
+the table read, the USB device with a data endpoint probably no longer
+fits a bank (the v3 study measured 243 words with the whole bundle, 250
+with the table read alone and 280 with none of it; the bundle without the
+table read was not counted).
 
 ## The KV260 FPGA build
 
