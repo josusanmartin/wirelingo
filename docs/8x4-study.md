@@ -579,9 +579,11 @@ gets its own short search and its own receipts, scheduled first (plan,
 week 3). Its 48 MHz margin is not measured: the base has +0.19 ns at the
 slow corner, and the table read adds a load on those paths. If it misses
 48 MHz, drop the table read first: it is the addition that loads the SRAM
-outputs directly. CMPW and `!t` also add a gate on decode paths, and the
-any-width CRC widens an endpoint register (v3-study.md, "Timing"), so
-whether that is enough is for a harden to measure (plan, the gate).
+outputs directly. CMPW and `!t` also add a gate on decode paths
+(v3-study.md, "Timing", which also names the CRC register as an endpoint
+of those paths); the any-width CRC widens that register (this study's
+prototype). So whether dropping the table read is enough is for a harden
+to measure (plan, the gate).
 
 ### Left out, and why
 
@@ -652,13 +654,14 @@ fallback adds the bundle's load on the SRAM output paths (the table read's
 OSR mux, on the paths that set the slow corner), so its own search
 measures whether it keeps that margin. If the fallback misses 48 MHz too,
 drop the table read first: it is the addition that loads the SRAM outputs
-directly. CMPW and `!t` also add a gate on decode paths, and the
-any-width CRC widens an endpoint register ([v3-study.md](v3-study.md),
-"Timing"), so whether that is enough is for a harden to measure. Without
-the table read, the USB device with a data endpoint probably no longer
-fits a bank (the v3 study measured 243 words with the whole bundle, 250
-with the table read alone and 280 with none of it; the bundle without the
-table read was not counted).
+directly. CMPW and `!t` also add a gate on decode paths
+([v3-study.md](v3-study.md), "Timing", which also names the CRC register
+as an endpoint of those paths); the any-width CRC widens that register
+(this study's prototype). So whether dropping the table read is enough is
+for a harden to measure. Without the table read, the USB device with a
+data endpoint probably no longer fits a bank (the v3 study measured 243
+words with the whole bundle, 250 with the table read alone and 280 with
+none of it; the bundle without the table read was not counted).
 
 ## The KV260 FPGA build
 
