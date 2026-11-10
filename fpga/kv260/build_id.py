@@ -2,7 +2,7 @@
 """Revision identity of the KV260 design (read back from pe_lab, 0xA0030000).
 
     build_id.py info                     # JSON: the checkout's RTL revision
-    build_id.py vh STAGE OUT.vh JSON     # build.sh: build_id.vh for pe_lab.v + a record
+    build_id.py vh STAGE OUT.vh JSON [CLK_DIV]   # build.sh: build_id.vh for pe_lab.v + a record
 
 The RTL revision is the last commit that touched the RTL inputs (INPUTS
 below): commits that change only docs, tests or host software keep it, so a
@@ -10,11 +10,16 @@ bitstream stays valid across them. `dirty` means an input differs from that
 commit (modified, staged or untracked), so the bitstream is not exactly any
 commit; build.sh refuses that unless ALLOW_DIRTY=1. The digest is the first
 32 bits of the SHA-256 over the staged RTL (flow/fpga_profile.py output) and
-the fabric sources, the exact bytes Vivado read.
+the fabric sources, the exact bytes Vivado read. The record (build_info.json)
+also gives the staged chip's core count (its project.v) and, from build.sh,
+clk_div: install.sh checks both against the app it installs. Two builds from
+one checkout (2 and 3 cores) differ there and in the digest, not in the
+revision; on the board the chip's ID register gives the core count.
 """
 import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -47,9 +52,20 @@ def digest(stage):
     return h.hexdigest()[:8]
 
 
-def write_vh(stage, vh, record):
+def staged_cores(stage):
+    """PE_NCORES of the staged chip (flow/fpga_profile.py leaves exactly one define)."""
+    found = re.findall(r"^`define PE_NCORES ([0-9]+)$", (stage / "rtl/src/project.v").read_text(), re.M)
+    if len(found) != 1:
+        raise ValueError(f"staged project.v: {len(found)} PE_NCORES defines")
+    return int(found[0])
+
+
+def write_vh(stage, vh, record, clk_div=None):
     d = info()
     d["digest"] = digest(stage)
+    d["cores"] = staged_cores(stage)
+    if clk_div is not None:
+        d["clk_div"] = int(clk_div)
     d["build_time"] = int(time.time())
     d["build_utc"] = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(d["build_time"]))
     pathlib.Path(vh).write_text(
@@ -66,7 +82,7 @@ def write_vh(stage, vh, record):
 if __name__ == "__main__":
     if sys.argv[1:2] == ["info"]:
         print(json.dumps(info()))
-    elif sys.argv[1:2] == ["vh"] and len(sys.argv) == 5:
-        print(json.dumps(write_vh(pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4])))
+    elif sys.argv[1:2] == ["vh"] and len(sys.argv) in (5, 6):
+        print(json.dumps(write_vh(pathlib.Path(sys.argv[2]), *sys.argv[3:])))
     else:
         sys.exit(__doc__)
