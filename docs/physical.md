@@ -95,6 +95,28 @@ PASSED; setup WS 0 / −0.643 / 0 ns (typ / slow / fast; slow 90 endpoints),
 hold +0.158 / +0.362 / +0.059 ns, no slew or capacitance violation, 0
 routing and KLayout DRC, LVS clean, 0 antenna.
 
+**48 MHz at the slow corner, released (apbase, 2026-11-10).** The author
+accepts 48 MHz at the slow corner; apbase misses 50 MHz there by 0.643 ns.
+`flow/sta_rerun.py` re-times the run's own final STA step at another period
+([release-evidence.md](release-evidence.md#48-mhz-at-the-slow-corner-8x4)).
+Its self-check: at 20 ns, on the study's `base` run, all 21 STA metrics of
+each corner equal the run's own. At 20.832 ns, apbase's slow corner has
+setup WS 0 (the latch floor) with 0 violators, hold unchanged (+0.362 ns).
+`flow/release_evidence.py apbase --slow-mhz 48` (validation root `3cb9f46`,
+runner1, 17:40–19:51 UTC) then gave **`RELEASE PASSED (SDF profile v2,
+slow target 48 MHz)`**, no waiver: functional GL 32/32 (test 28, test_pio 2,
+test_eth_service 2); SDF standard typ/fast 20 ns and slow 20.832 ns 5/5
+each, the slow 10 ns control failing as required; SDF v2 typ/fast 20 ns and
+slow 20.832 ns 3/3, USB full speed 20.834 ns 1/1 at each corner; autonomous
+USB 2/2 at 20.834 ns at each corner; precheck passed on the 8x4 GDS; the
+fresh slow STA at 20.832 ns. The same receipts without the STA receipt fail
+(slow −0.643 ns at 20 ns), and at 50 MHz fail on both the STA and the SDF
+slow coverage. The archive
+`wirelingo-release-evidence-3cb9f46-apbase.tar.gz` (sha256
+`63735078…f928`, 523 members) re-verifies when extracted. This
+is the 2-core RTL of today, a dry run of the path for the 8x4 release, not a
+release candidate.
+
 ## SRAM macros
 
 * `RM_IHPSG13_1P_256x32_c2_bm_bist`: 416.64 × 118.78 µm, all signal pins on the
