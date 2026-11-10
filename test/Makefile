@@ -25,16 +25,17 @@ override PE_BANK_AW = 8
 IMEM_ARGS =
 endif
 export PE_BANK_AW
-# Build parameters: unset = each testbench's own default (tb.v -> project.v, the
-# tapeout configuration: 2 cores, 2 banks, 8-deep FIFOs; tb_chip.v -> 4/4/4).
+# Build parameters. TB=top defaults to the 8x4 tapeout's configuration (project.v:
+# 3 cores, 3 banks, 8-deep FIFOs; PE_NCORES=2 PE_NBANKS=2 is its fallback and the
+# 6x4 v0.2 tapeout's geometry); TB=chip to 4/4/4.
 BUILD_DEFS = $(if $(PE_NCORES),-DPE_NCORES=$(PE_NCORES)) $(if $(PE_NBANKS),-DPE_NBANKS=$(PE_NBANKS)) $(if $(PE_FIFO_LOG2),-DPE_FIFO_LOG2=$(PE_FIFO_LOG2))
 ifeq ($(TB),chip)
 export PE_NCORES ?= 4
 export PE_NBANKS ?= 4
 export PE_FIFO_LOG2 ?= 2
 else
-export PE_NCORES ?= 2
-export PE_NBANKS ?= 2
+export PE_NCORES ?= 3
+export PE_NBANKS ?= 3
 export PE_FIFO_LOG2 ?= 3
 endif
 
