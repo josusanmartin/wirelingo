@@ -1,0 +1,6 @@
+test_spi_packed_host rc=0
+                                                        ** TESTS=1 PASS=1 FAIL=0 SKIP=0                                     2160830.00          20.65     104638.03  **
+test_spi_packed_host.xml: 1 tests, 0 not passing
+test_uart_capture_host rc=0
+                                                        ** TESTS=1 PASS=1 FAIL=0 SKIP=0                         4124240.00          39.74     103782.93  **
+test_uart_capture_host.xml: 1 tests, 0 not passing

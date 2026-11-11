@@ -1,0 +1,132 @@
+.....................s....s.................s........................... [ 90%]
+.....................s........ss............................s..........s [ 92%]
+....s...................s............................................... [ 95%]
+....................s......................sss.......................... [ 97%]
+..........s..............s.....s....s..s...........ss...............s... [ 99%]
+..........                                                               [100%]
+SIGROK CHECKS SKIPPED: 28 tests: a pass here says nothing about them (set SIGROK_CLI, flow/install_sigrok.sh)
+3149 passed, 29 skipped in 1963.89s (0:32:43)
+lockstep totals: {'chips': 20180, 'cycles': 162627479, 'state_compares': 2627565, 'poked_chips': 0, 'resyncs': 0, 'mismatches': 352, 'coverage_events': 235125501, 'copies_not_compared': 12, 'cycles_after_mismatch_ignored': 5870337, 'read_stubbed_chips': 2}
+tests with a mismatch: 118
+  test/model/test_ata_pio.py::test_a_device_outside_the_window_fools_the_poll_negative
+  test/model/test_ata_pio.py::test_bsy_stuck_times_out_exactly
+  test/model/test_ata_pio.py::test_device_without_cfa_rejects_8bit_mode
+  test/model/test_ata_pio.py::test_err_with_drq_refuses_the_block
+  test/model/test_ata_pio.py::test_error_status_refuses_the_block
+  test/model/test_ata_pio.py::test_exact_cycle_figures
+  test/model/test_ata_pio.py::test_fast_build_on_a_mode0_device_is_caught_negative[1]
+  test/model/test_ata_pio.py::test_fast_build_on_a_mode0_device_is_caught_negative[3]
+  test/model/test_ata_pio.py::test_faster_mode_follows_iordy[1]
+  test/model/test_ata_pio.py::test_faster_mode_follows_iordy[2]
+  test/model/test_ata_pio.py::test_faster_mode_follows_iordy[3]
+  test/model/test_ata_pio.py::test_faster_mode_follows_iordy[4]
+  test/model/test_ata_pio.py::test_faster_mode_read_write[1]
+  test/model/test_ata_pio.py::test_faster_mode_read_write[2]
+  test/model/test_ata_pio.py::test_faster_mode_read_write[3]
+  test/model/test_ata_pio.py::test_faster_mode_read_write[4]
+  test/model/test_ata_pio.py::test_first_poll_is_past_the_400_ns_window
+  test/model/test_ata_pio.py::test_idle_bus_is_deselected
+  test/model/test_ata_pio.py::test_iordy_extends_a_cycle_and_data_arrives_at_its_rise
+  test/model/test_ata_pio.py::test_iordy_stuck_low_cannot_hang_the_core
+  test/model/test_ata_pio.py::test_iordy_write_cycles_extend_too
+  test/model/test_ata_pio.py::test_polls_use_alternate_status
+  test/model/test_ata_pio.py::test_random_stress[1]
+  test/model/test_ata_pio.py::test_random_stress[2]
+  test/model/test_ata_pio.py::test_random_stress[3]
+  test/model/test_ata_pio.py::test_read_sample_point_from_both_sides[270-True]
+  test/model/test_ata_pio.py::test_read_sample_point_from_both_sides[290-False]
+  test/model/test_ata_pio.py::test_read_sector
+  test/model/test_ata_pio.py::test_read_two_sectors_with_bsy_between
+  test/model/test_ata_pio.py::test_refused_write_consumes_its_words
+  test/model/test_ata_pio.py::test_register_round_trip
+  test/model/test_ata_pio.py::test_rx_full_mid_block_loses_nothing_and_no_strobe_runs
+  test/model/test_ata_pio.py::test_set_features_8bit_then_identify
+  test/model/test_ata_pio.py::test_set_features_refuses_a_mode_the_device_lacks
+  test/model/test_ata_pio.py::test_slow_tx_refill_mid_block_write
+  test/model/test_ata_pio.py::test_smallest_figures_seen_at_the_pads
+  test/model/test_ata_pio.py::test_software_reset_signature
+  test/model/test_ata_pio.py::test_static_bounds_are_sound_on_the_model
+  test/model/test_ata_pio.py::test_write_sector_then_read_it_back
+  test/model/test_ata_pio.py::test_writing_a_16bit_device_is_flagged_by_the_far_end
+  test/model/test_call.py::test_lr_survives_restart
+  test/model/test_faults.py::test_a_line_stuck_for_a_whole_frame_and_more[i2c_master-0-0]
+  test/model/test_faults.py::test_a_line_stuck_for_a_whole_frame_and_more[i2c_master-1-0]
+  test/model/test_faults.py::test_a_line_stuck_for_a_whole_frame_and_more[i2c_master-1-1]
+  test/model/test_faults.py::test_finding_i2c_master_reads_back_sda
+  test/model/test_faults.py::test_finding_i2c_master_reports_a_stuck_sda
+  test/model/test_faults.py::test_finding_i2c_next_transfer_is_lost_after_a_truncated_read
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[10]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[11]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[22]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[23]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[6]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[7]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[8]
+  test/model/test_faults.py::test_fix_mutant_fails_its_test[9]
+  test/model/test_faults.py::test_stuck_scl_finds_a_missing_timeout
+  test/model/test_faults.py::test_sweep[flip-i2c_master]
+  test/model/test_faults.py::test_sweep[glitch-i2c_master]
+  test/model/test_faults.py::test_sweep[jitter-i2c_master]
+  test/model/test_faults.py::test_sweep[stretch-i2c_master]
+  test/model/test_faults.py::test_sweep[stuck-i2c_master]
+  test/model/test_faults.py::test_sweep[truncate-i2c_master]
+  test/model/test_pps.py::test_a_dip_inside_the_record_path_is_not_seen
+  test/model/test_pps.py::test_a_missed_pulse_is_counted_and_the_grid_holds
+  test/model/test_pps.py::test_a_runt_between_pulses_is_not_a_pulse[100]
+  test/model/test_pps.py::test_a_runt_between_pulses_is_not_a_pulse[13]
+  test/model/test_pps.py::test_a_runt_between_pulses_is_not_a_pulse[14]
+  test/model/test_pps.py::test_a_runt_between_pulses_is_not_a_pulse[1]
+  test/model/test_pps.py::test_a_runt_between_pulses_is_not_a_pulse[2]
+  test/model/test_pps.py::test_a_slow_host_loses_edges_never_time
+  test/model/test_pps.py::test_an_off_grid_first_pulse_is_reported_not_hidden
+  test/model/test_pps.py::test_an_off_grid_wide_pulse_is_not_fitted
+  test/model/test_pps.py::test_drift_of_a_one_hertz_train[-2500]
+  test/model/test_pps.py::test_drift_of_a_one_hertz_train[-37]
+  test/model/test_pps.py::test_drift_of_a_one_hertz_train[0]
+  test/model/test_pps.py::test_drift_of_a_one_hertz_train[2500]
+  test/model/test_pps.py::test_drift_of_a_one_hertz_train[37]
+  test/model/test_pps.py::test_drift_of_a_one_hertz_train[500]
+  test/model/test_pps.py::test_every_phase_through_a_rollover[carry-30064771272-8]
+  test/model/test_pps.py::test_every_phase_through_a_rollover[rollover-30065361096-4]
+  test/model/test_pps.py::test_every_width_through_the_record_path[borrow-4295164409-16]
+  test/model/test_pps.py::test_every_width_through_the_record_path[carry-4294967801-19]
+  test/model/test_pps.py::test_every_width_through_the_record_path[plain-281474976710655-13]
+  test/model/test_pps.py::test_fast_forward_equals_stepping
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[jmp r3--, over1-jmp over1]
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[ldi r2, 0xFFF8-ldi r2, 0xFFFC]
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[ldi r2, 0xFFFC-ldi r2, 0xFFFF]
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[sub r2, 13 -sub r2, 12 ]
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[sub r2, 3 -sub r2, 2 ]
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[sub r2, 6 -sub r2, 5 ]
+  test/model/test_pps.py::test_firmware_mutants_change_the_stamps[xor r0, 1 -nop ]
+  test/model/test_pps.py::test_host_pass_rate_bound
+  test/model/test_pps.py::test_interval_across_every_counter_digit_at_one_hertz
+  test/model/test_pps.py::test_interval_longer_than_the_32_bit_counter
+  test/model/test_pps.py::test_jitter_and_drift_together
+  test/model/test_pps.py::test_no_pulse_at_all_gives_no_records
+  test/model/test_pps.py::test_rollover_with_no_edge_keeps_time
+  test/model/test_pps.py::test_runt_is_decided_on_the_narrowest_width_the_stamps_allow
+  test/model/test_pps.py::test_stamps_equal_the_wire_clock_for_clock
+  test/model/test_pps.py::test_summary_states_the_reference
+  test/model/test_pps.py::test_the_borrow_boundary[0-16]
+  test/model/test_pps.py::test_the_borrow_boundary[12-16]
+  test/model/test_pps.py::test_the_borrow_boundary[13-13]
+  test/model/test_pps.py::test_the_borrow_boundary[14-13]
+  test/model/test_pps.py::test_word_order_and_split_reads
+  test/model/test_reverse_engineering.py::test_capture_close_edges
+  test/model/test_reverse_engineering.py::test_capture_timestamps
+  test/model/test_rmii.py::test_port_model_read_path_counts_every_word
+  test/model/test_usb_enum_ep1.py::test_faults_on_both_endpoints[0-full]
+  test/model/test_usb_enum_ep1.py::test_faults_on_both_endpoints[0-low]
+  test/model/test_usb_enum_ep1.py::test_faults_on_both_endpoints[1-full]
+  test/model/test_usb_enum_ep1.py::test_faults_on_both_endpoints[1-low]
+  test/model/test_usb_enum_ep1.py::test_lost_host_ack_repeats_the_toggle[full]
+  test/model/test_usb_enum_ep1.py::test_lost_host_ack_repeats_the_toggle[low]
+  test/model/test_usb_enum_ep1.py::test_reports_pins_on_endpoint_1[full+0.25%,jitter]
+  test/model/test_usb_enum_ep1.py::test_reports_pins_on_endpoint_1[full]
+  test/model/test_usb_enum_ep1.py::test_reports_pins_on_endpoint_1[low-1.5%]
+  test/model/test_usb_enum_ep1.py::test_reports_pins_on_endpoint_1[low]
+118 passed in 314.29s (0:05:14)
+stride 1:
+lockstep totals: {'chips': 367, 'cycles': 8073393, 'state_compares': 8073657, 'poked_chips': 352, 'resyncs': 9106, 'mismatches': 0, 'coverage_events': 6264022, 'copies_not_compared': 0, 'cycles_after_mismatch_ignored': 0, 'read_stubbed_chips': 0}
+tests with a mismatch: 0

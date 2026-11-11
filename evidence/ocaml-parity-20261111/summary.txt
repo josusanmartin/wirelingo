@@ -1,0 +1,126 @@
+commit 0f98335e58dcbb7a8a2e10ca4f62b5b7550b2c7b
+src tree 2eb73c355cdfd173e26d3c9487add15156d0dd17
+Yosys 0.69+158 (git sha1 a1a0ad7d4-dirty, Release, Clang /usr/bin/clang++ 21.1.8)
+5.3.0
+line_cyclesim: 200000 cycles agree (seed 1), pushes=1485, takes=5832, frame_ends_seen=3395
+phase 1 done at 3038 s
+phase 2 done at 4389 s
+phase 3 done at 5490 s
+wall time 5490 s
+asm rc=0
+cocotb_a rc=0
+cocotb_b rc=1
+cocotb_c rc=0
+cocotb_d rc=0
+cocotb_e rc=0
+cocotb_f rc=0
+cyclesim rc=0
+dune_test rc=0
+equiv2 rc=0
+equiv rc=0
+host rc=0
+model rc=1
+run rc=0
+self rc=0
+==== port equivalence: tt_um_josusanmartin_protoemu, build tapeout 
+generated Verilog   26af0b599ca74cd2b8b389ac8ce90dc7e4e689a0339235ec997efc4bb00a9b79
+checker             Yosys 0.69+158 (git sha1 a1a0ad7d4-dirty, Release, Clang /usr/bin/clang++ 21.1.8)
+module ports        11 modules: all equal
+state elements      flops gold 2232 / gate 2232: matched 2232
+                    instances (latches, clock gates, SRAMs) 1618/1618 by name
+compared points     {'port': 24, 'D': 2232, 'C': 2232, 'R': 2232, 'I:icg': 158, 'I:latch': 3072, 'I:sram': 462} (total 10412)
+ABC &cec            equivalent (src/ x values free)
+equiv_simple        10412/10412 proven, unproven: []
+mutants             wrong-gate:caught, swapped-mux-legs:caught, falling-edge:caught, reset-to-set:caught, swapped-clock-gate-enables:caught, sram-address-swapped:caught, dropped-register:caught, reset-value:caught, ticks-count-down:caught, table-word-dropped:caught
+time                1011.8 s
+VERDICT             EQUIVALENT
+==== port equivalence: tt_um_josusanmartin_protoemu, build fallback PE_NCORES=2 PE_NBANKS=2
+generated Verilog   3c95ce7b2883414e97f408d12c8f419fdc63253189542e573aaf9aaa22a4f166
+checker             Yosys 0.69+158 (git sha1 a1a0ad7d4-dirty, Release, Clang /usr/bin/clang++ 21.1.8)
+module ports        11 modules: all equal
+state elements      flops gold 1752 / gate 1752: matched 1752
+                    instances (latches, clock gates, SRAMs) 1080/1080 by name
+compared points     {'port': 24, 'D': 1752, 'C': 1752, 'R': 1752, 'I:icg': 108, 'I:latch': 2048, 'I:sram': 308} (total 7744)
+ABC &cec            equivalent (src/ x values free)
+equiv_simple        7744/7744 proven, unproven: []
+mutants             wrong-gate:caught, swapped-mux-legs:caught, falling-edge:caught, reset-to-set:caught, swapped-clock-gate-enables:caught, sram-address-swapped:caught, dropped-register:caught, reset-value:caught, ticks-count-down:caught, table-word-dropped:caught
+time                698.0 s
+VERDICT             EQUIVALENT
+test rc=0
+                                                        ** TESTS=30 PASS=30 FAIL=0 SKIP=0                             92105662.21        1533.58      60059.35  **
+test.xml: 30 tests, 0 not passing
+test_post_freeze rc=0
+                                                        ** TESTS=16 PASS=16 FAIL=0 SKIP=0               3397178339.45         470.37    7222312.96  **
+test_post_freeze.xml: 16 tests, 0 not passing
+test2 rc=0
+                                                        ** TESTS=30 PASS=30 FAIL=0 SKIP=0                             92029102.21        1019.65      90255.60  **
+test2.xml: 30 tests, 0 not passing
+lockstep rc=0
+                                                        ** TESTS=7 PASS=7 FAIL=0 SKIP=0                  1139625.01         327.44       3480.37  **
+lockstep.xml: 7 tests, 0 not passing
+lockstep2 rc=0
+                                                        ** TESTS=7 PASS=7 FAIL=0 SKIP=0                  1136885.01         206.01       5518.48  **
+lockstep2.xml: 7 tests, 0 not passing
+test_pio rc=0
+                                                        ** TESTS=2 PASS=2 FAIL=0 SKIP=0                                       4198359.48          69.11      60745.47  **
+test_pio.xml: 2 tests, 0 not passing
+test_eth_service rc=0
+                                                        ** TESTS=2 PASS=2 FAIL=0 SKIP=0                                  2673660.00          73.81      36224.82  **
+test_eth_service.xml: 2 tests, 0 not passing
+test_spi_packed_host rc=2
+                                                        ** test_spi_packed_host.test_serial_host_paid_completion   FAIL       10850.00           0.14      75243.79  **
+                                                        ** TESTS=1 PASS=0 FAIL=1 SKIP=0                                       10850.00           0.15      71982.61  **
+test_spi_packed_host.xml: 1 tests, 1 not passing
+test_spi_packed_host.xml: expected 1 passing tests; not passing: ['test_serial_host_paid_completion']
+test_spi_preloaded_host rc=0
+                                                        ** TESTS=1 PASS=1 FAIL=0 SKIP=0                             643170.00           7.92      81201.91  **
+test_spi_preloaded_host.xml: 1 tests, 0 not passing
+test_uart_capture_host rc=2
+                                                        ** test_uart_capture_host.test_capture_rearm   FAIL       10860.00           0.13      83582.84  **
+                                                        ** TESTS=1 PASS=0 FAIL=1 SKIP=0                           10860.00           0.14      75276.67  **
+test_uart_capture_host.xml: 1 tests, 1 not passing
+test_uart_capture_host.xml: expected 1 passing tests; not passing: ['test_capture_rearm']
+test_usb_uart_rtl rc=0
+                                                        ** TESTS=3 PASS=3 FAIL=0 SKIP=0                   10027008.36         222.48      45069.52  **
+test_usb_uart_rtl.xml: 3 tests, 0 not passing
+lockstep3 rc=0
+                                                        ** TESTS=8 PASS=8 FAIL=0 SKIP=0                              1139625.01         403.65       2823.32  **
+lockstep3.xml: 8 tests, 0 not passing
+lockstep3fb rc=0
+                                                        ** TESTS=8 PASS=8 FAIL=0 SKIP=0                              1136885.01         261.15       4353.34  **
+lockstep3fb.xml: 8 tests, 0 not passing
+lockstep3src rc=0
+                                                        ** TESTS=8 PASS=8 FAIL=0 SKIP=0                              1139625.01         243.04       4688.96  **
+lockstep3src.xml: 8 tests, 0 not passing
+lockstep3 rc=0
+                                                        ** TESTS=8 PASS=8 FAIL=0 SKIP=0                              2389885.01         603.81       3957.98  **
+lockstep3.xml: 8 tests, 0 not passing
+test_bench_fw rc=0
+                                                        ** TESTS=6 PASS=5 FAIL=0 SKIP=1                        26700100.00         116.18     229815.17  **
+test_bench_fw.xml: 5 tests, 0 not passing
+test_pps rc=0
+                                                        ** TESTS=5 PASS=4 FAIL=0 SKIP=1            9865340.00         170.25      57945.79  **
+test_pps.xml: 4 tests, 0 not passing
+lockstep4 rc=0
+                                                        ** TESTS=7 PASS=7 FAIL=0 SKIP=0                   636065.01         109.65       5801.03  **
+lockstep4.xml: 7 tests, 0 not passing
+1 failed, 3148 passed, 29 skipped in 1166.04s (0:19:26)
+lockstep totals: {'chips': 20180, 'cycles': 162304809, 'state_compares': 2622941, 'poked_chips': 0, 'resyncs': 0, 'mismatches': 354, 'coverage_events': 234174020, 'copies_not_compared': 12, 'cycles_after_mismatch_ignored': 5900645}
+tests with a mismatch: 120
+120 passed in 184.11s (0:03:04)
+stride 1:
+lockstep totals: {'chips': 369, 'cycles': 8073393, 'state_compares': 8076830, 'poked_chips': 352, 'resyncs': 9106, 'mismatches': 2, 'coverage_events': 6263002, 'copies_not_compared': 0, 'cycles_after_mismatch_ignored': 3176}
+tests with a mismatch: 2
+firmware files: 70 (swd_probe excluded)
+corpus: 9709 recorded calls, 535 distinct
+firmware   agree ok=365 error=408 crash=0 DISAGREE=0
+directed   agree ok=179 error=148 crash=8 DISAGREE=0
+fuzz       agree ok=997 error=3993 crash=10 DISAGREE=0
+corpus     agree ok=498 error=37 crash=0 DISAGREE=0
+bytes compared via --bin: 409700
+PARITY
+disasm words 200000 agree
+{'files': 70, 'v03_files': 2, 'export': 828, 'export_err': 404, 'writes': 175, 'listing': 176, 'bad': 0}
+8 firmware runs, 3714 lines compared, 0 disagree
+line_cyclesim: 2000000 cycles agree (seed 7), pushes=17411, takes=58835, frame_ends_seen=30595
+missed: 0

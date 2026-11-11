@@ -1,0 +1,39 @@
+baseline sim: pytest rc=0, 105 passed in 286.37s (0:04:46)
+baseline: clean
+sim [let ncnt = min 32 (c.isr_cnt + n) in] -> [let ncnt = min 31 (c.isr_cnt + n) in]: caught=yes
+sim [c.dcnt <- delay;] -> [c.dcnt <- delay + (delay land 1);]: caught=yes
+sim [c.lr <- (if c.pc = c.wrap_top then c.wrap_bottom else (c.pc + 1) land 1023);] -> [c.lr <- (c.pc + 1) land 1023 lor 1;]: caught=yes
+sim [let g = min 5 (1 + (l.n / 6)) in] -> [let g = min 4 (1 + (l.n / 6)) in]: caught=yes
+sim ["wait:timeout"] -> ["wait:timed_out"]: caught=yes
+sim [| 0 -> sel <> Isa.xc_nt || c.t = 0] -> [| 0 -> sel <> Isa.xc_nt || c.t = 1]: caught=yes
+sim [let s = Isa.cmpw_imm e.x in] -> [let s = e.x land 0x3FFF in]: caught=yes
+sim [          core.osr_cnt <- 0;
+          core.tbl <- None] -> [          core.osr_cnt <- 32;
+          core.tbl <- None]: caught=yes
+sim [if tick then c.ticks <- (c.ticks + 1) land m16;] -> [if tick then c.ticks <- (c.ticks + 2) land m16;]: caught=yes
+sim [lor (((v lsr 23) land 1) lsl 4)] -> [lor (((v lsr 22) land 1) lsl 4)]: caught=yes
+  with the load: caught; without: missed
+resync [then List.nth c.rxf n else 0)] -> [then List.nth c.rxf (List.length c.rxf - 1 - n) else 0)]: caught=yes
+  with the load: caught; without: missed
+resync [       c.txf <- list ();
+       c.rxf <- list ();] -> [       c.rxf <- list ();
+       c.txf <- list ();]: caught=yes
+asm [(cond lsl 15) lor (z_int sel lsl 10) lor addr] -> [(cond lsl 15) lor (z_int sel lsl 11) lor addr]: caught=yes
+asm ["pin out of range"] -> ["pin outside range"]: caught=yes
+asm [| "!t" -> Isa.c_always, Z.of_int Isa.xc_nt] -> [| "!t" -> Isa.c_t, Z.zero]: caught=yes
+asm [if Pyre.starts_with ~prefix:".data" line then prog.data <- idx :: prog.data;] -> []: caught=yes
+asm [if v >= 8192 || l.mn = "cmpw"] -> [if v >= 8191 || l.mn = "cmpw"]: caught=yes
+asm [I (Z.fdiv x y)] -> [I (Z.div x y)]: caught=yes
+asm [if greedy
+        then more () || k pos
+        else k pos || more ()] -> [if greedy
+        then k pos || more ()
+        else k pos || more ()]: caught=yes
+wave [let do_push = i.push &: ~:(bit cnt_w log2) in] -> [let do_push = i.push in]: caught=yes
+wave [let xfer = i.fjoin &: ~:txf_empty &: ~:rxf_full in] -> [let xfer = i.fjoin &: ~:txf_empty in]: caught=yes
+wave [let spb = mux2 manch (of_int_trunc ~width:4 2) (of_int_trunc ~width:4 1) in] -> [let spb = of_int_trunc ~width:4 1 in]: caught=yes
+wave [n_trunbit <-- ~:(trunbit.value)] -> [n_trunbit <-- trunbit.value]: caught=yes
+wave [let m_age = mux2 edge1 (of_int_trunc ~width:21 96) (of_int_trunc ~width:21 32) in] -> [let m_age = mux2 edge1 (of_int_trunc ~width:21 32) (of_int_trunc ~width:21 96) in]: caught=yes
+  with the rule: fail; rule removed: pass
+promote [let xfer = i.fjoin &: ~:txf_empty &: ~:rxf_full in] -> [let xfer = i.fjoin &: ~:txf_empty in]: caught=yes
+missed: 0

@@ -1,0 +1,4 @@
+stride 1 lockstep totals: {'chips': 8, 'cycles': 1361901, 'state_compares': 1361909, 'poked_chips': 0, 'resyncs': 0, 'mismatches': 0, 'coverage_events': 940176, 'copies_not_compared': 0, 'cycles_after_mismatch_ignored': 0, 'read_stubbed_chips': 2}
+stride 1 mismatch files: 0
+stride 64 lockstep totals: {'chips': 8, 'cycles': 1361901, 'state_compares': 21282, 'poked_chips': 0, 'resyncs': 0, 'mismatches': 0, 'coverage_events': 940176, 'copies_not_compared': 0, 'cycles_after_mismatch_ignored': 0, 'read_stubbed_chips': 2}
+stride 64 mismatch files: 0

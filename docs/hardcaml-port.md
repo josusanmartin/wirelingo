@@ -11,7 +11,8 @@ bank-relative PC), at 3 cores and 3 banks (the 8x4 tapeout, `project.v`'s defaul
 2 and 2 (its Dec 6 fallback, the same RTL with `PE_NCORES=2 PE_NBANKS=2`). The v0.2
 port's numbers, at a167455 for the 6x4 tapeout, are in
 [evidence/ocaml-parity-20261104/](../evidence/ocaml-parity-20261104/README.md); they say
-nothing about v0.3, and this page replaces them.
+nothing about v0.3, and this page replaces them. This page's own run is in
+[evidence/ocaml-parity-20261111/](../evidence/ocaml-parity-20261111/README.md).
 
 **Evidence level.** Everything below is a statement about the port. "Equivalent" means
 the generated Verilog equals `src/` by a formal check; "lockstep" means simulation. None
@@ -21,30 +22,41 @@ over to the generated Verilog through the proof, and the OCaml tools can stand i
 Python ones where they were compared.
 
 All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 0f98335,
-base `next-8x4` 25214f2 (`src/` as there), except one model test file rerun at 856194f, the
-next commit, which changes only `ocaml/test/lock_chip.py` (Stage 3). The commit after that
-changes only this file, `ocaml/README.md`, `README.md` and `docs/summary.md`. The run's
-logs stay on runner1, in the branch's work directory; its `summary.txt` is not committed.
-The generated Verilog has sha256 `26af0b599ca74cd2…` (tapeout) and `3c95ce7b28834149…`
-(fallback).
+base `next-8x4` 25214f2 (`src/` as there), except three later reruns. `src/` has not changed
+since; `next-8x4` 27ac3f7 adds d68c7ec, a fix to two of `test/`'s cocotb suites, below.
 
-Two gates did not pass at 0f98335. The model-suite gate failed on two mismatches that were
-the wrapper comparing a test's stubbed bus read, not the model (Stage 3); 856194f fixes the
-wrapper, and the affected file was rerun there with no mismatch. The other does not pass on
-`src/` either: two of CI's host-transport suites, `test_spi_packed_host` and
-`test_uart_capture_host`, check the ID register against `sim.ID_VALUE`, which
-`tools/pe/sim.py` keeps at v0.2's `0x50450002` on purpose, for the board tools. The 2-core
-v0.3 chip reads `0x50452203` (docs/isa.md §6.2). Both suites fail at that assertion, before
-any traffic, with the same value on the generated Verilog and on `src/` itself (run by hand
-at 25214f2, same build parameters). It is a test that `test/` still has to update to
-`sim.id_value(2, 2)`, outside `ocaml/`; until then these two suites are not evidence of
-anything here.
+* `test_kv260_3core.py` in the model gate, at 856194f (Stage 3); that commit changes only
+  `ocaml/test/lock_chip.py`.
+* The whole model gate, `self_check.sh` and the two fixed suites, at 567bff6 on 27ac3f7.
+  Since 856194f, `ocaml/` has changed only in `ocaml/test/capture_plugin.py` (9a7a63a),
+  `ocaml/test/self_check.sh` and comments in `ocaml/formal/equiv_port.py` (567bff6). The
+  commit after 567bff6 changes only this file and `evidence/`. (The 567bff6 runs used a
+  checkout of the same tree, `1ea4cc79…`; see the evidence folder's README.)
+
+The generated Verilog is the same at all of them: it has sha256 `26af0b599ca74cd2…`
+(tapeout) and `3c95ce7b28834149…` (fallback). The run's `summary.txt` and `rc.txt`, and the
+reruns' output, are in
+[evidence/ocaml-parity-20261111/](../evidence/ocaml-parity-20261111/README.md). The step
+logs stay on runner1, in the branch's work directory.
+
+Two gates of the run at 0f98335 did not pass. Both are resolved, as follows.
+
+* **The model gate** failed on two mismatches that were the wrapper comparing a test's
+  stubbed bus read, not the model (Stage 3). 856194f fixes the wrapper, and the whole gate,
+  rerun at 567bff6, passes with no mismatch.
+* **Two of CI's host-transport suites**, `test_spi_packed_host` and
+  `test_uart_capture_host`, failed on `src/` too. They checked the ID register against
+  `sim.ID_VALUE`, which `tools/pe/sim.py` keeps at v0.2's `0x50450002` on purpose, for the
+  board tools. The 2-core v0.3 chip reads `0x50452203` (docs/isa.md §6.2). Both failed at that
+  assertion, before any traffic, with the same value on the generated Verilog and on `src/`
+  itself (run by hand at 25214f2). d68c7ec changes both to `sim.id_value(2, 2)`. At 567bff6,
+  on 27ac3f7, both pass on the generated Verilog: 1/1 and 1/1.
 
 | stage | gate | result |
 |---|---|---|
 | 1 | formal equivalence with `src/`, 3-core tapeout build | proved: 10,412 of 10,412 points by `equiv_simple`, ABC `&cec` equivalent, 10 of 10 planted bugs caught |
 | 1 | the same, 2-core fallback build | proved: 7,744 of 7,744 points, ABC equivalent, 10 of 10 planted bugs caught |
-| 1 | CI's cocotb suites on the generated Verilog | all pass but the two above: `test` 30/30 at 3 cores and 30/30 at 2, `test_post_freeze` 16/16, `test_bench_fw` 5/5, `test_pps` 4/4, `test_pio` 2/2, `test_eth_service` 2/2, `test_spi_preloaded_host` 1/1, `test_usb_uart_rtl` 3/3, lockstep 7/7 at 3, 2 and 4 cores |
+| 1 | CI's cocotb suites on the generated Verilog | all pass (the two above at 567bff6): `test` 30/30 at 3 cores and 30/30 at 2, `test_post_freeze` 16/16, `test_bench_fw` 5/5, `test_pps` 4/4, `test_pio` 2/2, `test_eth_service` 2/2, `test_spi_preloaded_host` 1/1, `test_usb_uart_rtl` 3/3, `test_spi_packed_host` 1/1, `test_uart_capture_host` 1/1, lockstep 7/7 at 3, 2 and 4 cores |
 | 2 | assembler, every firmware but `swd_probe`, and the v0.3 syntax | 70 files byte-identical, no disagreement in 6643 cases |
 | 3 | cycle model against `sim.py` and RTL | no difference in 113,825 + 238,671 cycles three-way at 3 cores, 113,551 at 2, nor in about 162 million cycles of the model suite and 8.1 million more at stride 1 on the chips its tests write into |
 | 4 | host tools | `host`, `profile`, `export`, `disasm`, `listing`, `modelhost` ported, parity holds, two v0.3 programs included |
@@ -97,7 +109,7 @@ Each runs on the build CI runs it on.
 | `test_pio`, `test_eth_service` | tapeout | 2/2, 2/2 |
 | `test_bench_fw`, `test_pps` | tapeout, `tb.v` | 5/5, 4/4 |
 | `test_spi_preloaded_host`, `test_usb_uart_rtl` | fallback | 1/1, 3/3 |
-| `test_spi_packed_host`, `test_uart_capture_host` | fallback | 0/1, 0/1: the ID check above, the same on `src/` |
+| `test_spi_packed_host`, `test_uart_capture_host` | fallback | 0/1, 0/1 at 0f98335 (the ID check above, the same on `src/`); 1/1, 1/1 at 567bff6, with d68c7ec |
 
 That is every cocotb step of CI's test job. RTL simulation in Icarus. The lockstep suites
 include `test_v03_corners`, which drives every v0.3 addition and the table read's corners
@@ -159,8 +171,11 @@ clock-gate enables, swapped SRAM address legs (these four by the proof), a flop'
 edge, a flop's reset polarity (by the proof and the state-element check), a stuck register
 that left its neighbours unmatched, a changed reset value (by the state-element check alone,
 since a reset value is a property of the flop rather than a compared point), and two in
-v0.3 logic, both by the proof: the first core's tick counter counting down, and a table
-read's word never reaching the OSR.
+v0.3 logic, both by the proof: a tick counter counting down, and a table read's word never
+reaching the OSR. The planted bugs in `pe_core` (reset polarity, reset value and the two v0.3
+ones) edit the first `module pe_core (` in the generated file. Hardcaml names one core's
+module `pe_core` and the others `pe_core_N`, and that one is `u_core_2`'s at 3 cores and
+`u_core_1`'s at 2.
 
 No section fails to prove, so there is no counterexample to analyse.
 
@@ -222,7 +237,7 @@ mostly arbitrary define values that do not fit a field. That is a test of the er
 working define sets are in the other column and in the corpus, which holds the tests' real
 defines.
 
-`test/self_check.sh`, part of `evidence.sh`, plants bugs to show the check can fail: 7 in the
+`ocaml/test/self_check.sh`, part of `evidence.sh`, plants bugs to show the check can fail: 7 in the
 assembler (a field shift, an error message, truncating division, a greedy quantifier made
 lazy, and in v0.3 syntax `!t` assembled as `t`, `.data` marks dropped, CMPW chosen from 8191),
 all caught.
@@ -265,6 +280,8 @@ Three comparisons, each at a stated level:
 | `sim.py` = OCaml | model suite: 3148 tests passed, 1 failed (below), 29 skipped | 20,180 | 162,304,809 | see below |
 | `sim.py` = OCaml, stride 1 | the 120 tests with a difference (below): 352 chips written into by the test | 369 | 8,073,393 | 2 mismatches, both a stubbed read (below); 0 after the fix |
 | `sim.py` = OCaml, after the fix, strides 1 and 64 | `test_kv260_3core.py`, 73 tests | 8 | 1,361,901 | 0 mismatches |
+| `sim.py` = OCaml, the whole gate at 567bff6 | model suite: 3149 passed, 0 failed, 29 skipped | 20,180 | 162,627,479 | see below |
+| the same, stride 1 | the 118 tests with a difference: 352 chips written into | 367 | 8,073,393 | 0 mismatches |
 | `Pe_line` under Cyclesim = OCaml `Line` | seed 7, random traffic | | 2,000,000 | 0 mismatches |
 
 (8 tests: `test_lockstep.py`'s 7 and the final check that every chip agreed with OCaml.)
@@ -278,13 +295,17 @@ was left unexplained. At v0.2 it was about 155.1M on 19,602 chips; the suite has
 (`test_v03_isa.py`, `test_eth10_fcs.py`, `test_usb_enum_ep1.py`, `test_kv260_3core.py` and
 others).
 
-**The one failed test** is the port's own guard:
+**The one failed test** at 0f98335 was the port's own guard:
 `test_v03_isa.py::test_v02_firmware_uses_no_v03_encoding` assembles every file in
 `firmware/`, `swd_probe.pasm` included, and `ocaml/test/capture_plugin.py`, which records
-`assemble_all()` calls for the corpus, refuses SWD source by raising. The guard
-is the rule that SWD is parked; it stays. The test passes without the plugin (CI's run). It
-reads no chip, so nothing is lost to the model comparison. The SWD file stays out of the
-assembler parity sets.
+`assemble_all()` calls for the corpus, then refused SWD source by raising. Since 9a7a63a the
+plugin passes an SWD call through to the assembler unrecorded: it never enters the corpus,
+so it is in no assembler parity set and no parity evidence on this page. The count of such
+calls goes to a `.swd-skipped` file beside the corpus, which `asm_parity.py` does not read;
+the 567bff6 run had 1, and no corpus file there holds SWD text. The test reads no chip, so
+the model comparison is the same either way, and with the plugin loaded it passes
+(`model-567bff6.txt`: 3149 passed). So does `self_check.sh`'s run of `test_v03_isa.py`,
+which includes that test (its clean baseline, below).
 
 120 tests showed a difference at stride 64: 43 in `test_pps.py`, 40 in `test_ata_pio.py`, 21
 in `test_faults.py` (its `i2c_master` cases), 10 in `test_usb_enum_ep1.py`, 2 in
@@ -297,26 +318,34 @@ here. Up to the write the two models were equal every cycle, so a load hides not
 OCaml model computed; what it does not check is the written values themselves, which the
 test chose.
 
-The other 2, both in `test_kv260_3core.py`, replace a chip's `read` with a stub that returns
-a made-up ID register, and the wrapper compared the stub's value with the OCaml model's
-read: the mismatch was at the ID address only (the model's `0x50452203` against the stub's
-v0.2 ID, and the model's `0x50453303` against the stub's 4-core ID). The chip itself runs on `sim.py`. 856194f makes the wrapper compare
-`sim.Chip.read`, the model's own, and count such chips (`read_stubbed_chips`). Rerun at
-856194f, the whole file has 0 mismatches at strides 1 and 64, with 2 stubbed chips; the
-rest of the run above is at 0f98335, where only that comparison differs. 12 deep copies of
-chips, made by USB and SPI tests, are not compared after the copy. `test_swd.py` is
-excluded. Of the 29 skips, the suite's own summary line says 28 are sigrok checks (runner1
-has no sigrok-cli on its path).
+At 567bff6, 118 tests showed a difference at stride 64, the same files without
+`test_kv260_3core.py`, and all were written into, with 9106 loads and 0 mismatches.
 
-`test/self_check.sh` plants 10 bugs in the model: a saturation limit, a delay, the link
+The other 2 at 0f98335, both in `test_kv260_3core.py`, replace a chip's `read` with a stub
+that returns a made-up ID register, and the wrapper compared the stub's value with the OCaml
+model's read: the mismatch was at the ID address only (the model's `0x50452203` against the
+stub's v0.2 ID, and the model's `0x50453303` against the stub's 4-core ID). The chip itself
+runs on `sim.py`. 856194f makes the wrapper compare `sim.Chip.read`, the model's own, and
+count such chips (`read_stubbed_chips`). Rerun at 856194f, the whole file has 0 mismatches at
+strides 1 and 64, with 2 stubbed chips, and so it has in the whole gate at 567bff6. 12 deep
+copies of chips, made by USB and SPI tests, are not compared after the copy. `test_swd.py`
+is excluded. Of the 29 skips, the suite's own summary line says 28 are sigrok checks
+(runner1 has no sigrok-cli on its path).
+
+`ocaml/test/self_check.sh` plants 10 bugs in the model: a saturation limit, a delay, the link
 value, a loop gain, a coverage counter's name, and five in v0.3 behaviour (`!t` taken on
 T = 1, CMPW's immediate cut to 14 bits, a table word leaving the OSR count at 32, the tick
 counter stepping by 2, CRC_W[4] read from bit 22), each run against five model test files,
 `test_v03_isa.py` now one of them. It plants 2 more that only a chip written into reaches, on
 the `test_rmii.py` test that fills `core.rxf` by hand: the FIFO read taking the wrong end, and
 `load_state` swapping the two FIFOs. Each must be caught with the load and missed with
-`WL_LOCK_RESYNC=0`. All 12 were caught, the 2 written-into cases as required (caught with
-the load, missed without).
+`WL_LOCK_RESYNC=0`. Since 567bff6 the script first runs every check once on the unmutated
+tree, and exits 1 unless that baseline is clean: no lockstep failure on the five files and
+pytest passing, the written-into test clean with and without the load, `asm_parity.py` and
+the waveform tests passing. Otherwise a failure already there would make every case look
+caught. All 12 were caught, the 2 written-into cases as required (caught with
+the load, missed without). At 567bff6 the whole script, baseline first, again caught all 25
+of its planted bugs (`self-check-567bff6.txt`); the baseline's five files gave 105 passed.
 
 ### Waveform tests
 
@@ -375,7 +404,7 @@ counts.
 
 ## Reproduce
 
-On runner1, from a checkout of commit 856194f or later:
+On runner1, from a checkout of commit 567bff6 or later:
 
 ```
 ocaml/scripts/setup_runner.sh SYSROOT    # once
@@ -400,8 +429,6 @@ Toolchain: OCaml 5.3.0, dune 3.24.2, hardcaml and hardcaml_waveterm v0.17 from o
 
 ## Not done
 
-* `test_spi_packed_host` and `test_uart_capture_host` fail on the v0.3 ID, on `src/` as on
-  the port (top of this page); the fix is in `test/`.
 * `pe_core` and `pe_hostport` have no waveform test, for the reason above; the v0.3 logic is
   in `pe_core`, so it has the proof, the lockstep and the planted bugs, but no waveform test.
 * `hardcaml_verify` is not used. The proof runs in yosys on the generated Verilog, as gate (b)
