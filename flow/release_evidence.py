@@ -286,8 +286,9 @@ def terminate(jobs):
 
 
 def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50):
+    # the run is live here: an STA receipt's run-side checks may not be skipped
     cmd = [sys.executable, str(FLOW / "release_check.py"), str(run), "--validation-root", str(validation),
-           "--sdf-profile", sdf_profile]
+           "--sdf-profile", sdf_profile, "--require-sta-inputs"]
     if slow_mhz != 50:
         cmd += ["--slow-mhz", f"{slow_mhz:g}"]
     for kind, path in receipt_paths:
@@ -299,6 +300,17 @@ def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=5
 def verdict_line(text):
     lines = [l for l in text.splitlines() if l.startswith(("RELEASE PASSED", "RELEASE FAILED"))]
     return lines[-1] if lines else "RELEASE CHECK PRODUCED NO VERDICT"
+
+
+def verdict_failures(returncode, line):
+    """Why the release check's outcome is not a release of this live run."""
+    if returncode:
+        return [line]
+    if not line.startswith("RELEASE PASSED"):
+        return [f"release check exited 0 without a pass: {line}"]
+    if receipts.SKIPPED_VERDICT in line:
+        return [f"release check skipped STA receipt checks on a live run: {line}"]
+    return []
 
 
 def main(argv=None):
@@ -374,8 +386,7 @@ def main(argv=None):
         check = subprocess.run(cmd, cwd=FLOW.parent, capture_output=True, text=True)
         (work / "release-check.log").write_text(check.stdout + check.stderr)
         verdict.update(release_check=cmd, exit=check.returncode, verdict=verdict_line(check.stdout))
-        if check.returncode:
-            failures.append(verdict["verdict"])
+        failures += verdict_failures(check.returncode, verdict["verdict"])
         say(check.stdout.rstrip())
     else:
         verdict.update(exit=1, verdict="RELEASE EVIDENCE INCOMPLETE: " + "; ".join(failures))

@@ -31,6 +31,9 @@ CLOCK_PERIOD_RE = r"^Clock: clk\n(?:(?!^Clock:).)*?^Period: ([0-9.]+)\s*$"
 CLOCK_TOLERANCE_NS = 5e-6
 STA_STEP_ID = "OpenROAD.STAPostPNR"
 IMAGE_ID_RE = r"sha256:[0-9a-f]{64}"
+# release_check's verdict when an STA receipt was checked without the run's STA
+# inputs (an archive); release_evidence and archive_evidence refuse it
+SKIPPED_VERDICT = "STA RECEIPT CHECKS SKIPPED"
 
 
 def runner_files(root):
@@ -110,21 +113,34 @@ def one(paths, description):
 def sta_recheck(worktree, data, out, *, allow_absent=False):
     """Recompute an STA receipt's run-side inputs: the step's input digests and
     its config (equal to the receipt's except CLOCK_PERIOD). With allow_absent,
-    a tree without the step's state_in.json and config.json (an evidence
-    archive keeps neither) has every recorded input that is present checked,
-    and the checks it skipped are returned."""
+    a tree where nothing at all stands at the step's state_in.json and
+    config.json (an evidence archive keeps neither) has every recorded input
+    that is present checked, the step netlist against final/nl (begin required
+    them equal), and the checks it skipped are returned. In both modes the
+    image's LibreLane version must be the run's (resolved.json, a candidate file)."""
     wt, plan = Path(worktree), data["plan"]
     recorded, step = plan["inputs"], sta_step(worktree)
     if step.name != plan["step"]:
         raise ValueError("the receipt names another STA step")
-    if allow_absent and not any((step / name).is_file() for name in ("state_in.json", "config.json")):
-        absent = sorted(name for name in recorded if not (wt / name).is_file())
+    run_version = read_json(wt / "runs/wokwi/resolved.json").get("meta", {}).get("librelane_version")
+    if plan.get("librelane_version") != run_version:
+        raise ValueError(f"STA image has LibreLane {plan.get('librelane_version')}, not the run's {run_version} "
+                         "(resolved.json)")
+    if allow_absent and not any(os.path.lexists(step / name) for name in ("state_in.json", "config.json")):
+        absent = sorted(name for name in recorded if not os.path.lexists(wt / name))
+        irregular = sorted(name for name in recorded if name not in absent and not (wt / name).is_file())
+        if irregular:
+            raise ValueError(f"STA inputs are not regular files: {', '.join(irregular)}")
         changed = sorted(name for name in recorded if name not in absent and digest(wt / name) != recorded[name])
+        final_nl = one((wt / "runs/wokwi/final/nl").glob("*.nl.v"), "final netlist")
+        netlists = [name for name in absent if name.endswith(".nl.v")]
+        changed += [name for name in netlists if recorded[name] != digest(final_nl)]
         if changed:
-            raise ValueError(f"STA inputs differ from the receipt's: {', '.join(changed)}")
+            raise ValueError(f"STA inputs differ from the receipt's: {', '.join(sorted(changed))}")
+        unchecked = [name for name in absent if name not in netlists]
         return [f"STA inputs not recomputed: the run's {step.name}/state_in.json and config.json are absent; "
-                f"{len(recorded) - len(absent)} of {len(recorded)} recorded input files checked, "
-                f"absent and not checked: {', '.join(absent)}",
+                f"{len(recorded) - len(unchecked)} of {len(recorded)} recorded input files checked "
+                f"(the step netlist against final/nl), absent and not checked: {', '.join(unchecked)}",
                 "STA step config not compared with the run's: its config.json is absent"]
     inputs = sta_inputs(wt)
     if inputs != recorded:
@@ -413,7 +429,11 @@ def verify(path, worktree, kind, validation_root=None):
         raise ValueError(f"{path}: not a completed {kind} receipt")
     if data["candidate"] != candidate_files(worktree):
         raise ValueError(f"{path}: receipt belongs to different candidate inputs")
-    if not data.get("artifacts") or outputs(path.parent, data) != data["artifacts"]:
+    try:
+        artifacts = outputs(path.parent, data) if data.get("artifacts") else None
+    except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as e:
+        raise ValueError(f"{path}: {e}") from e
+    if artifacts is None or artifacts != data["artifacts"]:
         raise ValueError(f"{path}: evidence changed after receipt was written")
     if kind == "gl":
         root = Path(validation_root or worktree)
@@ -429,7 +449,7 @@ def verify(path, worktree, kind, validation_root=None):
     if kind == "sta":
         try:
             skipped = sta_recheck(worktree, data, path.parent, allow_absent=True)
-        except (OSError, KeyError, TypeError) as e:
+        except (OSError, ValueError, KeyError, TypeError) as e:
             raise ValueError(f"{path}: the run's STA inputs: {e}") from e
     return dict(data, skipped=skipped)
 

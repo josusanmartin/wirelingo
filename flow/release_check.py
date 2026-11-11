@@ -64,6 +64,9 @@ def main(argv=None):
     ap.add_argument("--slow-sta-receipt",
                     help="fresh STA of this run at <= 1000/slow-mhz ns (flow/sta_rerun.py): "
                          "the slow corner's timing is taken from it instead of the run's own STA")
+    ap.add_argument("--require-sta-inputs", action="store_true",
+                    help="a live run: refuse an STA receipt whose run-side checks would be skipped "
+                         "(flow/release_evidence.py passes it; an archive check leaves it out)")
     ap.add_argument("--waive", action="append", default=[], metavar="KIND=N")
     ap.add_argument("--waiver-reason", help="documented justification for all explicit electrical waivers")
     ap.add_argument("--gl-receipt", help="otherwise discover completed gl.*/receipt.json in this run")
@@ -110,6 +113,9 @@ def main(argv=None):
             skipped += fresh["skipped"]
             for check in fresh["skipped"]:
                 print(f"slow-corner STA receipt, SKIPPED: {check}")
+            if a.require_sta_inputs and fresh["skipped"]:
+                failures.append("--require-sta-inputs: the run lacks the STA inputs its receipt records "
+                                f"({len(fresh['skipped'])} checks would be skipped)")
         for corner in signoff.CORNERS:
             target = a.slow_mhz if corner.startswith("nom_slow") else 50
             sta = receipts.one(run.glob("*-openroad-stapostpnr"), "final STA directory")
@@ -178,7 +184,7 @@ def main(argv=None):
     else:
         print(f"RELEASE PASSED (SDF profile {a.sdf_profile}, slow target {a.slow_mhz:g} MHz"
               + (", WITH ELECTRICAL WAIVERS" if waive else "")
-              + (f", {len(skipped)} STA RECEIPT CHECKS SKIPPED (the run's STA inputs are absent)" if skipped else "")
+              + (f", {len(skipped)} {receipts.SKIPPED_VERDICT} (the run's STA inputs are absent)" if skipped else "")
               + ")")
     return int(bool(failures))
 
