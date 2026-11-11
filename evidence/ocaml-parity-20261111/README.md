@@ -22,8 +22,8 @@ Level: **simulation and formal only**. The formal equivalence of the generated V
 
 The three `567bff6` runs were made from a clone of a commit with the same tree as 567bff6,
 `1ea4cc7926921da9f12463890b317e038f2e58b5` (the tree id of 567bff6). That commit differed
-only in its committer line, which was corrected before publication, so the checked-out
-files were these.
+in its parent, a copy of 9a7a63a whose committer line was corrected before publication,
+so the checked-out files were these.
 
 Two steps of `summary.txt` exit 1. Both are explained in docs/hardcaml-port.md and both
 pass at 567bff6:

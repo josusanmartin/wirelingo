@@ -22,14 +22,15 @@ over to the generated Verilog through the proof, and the OCaml tools can stand i
 Python ones where they were compared.
 
 All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 0f98335,
-base `next-8x4` 25214f2 (`src/` as there), except three later reruns. `src/` has not changed
+base `next-8x4` 25214f2 (`src/` as there), except four later reruns. `src/` has not changed
 since; `next-8x4` 27ac3f7 adds d68c7ec, a fix to two of `test/`'s cocotb suites, below.
 
 * `test_kv260_3core.py` in the model gate, at 856194f (Stage 3); that commit changes only
   `ocaml/test/lock_chip.py`.
 * The whole model gate, `self_check.sh` and the two fixed suites, at 567bff6 on 27ac3f7.
-  Since 856194f, `ocaml/` has changed only in `ocaml/test/capture_plugin.py` (9a7a63a),
-  `ocaml/test/self_check.sh` and comments in `ocaml/formal/equiv_port.py` (567bff6). The
+  Since 856194f, `ocaml/` has changed only in `ocaml/README.md` (c9264ed, docs only),
+  `ocaml/test/capture_plugin.py` (9a7a63a), `ocaml/test/self_check.sh` and comments in
+  `ocaml/formal/equiv_port.py` (567bff6). The
   commit after 567bff6 changes only this file and `evidence/`. (The 567bff6 runs used a
   checkout of the same tree, `1ea4cc79…`; see the evidence folder's README.)
 
