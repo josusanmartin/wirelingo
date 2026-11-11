@@ -29,6 +29,8 @@ CLOCK_PERIOD_RE = r"^Clock: clk\n(?:(?!^Clock:).)*?^Period: ([0-9.]+)\s*$"
 # OpenSTA holds a period in single precision: 20.832 ns prints as 20.832001
 # (1.0e-6 off). 5e-6 ns (0.005 ps) still pins the period.
 CLOCK_TOLERANCE_NS = 5e-6
+STA_STEP_ID = "OpenROAD.STAPostPNR"
+IMAGE_ID_RE = r"sha256:[0-9a-f]{64}"
 
 
 def runner_files(root):
@@ -47,10 +49,13 @@ def run_base(worktree):
 
 
 def sta_inputs(worktree):
-    """Digests of every design file the run's final STA step read, by path in the worktree."""
+    """Digests of every design file the run's final STA step read, by path in the
+    worktree, and of the final SPEF (begin checks the step read that extraction)."""
     wt, base, step = Path(worktree), run_base(worktree), sta_step(worktree)
     state, config = read_json(step / "state_in.json"), read_json(step / "config.json")
     files = {f"runs/wokwi/{step.name}/{name}": digest(step / name) for name in ("state_in.json", "config.json")}
+    final_spef = one((wt / "runs/wokwi/final/spef/nom").glob("*.spef"), "final SPEF")
+    files[str(final_spef.relative_to(wt))] = digest(final_spef)
     paths = [state["nl"], state["sdc"], state["odb"], *state["spef"].values()]
     paths += [config[k] for k in ("SIGNOFF_SDC_FILE", "STA_EXTRA_CORNER_TCL_FILE") if config.get(k)]
     for p in map(Path, paths):   # LibreLane records absolute paths in the hardened worktree
@@ -65,7 +70,10 @@ def sta_metrics(out, corner):
     text = (Path(out) / "sta" / corner / "sta.log").read_text(errors="replace")
     found = {}
     for kind, key, value in re.findall(rf"^%OL_METRIC_([FI]) (\S+)__corner:{re.escape(corner)} (\S+)$", text, re.M):
-        found[key] = int(value) if kind == "I" else float(value)
+        value = int(value) if kind == "I" else float(value)
+        if key in found and found[key] != value:
+            raise ValueError(f"{out}: {corner} reports {key} twice, as {found[key]} and {value}")
+        found[key] = value
     metrics = {key: found.get(key) for key in STA_METRICS}
     if any(type(v) not in (int, float) or not math.isfinite(v) for v in metrics.values()):
         raise ValueError(f"{out}: incomplete or non-finite STA metrics for {corner}: {metrics}")
@@ -97,6 +105,37 @@ def one(paths, description):
     if len(paths) != 1:
         raise ValueError(f"expected exactly one {description}; found {len(paths)}")
     return paths[0]
+
+
+def sta_recheck(worktree, data, out, *, allow_absent=False):
+    """Recompute an STA receipt's run-side inputs: the step's input digests and
+    its config (equal to the receipt's except CLOCK_PERIOD). With allow_absent,
+    a tree without the step's state_in.json and config.json (an evidence
+    archive keeps neither) has every recorded input that is present checked,
+    and the checks it skipped are returned."""
+    wt, plan = Path(worktree), data["plan"]
+    recorded, step = plan["inputs"], sta_step(worktree)
+    if step.name != plan["step"]:
+        raise ValueError("the receipt names another STA step")
+    if allow_absent and not any((step / name).is_file() for name in ("state_in.json", "config.json")):
+        absent = sorted(name for name in recorded if not (wt / name).is_file())
+        changed = sorted(name for name in recorded if name not in absent and digest(wt / name) != recorded[name])
+        if changed:
+            raise ValueError(f"STA inputs differ from the receipt's: {', '.join(changed)}")
+        return [f"STA inputs not recomputed: the run's {step.name}/state_in.json and config.json are absent; "
+                f"{len(recorded) - len(absent)} of {len(recorded)} recorded input files checked, "
+                f"absent and not checked: {', '.join(absent)}",
+                "STA step config not compared with the run's: its config.json is absent"]
+    inputs = sta_inputs(wt)
+    if inputs != recorded:
+        changed = sorted(name for name in set(inputs) | set(recorded) if inputs.get(name) != recorded.get(name))
+        raise ValueError(f"STA inputs differ from the receipt's: {', '.join(changed)}")
+    # the step's own configuration with only the clock period changed
+    config = read_json(step / "config.json")
+    config["CLOCK_PERIOD"] = plan["period_ns"]
+    if read_json(Path(out) / "config.json") != config:
+        raise ValueError("STA step config differs from the run's beyond CLOCK_PERIOD")
+    return []
 
 
 def candidate_files(worktree):
@@ -192,12 +231,14 @@ def begin(worktree, out, kind, validation_root, plan=None):
         raise ValueError(f"unknown receipt kind {kind}")
     if kind == "sta":
         # a fresh STA of the run's own final step at plan["period_ns"]
-        if not isinstance(plan, dict) or set(plan) != {"period_ns", "step", "image"}:
-            raise ValueError("STA plan needs period_ns, step and image")
+        if not isinstance(plan, dict) or set(plan) != {"period_ns", "step", "image", "image_id", "librelane_version"}:
+            raise ValueError("STA plan needs period_ns, step, image, image_id and librelane_version")
         if type(plan["period_ns"]) not in (int, float) or not math.isfinite(plan["period_ns"]) or plan["period_ns"] <= 0:
             raise ValueError("invalid STA period")
         if plan["step"] != sta_step(wt).name:
             raise ValueError("STA plan names another step")
+        if not isinstance(plan["image_id"], str) or not re.fullmatch(IMAGE_ID_RE, plan["image_id"]):
+            raise ValueError("STA plan needs the image's ID (sha256:...)")
         plan = dict(plan, inputs=sta_inputs(wt))
         state = read_json(sta_step(wt) / "state_in.json")
         rel = lambda p: str(wt / Path(p).relative_to(run_base(wt)))
@@ -319,9 +360,19 @@ def outputs(out, data):
         rc = read_json(out / "status.json")["returncode"]
         if type(rc) is not int or rc != 0:
             raise ValueError("STA step failed")
-        period = plan["period_ns"]
-        if read_json(out / "config.json").get("CLOCK_PERIOD") != period:
+        period, config = plan["period_ns"], read_json(out / "config.json")
+        if config.get("CLOCK_PERIOD") != period:
             raise ValueError("STA step config is not at the planned period")
+        # the image that ran: recorded by ID, the run's LibreLane, and the one the command ran
+        image_id, version = plan.get("image_id"), plan.get("librelane_version")
+        if not isinstance(image_id, str) or not re.fullmatch(IMAGE_ID_RE, image_id):
+            raise ValueError("the STA receipt records no image ID (sha256:...)")
+        if version != config["meta"]["librelane_version"]:
+            raise ValueError(f"STA image {image_id} has LibreLane {version}, "
+                             f"not the run's {config['meta']['librelane_version']}")
+        command = (out / "run.log").read_text(errors="replace").split("\n", 1)[0]
+        if f" {image_id} python3 -m librelane.steps run --id {STA_STEP_ID} " not in command:
+            raise ValueError(f"the STA command did not run image {image_id}")
         for corner in CORNERS:
             d = out / "sta" / corner
             clock = re.search(CLOCK_PERIOD_RE, (d / "clock.rpt").read_text(), re.M | re.S)
@@ -343,13 +394,7 @@ def finish(out):
     if candidate_files(data["worktree"]) != data["candidate"]:
         raise ValueError("candidate changed during verification")
     if data["kind"] == "sta":
-        if sta_inputs(data["worktree"]) != data["plan"]["inputs"]:
-            raise ValueError("STA inputs changed during verification")
-        # the step's own configuration with only the clock period changed
-        config = read_json(sta_step(data["worktree"]) / "config.json")
-        config["CLOCK_PERIOD"] = data["plan"]["period_ns"]
-        if read_json(out / "config.json") != config:
-            raise ValueError("STA step config differs from the run's beyond CLOCK_PERIOD")
+        sta_recheck(data["worktree"], data, out)
     elif validation_files(data["validation_root"], include_hardware=data["kind"] in ("gl", "sdf")) != data["validation"]:
         raise ValueError("validation inputs changed during verification")
     data["artifacts"] = outputs(out, data)
@@ -360,6 +405,8 @@ def finish(out):
 
 
 def verify(path, worktree, kind, validation_root=None):
+    """The receipt's data, plus "skipped": the checks this tree could not make
+    (only an STA receipt checked against an evidence archive skips any)."""
     path = Path(path)
     data = read_json(path)
     if data.get("schema") != SCHEMA or data.get("kind") != kind or data.get("status") != "complete":
@@ -378,7 +425,13 @@ def verify(path, worktree, kind, validation_root=None):
     if kind == "sdf" and validation_root is not None:
         if data["validation"] != validation_files(validation_root, include_hardware=True):
             raise ValueError(f"{path}: SDF tests no longer match the selected validation checkout")
-    return data
+    skipped = []
+    if kind == "sta":
+        try:
+            skipped = sta_recheck(worktree, data, path.parent, allow_absent=True)
+        except (OSError, KeyError, TypeError) as e:
+            raise ValueError(f"{path}: the run's STA inputs: {e}") from e
+    return dict(data, skipped=skipped)
 
 
 def main():

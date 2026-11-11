@@ -150,10 +150,25 @@ it re-runs the run's own LibreLane `OpenROAD.STAPostPNR` step (its step
 config and input state: final netlist, extracted SPEF, signoff SDC and corner
 Tcl) in the run's LibreLane image, with the run mounted read-only, no
 network, and only `CLOCK_PERIOD` changed (`src/protoemu.sdc` scales the I/O
-delays and the host port's SCK with it). Its receipt (kind `sta`) binds the
-candidate files, the digests of every design file the step read, the step
-config, and each corner's `sta.log` and `clock.rpt`; the timing is read from
-the fresh `sta.log`, never from inherited state. Then
+delays and the host port's SCK with it). The image must be local and report
+the run's own LibreLane version (`meta.librelane_version`; an `--image` with
+another version is refused), and the STA runs it by the ID `docker image
+inspect` gives. Its receipt (kind `sta`) binds the candidate files, that image
+ID and version, the digests of every design file the step read plus the final
+SPEF copy, the step config, and each corner's `sta.log` and `clock.rpt`; the
+timing is read from the fresh `sta.log`, never from inherited state, and a
+metric reported twice with two values is refused.
+
+Verifying the receipt (in `release_check.py`) rechecks the run as well: it
+recomputes the step's input digests and compares the step config, so a run
+whose SPEF, odb, step `state_in.json` or `config.json` changed after the
+receipt cannot release. It checks that the receipt's LibreLane version is the
+run's and that the recorded command ran the recorded image ID; it does not ask
+docker. An evidence archive keeps the candidate files but not the step's state,
+config, odb or SPEF: there the inputs it does hold are checked, and the check
+prints each skipped check (`slow-corner STA receipt, SKIPPED: ...`) and says
+so in its verdict (`..., 2 STA RECEIPT CHECKS SKIPPED (the run's STA inputs
+are absent))`). A tree with only one of the step's two files is refused. Then
 
 ```sh
 python3 flow/release_check.py "$RUN" --slow-mhz 48 \

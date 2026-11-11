@@ -50,13 +50,24 @@ def sta_step(wt, *, nl_text=None):
 
 
 FAKE_DOCKER = r'''#!PYTHON
-"""Fake `docker run ... librelane.steps run -c CONFIG -i STATE -o OUT`: writes the
-step's outputs, with slow-corner metrics from FAKE_SLOW_WS / FAKE_SLOW_VIO."""
-import json, os, sys
+"""Fake docker. `image inspect --format {{.Id}} IMAGE`: a made-up ID from the
+name (fails with FAKE_IMAGE_MISSING). `run ... ID python3 -c PROBE`: prints
+FAKE_LIBRELANE_VERSION. `run ... librelane.steps run -c CONFIG -i STATE -o OUT`:
+writes the step's outputs, with slow-corner metrics from FAKE_SLOW_WS / FAKE_SLOW_VIO."""
+import hashlib, json, os, sys
 args = sys.argv[1:]
-assert args[:2] == ["run", "--rm"] and "--network" in args and "librelane.steps" in args
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as f:
     f.write(json.dumps(args) + "\n")
+if args[:3] == ["image", "inspect", "--format"]:
+    if os.environ.get("FAKE_IMAGE_MISSING"):
+        sys.exit("Error: No such image: " + args[4])
+    print("sha256:" + hashlib.sha256(args[4].encode()).hexdigest())
+    sys.exit(0)
+assert args[:2] == ["run", "--rm"] and args[args.index("--network") + 1] == "none"
+if "librelane.steps" not in args:
+    assert args[-3:-1] == ["python3", "-c"] and args[-4].startswith("sha256:")
+    print(os.environ.get("FAKE_LIBRELANE_VERSION", "3.1.0.dev3"))
+    sys.exit(0)
 config = json.load(open(args[args.index("-c") + 1]))
 json.load(open(args[args.index("-i") + 1]))
 out = args[args.index("-o") + 1]
@@ -94,10 +105,45 @@ def fake_docker(tmp_path, monkeypatch):
     return tmp_path / "docker.log"
 
 
-def rerun(wt, period, out_parent, capsys=None):
-    rc = module("sta_rerun").main([str(wt), str(period), "--out-parent", str(out_parent)])
+def rerun(wt, period, out_parent, *extra):
+    rc = module("sta_rerun").main([str(wt), str(period), "--out-parent", str(out_parent), *extra])
     outs = sorted(Path(out_parent).glob("sta.*"))
-    return rc, outs[-1]
+    return rc, (outs[-1] if outs else None)
+
+
+def fake_image_id(name):
+    import hashlib
+    return "sha256:" + hashlib.sha256(name.encode()).hexdigest()
+
+
+DEFAULT_IMAGE = "ghcr.io/librelane/librelane:3.1.0.dev3"
+
+
+def sta_calls(log):
+    """The fake docker's STA step runs (not the image inspect or version probe)."""
+    calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    return [c for c in calls if "librelane.steps" in c]
+
+
+def manual_plan(period=20.832):
+    return dict(period_ns=period, step=STEP, image=DEFAULT_IMAGE, image_id=fake_image_id(DEFAULT_IMAGE),
+                librelane_version="3.1.0.dev3")
+
+
+def manual_run_log(out, image_id=None):
+    image_id = image_id or fake_image_id(DEFAULT_IMAGE)
+    (out / "run.log").write_text(f"docker run --rm --network none -w {out} {image_id} python3 -m librelane.steps run "
+                                 f"--id OpenROAD.STAPostPNR -c {out}/config.json -i state_in.json -o {out}/sta\n")
+
+
+def reseal(out, **plan):
+    """A forged receipt: its plan edited and its artifact digests recomputed
+    (what verify's own checks, not the digests, must catch)."""
+    rec = module("release_receipts")
+    data = json.loads((out / "receipt.json").read_text())
+    data["plan"].update(plan)
+    data["artifacts"] = {name: rec.digest(out / name) for name in data["artifacts"]}
+    (out / "receipt.json").write_text(json.dumps(data))
 
 
 def test_48mhz_slow_release_needs_the_fresh_sta(tmp_path, fake_docker):
@@ -116,6 +162,11 @@ def test_48mhz_slow_release_needs_the_fresh_sta(tmp_path, fake_docker):
     # the docker call: the run read-only, no network, only CLOCK_PERIOD changed
     call = json.loads(fake_docker.read_text().splitlines()[-1])
     assert f"{wt}:{wt}:ro" in call and call[call.index("--network") + 1] == "none"
+    # the image: the run's version's tag, run by the ID docker gave for it, and recorded
+    plan = json.loads((out / "receipt.json").read_text())["plan"]
+    assert plan["image"] == DEFAULT_IMAGE and plan["image_id"] == fake_image_id(DEFAULT_IMAGE)
+    assert plan["librelane_version"] == "3.1.0.dev3"
+    assert sta_calls(fake_docker) == [call] and call[call.index("python3") - 1] == plan["image_id"]
     config = json.loads((out / "config.json").read_text())
     original = json.loads((wt / "runs/wokwi" / STEP / "config.json").read_text())
     assert config == dict(original, CLOCK_PERIOD=20.832)
@@ -179,7 +230,7 @@ def test_sta_receipt_rejects_changes_during_the_run(tmp_path, fault):
     wt = sta_step(candidate(tmp_path))
     rec = module("release_receipts")
     out = tmp_path / "sta.manual"
-    plan = dict(period_ns=20.832, step=STEP, image="fixture")
+    plan = manual_plan()
     rec.begin(wt, out, "sta", wt, plan)
     config = json.loads((wt / "runs/wokwi" / STEP / "config.json").read_text())
     config["CLOCK_PERIOD"] = 20.0 if fault == "other-period" else 20.832
@@ -187,7 +238,7 @@ def test_sta_receipt_rejects_changes_during_the_run(tmp_path, fault):
         config["STA_EXTRA_CORNER_TCL_FILE"] = ""
     (out / "config.json").write_text(json.dumps(config))
     (out / "status.json").write_text('{"returncode":0}')
-    (out / "run.log").write_text("fixture\n")
+    manual_run_log(out)
     for corner in CORNERS:
         d = out / "sta" / corner
         d.mkdir(parents=True)
@@ -208,11 +259,11 @@ def test_clock_report_in_single_precision(tmp_path, printed, ok):
     wt = sta_step(candidate(tmp_path))
     rec = module("release_receipts")
     out = tmp_path / "sta.manual"
-    rec.begin(wt, out, "sta", wt, dict(period_ns=20.832, step=STEP, image="fixture"))
+    rec.begin(wt, out, "sta", wt, manual_plan())
     config = json.loads((wt / "runs/wokwi" / STEP / "config.json").read_text())
     (out / "config.json").write_text(json.dumps(dict(config, CLOCK_PERIOD=20.832)))
     (out / "status.json").write_text('{"returncode":0}')
-    (out / "run.log").write_text("fixture\n")
+    manual_run_log(out)
     for corner in CORNERS:
         d = out / "sta" / corner
         d.mkdir(parents=True)
@@ -230,7 +281,179 @@ def test_clock_report_in_single_precision(tmp_path, printed, ok):
 def test_sta_rerun_refuses_a_step_that_did_not_read_the_final_netlist(tmp_path, fake_docker):
     wt = sta_step(candidate(tmp_path), nl_text="module older; endmodule\n")
     rc, out = rerun(wt, 20.832, tmp_path / "sta-out")
-    assert rc == 2 and not fake_docker.exists() and not (out / "receipt.json").exists()
+    assert rc == 2 and sta_calls(fake_docker) == [] and not (out / "receipt.json").exists()
+
+
+def sta_release(tmp_path):
+    """A run, its complete receipts and a fresh 48 MHz STA receipt that releases it."""
+    wt = sta_step(candidate(tmp_path))
+    args = complete_receipts(wt)
+    rc, out = rerun(wt, 20.832, tmp_path / "sta-out")
+    assert rc == 0
+    args += ["--slow-mhz", "48", "--slow-sta-receipt", str(out / "receipt.json")]
+    assert module("release_check").main(args) == 0
+    return wt, out, args
+
+
+def release_output(args, capsys):
+    capsys.readouterr()
+    rc = module("release_check").main(args)
+    return rc, capsys.readouterr().out
+
+
+# 080 finding 2: the verifier's four cases (both SPEF copies, the step's config.json,
+# its state_in.json, the odb) passed the release after the receipt was written.
+TAMPER = {
+    "spef-both": ("61-rcx/nom/design.nom.spef", "final/spef/nom/design.nom.spef"),
+    "spef-final": ("final/spef/nom/design.nom.spef",),
+    "spef-extracted": ("61-rcx/nom/design.nom.spef",),
+    "step-config": (f"{STEP}/config.json",),
+    "step-config-bytes": (f"{STEP}/config.json",),
+    "step-state": (f"{STEP}/state_in.json",),
+    "odb": ("60-odb/design.odb",),
+}
+
+
+def tamper(wt, case):
+    run = wt / "runs/wokwi"
+    for name in TAMPER[case]:
+        p = run / name
+        if case == "step-config":          # a setting changed
+            p.write_text(json.dumps(dict(json.loads(p.read_text()), PL_TARGET_DENSITY_PCT=44)))
+        elif case == "step-config-bytes":  # the same settings, other bytes
+            p.write_text(p.read_text() + "\n")
+        elif case == "step-state":
+            p.write_text(json.dumps(dict(json.loads(p.read_text()), metrics={"injected": 1})))
+        else:
+            p.write_text("another " + p.read_text())
+
+
+@pytest.mark.parametrize("case", sorted(TAMPER))
+def test_run_changed_after_the_sta_receipt_cannot_release(tmp_path, fake_docker, capsys, case):
+    wt, out, args = sta_release(tmp_path)
+    assert module("release_receipts").verify(out / "receipt.json", wt, "sta")["skipped"] == []
+    tamper(wt, case)
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and "STA inputs differ from the receipt's" in text and "RELEASE FAILED" in text
+
+
+def test_forged_receipt_config_is_compared_with_the_runs(tmp_path, fake_docker, capsys):
+    # the receipt's own config edited and its digests recomputed: the inputs still
+    # match, so only the step-config comparison can refuse it
+    wt, out, args = sta_release(tmp_path)
+    config = json.loads((out / "config.json").read_text())
+    (out / "config.json").write_text(json.dumps(dict(config, PL_TARGET_DENSITY_PCT=44)))
+    reseal(out)
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and "STA step config differs from the run's beyond CLOCK_PERIOD" in text
+
+
+def archive_shaped(wt, keep=()):
+    """What an evidence archive keeps of the run: the candidate files, not the
+    STA step's state and config, the odb, the step's netlist copy or the SPEFs."""
+    run = wt / "runs/wokwi"
+    for name in (f"{STEP}/state_in.json", f"{STEP}/config.json", "59-fill/design.nl.v", "59-fill/design.sdc",
+                 "60-odb/design.odb", "61-rcx/nom/design.nom.spef", "final/spef/nom/design.nom.spef"):
+        if name not in keep:
+            (run / name).unlink()
+
+
+def test_archive_without_the_sta_inputs_says_what_it_skipped(tmp_path, fake_docker, capsys):
+    wt, out, args = sta_release(tmp_path)
+    archive_shaped(wt)
+    rc, text = release_output(args, capsys)
+    assert rc == 0
+    skipped = [line for line in text.splitlines() if line.startswith("slow-corner STA receipt, SKIPPED: ")]
+    assert len(skipped) == 2
+    assert "STA inputs not recomputed" in skipped[0] and "2 of 9 recorded input files checked" in skipped[0]
+    assert "runs/wokwi/60-odb/design.odb" in skipped[0] and "STA step config not compared" in skipped[1]
+    verdict = [line for line in text.splitlines() if line.startswith("RELEASE PASSED")]
+    assert verdict == ["RELEASE PASSED (SDF profile v2, slow target 48 MHz, 2 STA RECEIPT CHECKS SKIPPED "
+                       "(the run's STA inputs are absent))"]
+    assert len(module("release_receipts").verify(out / "receipt.json", wt, "sta")["skipped"]) == 2
+
+
+@pytest.mark.parametrize("case", ["archive-odb-changed", "state-removed", "config-removed"])
+def test_partial_sta_inputs_are_still_checked(tmp_path, fake_docker, capsys, case):
+    wt, out, args = sta_release(tmp_path)
+    run = wt / "runs/wokwi"
+    if case == "archive-odb-changed":       # archive-shaped, but an input it does hold differs
+        archive_shaped(wt, keep=("60-odb/design.odb",))
+        (run / "60-odb/design.odb").write_text("another odb\n")
+    else:                                    # one of the step's two files gone: not an archive
+        (run / STEP / ("state_in.json" if case == "state-removed" else "config.json")).unlink()
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and "SKIPPED" not in text
+
+
+@pytest.mark.parametrize("forgery", ["other-version", "other-image-ran", "no-image-id"])
+def test_sta_receipt_binds_the_image_that_ran(tmp_path, fake_docker, capsys, forgery):
+    wt, out, args = sta_release(tmp_path)
+    if forgery == "other-version":
+        reseal(out, librelane_version="3.0.0")
+        expected = "has LibreLane 3.0.0, not the run's 3.1.0.dev3"
+    elif forgery == "other-image-ran":
+        log = out / "run.log"
+        log.write_text(log.read_text().replace(fake_image_id(DEFAULT_IMAGE), fake_image_id("example/other")))
+        reseal(out)
+        expected = "the STA command did not run image"
+    else:                                   # a receipt made before the image was recorded
+        data = json.loads((out / "receipt.json").read_text())
+        del data["plan"]["image_id"]
+        (out / "receipt.json").write_text(json.dumps(data))
+        expected = "records no image ID"
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and expected in text
+
+
+@pytest.mark.parametrize("case", ["other-version", "missing-image"])
+def test_sta_rerun_refuses_an_image_without_the_runs_librelane(tmp_path, fake_docker, monkeypatch, capsys, case):
+    wt = sta_step(candidate(tmp_path))
+    monkeypatch.setenv(*{"other-version": ("FAKE_LIBRELANE_VERSION", "3.0.0"),
+                         "missing-image": ("FAKE_IMAGE_MISSING", "1")}[case])
+    rc, out = rerun(wt, 20.832, tmp_path / "sta-out", "--image", "example/librelane:local")
+    assert rc == 2 and out is None and sta_calls(fake_docker) == []
+    text = capsys.readouterr().out
+    assert "refused:" in text and ("has LibreLane 3.0.0; the run used 3.1.0.dev3" in text
+                                   if case == "other-version" else "docker pull it first" in text)
+
+
+def test_sta_rerun_accepts_another_image_with_the_runs_librelane(tmp_path, fake_docker):
+    wt = sta_step(candidate(tmp_path))
+    rc, out = rerun(wt, 20.832, tmp_path / "sta-out", "--image", "example/librelane:local")
+    assert rc == 0
+    plan = json.loads((out / "receipt.json").read_text())["plan"]
+    assert plan["image"] == "example/librelane:local" and plan["image_id"] == fake_image_id("example/librelane:local")
+    [call] = sta_calls(fake_docker)
+    assert call[call.index("python3") - 1] == plan["image_id"]
+
+
+def test_sta_plan_needs_an_image_id(tmp_path):
+    wt = sta_step(candidate(tmp_path))
+    rec = module("release_receipts")
+    for bad in ("ghcr.io/librelane/librelane:3.1.0.dev3", "sha256:abc", None):
+        with pytest.raises(ValueError, match="image's ID"):
+            rec.begin(wt, tmp_path / "sta.bad", "sta", wt, dict(manual_plan(), image_id=bad))
+    with pytest.raises(ValueError, match="needs period_ns"):
+        plan = manual_plan()
+        del plan["librelane_version"]
+        rec.begin(wt, tmp_path / "sta.bad", "sta", wt, plan)
+
+
+def test_a_repeated_sta_metric_must_repeat_its_value(tmp_path):
+    # 080 note 4: a repeated key used to keep its last value
+    rec = module("release_receipts")
+    d = tmp_path / "sta" / SLOW
+    d.mkdir(parents=True)
+    lines = [f"%OL_METRIC_{'I' if 'count' in k else 'F'} {k}__corner:{SLOW} 0" for k in rec.STA_METRICS]
+    (d / "sta.log").write_text("\n".join(lines + lines[:1]) + "\n")
+    assert rec.sta_metrics(tmp_path, SLOW)["timing__setup__ws"] == 0      # the same value twice is harmless
+    (d / "sta.log").write_text("\n".join(lines + [f"%OL_METRIC_F timing__setup__ws__corner:{SLOW} 1.5"]) + "\n")
+    with pytest.raises(ValueError, match="twice"):
+        rec.sta_metrics(tmp_path, SLOW)
+    (d / "sta.log").write_text("\n".join([f"%OL_METRIC_I timing__setup_vio__count__corner:{SLOW} 3"] + lines) + "\n")
+    with pytest.raises(ValueError, match="twice"):
+        rec.sta_metrics(tmp_path, SLOW)
 
 
 def test_release_evidence_plans_the_48mhz_release(tmp_path):
