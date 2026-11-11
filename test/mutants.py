@@ -571,9 +571,20 @@ MUTANTS = {
     "privacy-home-scratch-in-readme": ("fpga/kv260/README.md", "written `<scratch>/out3c`",
         "written `/tmp/cla" + "ude-1000/-ho" + "me-jdoe/0f1e/scratchpad/out3c`", HOME_SCAN),
     "privacy-home-scan-no-dashed": ("test/model/test_home_paths.py",
-        '                  + rb"|(?<![A-Za-z0-9])-ho" rb"me-([A-Za-z0-9_.]+)-"\n', '', HOME_SELF),
-    "privacy-home-scan-any-name": ("test/model/test_home_paths.py", "            if name in ALLOWED:",
-        "            if name:", HOME_SELF),
+        '    ("home", re.compile(rb"(?<![A-Za-z0-9-])-ho" rb"me-([A-Za-z0-9_.]+)(?![A-Za-z0-9_.])")),\n', '', HOME_SELF),
+    # 078 finding 1: the dashed class needing a '-' after the name misses the home directory's own name
+    "privacy-home-scan-dashed-needs-dash": ("test/model/test_home_paths.py",
+        'rb"me-([A-Za-z0-9_.]+)(?![A-Za-z0-9_.])")', 'rb"me-([A-Za-z0-9_.]+)-")', HOME_SELF),
+    "privacy-home-scan-no-relative": ("test/model/test_home_paths.py",
+        '    ("home", re.compile(rb"(?<![A-Za-z0-9/])ho" rb"me/" + NAME + rb"/")),\n', '', HOME_SELF),
+    "privacy-home-scan-any-name": ("test/model/test_home_paths.py",
+        '            if kind == "home" and allowed(m.group(1), path):', '            if kind == "home":', HOME_SELF),
+    # 078 finding 3: an allowed name anywhere (runner1 outside evidence/); 2: symlink targets unread
+    "privacy-home-allow-anywhere": ("test/model/test_home_paths.py",
+        "    return entry is not None and path is not None and any(path.startswith(p) for p in entry[1])",
+        "    return entry is not None", HOME_SELF),
+    "privacy-home-scan-no-symlink": ("test/model/test_home_paths.py",
+        "            if home_paths(os.fsencode(os.readlink(p)), name):", "            if False:", HOME_SELF),
     # any other default host: install.sh must still refuse with no host given
     "privacy-kria-other-default": ("fpga/kv260/install.sh", 'kria=${WL_KRIA:-${KRIA:-}}',
         'kria=${WL_KRIA:-${KRIA:-ubuntu@kria.local}}', pytest("test/model/test_private_hosts.py -k install")),

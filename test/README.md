@@ -20,4 +20,4 @@ make GATES=yes                         # gate level: copy runs/wokwi/final/nl/*.
 cd .. && PYTHONPATH=tools python -m pytest test/model
 ```
 
-Waveforms: `tb.fst` (`gtkwave tb.fst` or `surfer tb.fst`).
+Waveforms: `make` writes `wave.fst` in its `$(SIM_BUILD)` directory under `sim_build/` (test/Makefile passes `+DUMP_FILE=$(SIM_BUILD)/wave.fst`; tb.v writes `tb.fst` only without that plusarg). Open it with `gtkwave <that wave.fst> tb.gtkw` or `surfer <that wave.fst>`.
