@@ -46,6 +46,9 @@ def sta_step(wt, *, nl_text=None):
     m[f"timing__setup__ws__corner:{SLOW}"] = -0.643
     m[f"timing__setup_vio__count__corner:{SLOW}"] = 90
     p.write_text(json.dumps(m))
+    # LibreLane records its version in the run's resolved.json too (a candidate file)
+    p = run / "resolved.json"
+    p.write_text(json.dumps(dict(json.loads(p.read_text()), meta={"librelane_version": "3.1.0.dev3"})))
     return wt
 
 
@@ -365,7 +368,8 @@ def test_archive_without_the_sta_inputs_says_what_it_skipped(tmp_path, fake_dock
     assert rc == 0
     skipped = [line for line in text.splitlines() if line.startswith("slow-corner STA receipt, SKIPPED: ")]
     assert len(skipped) == 2
-    assert "STA inputs not recomputed" in skipped[0] and "2 of 9 recorded input files checked" in skipped[0]
+    assert "STA inputs not recomputed" in skipped[0] and "3 of 9 recorded input files checked" in skipped[0]
+    assert "(the step netlist against final/nl)" in skipped[0] and "59-fill/design.nl.v" not in skipped[0]
     assert "runs/wokwi/60-odb/design.odb" in skipped[0] and "STA step config not compared" in skipped[1]
     verdict = [line for line in text.splitlines() if line.startswith("RELEASE PASSED")]
     assert verdict == ["RELEASE PASSED (SDF profile v2, slow target 48 MHz, 2 STA RECEIPT CHECKS SKIPPED "
@@ -391,7 +395,7 @@ def test_sta_receipt_binds_the_image_that_ran(tmp_path, fake_docker, capsys, for
     wt, out, args = sta_release(tmp_path)
     if forgery == "other-version":
         reseal(out, librelane_version="3.0.0")
-        expected = "has LibreLane 3.0.0, not the run's 3.1.0.dev3"
+        expected = f"STA image {fake_image_id(DEFAULT_IMAGE)} has LibreLane 3.0.0, not the run's 3.1.0.dev3"
     elif forgery == "other-image-ran":
         log = out / "run.log"
         log.write_text(log.read_text().replace(fake_image_id(DEFAULT_IMAGE), fake_image_id("example/other")))
@@ -403,7 +407,98 @@ def test_sta_receipt_binds_the_image_that_ran(tmp_path, fake_docker, capsys, for
         (out / "receipt.json").write_text(json.dumps(data))
         expected = "records no image ID"
     rc, text = release_output(args, capsys)
-    assert rc == 1 and expected in text
+    assert rc == 1 and expected in text and f"{out / 'receipt.json'}: " in text   # 082 f3: the receipt is named
+
+
+# 082 finding 1: a live run whose step files are gone, or replaced, must not pass as an archive
+@pytest.mark.parametrize("case", ["deleted", "step-directories", "step-dangling-link", "archive-odb-directory"])
+def test_live_run_without_its_sta_inputs_cannot_release(tmp_path, fake_docker, capsys, case):
+    wt, out, args = sta_release(tmp_path)
+    run = wt / "runs/wokwi"
+    if case == "deleted":                   # what an archive holds: passes with the notice, unless required
+        archive_shaped(wt)
+        rc, text = release_output(args, capsys)
+        assert rc == 0 and receipts_skipped(text)
+    elif case == "step-directories":        # the step files and the odb replaced by directories
+        for name in (f"{STEP}/state_in.json", f"{STEP}/config.json", "60-odb/design.odb"):
+            (run / name).unlink()
+            (run / name).mkdir()
+    elif case == "step-dangling-link":
+        archive_shaped(wt)
+        (run / STEP / "config.json").symlink_to(run / STEP / "elsewhere.json")
+    else:                                   # archive-shaped, but a directory where the odb was
+        archive_shaped(wt)
+        (run / "60-odb/design.odb").mkdir()
+    if case != "deleted":                   # not an archive: refused, without the flag too
+        rc, text = release_output(args, capsys)
+        assert rc == 1 and not receipts_skipped(text) and "RELEASE FAILED" in text
+        if case == "archive-odb-directory":
+            assert "STA inputs are not regular files: runs/wokwi/60-odb/design.odb" in text
+    rc, text = release_output(args + ["--require-sta-inputs"], capsys)
+    assert rc == 1 and "RELEASE PASSED" not in text
+    if case == "deleted":
+        assert "--require-sta-inputs: the run lacks the STA inputs its receipt records (2 checks" in text
+
+
+def receipts_skipped(text):
+    return [line for line in text.splitlines() if line.startswith("slow-corner STA receipt, SKIPPED: ")]
+
+
+def test_require_sta_inputs_passes_a_complete_live_run(tmp_path, fake_docker):
+    wt, out, args = sta_release(tmp_path)
+    assert module("release_check").main(args + ["--require-sta-inputs"]) == 0
+
+
+def test_release_evidence_requires_the_sta_inputs_and_refuses_a_skipped_verdict(tmp_path):
+    ev = module("release_evidence")
+    assert "--require-sta-inputs" in ev.release_command(tmp_path / "run", tmp_path / "V", [("sta", "s")], slow_mhz=48)
+    passed = "RELEASE PASSED (SDF profile v2, slow target 48 MHz)"
+    skipped = ("RELEASE PASSED (SDF profile v2, slow target 48 MHz, 2 STA RECEIPT CHECKS SKIPPED "
+               "(the run's STA inputs are absent))")
+    assert ev.verdict_failures(0, passed) == []
+    assert ev.verdict_failures(1, "RELEASE FAILED:") == ["RELEASE FAILED:"]
+    assert "skipped STA receipt checks" in ev.verdict_failures(0, skipped)[0]
+    assert ev.verdict_failures(0, "RELEASE CHECK PRODUCED NO VERDICT")
+
+
+def test_archive_refuses_a_verdict_or_receipt_with_skipped_checks(tmp_path):
+    from test_flow_tools import evidence_bundle, flow_module
+    ar = flow_module("archive_evidence")
+    wt, verdict, paths = evidence_bundle(tmp_path)
+    ar.collect(verdict, ar.Manifest("/"))
+    rec = flow_module("release_receipts")
+    with pytest.raises(ValueError, match="checks skipped on the run being archived"):
+        ar.collect(verdict, ar.Manifest("/"), verify=lambda *a: dict(rec.verify(*a), skipped=["STA step config"]))
+    verdict = dict(verdict, verdict="RELEASE PASSED (SDF profile v2, slow target 48 MHz, 2 STA RECEIPT CHECKS "
+                                    "SKIPPED (the run's STA inputs are absent))")
+    with pytest.raises(ValueError, match="skipped STA receipt checks"):
+        ar.collect(verdict, ar.Manifest("/"))
+
+
+# 082 finding 2: on an archive the receipt's config is not compared with the run's,
+# so the version is bound to the run's resolved.json (a candidate file) as well
+@pytest.mark.parametrize("shape", ["live", "archive"])
+def test_forged_librelane_version_is_refused_against_resolved_json(tmp_path, fake_docker, capsys, shape):
+    wt, out, args = sta_release(tmp_path)
+    if shape == "archive":
+        archive_shaped(wt)
+    config = json.loads((out / "config.json").read_text())
+    config["meta"]["librelane_version"] = "3.0.0"
+    (out / "config.json").write_text(json.dumps(config))
+    reseal(out, librelane_version="3.0.0")
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and "has LibreLane 3.0.0, not the run's 3.1.0.dev3 (resolved.json)" in text
+
+
+def test_archive_checks_the_step_netlist_against_final_nl(tmp_path, fake_docker, capsys):
+    # 082 f3: begin required the step's netlist copy to equal final/nl, which an archive holds
+    wt, out, args = sta_release(tmp_path)
+    archive_shaped(wt)
+    data = json.loads((out / "receipt.json").read_text())
+    data["plan"]["inputs"]["runs/wokwi/59-fill/design.nl.v"] = "0" * 64
+    (out / "receipt.json").write_text(json.dumps(data))
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and "STA inputs differ from the receipt's: runs/wokwi/59-fill/design.nl.v" in text
 
 
 @pytest.mark.parametrize("case", ["other-version", "missing-image"])

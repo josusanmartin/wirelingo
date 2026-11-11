@@ -163,12 +163,19 @@ Verifying the receipt (in `release_check.py`) rechecks the run as well: it
 recomputes the step's input digests and compares the step config, so a run
 whose SPEF, odb, step `state_in.json` or `config.json` changed after the
 receipt cannot release. It checks that the receipt's LibreLane version is the
-run's and that the recorded command ran the recorded image ID; it does not ask
-docker. An evidence archive keeps the candidate files but not the step's state,
-config, odb or SPEF: there the inputs it does hold are checked, and the check
-prints each skipped check (`slow-corner STA receipt, SKIPPED: ...`) and says
-so in its verdict (`..., 2 STA RECEIPT CHECKS SKIPPED (the run's STA inputs
-are absent))`). A tree with only one of the step's two files is refused. Then
+run's (the receipt's config and the run's `resolved.json`) and that the
+recorded command ran the recorded image ID; it does not ask docker. An
+evidence archive keeps the candidate files but not the step's state, config,
+odb or SPEF. There the inputs it does hold are checked, and so is the step
+netlist against `final/nl` (3 of 9 files). The check prints each skipped check
+(`slow-corner STA receipt, SKIPPED: ...`) and says so in its verdict (`..., 2
+STA RECEIPT CHECKS SKIPPED (the run's STA inputs are absent))`). Anything at
+all where a step file should be (one file, a directory, a dangling link)
+means "not an archive", and a recorded input that is present must be a
+regular file. On a live run, `--require-sta-inputs` refuses a receipt whose
+checks would be skipped. `flow/release_evidence.py` always passes it and
+refuses a verdict that says checks were skipped, and `flow/archive_evidence.py`
+refuses such a verdict or receipt too. Then
 
 ```sh
 python3 flow/release_check.py "$RUN" --slow-mhz 48 \

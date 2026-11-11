@@ -60,6 +60,8 @@ def collect(verdict, manifest, *, verify=receipts.verify, repro=(), extras=()):
     work, runner = Path(verdict["work"]), Path(verdict["runner_root"])
     if not verdict.get("verdict", "").startswith("RELEASE PASSED") or verdict.get("exit") != 0:
         raise ValueError(f"verdict is not a pass: {verdict.get('verdict')}")
+    if receipts.SKIPPED_VERDICT in verdict["verdict"]:
+        raise ValueError(f"verdict skipped STA receipt checks, not a live run's release: {verdict['verdict']}")
     kinds = sorted(r["kind"] for r in verdict["receipts"])
     if kinds.count("gl") != 1 or kinds.count("precheck") != 1 or "sdf" not in kinds:
         raise ValueError(f"verdict lacks a GL, SDF or precheck receipt: {kinds}")
@@ -69,6 +71,8 @@ def collect(verdict, manifest, *, verify=receipts.verify, repro=(), extras=()):
         if receipts.digest(path) != entry["sha256"]:
             raise ValueError(f"receipt changed after the verdict: {path}")
         data = verify(path, run, entry["kind"], validation if entry["kind"] in ("gl", "sdf") else None)
+        if data.get("skipped"):
+            raise ValueError(f"{path}: checks skipped on the run being archived: {'; '.join(data['skipped'])}")
         manifest.add(path)
         manifest.add(path.parent / "inputs.json")
         for key, root in (("candidate", data["worktree"]), ("validation", data["validation_root"]),
