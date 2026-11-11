@@ -100,7 +100,9 @@ def mutate(text, kind):
     if kind == "falling-edge":           # the negedge rx_n1 flop made a posedge flop
         m = re.search(r"always @\(negedge (\S+) or negedge (\S+)\) begin\n\s+if \(\S+ == 0\)\n\s+rx_n1 <=", text)
         return text[:m.start()] + m.group(0).replace("negedge " + m.group(1), "posedge " + m.group(1), 1) + text[m.end():]
-    if kind == "reset-to-set":           # r0 of core 1 loses its reset polarity: active-high reset
+    # pe_core mutants edit the first `module pe_core (` in the file: Hardcaml names one core's
+    # module pe_core and the others pe_core_N, and that one is u_core_2 at 3 cores, u_core_1 at 2
+    if kind == "reset-to-set":           # r0 of that pe_core loses its reset polarity: active-high reset
         i = text.index("module pe_core (")
         m = first_flop_of("r0").search(text, i)
         return text[:m.start()] + m.group(0).replace("negedge " + m.group(2), "posedge " + m.group(2)).replace("== 0", "== 1") + text[m.end():]
@@ -125,11 +127,11 @@ def mutate(text, kind):
         i = text.index("module pe_core (")
         m = first_flop_of("osr_cnt").search(text, i)
         return text[:m.start()] + m.group(0).replace(f"osr_cnt <= {m.group(3)}", "osr_cnt <= 6'b0") + text[m.end():]
-    if kind == "ticks-count-down":       # v0.3: the tick counter of the first core decrements
+    if kind == "ticks-count-down":       # v0.3: the tick counter of that pe_core decrements
         i = text.index("module pe_core (")
         m = re.compile(r"assign (\S+) = tcnt \+ (\S+);").search(text, i)
         return text[:m.start()] + f"assign {m.group(1)} = tcnt - {m.group(2)};" + text[m.end():]
-    if kind == "table-word-dropped":     # v0.3: a table read's word never reaches the OSR
+    if kind == "table-word-dropped":     # v0.3: in that pe_core, a table read's word never reaches the OSR
         i = text.index("module pe_core (")
         m = re.compile(r"assign (\S+) = tbl_pend \? (\S+) : osr;").search(text, i)
         return text[:m.start()] + f"assign {m.group(1)} = tbl_pend ? osr : osr;" + text[m.end():]

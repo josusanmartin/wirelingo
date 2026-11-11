@@ -7,7 +7,10 @@
 # Assembler bugs go to asm_parity.py, model bugs to the lockstep plugin on four
 # model test files (and, for the state load after a test writes into a chip, on
 # one test that does), RTL bugs to the waveform tests. Needs the same environment as dune build and stage3_model_suite.sh.
-# Exit status 0 only if every planted bug is caught.
+# First the unmutated tree runs every check once and must come out clean (no lockstep
+# failure, every test passing, parity and waveform tests passing); otherwise a planted
+# bug would look caught by a failure that was already there.
+# Exit status 0 only if the baseline is clean and every planted bug is caught.
 # SPDX-License-Identifier: Apache-2.0
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -18,6 +21,36 @@ mkdir -p "$work"
 git -C "$repo" archive HEAD | tar -x -C "$work"
 cd "$work/ocaml" || exit 2
 missed=0
+sim_check() {                  # the model files every sim case runs; rc of pytest
+  (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_OUT="$work/lock" \
+    "$py" -m pytest -q -p no:cacheprovider -p capture_plugin -n 4 \
+    test/model/test_eth10.py test/model/test_call.py test/model/test_uart.py test/model/test_i2c_timeout.py \
+    test/model/test_v03_isa.py \
+    > "$1" 2>&1)
+}
+resync_check() {               # resync_check R LOG: the written-into test, state load on (1) or off (0)
+  (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_RESYNC=$1 \
+    WL_LOCK_OUT="$work/lock" "$py" -m pytest -q -p no:cacheprovider -p capture_plugin \
+    test/model/test_rmii.py::test_port_model_read_path_counts_every_word > "$2" 2>&1)
+}
+# baseline: the unmutated tree, every check once
+dune build bin/wl_asm.exe bin/wl_simcheck.exe 2>"$work/build.err" || { echo "baseline does not build"; cat "$work/build.err"; exit 1; }
+base_bad=0
+rm -f "$work"/lock.*
+sim_check "$work/base_sim.log"; rc=$?
+ls "$work"/lock.fail.* >/dev/null 2>&1 && { echo "baseline sim: lockstep failure"; base_bad=1; }
+echo "baseline sim: pytest rc=$rc, $(tail -n 1 "$work/base_sim.log")"; [ $rc -eq 0 ] || base_bad=1
+for r in 1 0; do
+  rm -f "$work"/lock.*
+  resync_check $r "$work/base_resync$r.log"; rc=$?
+  ls "$work"/lock.fail.* >/dev/null 2>&1 && { echo "baseline resync=$r: lockstep failure"; base_bad=1; }
+  [ $rc -eq 0 ] || { echo "baseline resync=$r: pytest rc=$rc"; base_bad=1; }
+done
+python3 test/asm_parity.py --fuzz 300 > "$work/base_asm.log" 2>&1 || { echo "baseline asm: parity fails"; base_bad=1; }
+dune build @wave_test/runtest > "$work/base_wave.log" 2>&1 || { echo "baseline wave: tests fail"; base_bad=1; }
+rm -f "$work"/lock.*
+if [ $base_bad -ne 0 ]; then echo "baseline: NOT CLEAN, no case can show anything"; exit 1; fi
+echo "baseline: clean"
 try() {                        # try FILE PATTERN REPLACEMENT KIND
   local f=$1 pat=$2 rep=$3 kind=$4
   cp "$f" "$f.orig"
@@ -55,9 +88,7 @@ EOF
     # with the state load after the write, and missed without it, or the case shows nothing
     for r in 1 0; do
       rm -f "$work"/lock.*
-      (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_RESYNC=$r \
-        WL_LOCK_OUT="$work/lock" "$py" -m pytest -q -p no:cacheprovider -p capture_plugin \
-        test/model/test_rmii.py::test_port_model_read_path_counts_every_word > "$work/check$r.log" 2>&1)
+      resync_check $r "$work/check$r.log"
       ls "$work"/lock.fail.* >/dev/null 2>&1 && got[$r]=caught || got[$r]=missed
     done
     echo "  with the load: ${got[1]}; without: ${got[0]}"
@@ -65,11 +96,7 @@ EOF
   elif [ "$kind" = asm ]; then
     python3 test/asm_parity.py --fuzz 300 > "$work/check.log" 2>&1 && caught=no || caught=yes
   else
-    (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_OUT="$work/lock" \
-      "$py" -m pytest -q -p no:cacheprovider -p capture_plugin -n 4 \
-      test/model/test_eth10.py test/model/test_call.py test/model/test_uart.py test/model/test_i2c_timeout.py \
-      test/model/test_v03_isa.py \
-      > "$work/check.log" 2>&1)
+    sim_check "$work/check.log"
     ls "$work"/lock.fail.* >/dev/null 2>&1 && caught=yes || caught=no
   fi
   echo "$kind [$pat] -> [$rep]: caught=$caught"
