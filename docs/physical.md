@@ -117,6 +117,61 @@ slow coverage. The archive
 is the 2-core RTL of today, a dry run of the path for the 8x4 release, not a
 release candidate.
 
+**A first settings sweep at 8x4 (2026-11-10/11).** Today's 2-core RTL (the
+apbase netlist's), `flow/harden.sh NAME -- <one change>` against fo6's
+defaults, one harden at a time on runner1, one placement each. Every run
+passed `flow/signoff.py` with 0 routing DRC, 0 KLayout DRC, LVS clean and 0
+antenna; every run met setup at typical and fast (WS 0, the latch floor, 0
+violators) and had 0 slew, capacitance and fanout violations at every
+corner. "Worst flop" is the slow corner's worst flop or SRAM endpoint at 20
+ns (`syn/8x4-study/sta_period.sh`; it equals WS when WS is negative). At
+48 MHz every run met the slow corner (fresh STA at 20.833 ns,
+`flow/sta_rerun.py`: WS 0, 0 violators). Metal3 is the last congestion
+report of the run (after post-GRT repair).
+
+| Run | Change | Slow WS at 20 ns (endpoints, TNS) | Slow worst flop | Hold typ / slow / fast | Metal3 / overflow | Wire (µm) | Time |
+|---|---|---|---|---|---|---|---|
+| apbase | none (study base) | −0.643 (90, −33.8) | −0.643 | +0.158 / +0.362 / +0.059 | 46.6 % / 1 | 1,883,658 | 104 min* |
+| apl10 | `--late-clock 10` | −0.517 (77, −15.4) | −0.517 | +0.178 / +0.353 / +0.062 | 46.7 % / 1 | 1,885,779 | 70 min* |
+| apg15 | `--grt-adjust 0.15` | −0.468 (81, −13.1) | −0.468 | +0.175 / +0.362 / +0.063 | 50.3 % / 13 | 1,918,586 | 56 min |
+| aprow | `--layout row` (banks at x 444.0, 863.52) | −0.266 (47, −4.2) | −0.266 | +0.204 / +0.380 / +0.088 | 46.2 % / 0 | 1,858,256 | 59 min |
+| aplcc | `--late-clock-core 4` | **0 (0)** | **+0.068** | +0.145 / +0.349 / **+0.050** | 46.7 % / 1 | 1,883,270 | 57 min |
+| apd40 | `--density 40` | −0.439 (88, −12.7) | −0.439 | +0.194 / +0.342 / +0.057 | 44.4 % / 7 | 1,781,998 | 47 min |
+| apd44 | `--density 44` | **0 (0)** | **+0.404** | +0.147 / +0.331 / +0.051 | 41.3 % / 10 | 1,716,089 | 243 min* |
+| apd48 | `--density 48` | −0.370 (25, −3.8) | −0.370 | +0.171 / +0.365 / +0.051 | 40.3 % / 10 | 1,666,604 | 59 min |
+| apd52 | `--density 52` | −0.081 (1, −0.08) | −0.081 | +0.192 / +0.358 / +0.088 | 38.5 % / 32 | 1,628,590 | 76 min |
+| apd44lcc | `--density 44 --late-clock-core 4` | **0 (0)** | **+0.437** | +0.177 / +0.344 / +0.064 | 41.3 % / 9 | 1,717,596 | 142 min |
+
+(* runner1 shared with other builders' simulations; the study's base took 43
+min.) What it says, with one placement per row and the ±0.4 ns between
+placements of one configuration ("Slow corner: useful skew", below) in mind:
+
+* **Two single changes closed 50 MHz at the slow corner**: density 44
+  (+0.404 ns at the worst flop, against −0.643) and core 0's R0–R3/CRC
+  clocked 4 buffers late (+0.068). Both keep fast-corner hold thin (+0.051
+  and +0.050 ns; fo6 had +0.095). **The two together** (apd44lcc): +0.437
+  ns, fast hold +0.064, no electrical exception: the best of the set, on one
+  placement. The two density-44 runs took 2.4 and 4 h, the others about
+  an hour: their post-GRT repair kept rerunning incremental global routing
+  (apd44's log had 35 overflow-iteration rounds while still in that step,
+  apbase's whole log 7).
+* **Density is the strongest knob, and not monotonic in one sample each**:
+  34 / 40 / 44 / 48 / 52 gave −0.643 / −0.439 / +0.404 / −0.370 / −0.081.
+  Routed wire falls steadily with density (1.88M → 1.63M µm) and Metal3
+  demand with it, while overflow after repair rises (1 → 32; all cleared by
+  detailed routing). 44 sits about 0.8 ns above both neighbours, the
+  whole ±0.4 ns spread seen between placements, so it may be a
+  good placement rather than a trend; a search should sample around it.
+* **Late pin clocks help little** (8 buffers: +0.02 ns in the study, 10:
+  +0.13); clocking core 0's R0–R3 and CRC registers late as well
+  (`--late-clock-core 4`, pin registers at the default 6) gained 0.71 ns.
+* **The SRAM row layout** (both banks side by side at the bottom centre)
+  gained 0.38 ns and, with apd52, the best fast hold of the set (+0.088), with no
+  overflow left; at 6x4 the same layout stayed congested in global routing
+  (2026-10-03, older RTL).
+* **GRT_ADJUSTMENT** 0.15 gained 0.17 ns at higher Metal3 use (50 %, 13
+  overflows), within the noise.
+
 ## SRAM macros
 
 * `RM_IHPSG13_1P_256x32_c2_bm_bist`: 416.64 × 118.78 µm, all signal pins on the
