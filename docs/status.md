@@ -31,7 +31,7 @@ was removed from the repository, only moved.
   subset does. Model and RTL simulation only; the draw's list was written by
   an agent and its fixing in advance cannot be proved.
 * [evidence/verifier/](../evidence/verifier/README.md): the independent verifier
-  agent's items and reports 000-050, 27 PASS and 24 FAIL, verbatim apart from
+  agent's items and reports 000-078b, 52 PASS and 31 FAIL, verbatim apart from
   the redactions listed there.
 
 ## Raw evidence in the repository

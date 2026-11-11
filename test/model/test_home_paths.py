@@ -64,7 +64,8 @@ ALLOWED = {   # name: (reason, path prefixes where it may appear)
     b"vscode": ("the devcontainer's user", (".devcontainer/Dockerfile",)),
     b"someone": ("a made-up example user (verifier report 016 and the reports quoting it)",
                  ("evidence/verifier/",)),
-    b"x": ("a made-up HOME in test_flow_tools.py", ("test/model/test_flow_tools.py",)),
+    b"x": ("a made-up HOME in test_flow_tools.py and test_flow_slow48.py",
+          ("test/model/test_flow_tools.py", "test/model/test_flow_slow48.py")),
 }
 
 

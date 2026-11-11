@@ -6,7 +6,7 @@ source and the redactions made before it was committed.
 
 | Folder | What | Level |
 |---|---|---|
-| [verifier/](verifier/README.md) | The independent verifier's items and reports, 000-050, 27 PASS and 24 FAIL, verbatim apart from the listed redactions | Review records |
+| [verifier/](verifier/README.md) | The independent verifier's items and reports, 000-078b, 52 PASS and 31 FAIL, verbatim apart from the listed redactions | Review records |
 | [kv260-usb-20261030/](kv260-usb-20261030/README.md) | Kernel and step logs of Linux enumerating `usb_enum` (246 words, before `fault-fixes`) at low and full speed | RTL in FPGA fabric |
 | [fabric-ping-20261103/](fabric-ping-20261103/README.md) | Board run of the ARP/ping/UDP stack through the KV260 build, one 64-byte frame at a time, no cable. Verified ([report 037](verifier/037-fabric-ping-fix3.report.md), after FAILs 029, 031 and 034) | RTL in FPGA fabric |
 | [kv260-usbfs-zlp-20261103/](kv260-usbfs-zlp-20261103/README.md) | Logs of the full-speed data device's zero-length transfers and 200-attach runs, before and after the `usbfs-zlp` software fixes, with the `SET_CONFIGURATION` stall still open | RTL in FPGA fabric (KV260, protoemu48 `60b0692`) |
@@ -31,7 +31,7 @@ build machine's provider hostname, and anything that looks like a credential
 or key were searched for and would be replaced by a bracketed `[... redacted]`
 note. What was found and replaced is listed in each folder's README: six
 replacements in the USB kernel logs, and 17 in verifier files 030-038 (none
-in 039-041, and 2 in 042-050), which were also searched for the Kria's tailnet label, the local
+in 039-041, 2 in 042-050, and 63 in 051-078b), which were also searched for the Kria's tailnet label, the local
 user's home directory, MAC addresses and Wi-Fi network names. The READMEs of
 `kv260-usbfs-zlp-20261103/` and `model-usb-fs-enum-sweep-20261104/` have no
 redaction section: a search of both for all of these classes on 2026-11-04

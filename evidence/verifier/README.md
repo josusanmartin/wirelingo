@@ -1,12 +1,13 @@
 # Verifier reports
 
 Every report of the project's independent verifier, with the item it
-answered, from the first (2026-11-02) to item 050 (2026-11-04): 51 items, 51
-reports, 27 `VERDICT: PASS` and 24 `VERDICT: FAIL`. FAILs are kept: they are
+answered, from the first (2026-11-02) to item 078b (2026-11-11): 83 items, 83
+reports, 52 `VERDICT: PASS` and 31 `VERDICT: FAIL`. FAILs are kept: they are
 most of what the verifier caught. (Counted from the files, not from this
-text: 51 `NNN-name.md` files that are not `.report.md`, 51 `NNN-name.report.md`
-files, and `head -qn1 *.report.md | sort | uniq -c`, which gives 27 `VERDICT:
-PASS` and 24 `VERDICT: FAIL` and no other first line.)
+text: 83 `NNN-name.md` files that are not `.report.md`, 83 `NNN-name.report.md`
+files, and `head -qn1 *.report.md | sort | uniq -c`, which gives 52 `VERDICT:
+PASS` and 31 `VERDICT: FAIL` and no other first line. A number with a letter,
+such as 069b, is a further round of the same item.)
 
 ## What the verifier is
 
@@ -36,7 +37,9 @@ For each number NNN:
   come numbered findings with file:line, how each was shown, and what the
   verifier ran.
 
-Commits named here are local commits of the project. Every hexadecimal string
+Commits named here are local commits of the project. (For 051-078b, which
+partly predate the history rewrite of 2026-11-07, see
+[051-078b](#051-078b) below.) Every hexadecimal string
 of 7 or more characters in the items and reports 000-050 was looked up with
 `git cat-file --batch-check` and, where it is a commit, against `git rev-list
 HEAD`. All the commits are in this branch's history except these, which name
@@ -111,6 +114,38 @@ verifier's own checkouts.
 | 048 | `usb-guard2` | `e158fe0` | FAIL | [item](048-usb-guard2.md) | [report](048-usb-guard2.report.md) |
 | 049 | `usb-guard2-fix` | `c0cf7f0` | PASS | [item](049-usb-guard2-fix.md) | [report](049-usb-guard2-fix.report.md) |
 | 050 | `usb-in-setup` | `d4f5a61` | PASS | [item](050-usb-in-setup.md) | [report](050-usb-in-setup.report.md) |
+| 051 | `verifier-reports3` | `fff2b3f` | FAIL | [item](051-verifier-reports3.md) | [report](051-verifier-reports3.report.md) |
+| 052 | `demo-notes` | `2a5677d` | PASS | [item](052-demo-notes.md) | [report](052-demo-notes.report.md) |
+| 053 | `verifier-reports3-fix` | `f28e573` | PASS | [item](053-verifier-reports3-fix.md) | [report](053-verifier-reports3-fix.report.md) |
+| 054 | `reattach-wiring` | `cb93530` | PASS | [item](054-reattach-wiring.md) | [report](054-reattach-wiring.report.md) |
+| 055 | `reap-stop` | `0d84715` | PASS | [item](055-reap-stop.md) | [report](055-reap-stop.report.md) |
+| 056 | `ocaml-parity2` | `6219a50` | PASS | [item](056-ocaml-parity2.md) | [report](056-ocaml-parity2.report.md) |
+| 057 | `present` | `18a5c09` | FAIL | [item](057-present.md) | [report](057-present.report.md) |
+| 058 | `tidy` | `bbf8b11` | PASS | [item](058-tidy.md) | [report](058-tidy.report.md) |
+| 059 | `present-fix` | `9774c41` | PASS | [item](059-present-fix.md) | [report](059-present-fix.report.md) |
+| 060 | `privacy-needles` | `6b78b89` | PASS | [item](060-privacy-needles.md) | [report](060-privacy-needles.report.md) |
+| 061 | `present2` | `5674e33` | PASS | [item](061-present2.md) | [report](061-present2.report.md) |
+| 062 | `usb-config-prestage` | `ab2db8e` | PASS | [item](062-usb-config-prestage.md) | [report](062-usb-config-prestage.report.md) |
+| 063 | `present3` | `82bf76f` | PASS | [item](063-present3.md) | [report](063-present3.report.md) |
+| 064 | `privacy-needles2` | `251b323` | PASS | [item](064-privacy-needles2.md) | [report](064-privacy-needles2.report.md) |
+| 065 | `public-history` | round 1, unpublished | FAIL | [item](065-public-history.md) | [report](065-public-history.report.md) |
+| 066 | `public-history2` | `f7923d4` | PASS | [item](066-public-history2.md) | [report](066-public-history2.report.md) |
+| 067 | `public-followups` | `c110c44` | PASS | [item](067-public-followups.md) | [report](067-public-followups.report.md) |
+| 068 | `public-followups2` | `aa958a7` | PASS | [item](068-public-followups2.md) | [report](068-public-followups2.report.md) |
+| 069 | `8x4-study` | `65d0e8e` | PASS | [item](069-8x4-study.md) | [report](069-8x4-study.report.md) |
+| 069b | `8x4-study-fix` | `a8b6e2a` | FAIL | [item](069b-8x4-study-fix.md) | [report](069b-8x4-study-fix.report.md) |
+| 069c | `8x4-study-fix2` | `976fed1` | FAIL | [item](069c-8x4-study-fix2.md) | [report](069c-8x4-study-fix2.report.md) |
+| 069d | `8x4-study-fix3` | `d2ed344` | PASS | [item](069d-8x4-study-fix3.md) | [report](069d-8x4-study-fix3.report.md) |
+| 070 | `pkg3-spec-model` | `effd086` | PASS | [item](070-pkg3-spec-model.md) | [report](070-pkg3-spec-model.report.md) |
+| 071 | `pkg3-rtl` | `3a7feab` | PASS | [item](071-pkg3-rtl.md) | [report](071-pkg3-rtl.report.md) |
+| 072 | `pkg3-firmware` | `3a7feab` | FAIL | [item](072-pkg3-firmware.md) | [report](072-pkg3-firmware.report.md) |
+| 073 | `flow-8x4` | `72e2ccb` | PASS | [item](073-flow-8x4.md) | [report](073-flow-8x4.report.md) |
+| 074 | `pkg3-fix` | `eb63aa8` | PASS | [item](074-pkg3-fix.md) | [report](074-pkg3-fix.report.md) |
+| 075 | `merge-ao-ap` | `d973462` | PASS | [item](075-merge-ao-ap.md) | [report](075-merge-ao-ap.report.md) |
+| 076 | `kv260-3core` | `b3a019a` | PASS | [item](076-kv260-3core.md) | [report](076-kv260-3core.report.md) |
+| 077 | `kv260-3core-fix` | `36c6c26` | PASS | [item](077-kv260-3core-fix.md) | [report](077-kv260-3core-fix.report.md) |
+| 078 | `home-path-scan` | `2f63d7f` | FAIL | [item](078-home-path-scan.md) | [report](078-home-path-scan.report.md) |
+| 078b | `home-path-fix` | `965a520` | PASS | [item](078b-home-path-fix.md) | [report](078b-home-path-fix.report.md) |
 
 ## Verbatim, and the redactions
 
@@ -279,9 +314,10 @@ Two replacements were made, on 2 lines of 2 files. Neither line names a host:
 both quote the bare tailnet domain as a class searched for. The same class
 mention is kept, unredacted, in the files 030 (item and report), 035 (item
 and report), 038 (report) and 041 (report), in three lines of this README
-(`:130` and `:157`, the 000-029 and 030-038 tables, as `*.` and the domain;
-`:235`, the 039-041 list, bare), and in one of `evidence/README.md` (`:24`,
-its redaction summary). The two lines here are
+(`:170` and `:197`, the 000-029 and 030-038 tables, as `*.` and the domain;
+`:275`, the 039-041 list, bare), and in one of `evidence/README.md` (`:28`,
+its redaction summary); these line numbers are as of the 051-078b update,
+which added rows above them. The two lines here are
 redacted only because this update's rule is that the `git grep` above finds
 nothing in the added files; each replaces exactly the redacted
 string, inside its backticks, and nothing else on the line changed:
@@ -338,4 +374,208 @@ link syntax.
 To check: `sha256sum evidence/verifier/04[2-9]-*.md evidence/verifier/050-*.md`
 gives the right-hand column.
 
-Item 051 and later items and reports are not here.
+### 051-078b
+
+The 64 files 051-078b (32 items and their 32 reports; item 069 had four
+rounds, 069 to 069d, and item 078 two) were copied from the verifier's inbox
+on 2026-11-11 at about 02:49 UTC, checked equal to the source with `cmp`, and
+then redacted. As above, the time can't be checked from the repository; the
+sha256 column below pins the content as committed.
+
+[Report 065](065-public-history.report.md) asks (`:7`) not to be copied here
+until its finding 1 is resolved. That finding, old commit hashes in the
+published history that each depend on one private value, was fixed by the
+second round of the rewrite ([report 066](066-public-history2.report.md),
+PASS). The replacements below remove the same kind of token from the records
+themselves (backlog item AL, from report 066's finding 1).
+
+**What was searched for.** Every class of the 030-038 table; the Kria's
+Ethernet MAC in any form; any IPv4 or IPv6 address; the tailnet label, its hex
+part alone and the hex part split by one separator; the build machine's
+hostname, its ident email and the provider word, in any case, and the
+hostname's fixed part (its letters without the digits, which is also the
+provider's naming scheme), bounded by non-letters, in any case; the local
+user's home directory in every form `test/model/test_home_paths.py` knows (an
+absolute or relative home path, the dashed directory-name form, `/Users/`,
+`~` and the name) and Claude scratch paths; session ids; and, with AK's
+`record_check.py` run against the old (private) object store, every
+hexadecimal run that names an old object whose id depends on only one private
+value. The table counts lines and replacements by kind; a line can hold more
+than one.
+
+| Searched for | Found | Redacted |
+|---|---|---|
+| the tailnet label's hex part | 2 lines, each the `git grep` needle an item quotes (060 item `:31`, 064 item `:22`) | both, as `[tailnet label's hex part redacted]` |
+| tailnet names and addresses | 1 line that names the label-plus-domain form as a class to search for (068 item `:39`). Elsewhere the domain, `tail` and hex, the 100.64.0.0/10 range and the Tailscale IPv6 prefix appear only as classes, as in 042-050 | the 1, as `[tailnet name form redacted]`, so that `test_private_hosts.py` passes |
+| the build machine's hostname or its ident email | none | nothing |
+| the build machine's hostname class: its fixed part, the host name with its digits removed, which is also the provider's naming scheme (found by verifier 079, finding 1) | 5 lines, each in a list of what was searched for: 058 report `:30`, 065 item `:31` and 066 item `:141` (both beside the provider word), 067 item `:156`, 068 item `:71` | all 5, as `[build host name class redacted]` |
+| the provider word | 3 lines, each in a list of what was searched for or kept (053 report `:61`, 065 item `:31`, 066 item `:141`) | all 3, as `[build host provider redacted]` |
+| the local user's home directory | 4 lines: 051 item `:10`; 065 item `:32` (twice: the path, and `~` with the name) and `:67`; 066 item `:142` | all 5, as `[home directory redacted]` |
+| scratch paths | 3 lines: the rewrite's working directory (065 item `:7`, 066 item `:11`), which also holds the home directory's dashed form and a session id; and a bare scratch prefix with a uid (051 item `:29`) | all 3, the path up to `scratchpad` (or the prefix) as `[scratch path redacted]` |
+| other people's and generic home directories that `test_home_paths.py` doesn't allow under `evidence/verifier/` (verifier note 078b-4) | 13 lines: the upstream template author's home that `test/tb.gtkw` once held, the devcontainer's user, a test's made-up `HOME`, the CI runner's user, and a macOS `/Users/` example | all 15, as `/home/<other>` or `/Users/<other>`; the names the test allows here (`ubuntu`, `runner1`, `pi`, `someone`) are kept |
+| old commit ids that depend on one private value (the checker's "commit host-only") | 6, on 6 lines | 4 translated to the published commit, 2 marked (below) |
+| old tree ids that depend on one private value ("tree host-only") | 3: 063 report `:39`, 064 report `:75`, 065 report `:86` | all 3, as `[host-only tree id redacted]` |
+| ids of the rewrite's unpublished first round (item 065's output) | 20, on 12 lines of item and report 065 | all 20, as `[round-1 id redacted]` |
+| email addresses | only `root@example.org` (058 report `:31`) and the GitHub noreply address in the rewritten ident (065 item `:36`) | nothing |
+| MAC addresses | only the locally administered `02:00:de:ad:be:01` and `02:57:4c:…`, and the broadcast `ff:ff:…` | nothing |
+| IP addresses | none beyond the range base 100.64.0.0, quoted as a class: `0.0.0.0` and `3.4.1.1` (053 report `:49`), `7.1.18.1` (a USB 2.0 section number) and `10.77.0.2` (the test's own network namespace); the other matches are times such as `0:07:22` | nothing |
+| Wi-Fi names (SSIDs), credentials and keys | none: `ssid`, `psk`, `password` and key headers appear only as classes searched for; "token" is a USB token, and "secrets" names the rewrite's private values, never a value | nothing |
+
+That is 63 replacements on 47 lines of 17 files; the other 47 files are
+unchanged. (Of the 5 lines with the hostname class, 065 item `:31` and 066
+item `:141` also hold a provider-word replacement, and only 067 item is a
+file with no other replacement.) Each replacement changes exactly the redacted string (inside its
+backticks where it had them) and nothing else on the line. No file has a
+Markdown link outside a code span, so none was turned into plain text.
+
+Why each new marker:
+
+* `[tailnet label's hex part redacted]`: the hex part is the label's only
+  private part; the existing `[tailnet label redacted]` is for the whole label.
+* `[tailnet name form redacted]`: a class mention, not a name, replaced only so
+  that the tree-wide tailnet scan finds nothing.
+* `[build host name class redacted]`: the fixed part of the build machine's
+  name, which leaves only its digits to guess and names the provider (it is
+  the provider's naming scheme for machines).
+* `[scratch path redacted]`: a Claude scratch directory, which names the local
+  user and a session.
+* `/home/<other>`, `/Users/<other>`: a home directory that is not the local
+  user's, named in a report about the home-path scan; redacted so that the
+  scan passes without widening its allowlist.
+* `[host-only tree id redacted]`: an old tree whose id depends on the build
+  host's name alone (through old commit ids that its files cite). Trees have no
+  published counterpart, so the id can't be translated, and a guess at the name
+  could be tested against it.
+* `[old id of a907d4a, redacted]`: in the old-to-new tables of items 065 and 066
+  (row `signoff-g4`), the old commit is host-only. Writing its published id in
+  its place would make the row read `a907d4a` to `a907d4a` (066), or pair it
+  with a round-1 id it never had (065), so the cell names the published commit
+  instead.
+* `[round-1 id redacted]`: round 1 of the rewrite (065) was never published. Its
+  files still cited old host-only commit ids (the pass that translated them came
+  in round 2), so its commit and tag ids depend on the build host's name. The
+  checker can't classify them, as they are not in the old object store, but
+  verifier 079 (check 4) computed them over the round-1 store: counting every
+  hex token already in public text as known, 12 of the 13 redacted round-1
+  objects need only the build host to be tested (main^ and the tree at 065
+  report `:86` also need the guessable provider word), and only round-1 main
+  needs the label too. Report 066 gives the published ids. The verifier counts
+  21 tokens in 13 objects; the table above counts 20 in 12, because the tree
+  at 065 report `:86` is also an old host-only tree (round 1 kept b2fa7f3's
+  tree) and is counted on that row.
+
+The 4 translated ids: 060 report `:111` is now `c8f311e`, the root commit of
+public main, in which `test/tb.gtkw` arrived; 061 report `:26` is `37dd63a`,
+and `:27` and `:53` are `878a876`. Each is the published counterpart of the
+old commit, from the rewrite's private commit map, an ancestor of public main,
+and a unique prefix there.
+
+**The hexadecimal strings that remain.** Every run of 7 or more hexadecimal
+characters in the 64 files, as committed, was looked up in the old object
+store and in this branch's and public main's objects:
+
+* 449 occurrences (64 distinct) are commits in this branch's or public main's
+  history (the 4 translations and 2 markers above included); 5 more are trees,
+  3 tag objects and 2 blobs of public main, and 1 is the published
+  `signoff-g4` tag object (066 item `:28`).
+* 651 occurrences are old commits, counted as verifier 079 counts them:
+  lowercase tokens of 7 to 40 hex, bounded by non-alphanumerics, that prefix
+  an old commit of the old object store. 624 are in 051-068 (the items and
+  reports written before or about the rewrite): 515 (57 distinct) have a
+  published counterpart, and 109 (16 distinct) have none (builder commits
+  that were rebased or never merged). The other 27 (3 distinct, all with a
+  counterpart) are in 069-078b, 25 of them `b2fa7f3` in the ancestry checks. 2 more are old trees: 053 report `:79` and 066
+  report `:46`, the second also cited in `docs/`. AK's checker classes every
+  one of these as joint-only: its id depends on two private values, the build
+  host's name and the tailnet label, so it can't be used to test a guess at
+  either alone. RULES allow joint-only ids in published files, so they are
+  kept verbatim. They are not in this repository under these ids.
+  `evidence/history-map.txt`, written at the rewrite, already lists all 16
+  without a counterpart (as cited but not published) and 20 of the 58 with
+  one; the other 38 are not in it.
+* 29 occurrences (7 distinct) are commits made after the rewrite, from public
+  main, on branches not (yet) in this branch's history (for example 073's
+  `72e2ccb`); none has a private input.
+* The rest are not objects: dates, sha256, CRC and ID values, process ids,
+  the verifier's checkout suffixes, and hex words such as `deadbeef`.
+
+As committed, `record_check.py --repo . --tree HEAD --commits
+refs/remotes/public/main..HEAD` flags nothing.
+
+The sha256 of each file as committed. For a file with replacements, the
+digest of the inbox original is not given: the original holds the redacted
+values, and its digest would let a guess at them be checked (report 066
+finding 4 found this for the provider word in the 030-042 digests above). An
+unchanged file has the same digest in the inbox.
+
+| File | sha256 committed | Same bytes as the inbox |
+|---|---|---|
+| `051-verifier-reports3.md` | `629d17053e1276b3c1e8a3c0b5e1ce5d36b7523927966488fd940db41ffbb2ae` | no: lines 10, 29 |
+| `051-verifier-reports3.report.md` | `05548b29801501aab882c92c75d32a5ac5adbe1eba3b18ef0837d65fb39cfb7a` | yes |
+| `052-demo-notes.md` | `3497e0e1a7ccce2840f4b4d705475db180492952589df94733e5ac0d79e26a7e` | yes |
+| `052-demo-notes.report.md` | `9dc1eb14981bac7b9c7a4967fdcd166774e3aee5330b2e18580e32bf2c829159` | yes |
+| `053-verifier-reports3-fix.md` | `7691897b0d439b41488f82bd215eba01c07a05e547b5db7e9a8eda92489107bc` | yes |
+| `053-verifier-reports3-fix.report.md` | `b1bd64155d044e127eec1058edbed7c0f584447f72d3703209486cb8bb12b438` | no: line 61 |
+| `054-reattach-wiring.md` | `49a2c0f0e6c9215d02ced3bedc8b111fceacd62256852d7ef173e17b52116ed4` | yes |
+| `054-reattach-wiring.report.md` | `775714d417e5d2e34815471ac31792022afb15d6531db880208d617c6b56f299` | yes |
+| `055-reap-stop.md` | `631bbcb83a1a3a6b3c3a394eaf055c5490c0ba41810db2186ee01a30872c3f82` | yes |
+| `055-reap-stop.report.md` | `456cc312a4c51e8d99215030d554671dd5343c95214ca96c9f8eb36100136b3b` | yes |
+| `056-ocaml-parity2.md` | `a332cca60ffef14158bdff3d6cacd3255d06283fbee7c091d664c1befe866400` | yes |
+| `056-ocaml-parity2.report.md` | `01710047e42774ba24593728f5d1833d7eef1b688b7a0382fb108fd4c56250af` | yes |
+| `057-present.md` | `37fc7e8cb446f08ddd4b469d4e18a2c4fa7a36b7c84b043e120560c5a34ba62a` | yes |
+| `057-present.report.md` | `db7927babec2d325df27b077855c27df96cfe47b714d53a6a82810518ea368e7` | yes |
+| `058-tidy.md` | `cd716d6c154d97713265ed683823e0cff7795dae8cfde5c2a4531bbe493bb786` | yes |
+| `058-tidy.report.md` | `a24460cd63ffd98436e869e83af3699273eada8e77963848df4d5e98984eca63` | no: lines 27, 28, 29, 30 |
+| `059-present-fix.md` | `6453b4602b64a92a928f6fab40c16f91c02b494a5ce4766ae0fe44d8c1ebbe14` | yes |
+| `059-present-fix.report.md` | `749900870e72a3034ad9f2e96dbd3767d9960e27d169d0bf5c2f3ea5e1181e56` | yes |
+| `060-privacy-needles.md` | `e8a231627993b05699943455cfec814e20fe4bb331f2a14d8607966459504927` | no: lines 31, 47 |
+| `060-privacy-needles.report.md` | `c11bca27ccfa3b75ee6fb69f694592da00231ddb4c9b1e26c5223b7ec493df0b` | no: lines 109, 111 |
+| `061-present2.md` | `0bea292215e679f5710e73f7f55d68db800e367a62f83c0041f9e382537058eb` | yes |
+| `061-present2.report.md` | `10114d9826560c02cda3db49924b8639697262d36369df6c39e94f6902355492` | no: lines 26, 27, 53 |
+| `062-usb-config-prestage.md` | `99409d24a4ac9278338bb8b13b0d661abc69384ad9df90a46fba17bdafd44fd4` | yes |
+| `062-usb-config-prestage.report.md` | `2d37dd465f0679893d25853f97fb15e8c75720adf7d2b4213f73c9bcaa58b3fd` | yes |
+| `063-present3.md` | `ff3205e66623834d27c918714d41fafa0134d0ec7c7ae8974e9deb85609f1e4a` | yes |
+| `063-present3.report.md` | `dafd1d3b6c188d583630a09a79f24832b7fc54ff9f2c6729dc202d19381e0c7b` | no: line 39 |
+| `064-privacy-needles2.md` | `1b403d22c46786f23f72135c125cf1c69d7def29123294d69a26ec83648f2282` | no: line 22 |
+| `064-privacy-needles2.report.md` | `440aa7edd39c169f7fc0b4ffb9df86d4753a4a7a566124da2c5db5a3b4b00538` | no: line 75 |
+| `065-public-history.md` | `355e3361c94a6eb38ba23775dcf9628630bf249f4b7358394e34441abbceea18` | no: lines 7, 18, 19, 20, 21, 22, 23, 31, 32, 62, 67 |
+| `065-public-history.report.md` | `a370fe8e9d819c5ba51df873ab8af2de745a6d88c75e596c839ce6ff4efd1ad1` | no: lines 86, 106, 114, 128, 154 |
+| `066-public-history2.md` | `968e96fa08a799f7e3758a9cae9e56480c9eb50dfc75821c697d79d88687c65d` | no: lines 11, 28, 141, 142 |
+| `066-public-history2.report.md` | `b8072a6eb3f85b886af53c0db7fe493ad9ca452aae9d5aaf4c0cd9a7808b9348` | yes |
+| `067-public-followups.md` | `c3c3cdc1d574a926989aa9c5bdf238732eb1fcae24444479da43777497f42189` | no: line 156 |
+| `067-public-followups.report.md` | `32da09f9ba2975cbc22adfb1fe257b9521fb9a748c498674c2e50d9d6178e870` | yes |
+| `068-public-followups2.md` | `07d55fbb3d423e777e2e0495c18c75d2dfb2750c7a6ee6ccc4df92f15729ee67` | no: lines 39, 71 |
+| `068-public-followups2.report.md` | `6b5110b2cbd4f4878fd70d206b0bac7557b4240c1a6efd99cf7d67c9481dc05a` | yes |
+| `069-8x4-study.md` | `eb886c3e350e2380e86d7a1f8e29bb7952e772c656d61324dad18d6a7500f65a` | yes |
+| `069-8x4-study.report.md` | `66908b851e75d3a326a07df764f3a168827bc773150a4bae90663b1da92567cd` | yes |
+| `069b-8x4-study-fix.md` | `fb2129e2dfadf2a91557e8cad8fc0ba35766af961620ba5f490543a804812ca4` | yes |
+| `069b-8x4-study-fix.report.md` | `667fd1610dd59df8981ce7b6c75d4384bcf88e2d5e4ca7a1b6d7548a2a69c86a` | yes |
+| `069c-8x4-study-fix2.md` | `574130316934ad47c4372fa6b28a4c63a39163a3b4fa12450c668160ab7a629f` | yes |
+| `069c-8x4-study-fix2.report.md` | `ee4f08b5aaf9bf981c677c41b52d5a2b7e7e97f7226f0439ad301986686c22b6` | yes |
+| `069d-8x4-study-fix3.md` | `17ba28fc561ca2f7363888765ccd330d6dff3e65a6d61662f029b6281a982911` | yes |
+| `069d-8x4-study-fix3.report.md` | `c345c4c58429c7bf361f1eea9bea416ab2250901b903207cc73a4f2b9ad743ac` | yes |
+| `070-pkg3-spec-model.md` | `6cadc8eefebab09846ae8aa11a6cf8f54c1f76d302c83cfb8b057270c2b68a71` | yes |
+| `070-pkg3-spec-model.report.md` | `87debbf3b52bcb35f09453a7b6625cc03d007652a2d27b79dc0c2c789e02bc8b` | yes |
+| `071-pkg3-rtl.md` | `b2cef9340d51dd78b3537820bd0c771114f8e8c4ea80ae7ec2bc37f54856426a` | yes |
+| `071-pkg3-rtl.report.md` | `afce321c0bcad5595dd29098d23eeca34d5206edff6fc864f9b6bea58830d62f` | yes |
+| `072-pkg3-firmware.md` | `cb4a5b83c4c51a0a99e77c0f9e342990cbc4e84c3b1b22bd164969ef6bbf9007` | yes |
+| `072-pkg3-firmware.report.md` | `c41dc327db9ad081e4d2ef73a977bcd1e84805068325130d1ec239ba66c5897a` | yes |
+| `073-flow-8x4.md` | `8e5bf0a6790dddb60bfd2bca882cd8fbb5fb4154442a82aa5c3843579333bbc5` | yes |
+| `073-flow-8x4.report.md` | `287c80ddd297a5b6b8bda7aa1f8ea9e708eab8de1987487d7cd994c34d55cbfe` | yes |
+| `074-pkg3-fix.md` | `5d1dcad94b2a90a9ade111d6a4bf40a1d22340600d95e7f73c1ec4bbd886c151` | yes |
+| `074-pkg3-fix.report.md` | `18b8d8ab7c01ce6f95416911e3a709d2c2fde0bc698ac62b0f174a7ef5c88b77` | yes |
+| `075-merge-ao-ap.md` | `abed08c8685272232f8918447bceb214b47e9f6819099852385a8a3d4509b359` | yes |
+| `075-merge-ao-ap.report.md` | `9dc28c2fdaa1e110f91e56a18e0ba097fe516d52c593c5701af18ebbfb314f4e` | yes |
+| `076-kv260-3core.md` | `2f3b989d7dab36974b7137f6245981da6784603046d16e057af95b65c01f5e33` | yes |
+| `076-kv260-3core.report.md` | `c5a10dbe0047088a8286c60e12dad63088d52b05483cff27f25d8acd0ee31361` | yes |
+| `077-kv260-3core-fix.md` | `831eaa004bb6a62fc9996f078d20d5c4b9481ab8bab55c9da1072b37f6c06f46` | yes |
+| `077-kv260-3core-fix.report.md` | `29293ff63759ef0755b7196e6f2cfb87232d3eb15a253a07958b2c1136311546` | no: line 94 |
+| `078-home-path-scan.md` | `0720ab5b68676842363f2019f5ed5fac4a56ad53a9a44c9044a6b7eb29a06e0c` | no: lines 47, 58, 61, 67, 76 |
+| `078-home-path-scan.report.md` | `69df179d179b968dbc3dd504a9344a7c7e5029fe4165ed08fb9b0d47712ce512` | yes |
+| `078b-home-path-fix.md` | `92e59e6968cc84974ea17293582ba298f584d78e0709b33c701e7932c159fa24` | no: line 79 |
+| `078b-home-path-fix.report.md` | `c3faf5aa28e56f45917ab6ac56979c0d70509dcfc62eea8d8eb90b82bdec24d9` | yes |
+
+To check: `sha256sum evidence/verifier/05[1-9]-*.md evidence/verifier/06*-*.md evidence/verifier/07[0-8]*-*.md`
+gives the middle column.
+
+Item 079 and later items and reports are not here.
