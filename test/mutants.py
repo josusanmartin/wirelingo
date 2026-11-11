@@ -9,6 +9,7 @@ touched. Exit status 1 if any mutant survives.
     python3 test/mutants.py 'hw-*'                     # the hardware-day launcher and fabric guard
     python3 test/mutants.py 'fab-*'                    # eth_tap's FPGA backend (fabric_eth.py)
     python3 test/mutants.py 'reply-*'                  # match, then answer (eth10_reply)
+    python3 test/mutants.py 'flow-sta-*'               # the fresh-STA receipt (48 MHz release path)
 """
 import fnmatch
 import os
@@ -63,6 +64,9 @@ def REPLY(selection):
 REPLY50 = REPLY("match_then_reply_timing and 50000000.0")
 
 FSDATA = "test/model/test_usb_fs_data.py -k"   # full-speed data over endpoint 0
+
+SLOW48 = pytest("test/model/test_flow_slow48.py")   # the 48 MHz release path's fresh-STA receipt
+SLOW48_VERIFY = pytest('test/model/test_flow_slow48.py -k "after_the_sta_receipt or forged_receipt"')
 
 # name: (file, original text, mutated text, test command)
 MUTANTS = {
@@ -710,6 +714,42 @@ MUTANTS = {
     "fw-usb-ep1-data-as-ep0": ("firmware/usb_enum_ep1.pasm", "    jmp f F_SENT1, ep1_data        ; endpoint 1's DATA",
                                "    nop                            ; endpoint 1's DATA",
                                pytest("test/model/test_usb_enum_ep1.py -k reports_pins")),
+    # 080 findings 2-3 (AT): each takes out one check of the fresh-STA receipt
+    "flow-sta-verify-skips-run": ("flow/release_receipts.py",
+                                  "skipped = sta_recheck(worktree, data, path.parent, allow_absent=True)",
+                                  "skipped = []", SLOW48),
+    # finish() shares these two checks; only release_check's tests after the receipt run here
+    "flow-sta-inputs-not-compared": ("flow/release_receipts.py", "    if inputs != recorded:", "    if False:",
+                                     SLOW48_VERIFY),
+    "flow-sta-config-not-compared": ("flow/release_receipts.py",
+                                     '    if read_json(Path(out) / "config.json") != config:', "    if False:",
+                                     SLOW48_VERIFY),
+    "flow-sta-final-spef-not-bound": ("flow/release_receipts.py",
+                                      "    files[str(final_spef.relative_to(wt))] = digest(final_spef)", "    pass",
+                                      SLOW48),
+    "flow-sta-archive-if-either-absent": ("flow/release_receipts.py",
+                                          'not any((step / name).is_file() for name in ("state_in.json", "config.json"))',
+                                          'not all((step / name).is_file() for name in ("state_in.json", "config.json"))',
+                                          SLOW48),
+    "flow-sta-archive-present-unchecked": ("flow/release_receipts.py", "        if changed:", "        if False:", SLOW48),
+    "flow-sta-skip-not-printed": ("flow/release_check.py", 'print(f"slow-corner STA receipt, SKIPPED: {check}")',
+                                  "pass", SLOW48),
+    "flow-sta-skip-not-in-verdict": ("flow/release_check.py",
+                                     "(the run's STA inputs are absent)\" if skipped else \"\")",
+                                     "(the run's STA inputs are absent)\" if False else \"\")", SLOW48),
+    "flow-sta-runs-the-tag": ("flow/sta_rerun.py", '"-w", str(out), image_id,', '"-w", str(out), image,', SLOW48),
+    "flow-sta-other-librelane-runs": ("flow/sta_rerun.py", "    if image_version != version:", "    if False:", SLOW48),
+    "flow-sta-receipt-version-unchecked": ("flow/release_receipts.py",
+                                           '        if version != config["meta"]["librelane_version"]:',
+                                           "        if False:", SLOW48),
+    "flow-sta-receipt-ran-image-unchecked": ("flow/release_receipts.py",
+                                             '        if f" {image_id} python3 -m librelane.steps run --id {STA_STEP_ID} " '
+                                             "not in command:", "        if False:", SLOW48),
+    "flow-sta-receipt-no-image-id": ("flow/release_receipts.py",
+                                     "        if not isinstance(image_id, str) or not re.fullmatch(IMAGE_ID_RE, image_id):",
+                                     "        if False:", SLOW48),
+    "flow-sta-metric-repeat": ("flow/release_receipts.py", "        if key in found and found[key] != value:",
+                               "        if False:", SLOW48),
 }
 
 
