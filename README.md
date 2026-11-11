@@ -145,7 +145,7 @@ network stack in
 | Outside oracles | sigrok's protocol decoders; Linux's USB and network stacks on the FPGA build | RTL simulation, FPGA | [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), [fpga/kv260](fpga/kv260/README.md) |
 | Fault injection | Seeded wire faults: six real failures found, four fixed | Model, RTL | [docs/fault-testing.md](docs/fault-testing.md) |
 | Blind test | Two protocols drawn by a rule, chip and tools frozen | Model, RTL | [docs/blind-test.md](docs/blind-test.md) |
-| Independent verifier agent | Reruns and attacks the claims of each item sent to it: reports 000-050, 27 PASS and 24 FAIL, kept verbatim | Review | [evidence/verifier](evidence/verifier/README.md) |
+| Independent verifier agent | Reruns and attacks the claims of each item sent to it: reports 000-078b, 52 PASS and 31 FAIL, kept verbatim apart from listed redactions | Review | [evidence/verifier](evidence/verifier/README.md) |
 | Lean proofs | Manual proofs and finite comparisons against the RTL, each with its stated scope | Formal | [docs/lean-verification.md](docs/lean-verification.md) |
 
 What is proven at each level, and what is still open:

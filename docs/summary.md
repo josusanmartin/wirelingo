@@ -92,8 +92,8 @@ rest on an agent's word:
 * **Oracles that don't share our assumptions:** sigrok's protocol decoders,
   a real Linux USB stack on the FPGA build, and seeded wire faults (six real
   failures found, four fixed: [fault-testing.md](fault-testing.md)).
-* **An independent verifier agent** that reruns and attacks the claims of each item sent to it: 51
-  reports (000-050), 27 PASS and 24 FAIL, kept verbatim
+* **An independent verifier agent** that reruns and attacks the claims of each item sent to it: 83
+  reports (000-078b), 52 PASS and 31 FAIL, kept verbatim apart from listed redactions
   ([evidence/verifier](../evidence/verifier/README.md)).
 
 ## Physical status (run fo6)
