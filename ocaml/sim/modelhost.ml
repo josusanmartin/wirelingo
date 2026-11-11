@@ -9,8 +9,8 @@ type t =
   ; mutable pull_up : int
   }
 
-let create ?(bank_words = 256) ?(fifo_depth = 8) () =
-  { chip = Chip.create ~bank_words ~ncores:4 ~nbanks:4 ~fifo_depth
+let create ?(bank_words = 256) ?(fifo_depth = 8) ?(ncores = 4) ?(nbanks = 4) () =
+  { chip = Chip.create ~bank_words ~ncores ~nbanks ~fifo_depth
   ; ui = 0
   ; uio = 0
   ; ext_oe = 0

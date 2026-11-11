@@ -68,6 +68,7 @@ EOF
     (cd .. && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test WL_LOCK_EVERY=1 WL_LOCK_OUT="$work/lock" \
       "$py" -m pytest -q -p no:cacheprovider -p capture_plugin -n 4 \
       test/model/test_eth10.py test/model/test_call.py test/model/test_uart.py test/model/test_i2c_timeout.py \
+      test/model/test_v03_isa.py \
       > "$work/check.log" 2>&1)
     ls "$work"/lock.fail.* >/dev/null 2>&1 && caught=yes || caught=no
   fi
@@ -80,12 +81,23 @@ try sim/chip.ml 'c.dcnt <- delay;' 'c.dcnt <- delay + (delay land 1);' sim
 try sim/chip.ml 'c.lr <- (if c.pc = c.wrap_top then c.wrap_bottom else (c.pc + 1) land 1023);' 'c.lr <- (c.pc + 1) land 1023 lor 1;' sim
 try sim/line.ml 'let g = min 5 (1 + (l.n / 6)) in' 'let g = min 4 (1 + (l.n / 6)) in' sim
 try sim/chip.ml '"wait:timeout"' '"wait:timed_out"' sim
+# v0.3 (docs/isa.md section 5.2): `!t`, CMPW's immediate, the table word, the ticks, CRC width 17..32
+try sim/chip.ml '| 0 -> sel <> Isa.xc_nt || c.t = 0' '| 0 -> sel <> Isa.xc_nt || c.t = 1' sim
+try sim/chip.ml 'let s = Isa.cmpw_imm e.x in' 'let s = e.x land 0x3FFF in' sim
+try sim/chip.ml '          core.osr_cnt <- 0;
+          core.tbl <- None' '          core.osr_cnt <- 32;
+          core.tbl <- None' sim
+try sim/chip.ml 'if tick then c.ticks <- (c.ticks + 1) land m16;' 'if tick then c.ticks <- (c.ticks + 2) land m16;' sim
+try sim/chip.ml 'lor (((v lsr 23) land 1) lsl 4)' 'lor (((v lsr 22) land 1) lsl 4)' sim
 try sim/chip.ml 'then List.nth c.rxf n else 0)' 'then List.nth c.rxf (List.length c.rxf - 1 - n) else 0)' resync
 try sim/chip.ml '       c.txf <- list ();
        c.rxf <- list ();' '       c.rxf <- list ();
        c.txf <- list ();' resync
 try asm/asm.ml '(cond lsl 15) lor (z_int sel lsl 10) lor addr' '(cond lsl 15) lor (z_int sel lsl 11) lor addr' asm
 try asm/asm.ml '"pin out of range"' '"pin outside range"' asm
+try asm/asm.ml '| "!t" -> Isa.c_always, Z.of_int Isa.xc_nt' '| "!t" -> Isa.c_t, Z.zero' asm
+try asm/asm.ml 'if Pyre.starts_with ~prefix:".data" line then prog.data <- idx :: prog.data;' '' asm
+try asm/asm.ml 'if v >= 8192 || l.mn = "cmpw"' 'if v >= 8191 || l.mn = "cmpw"' asm
 try asm/pyexpr.ml 'I (Z.fdiv x y)' 'I (Z.div x y)' asm
 try asm/pyre.ml "if greedy
         then more () || k pos

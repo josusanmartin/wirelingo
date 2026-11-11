@@ -32,7 +32,11 @@ module O = struct
   [@@deriving hardcaml]
 end
 
-let id_value = 0x5045_0002
+(* ID (docs/isa.md section 6.2): "PE", NBANKS, NCORES, ISA version 3 (v0.2 read
+   0x50450002) *)
+let id_value (cfg : Config.t) =
+  0x5045_0003 lor ((cfg.nbanks land 15) lsl 12) lor ((cfg.ncores land 15) lsl 8)
+;;
 
 let create ~(cfg : Config.t) scope (i : _ I.t) =
   let w = i.bus_wdata in
@@ -221,7 +225,7 @@ let create ~(cfg : Config.t) scope (i : _ I.t) =
   let glob_read =
     mux
       goff
-      [ of_int_trunc ~width:32 id_value
+      [ of_int_trunc ~width:32 (id_value cfg)
       ; zero 28 @: enable.value
       ; zero 24 @: flags.value
       ; zero 24 @: flags.value

@@ -13,7 +13,11 @@ type profile =
   ; bank_words : int
   }
 
+(* the 6x4 v0.2 tapeout (and the 8x4 fallback's geometry) *)
 let tapeout = { pname = "fixed-bank-v1-2c2b8f"; ncores = 2; nbanks = 2; bank_words = 256 }
+
+(* the 8x4 package: three cores and banks *)
+let pkg3 = { pname = "fixed-bank-v1-3c3b8f"; ncores = 3; nbanks = 3; bank_words = 256 }
 let full = { pname = "fixed-bank-v1-4c4b8f"; ncores = 4; nbanks = 4; bank_words = 256 }
 
 type overrides =
@@ -113,7 +117,8 @@ let core_config (prog : Asm.program) (o : overrides) =
   { clkdiv; pinctrl0; pinctrl1; shiftctrl }
 ;;
 
-let validate_image core words base wrap profile =
+(* [data]: indices of `.data` words, tables rather than jumps *)
+let validate_image ?(data = []) core words base wrap profile =
   if core < 0 || core >= min profile.ncores profile.nbanks
   then value_error "core has no instruction bank in selected profile";
   if words = [] then value_error "program must not be empty";
@@ -126,10 +131,12 @@ let validate_image core words base wrap profile =
   let top = wrap lsr 16 in
   if not (base <= bottom && bottom <= top && top < base + List.length words)
   then value_error "wrap must lie inside the loaded image";
-  List.iter
-    (fun w ->
+  List.iteri
+    (fun i w ->
        let op = w lsr 27 in
-       if (op = 0 || op = 13) && not (lo <= w land 0x3FF && w land 0x3FF < hi)
+       if (op = 0 || op = 13)
+          && (not (List.mem i data))
+          && not (lo <= w land 0x3FF && w land 0x3FF < hi)
        then value_error "JMP/CALL target leaves core's fixed instruction bank")
     words
 ;;
@@ -155,7 +162,7 @@ let load_program ?(profile = tapeout) ?base core (prog : Asm.program) o =
   if prog.words = [] then value_error "program must not be empty";
   let words = relocate prog base in
   let wrap = wrap_of prog base in
-  validate_image core words base wrap profile;
+  validate_image ~data:prog.data core words base wrap profile;
   let c = core_config prog o in
   let reg off = core_reg core off in
   List.mapi (fun i w -> z (base + i), z w) words

@@ -6,7 +6,10 @@
 let m32 = 0xFFFFFFFF
 let m16 = 0xFFFF
 let ncores_max = 4
-let id_value = 0x50450002
+let id_v2 = 0x50450002 (* the v0.2 builds *)
+
+(* the ID register of a v0.3 build (docs/isa.md section 6.2) *)
+let id_value ncores nbanks = 0x50450003 lor (ncores lsl 8) lor (nbanks lsl 12)
 let imem_words = 1024
 
 (* register map *)
@@ -41,6 +44,7 @@ let c_r0 = 0xA
 let c_isr = 0xE
 let c_osr = 0xF
 let c_fifo = 0x10
+let c_poly_hi = 0x11
 let bits v hi lo = (v lsr lo) land ((1 lsl (hi - lo + 1)) - 1)
 let mask n = if n >= 62 then -1 else (1 lsl n) - 1
 
@@ -84,7 +88,10 @@ type core =
   ; mutable crc_w : int
   ; mutable in_tap : int
   ; mutable out_tap : int
-  ; mutable crc : int
+  ; mutable crc_poly_hi : int (* POLY_HI: the polynomial's top half, widths > 16 *)
+  ; mutable crc : int (* 32 bits *)
+  ; mutable ticks : int (* the tick counter, source 15; cleared by restart *)
+  ; mutable tbl : int option (* a table read's word, for the OSR at the end of the next clock *)
   ; r : int array
   ; mutable lr : int
   ; mutable txf : int list
@@ -145,6 +152,7 @@ type fx =
   ; mutable fclr : int
   ; mutable txpop : bool
   ; mutable rxpush : int option
+  ; mutable ftbl : int option
   }
 
 (* the inputs and effects of one core cycle (_Exec) *)
@@ -154,6 +162,7 @@ type ex =
   ; eflags : int
   ; x : int
   ; fx : fx
+  ; eticks : int (* the tick counter at the start of the clock *)
   ; pull_th : int
   ; push_th : int
   ; pullq : int list
@@ -192,7 +201,9 @@ let restart c =
   c.facc <- 0;
   c.halted <- 0;
   c.fault <- 0;
-  c.stalled <- 0
+  c.stalled <- 0;
+  c.ticks <- 0;
+  c.tbl <- None (* a restart in the clock after a table read wins over its write *)
 ;;
 
 let make_core idx =
@@ -223,7 +234,10 @@ let make_core idx =
     ; crc_w = 0
     ; in_tap = 0
     ; out_tap = 0
+    ; crc_poly_hi = 0
     ; crc = 0
+    ; ticks = 0
+    ; tbl = None
     ; r = [| 0; 0; 0; 0 |]
     ; lr = 0
     ; txf = []
@@ -352,11 +366,14 @@ let write_reg c off v =
   else if off = c_crcctrl
   then (
     c.crc_poly <- v land m16;
-    c.crc_w <- (v lsr 16) land 15;
+    c.crc_w <- (v lsr 16) land 15 lor (((v lsr 23) land 1) lsl 4);
     c.in_tap <- (v lsr 20) land 1;
     c.out_tap <- (v lsr 21) land 1)
+  else if off = c_poly_hi
+  then c.crc_poly_hi <- v land m16
   else if off = c_crc
-  then c.crc <- v land m16
+  then (* the top half only for widths above 16 (v0.2: 16 bits) *)
+    c.crc <- v land (if c.crc_w >= 16 then m32 else m16)
   else if off = c_pc
   then (
     c.pc <- v land 1023;
@@ -461,7 +478,16 @@ let src c e code =
   then c.crc
   else if code = Isa.lr
   then c.lr
+  else if code = Isa.ticks
+  then e.eticks
   else 0
+;;
+
+(* sim.py builds its source table eagerly, so every non-register source read
+   counts "ticks:read", whichever source it is; kept for coverage parity *)
+let src c e code =
+  if code >= 4 then cover e.chip "ticks:read";
+  src c e code
 ;;
 
 let crc_mask c = mask (c.crc_w + 1)
@@ -469,7 +495,8 @@ let crc_mask c = mask (c.crc_w + 1)
 let crc_feed c b =
   let fb = ((c.crc lsr c.crc_w) land 1) lxor b in
   let m = crc_mask c in
-  c.crc <- ((c.crc lsl 1) land m) lxor (if fb = 1 then c.crc_poly land m else 0)
+  let poly = (c.crc_poly_hi lsl 16) lor c.crc_poly in
+  c.crc <- ((c.crc lsl 1) land m) lxor (if fb = 1 then poly land m else 0)
 ;;
 
 let write_dst c e dst v isr_count =
@@ -488,7 +515,8 @@ let write_dst c e dst v isr_count =
     c.osr <- v;
     c.osr_cnt <- 0)
   else if dst = Isa.pc
-  then e.jump <- Some (v land 1023)
+  then (* bank-relative: a core runs in its own bank *)
+    e.jump <- Some (c.pc land 0x300 lor (v land 0xFF))
   else if dst = Isa.crc
   then c.crc <- v land crc_mask c
   else if dst = Isa.lr
@@ -505,7 +533,7 @@ let op_jmp c e =
   let fl = (e.eflags lsr (sel land 7)) land 1 in
   let ok =
     match cond with
-    | 0 -> true
+    | 0 -> sel <> Isa.xc_nt || c.t = 0
     | 1 -> rv = 0
     | 2 | 3 -> rv <> 0
     | 4 -> pin e sel = 1
@@ -522,6 +550,8 @@ let op_jmp c e =
     | _ -> fl = 0
   in
   if cond = Isa.c_dec then c.r.(rs) <- (rv - 1) land m16;
+  if cond = Isa.c_always && sel = Isa.xc_nt
+  then cover e.chip (if ok then "jmp:not_t_taken" else "jmp:not_t_fallthrough");
   if ok then e.jump <- Some addr;
   ok
 ;;
@@ -734,6 +764,13 @@ let op_mov c e =
   let mop = bits e.x 14 13 in
   let s = bits e.x 12 9 in
   let v = src c e s in
+  if mop = Isa.m_tbl
+  then (
+    (* table read: OSR = the own bank's word at v[7:0], at the end of the next
+       clock, which the core spends on it *)
+    e.fx.ftbl <- Some (fetch e.chip (c.pc land 0x300 lor (v land 0xFF)));
+    cover e.chip "table:read")
+  else
   let v =
     if mop = Isa.m_inv then lnot v land m32 else if mop = Isa.m_rev then rev32 v else v
   in
@@ -752,7 +789,17 @@ let op_set c e =
   done
 ;;
 
-let op_ldi c e = c.r.(bits e.x 17 16) <- bits e.x 15 0
+let op_ldi c e =
+  if e.x land Isa.ldi_cmpw <> 0
+  then (
+    (* CMPW: cmp rd, #imm16 (flags only) *)
+    let a = c.r.(bits e.x 15 14) in
+    let s = Isa.cmpw_imm e.x in
+    c.z <- (if a = s then 1 else 0);
+    c.c <- (if a < s then 1 else 0);
+    cover e.chip (if a = s then "cmpw:eq" else if a < s then "cmpw:lt" else "cmpw:gt"))
+  else c.r.(bits e.x 17 16) <- bits e.x 15 0
+;;
 
 let op_alu c e =
   let x = e.x in
@@ -806,7 +853,17 @@ let op_pin _c e =
 
 let op_flag _c e =
   let b = 1 lsl bits e.x 2 0 in
-  if bits e.x 18 18 = 1 then e.fx.fclr <- e.fx.fclr lor b else e.fx.fset <- e.fx.fset lor b
+  if e.x land Isa.flag_tog <> 0
+  then (
+    (* toggle, inside the core: a set or a clear of the flag as this core sees it *)
+    if e.eflags land b <> 0
+    then (
+      e.fx.fclr <- e.fx.fclr lor b;
+      cover e.chip "flag:tog_clear")
+    else (
+      e.fx.fset <- e.fx.fset lor b;
+      cover e.chip "flag:tog_set"))
+  else if bits e.x 18 18 = 1 then e.fx.fclr <- e.fx.fclr lor b else e.fx.fset <- e.fx.fset lor b
 ;;
 
 let op_halt c e =
@@ -847,6 +904,7 @@ let core_step c chip pins_in flags =
     ; fclr = 0
     ; txpop = false
     ; rxpush = None
+    ; ftbl = None
     }
   in
   let e =
@@ -855,6 +913,7 @@ let core_step c chip pins_in flags =
     ; eflags = flags
     ; x
     ; fx
+    ; eticks = c.ticks
     ; pull_th = (if c.pull_thresh = 0 then 32 else c.pull_thresh)
     ; push_th = (if c.push_thresh = 0 then 32 else c.push_thresh)
     ; pullq = (if c.fjoin = 1 then c.rxf else c.txf)
@@ -873,8 +932,15 @@ let core_step c chip pins_in flags =
   in
   let tick = divider c in
   track_wait c e;
+  if tick then c.ticks <- (c.ticks + 1) land m16;
   if (not tick) || c.halted = 1 || c.fault = 1
   then fx
+  else if c.tbl <> None
+  then (
+    (* the clock after a table read: its word, not an instruction, is on the
+       fetch port *)
+    cover chip "table:extra_tick";
+    fx)
   else if c.dcnt <> 0
   then (
     c.dcnt <- c.dcnt - 1;
@@ -944,7 +1010,7 @@ let read chip addr =
     let off = (addr - core_base) mod core_stride in
     if c < chip.ncores then read_reg chip.cores.(c) off else 0)
   else if addr = a_id
-  then id_value
+  then id_value chip.ncores chip.nbanks
   else if addr = a_ctrl
   then chip.enable
   else if addr = a_fset || addr = a_fclr
@@ -991,6 +1057,7 @@ let step
   let new_out = ref chip.pin_out in
   let new_oe = ref chip.pin_oe in
   let fifo_ops = Array.make ncores_max (false, None) in
+  let tbl = Array.make ncores_max None in
   Array.iteri
     (fun c core ->
        if not (c >= chip.ncores || (restart_m lsr c) land 1 = 1 || (chip.enable lsr c) land 1 = 0)
@@ -999,6 +1066,7 @@ let step
          fset := !fset lor fx.fset;
          fclr := !fclr lor fx.fclr;
          fifo_ops.(c) <- fx.txpop, fx.rxpush;
+         tbl.(c) <- fx.ftbl;
          let apply kind_is_out base side =
            let overlap = ref false in
            for p = 0 to 31 do
@@ -1032,6 +1100,7 @@ let step
   let cidx = (addr - core_base) / core_stride in
   let off = (addr - core_base) mod core_stride in
   let res_op = ref None in
+  let host_pc = if !we && !in_cores && off = c_pc then Some cidx else None in
   if !in_cores && off = c_fifo
   then (
     let core = chip.cores.(cidx) in
@@ -1122,11 +1191,29 @@ let step
          core.txf <- !tx;
          core.rxf <- !rx))
     chip.cores;
+  (* table reads: last clock's word reaches the OSR now, enabled or not (a
+     restart, below, wins); this clock's is cancelled by a host PC write *)
+  let prev_tbl = Array.map (fun core -> core.tbl <> None) chip.cores in
+  Array.iteri
+    (fun c core ->
+       (match core.tbl with
+        | Some w ->
+          if (chip.enable lsr c) land 1 = 0 then cover chip "table:write_while_disabled";
+          core.osr <- w;
+          core.osr_cnt <- 0;
+          core.tbl <- None
+        | None -> ());
+       match tbl.(c) with
+       | Some w ->
+         if host_pc = Some c then cover chip "table:cancelled_by_host_pc" else core.tbl <- Some w
+       | None -> ())
+    chip.cores;
   for c = 0 to ncores_max - 1 do
     if (restart_m lsr c) land 1 = 1
     then (
       let core = chip.cores.(c) in
       if core.in_wait = 1 || core.dcnt <> 0 then cover chip "ctrl:restart_mid_instruction";
+      if prev_tbl.(c) then cover chip "table:restart_wins";
       restart core)
   done;
   (match !res_op with
@@ -1219,7 +1306,8 @@ let state_line b chip =
          ; c.wrap_bottom; c.wrap_top; c.crc_poly; c.crc_w; c.in_tap; c.out_tap; c.crc
          ; c.r.(0); c.r.(1); c.r.(2); c.r.(3); c.lr; c.pc; c.isr; c.isr_cnt; c.osr
          ; c.osr_cnt; c.z; c.c; c.t; c.dcnt; c.in_wait; c.wprev; c.wevent; c.cnt; c.facc
-         ; c.halted; c.fault; c.stalled
+         ; c.halted; c.fault; c.stalled; c.crc_poly_hi; c.ticks
+         ; (match c.tbl with None -> -1 | Some w -> w)
          ];
        list c.txf;
        list c.rxf;
@@ -1331,6 +1419,9 @@ let load_state chip s =
        c.halted <- next ();
        c.fault <- next ();
        c.stalled <- next ();
+       c.crc_poly_hi <- next ();
+       c.ticks <- next ();
+       c.tbl <- (match next () with -1 -> None | w -> Some w);
        c.txf <- list ();
        c.rxf <- list ();
        c.res <- List.map (fun r -> r <> 0) (list ()))

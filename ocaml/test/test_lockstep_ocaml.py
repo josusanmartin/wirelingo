@@ -18,7 +18,7 @@ import lock_chip
 lock_chip.patch()
 
 from test_lockstep import (test_call_ret, test_fifo_races, test_line_rx_jitter, test_random_lockstep,  # noqa: E402,F401
-                           test_registers, test_wait_diff)
+                           test_registers, test_v03_corners, test_wait_diff)
 
 
 @cocotb.test()

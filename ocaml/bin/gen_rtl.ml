@@ -1,6 +1,7 @@
 (* gen_rtl: write the Hardcaml port as Verilog.
 
-     gen_rtl tapeout DIR    2 cores, 2 SRAM banks, 8-deep FIFOs (the frozen chip)
+     gen_rtl tapeout DIR    3 cores, 3 SRAM banks, 8-deep FIFOs (the 8x4 chip)
+     gen_rtl fallback DIR   2 cores, 2 SRAM banks, 8-deep FIFOs (its fallback)
      gen_rtl flop4 DIR      4 cores, 16-word flop banks, 4-deep FIFOs (CI's other build)
 
    Writes DIR/wirelingo_hc.v (top module tt_um_josusanmartin_protoemu, every
@@ -47,13 +48,14 @@ let () =
     let cfg =
       match which with
       | "tapeout" -> Config.tapeout
+      | "fallback" -> Config.fallback
       | "flop4" -> Config.ci_flop4
-      | _ -> failwith "gen_rtl tapeout|flop4 DIR"
+      | _ -> failwith "gen_rtl tapeout|fallback|flop4 DIR"
     in
     top ~cfg ~chip_module:"pe_chip" (dir ^ "/wirelingo_hc.v");
     chip_only ~cfg ~chip_module:Lockstep_shim.impl_module (dir ^ "/pe_chip_impl.v");
     Stdio.Out_channel.write_all
       (dir ^ "/pe_chip_lockstep.v")
       ~data:(Lockstep_shim.verilog ~cfg)
-  | _ -> failwith "gen_rtl tapeout|flop4 DIR"
+  | _ -> failwith "gen_rtl tapeout|fallback|flop4 DIR"
 ;;

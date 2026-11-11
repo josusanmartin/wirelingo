@@ -56,7 +56,7 @@ def dump(progs):
         for k, v in sorted(p.labels.items()):
             out.append(f"label {k} {v}")
         for i, w in enumerate(p.words):
-            out.append(f"word {i} {w:08x} {int(i in p.reloc)}")
+            out.append(f"word {i} {w:08x} {int(i in p.reloc)} {int(i in p.data)}")
         for i, raw in p.source_lines:
             out.append(f"src {i} {raw}")
     return "".join(s + "\n" for s in out)
@@ -381,6 +381,70 @@ L: .define Z L\nnop\nldi r0, Z
    nop   ;   spaced
 NOP
 Jmp Z, 0
+mov osr, [r0]
+mov osr, [ r1 ]
+mov OSR, [R2] [3]
+mov osr, [x] [255]
+.side_set 1\nmov osr, [r0] side 1 [2]
+.side_set 1\nmov osr, [r0] [2] side 1
+.side_set 1 opt\nmov osr, [y] side 1
+mov r0, [r1]
+mov isr, [r1]
+mov osr, [r9]
+mov osr, [3]
+mov osr, []
+mov osr, [ticks]
+mov osr, [pins]
+mov osr, ~[r0]
+mov osr, [r0
+mov osr, r0]
+mov r0, ticks
+mov r1, ~ticks
+in ticks, 16
+in ticks, 32
+out ticks, 1
+.data 0xBEEF
+.data
+.data 1 +
+.data 0x1FFFFFFFF
+t: .data 1\n.data 2\nldi r0, t\nmov osr, [r0]
+L: .data L\njmp L
+.data 0x00000005\n.word 0x00000006\njmp 1
+.datax 1
+cmpw r0, 0xBEEF
+cmpw r1, 5
+cmpw r2, #0
+cmpw r3, r1
+cmpw r0, 65535
+cmpw r0, 65536
+cmpw r0, -1
+cmpw r4, 1
+cmpw r0
+CMPW y, 300
+cmp r0, 8191
+cmp r0, 8192
+cmp r0, #40000
+cmp r0, ##40000
+cmp r0, 65536
+cmp x, 0x2000 [3]
+add r0, 8192
+sub r1, 40000
+jmp !t, 0
+call !t, 5
+jmp !T, 3
+jmp ! t, 3
+jmp !t
+jmp t, 4
+jmp !tt, 4
+flag tog 3
+flag TOG 7
+flag tog 8
+flag tog
+flag tog 1 + 1
+flag tog -1
+flag toggle 2
+mov pc, r0
+out pc, 8
 """
 
 
@@ -399,7 +463,9 @@ def run_directed(p):
 
 # ---- fuzz
 JUNK = list("[]();,#:!~+-*/%<>&|=.0123456789abxyz_ ") + ["side", "if", "pin", "r0", "r9", "timeout", "clear", "==", "--",
-                                                          "::", ".wrap", ".define", "0x", "1<<", "opt"]
+                                                          "::", ".wrap", ".define", "0x", "1<<", "opt",
+                                                          # v0.3 syntax (docs/isa.md section 5.2)
+                                                          "[r0]", ", [r1]", "ticks", "cmpw", "!t", "tog", ".data"]
 
 
 def fuzz_line(rng, line):
@@ -455,7 +521,7 @@ def run_corpus(p, files):
 
 
 # A drop below these means coverage was lost, even with nothing disagreeing.
-FLOORS = {"firmware": {"ok": 340}, "directed": {"ok": 130, "error": 110, "crash": 8}, "corpus": {"ok": 330, "error": 20}}
+FLOORS = {"firmware": {"ok": 360}, "directed": {"ok": 175, "error": 145, "crash": 8}, "corpus": {"ok": 330, "error": 20}}
 
 
 def main():

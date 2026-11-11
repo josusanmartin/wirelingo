@@ -37,10 +37,11 @@ let pc = 11
 let crc = 12
 let line = 13
 let lr = 14
+let ticks = 15
 
 let loc_names =
   [| "r0"; "r1"; "r2"; "r3"; "pins"; "pindirs"; "isr"; "osr"; "null"; "status"; "flags"
-   ; "pc"; "crc"; "line"; "lr"
+   ; "pc"; "crc"; "line"; "lr"; "ticks"
   |]
 ;;
 
@@ -92,12 +93,27 @@ let p_toggle = 2
 let p_hiz = 3
 let pin_actions = [| "lo"; "hi"; "toggle"; "hiz" |]
 
-(* MOV ops *)
+(* MOV ops (v0.3: 3 = table read, `mov osr, [src]`) *)
 let m_none = 0
 let m_inv = 1
 let m_rev = 2
+let m_tbl = 3
 let enc op sd operand = (op lsl 27) lor (sd lsl 19) lor operand
 let bits v hi lo = (v lsr lo) land ((1 lsl (hi - lo + 1)) - 1)
+
+(* v0.3 additions (docs/isa.md sections 5, 8), each in encoding space v0.2
+   reserved or ignored *)
+let xc_nt = 1 (* JMP/CALL cond 0 (always) with sel 1: `!t` *)
+let ldi_cmpw = 1 lsl 18 (* LDI with bit 18: `cmp rd, #imm16` (CMPW) *)
+let flag_tog = 1 lsl 17 (* FLAG with bit 17: toggle F[k] *)
+let crc_w_hi = 1 lsl 23 (* CRCCTRL: CRC_W[4], widths 17..32 *)
+
+(* operand bits of `cmp rd, #imm16`, without opcode *)
+let cmpw_fields rd imm =
+  ldi_cmpw lor (((imm lsr 14) land 3) lsl 16) lor (rd lsl 14) lor (imm land 0x3FFF)
+;;
+
+let cmpw_imm x = (((x lsr 16) land 3) lsl 14) lor (x land 0x3FFF)
 
 let loc_name l = if l < Array.length loc_names then loc_names.(l) else Printf.sprintf "loc%d" l
 
@@ -134,7 +150,9 @@ let disasm word =
       | 14 -> pr "f %d" f
       | _ -> pr "!f %d" f
     in
-    pr "%s %s%d%s" opnames.(op) (if cs <> "" then cs ^ ", " else "") addr sfx)
+    if cond = c_always && sel = xc_nt
+    then pr "%s !t, %d%s" opnames.(op) addr sfx
+    else pr "%s %s%d%s" opnames.(op) (if cs <> "" then cs ^ ", " else "") addr sfx)
   else if op = op_wait
   then (
     let kind = bits x 18 16 in
@@ -174,9 +192,14 @@ let disasm word =
   else if op = op_mov
   then (
     let m = [| ""; "~"; "::"; "?" |] in
-    pr "mov %s, %s%s%s" (loc_name (bits x 18 15)) m.(bits x 14 13) (loc_name (bits x 12 9)) sfx)
+    if bits x 14 13 = m_tbl
+    then pr "mov %s, [%s]%s" (loc_name (bits x 18 15)) (loc_name (bits x 12 9)) sfx
+    else
+      pr "mov %s, %s%s%s" (loc_name (bits x 18 15)) m.(bits x 14 13) (loc_name (bits x 12 9)) sfx)
   else if op = op_set
   then pr "set %s, %d%s" (if bits x 18 18 = 1 then "pindirs" else "pins") (bits x 4 0) sfx
+  else if op = op_ldi && bits x 18 18 = 1
+  then pr "cmpw r%d, %d%s" (bits x 15 14) (cmpw_imm x) sfx
   else if op = op_ldi
   then pr "ldi r%d, %d%s" (bits x 17 16) (bits x 15 0) sfx
   else if op = op_alu
@@ -185,6 +208,8 @@ let disasm word =
     pr "%s r%d, %s%s" alu_names.(bits x 18 16) (bits x 15 14) s sfx)
   else if op = op_pin
   then pr "pin %d, %s%s" (bits x 4 0) pin_actions.(bits x 18 17) sfx
+  else if op = op_flag && bits x 17 17 = 1
+  then pr "flag tog %d%s" (bits x 2 0) sfx
   else if op = op_flag
   then pr "flag %s %d%s" (if bits x 18 18 = 1 then "clr" else "set") (bits x 2 0) sfx
   else if op = op_halt

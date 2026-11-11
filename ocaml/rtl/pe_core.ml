@@ -1,4 +1,4 @@
-(* One protocol-engine lane: port of src/pe_core.sv (docs/isa.md sections 4-5).
+(* One protocol-engine lane: port of src/pe_core.sv (docs/isa.md sections 4-5, v0.3).
    The [ifdef FORMAL] safety block is not ported: formal/core.sby proves it on
    src/, and the port is proved equal to src/ (docs/hardcaml-port.md). *)
 open! Base
@@ -81,6 +81,7 @@ let l_pc = 11
 let l_crc = 12
 let l_line = 13
 let l_lr = 14
+let l_ticks = 15
 
 (* WAIT kinds *)
 let w_rise = 2
@@ -125,11 +126,16 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let wrap_bottom = cfg 5 "wrap_bottom" w.:[9, 0] in
   let wrap_top = cfg 5 ~reset_to:(k10 1023) "wrap_top" w.:[25, 16] in
   let crc_poly = cfg 6 "crc_poly" w.:[15, 0] in
-  let crc_w = cfg 6 "crc_w" w.:[19, 16] in
+  (* width - 1: CRCCTRL {[23], [19:16]} *)
+  let crc_w = cfg 6 "crc_w" (bit w 23 @: w.:[19, 16]) in
   let in_tap = cfg 6 "in_tap" (bit w 20) in
   let out_tap = cfg 6 "out_tap" (bit w 21) in
   (* ---- state *)
   let dom = domain ~clock:i.clk ~rst_n:i.rst_n in
+  (* POLY_HI (core offset 0x11): an enable flop on clk, not an eighth clock gate *)
+  let crc_poly_hi =
+    dff dom ~enable:(host_cfg_en 0x11) w.:[15, 0] -- "crc_poly_hi"
+  in
   let reg ?reset_to name width = state dom ?reset_to name width in
   let pc = reg ~reset_to:idx_addr "pc" 10 in
   let r0 = reg "r0" 16 in
@@ -152,8 +158,10 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let halted = reg "halted" 1 in
   let fault = reg "fault" 1 in
   let stalled = reg "stalled" 1 in
-  let crc = reg "crc" 16 in
+  let crc = reg "crc" 32 in
   let lr = reg "lr" 10 in
+  let tcnt = reg "tcnt" 16 in (* the tick counter, source 15 *)
+  let tbl_pend = reg "tbl_pend" 1 in (* a table read last clock: instr is its word *)
   let res_n = reg "res_n" 2 in
   let res_v = reg "res_v" 2 in
   (* ---- execute outputs (assigned in the block below, used by the FIFOs) *)
@@ -172,7 +180,8 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let active = i.enable &: ~:(i.restart) in
   let attempt = active &: tick &: ~:(halted.value) &: ~:(fault.value) &: (dcnt.value ==:. 0) in
   let bank_ok = pc.value.:[9, 8] ==:. idx in
-  let exec = attempt &: bank_ok in
+  (* the clock after a table read is the read's: the fetch port holds its word *)
+  let exec = attempt &: bank_ok &: ~:(tbl_pend.value) in
   (* ---- FIFOs *)
   let host_push = i.bus_sel &: i.bus_we &: (i.bus_off ==:. 0x10) in
   let fifo_sel = i.bus_sel &: (i.bus_off ==:. 0x10) in
@@ -283,10 +292,10 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
       ; zero 21 @: status16.:[10, 0]
       ; zero 24 @: i.flags
       ; zero 22 @: pc.value
-      ; zero 16 @: crc.value
+      ; crc.value
       ; zero 32 (* 13: LINE *)
       ; zero 22 @: lr.value
-      ; zero 32
+      ; zero 16 @: tcnt.value (* L_TICKS *)
       ]
   in
   (* shift amounts (count field 0 means 32) *)
@@ -326,10 +335,15 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   (* MOV value *)
   let mop = x.:[14, 13] in
   let mov_val = mux2 (mop ==:. 1) ~:src_val (mux2 (mop ==:. 2) (reverse src_val) src_val) in
-  (* ALU *)
-  let aop = x.:[18, 16] in
+  (* ALU; CMPW (LDI with [18]) is a cmp with rd in [15:14] and the immediate
+     {x[17:16], x[13:0]} *)
+  let is_cmpw = (op ==:. op_ldi) &: bit x 18 in
+  let aop = mux2 is_cmpw (of_int_trunc ~width:3 7) x.:[18, 16] in
   let alu_a = rsel x.:[15, 14] in
-  let alu_s = mux2 (bit x 13) (zero 3 @: x.:[12, 0]) (rsel x.:[1, 0]) in
+  let alu_imm =
+    mux2 is_cmpw x.:[17, 16] (zero 2) @: (bit x 13 &: is_cmpw) @: x.:[12, 0]
+  in
+  let alu_s = mux2 (bit x 13 |: is_cmpw) alu_imm (rsel x.:[1, 0]) in
   let alu_sub = (alu_a <: alu_s) @: (alu_a -: alu_s) in
   let alu_res =
     mux
@@ -352,7 +366,7 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let cond_ok =
     mux
       cond
-      [ vdd
+      [ (jsel <>:. 1) |: ~:(t.value) (* sel 1: `!t`; else always *)
       ; jr ==:. 0
       ; jr <>:. 0
       ; jr <>:. 0
@@ -390,12 +404,13 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let w_treg = x.:[9, 8] in
   let w_tr = rsel w_treg in
   let w_timeout = ~:wbase &: w_to &: (w_tr ==:. 0) in
-  (* CRC tap *)
-  let crc_mask = shift_right (ones 16) (of_int_trunc ~width:4 15 -: crc_w) in
+  (* CRC tap: any width 1..32 *)
+  let crc_mask = shift_right (ones 32) (of_int_trunc ~width:5 31 -: crc_w) in
+  let crc_poly_m = (crc_poly_hi @: crc_poly) &: crc_mask in
   let crc_bit = wire gnd in
   let crc_fb = mux crc_w (bits_lsb crc.value) ^: crc_bit.value in
   let crc_fed =
-    (sll_const crc.value 1 &: crc_mask) ^: mux2 crc_fb (crc_poly &: crc_mask) (zero 16)
+    (sll_const crc.value 1 &: crc_mask) ^: mux2 crc_fb crc_poly_m (zero 32)
   in
   let pc_seq = mux2 (pc.value ==: wrap_top) wrap_bottom (pc.value +:. 1) in
   (* ---- execute (combinational) *)
@@ -429,7 +444,8 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let fclr = wire (zero 8) in
   let crc_feed = wire gnd in
   let crc_set = wire gnd in
-  let crc_set_val = wire (zero 16) in
+  let crc_set_val = wire (zero 32) in
+  let bank_rel v = pc.value.:[9, 8] @: v.:[7, 0] in (* bank-relative PC write *)
   let dst = x.:[18, 15] in
   let one8 = of_int_trunc ~width:8 1 in
   let in_blocked = in_autopush &: rx_block in
@@ -509,10 +525,10 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
                  ; when_dst l_isr [ set_isr out_data n ]
                  ; when_dst
                      l_pc
-                     [ jump <-- vdd; jump_target <-- out_data.:[9, 0] ]
+                     [ jump <-- vdd; jump_target <-- bank_rel out_data ]
                  ; when_dst
                      l_crc
-                     [ crc_set <-- vdd; crc_set_val <-- out_data.:[15, 0] ]
+                     [ crc_set <-- vdd; crc_set_val <-- out_data ]
                  ]
           ]
       ; when_op
@@ -541,14 +557,20 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
           ]
       ; when_op
           op_mov
-          [ when_ dst_is_reg [ reg_write dst.:[1, 0] mov_val.:[15, 0] ]
-          ; when_dst l_pins [ pw_out <-- vdd ]
-          ; when_dst l_pindirs [ pw_oe <-- vdd ]
-          ; when_dst l_isr [ set_isr mov_val (zero 6) ]
-          ; when_dst l_osr [ set_osr mov_val (zero 6) ]
-          ; when_dst l_pc [ jump <-- vdd; jump_target <-- mov_val.:[9, 0] ]
-          ; when_dst l_crc [ crc_set <-- vdd; crc_set_val <-- mov_val.:[15, 0] ]
-          ; when_dst l_lr [ lr_we <-- vdd; lr_nv <-- mov_val.:[9, 0] ]
+          [ if_
+              (mop ==:. 3)
+              (* table read: the word's address goes out on MOV PC's jump path;
+                 the PC continues at pc_seq and the word lands in the OSR next clock *)
+              [ jump <-- vdd; jump_target <-- bank_rel mov_val ]
+              [ when_ dst_is_reg [ reg_write dst.:[1, 0] mov_val.:[15, 0] ]
+              ; when_dst l_pins [ pw_out <-- vdd ]
+              ; when_dst l_pindirs [ pw_oe <-- vdd ]
+              ; when_dst l_isr [ set_isr mov_val (zero 6) ]
+              ; when_dst l_osr [ set_osr mov_val (zero 6) ]
+              ; when_dst l_pc [ jump <-- vdd; jump_target <-- bank_rel mov_val ]
+              ; when_dst l_crc [ crc_set <-- vdd; crc_set_val <-- mov_val ]
+              ; when_dst l_lr [ lr_we <-- vdd; lr_nv <-- mov_val.:[9, 0] ]
+              ]
           ]
       ; when_op
           op_set
@@ -558,7 +580,11 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
           ; pw_cnt <-- mux2 (set_count >:. 5) (k6 5) (zero 3 @: set_count)
           ; pw_data <-- (zero 27 @: x.:[4, 0])
           ]
-      ; when_op op_ldi [ reg_write x.:[17, 16] x.:[15, 0] ]
+      ; when_op
+          op_ldi
+          [ if_ (bit x 18) [ z_we <-- vdd ] (* CMPW: flags only *)
+              [ reg_write x.:[17, 16] x.:[15, 0] ]
+          ]
       ; when_op
           op_alu
           [ z_we <-- vdd
@@ -585,7 +611,8 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
       ; when_op
           op_flag
           [ if_
-              (bit x 18)
+              (* [17]: toggle, as a set or a clear of the flag as this core sees it *)
+              (mux2 (bit x 17) (mux x.:[2, 0] (bits_lsb i.flags)) (bit x 18))
               [ fclr <-- shift_left one8 x.:[2, 0] ]
               [ fset <-- shift_left one8 x.:[2, 0] ]
           ]
@@ -622,13 +649,16 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
          i.bus_wdata.:[9, 0]
          (mux2 commit (mux2 jump.value jump_target.value pc_seq) pc.value))
   in
+  (* a table read fetches its word but the PC moves on as for any MOV; a host
+     PC write in the same clock takes the fetch port and cancels the read *)
+  let tbl_issue = commit &: (op ==:. op_mov) &: (mop ==:. 3) &: ~:host_pc_w in
   (* ---- bus read: registers 0x00-0x06 are write-only *)
   let bus_rdata =
     let z32 = zero 32 in
     mux
       i.bus_off
       (List.init 7 ~f:(fun _ -> z32)
-       @ [ zero 16 @: crc.value
+       @ [ crc.value
          ; zero 22 @: pc.value
          ; zero 16 @: status16
          ; zero 16 @: r0.value
@@ -662,6 +692,7 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
         ; halted <-- gnd
         ; fault <-- gnd
         ; stalled <-- gnd
+        ; tcnt <-- zero 16
         ])
   in
   Always.(
@@ -682,20 +713,27 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
                  [ res_v <-- (rd_real @: bit res_v.value 0) ]
              ]
              []
-      ; pc <-- fetch_addr
+      ; pc <-- mux2 tbl_issue pc_seq fetch_addr
+      ; tbl_pend <-- tbl_issue
+      ; (* the table word, straight from the bank's output: first, so a restart
+           (and nothing else: the core doesn't execute this clock) overrides it *)
+        when_ tbl_pend.value [ osr <-- instr; osr_cnt <-- zero 6 ]
       ; if_
           i.restart
           [ clear_state ]
         @@ elif
              active
              [ cnt <-- cnt_next
-             ; when_ tick [ facc <-- fsum.:[7, 0] ]
+             ; when_ tick [ facc <-- fsum.:[7, 0]; tcnt <-- tcnt.value +:. 1 ]
              ; when_
                  in_wait.value
                  [ wevent <-- edge_done; wprev <-- wpin ]
              ; when_
                  (tick &: ~:(halted.value) &: ~:(fault.value))
                  [ if_
+                     tbl_pend.value
+                     [ (* the table read's tick: no instruction, no countdown *) ]
+                   @@ elif
                      (dcnt.value <>:. 0)
                      [ dcnt <-- dcnt.value -:. 1 ]
                    @@ elif
@@ -744,7 +782,9 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
           ; when_ (i.bus_off ==:. 0x0B) [ r1 <-- w.:[15, 0] ]
           ; when_ (i.bus_off ==:. 0x0C) [ r2 <-- w.:[15, 0] ]
           ; when_ (i.bus_off ==:. 0x0D) [ r3 <-- w.:[15, 0] ]
-          ; when_ (i.bus_off ==:. 0x07) [ crc <-- w.:[15, 0] ]
+          ; when_
+              (i.bus_off ==:. 0x07)
+              [ crc <-- (mux2 (bit crc_w 4) w.:[31, 16] (zero 16) @: w.:[15, 0]) ]
           ]
       ]);
   { O.fetch_addr

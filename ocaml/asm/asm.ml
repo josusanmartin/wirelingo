@@ -31,6 +31,7 @@ type program =
   { name : string
   ; mutable words : int list (* reversed while assembling *)
   ; mutable reloc : int list
+  ; mutable data : int list (* indices of `.data` words: tables for `mov osr, [src]` *)
   ; labels : (string, int) Hashtbl.t
   ; mutable origin : Z.t option
   ; mutable wrap_bottom : int
@@ -158,6 +159,7 @@ let assemble_block name lines defs =
     { name
     ; words = []
     ; reloc = []
+    ; data = []
     ; labels = Hashtbl.create 16
     ; origin = None
     ; wrap_bottom = 0
@@ -212,7 +214,7 @@ let assemble_block name lines defs =
              then err "line %d: side_set too wide" lineno
            | ".wrap_target" -> prog.wrap_bottom <- !pc
            | ".wrap" -> prog.wrap_top <- Some (!pc - 1)
-           | ".word" ->
+           | ".word" | ".data" ->
              items := (lineno, line, raw) :: !items;
              incr pc
            | ".clkdiv" ->
@@ -275,12 +277,20 @@ let split_suffix line =
   let delay = ref None in
   let side = ref None in
   let line = ref line in
+  (* `mov osr, [src]` ends in a bracketed operand, not a delay *)
+  let operand (m : Pyre.m) =
+    let before = Pyre.rstrip (String.sub !line 0 m.start) in
+    let n = String.length before in
+    n > 0
+    && before.[n - 1] = ','
+    && Hashtbl.mem locs (String.lowercase_ascii (Pyre.strip (Option.get (Pyre.group m !line 1))))
+  in
   let try_delay () =
     match Pyre.search re_delay !line with
-    | Some m ->
+    | Some m when not (operand m) ->
       delay := Pyre.group m !line 1;
       line := Pyre.rstrip (String.sub !line 0 m.start)
-    | None -> ()
+    | Some _ | None -> ()
   in
   try_delay ();
   (match Pyre.search re_side !line with
@@ -420,6 +430,7 @@ let jmp l =
               | "!osre" -> Isa.c_nosre, Z.zero
               | "txne" -> Isa.c_txne, Z.zero
               | "rxf" -> Isa.c_rxf, Z.zero
+              | "!t" -> Isa.c_always, Z.of_int Isa.xc_nt (* cond 0 with sel 1 *)
               | _ -> ln_err l "unknown jmp condition"))
       in
       if not (in_range sel 0 32) then ln_err l "jmp selector out of range";
@@ -537,6 +548,16 @@ let push_pull l =
 
 let mov l =
   match need l 2 "mov takes dst, src" with
+  | [ dst; src ]
+    when String.length src >= 2
+         && src.[0] = '['
+         && src.[String.length src - 1] = ']' ->
+    (* table read (docs/isa.md section 5.2) *)
+    if loc l dst <> Isa.osr then ln_err l "mov osr, [src]: a table read goes to the OSR";
+    ( Isa.op_mov
+    , (loc l dst lsl 15)
+      lor (Isa.m_tbl lsl 13)
+      lor (loc l (String.sub src 1 (String.length src - 2)) lsl 9) )
   | [ dst; src ] ->
     let tail s k = String.sub s k (String.length s - k) in
     let mop, src =
@@ -577,7 +598,7 @@ let alu_index mn =
 let alu l =
   match need l 2 (l.mn ^ " rN, rM|value") with
   | [ rd; src ] ->
-    let x = (alu_index l.mn lsl 16) lor (reg l rd lsl 14) in
+    let x = (alu_index (if l.mn = "cmpw" then "cmp" else l.mn) lsl 16) lor (reg l rd lsl 14) in
     (match String.lowercase_ascii src with
      | "r0" | "r1" | "r2" | "r3" | "x" | "y" -> Isa.op_alu, x lor reg l src
      | _ ->
@@ -588,7 +609,19 @@ let alu l =
          incr i
        done;
        let s = String.sub src !i (n - !i) in
-       Isa.op_alu, x lor (1 lsl 13) lor ranged l s 0 8192 "alu immediate")
+       let cmpw =
+         if l.mn = "cmp" || l.mn = "cmpw"
+         then (
+           (* CMPW: a 16-bit compare in LDI's format *)
+           let v = ranged l s 0 65536 "cmp immediate" in
+           if v >= 8192 || l.mn = "cmpw"
+           then Some (Isa.op_ldi, Isa.cmpw_fields (reg l rd) v)
+           else None)
+         else None
+       in
+       (match cmpw with
+        | Some r -> r
+        | None -> Isa.op_alu, x lor (1 lsl 13) lor ranged l s 0 8192 "alu immediate"))
   | _ -> assert false
 ;;
 
@@ -606,6 +639,9 @@ let pin l =
 let flag l =
   let toks = Pyre.split_ws l.rest in
   match toks with
+  | a :: (_ :: _ as rest) when String.lowercase_ascii a = "tog" ->
+    (* toggle (docs/isa.md section 5.2) *)
+    Isa.op_flag, Isa.flag_tog lor ranged l (String.concat " " rest) 0 8 "flag index"
   | a :: (_ :: _ as rest) when List.mem (String.lowercase_ascii a) [ "set"; "clr"; "clear" ] ->
     let k = String.lowercase_ascii a in
     Isa.op_flag, ((if k <> "set" then 1 else 0) lsl 18) lor ranged l (String.concat " " rest) 0 8 "flag index"
@@ -626,12 +662,12 @@ let encoder mn =
   | "pin" -> Some pin
   | "flag" -> Some flag
   | "halt" -> Some (fun _ -> Isa.op_halt, 0)
-  | "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr" | "cmp" -> Some alu
+  | "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr" | "cmp" | "cmpw" -> Some alu
   | _ -> None
 ;;
 
 let encode line prog defs lineno =
-  if Pyre.starts_with ~prefix:".word" line
+  if Pyre.starts_with ~prefix:".word" line || Pyre.starts_with ~prefix:".data" line
   then (
     let v = eval_expr (String.sub line 5 (String.length line - 5)) defs lineno in
     Z.to_int (Z.logand v (Z.of_int 0xFFFFFFFF)), false)
@@ -652,11 +688,13 @@ let finish_block (prog, items, defs) =
     (fun idx (lineno, line, raw) ->
        let w, is_jmp = encode line prog defs lineno in
        prog.words <- w :: prog.words;
+       if Pyre.starts_with ~prefix:".data" line then prog.data <- idx :: prog.data;
        if is_jmp then prog.reloc <- idx :: prog.reloc;
        prog.source_lines <- (idx, raw) :: prog.source_lines)
     items;
   prog.words <- List.rev prog.words;
   prog.reloc <- List.rev prog.reloc;
+  prog.data <- List.rev prog.data;
   prog.source_lines <- List.rev prog.source_lines;
   prog
 ;;
@@ -733,7 +771,13 @@ let dump b p =
   |> List.sort compare
   |> List.iter (fun (k, v) -> pr "label %s %d\n" k v);
   List.iteri
-    (fun i w -> pr "word %d %08x %d\n" i w (if List.mem i p.reloc then 1 else 0))
+    (fun i w ->
+       pr
+         "word %d %08x %d %d\n"
+         i
+         w
+         (if List.mem i p.reloc then 1 else 0)
+         (if List.mem i p.data then 1 else 0))
     p.words;
   List.iter (fun (i, raw) -> pr "src %d %s\n" i raw) p.source_lines
 ;;

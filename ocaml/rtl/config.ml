@@ -1,5 +1,7 @@
-(* Build parameters of src/project.v and src/pe_chip.sv. [tapeout] is the frozen
-   chip: 2 cores, 2 banks of 256-word SRAM, 8-deep FIFOs. *)
+(* Build parameters of src/project.v and src/pe_chip.sv. [tapeout] is the 8x4
+   chip (project.v's default): 3 cores, 3 banks of 256-word SRAM, 8-deep FIFOs.
+   [fallback] is its Dec 6 fallback, the same RTL with 2 cores and 2 banks (the
+   6x4 tapeout's geometry). *)
 open! Base
 
 type imem =
@@ -14,7 +16,8 @@ type t =
   ; fifo_no_cg : bool (* PE_FIFO_NO_CG *)
   }
 
-let tapeout = { ncores = 2; nbanks = 2; fifo_log2 = 3; imem = Sram; fifo_no_cg = false }
+let tapeout = { ncores = 3; nbanks = 3; fifo_log2 = 3; imem = Sram; fifo_no_cg = false }
+let fallback = { tapeout with ncores = 2; nbanks = 2 }
 
 (* the 4-core flop build CI's second lockstep run uses *)
 let ci_flop4 = { ncores = 4; nbanks = 4; fifo_log2 = 2; imem = Flop 4; fifo_no_cg = false }

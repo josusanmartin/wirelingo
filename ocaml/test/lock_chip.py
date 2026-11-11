@@ -53,7 +53,8 @@ def state_line(chip):
                 c.side_opt, c.side_pindir, c.in_base, c.out_shr, c.in_shr, c.autopull, c.autopush, c.pull_thresh,
                 c.push_thresh, c.fjoin, c.entry, c.wrap_bottom, c.wrap_top, c.crc_poly, c.crc_w, c.in_tap, c.out_tap,
                 c.crc, *c.r, c.lr, c.pc, c.isr, c.isr_cnt, c.osr, c.osr_cnt, c.z, c.c, c.t, c.dcnt, c.in_wait, c.wprev,
-                c.wevent, c.cnt, c.facc, c.halted, c.fault, c.stalled)
+                c.wevent, c.cnt, c.facc, c.halted, c.fault, c.stalled, c.crc_poly_hi, c.ticks,
+                -1 if c.tbl is None else c.tbl)
         out.append(len(c.txf))
         out += c.txf
         out.append(len(c.rxf))

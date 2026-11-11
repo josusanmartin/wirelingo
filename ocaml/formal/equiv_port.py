@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Formal equivalence of the Hardcaml port's generated Verilog against src/.
 
-    equiv_port.py [-j N] [--mutants] [--skip-simple] GEN_DIR OUT
+    equiv_port.py [-j N] [--mutants] [--skip-simple] [--build B] GEN_DIR OUT
 
-GEN_DIR holds wirelingo_hc.v (ocaml/bin/gen_rtl tapeout GEN_DIR). OUT is a new
+GEN_DIR holds wirelingo_hc.v (ocaml/bin/gen_rtl B GEN_DIR). B is tapeout (the
+default: src/ as project.v sets it, 3 cores and 3 banks) or fallback (src/ read
+with PE_NCORES=2 PE_NBANKS=2, the 8x4 fallback's geometry). OUT is a new
 work directory. The method is formal/equiv's (docs/equivalence.md), with the
 generated Verilog in the netlist's place: both designs are elaborated by yosys
 (proc, flatten), every state element is matched and cut, and the two
@@ -38,10 +40,13 @@ SRC = [f"{REPO}/src/{f}" for f in ("project.v", "pe_chip.sv", "pe_core.sv", "pe_
 # the first selects anything in src/ (checked in main)
 DEFINES = ["SCL_sg13cmos5l_stdcell", "PDK_ihp_sg13cmos5l", "__librelane__", "__pnr__"]
 TOP = "tt_um_josusanmartin_protoemu"
+# build parameters given to src/ on top of DEFINES, per gen_rtl build
+BUILDS = {"tapeout": [], "fallback": ["PE_NCORES=2", "PE_NBANKS=2"]}
+BUILD_DEFS = []
 
 
 def elaborate(sources, out, tag):
-    d = " ".join(f"-D{x}" for x in DEFINES) + f" -I{REPO}/src"
+    d = " ".join(f"-D{x}" for x in DEFINES + BUILD_DEFS) + f" -I{REPO}/src"
     reads = "".join(f"read_verilog -defer -noautowire -sv {d} {f}; " for f in sources)
     equiv.yosys(
         f"read_verilog -lib {HERE}/cells_stub.v; {reads}"
@@ -54,7 +59,7 @@ def elaborate(sources, out, tag):
 
 def module_ports(sources, out, tag):
     """{module: {port: (direction, width)}} of every module, as elaborated."""
-    d = " ".join(f"-D{x}" for x in DEFINES) + f" -I{REPO}/src"
+    d = " ".join(f"-D{x}" for x in DEFINES + BUILD_DEFS) + f" -I{REPO}/src"
     reads = "".join(f"read_verilog -defer -noautowire -sv {d} {f}; " for f in sources)
     equiv.yosys(f"read_verilog -lib {HERE}/cells_stub.v; {reads}hierarchy -top {TOP}; proc; write_json {out}/{tag}_ports.json",
                 f"{out}/{tag}_ports.log")
@@ -120,11 +125,19 @@ def mutate(text, kind):
         i = text.index("module pe_core (")
         m = first_flop_of("osr_cnt").search(text, i)
         return text[:m.start()] + m.group(0).replace(f"osr_cnt <= {m.group(3)}", "osr_cnt <= 6'b0") + text[m.end():]
+    if kind == "ticks-count-down":       # v0.3: the tick counter of the first core decrements
+        i = text.index("module pe_core (")
+        m = re.compile(r"assign (\S+) = tcnt \+ (\S+);").search(text, i)
+        return text[:m.start()] + f"assign {m.group(1)} = tcnt - {m.group(2)};" + text[m.end():]
+    if kind == "table-word-dropped":     # v0.3: a table read's word never reaches the OSR
+        i = text.index("module pe_core (")
+        m = re.compile(r"assign (\S+) = tbl_pend \? (\S+) : osr;").search(text, i)
+        return text[:m.start()] + f"assign {m.group(1)} = tbl_pend ? osr : osr;" + text[m.end():]
     raise ValueError(kind)
 
 
 MUTANTS = ["wrong-gate", "swapped-mux-legs", "falling-edge", "reset-to-set", "swapped-clock-gate-enables",
-           "sram-address-swapped", "dropped-register", "reset-value"]
+           "sram-address-swapped", "dropped-register", "reset-value", "ticks-count-down", "table-word-dropped"]
 
 
 def mutants(gen, out):
@@ -162,7 +175,9 @@ def main():
     ap.add_argument("-j", "--jobs", type=int, default=4)
     ap.add_argument("--skip-simple", action="store_true")
     ap.add_argument("--mutants", action="store_true")
+    ap.add_argument("--build", choices=sorted(BUILDS), default="tapeout")
     a = ap.parse_args()
+    BUILD_DEFS[:] = BUILDS[a.build]
     if os.path.exists(a.out) and os.listdir(a.out):
         sys.exit(f"equiv_port: {a.out} exists and is not empty")
     os.makedirs(a.out, exist_ok=True)
@@ -199,6 +214,7 @@ def main():
     s = m["summary"]
     cats = equiv.categorize(out)
     res = {
+        "build": a.build, "build_defines": BUILD_DEFS,
         "yosys": subprocess.run(["yosys", "-V"], capture_output=True, text=True).stdout.strip(),
         "gate_sha256": hashlib.sha256(open(gen, "rb").read()).hexdigest(),
         "src_sha256": {os.path.basename(f): hashlib.sha256(open(f, "rb").read()).hexdigest() for f in SRC},
@@ -214,7 +230,7 @@ def main():
     res["verdict"] = "EQUIVALENT" if ok else "NOT PROVEN"
     json.dump(res, open(f"{out}/result.json", "w"), indent=1)
     print(f"""
-==== port equivalence: {TOP}
+==== port equivalence: {TOP}, build {a.build} {' '.join(BUILD_DEFS)}
 generated Verilog   {res['gate_sha256']}
 checker             {res['yosys']}
 module ports        {len(gold_mods)} modules: {'all equal' if not port_diff else port_diff}

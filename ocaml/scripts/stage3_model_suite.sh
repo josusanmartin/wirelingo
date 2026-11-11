@@ -18,6 +18,8 @@
 #
 # Below 19000 chips or 150M cycles the script fails: coverage was lost.
 #
+# WL_JOBS: pytest-xdist workers (default 8).
+#
 # Needs pytest and pytest-xdist in $WL_PYTHON (default
 # ~/protoemu-flow/test-venv/bin/python). pytest's own result is reported, not
 # used: see docs/hardcaml-port.md for tests that need a tool runner1 lacks.
@@ -32,7 +34,7 @@ cd "$repo" || exit 2
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools:ocaml/test
 WL_LOCK_EVERY=$stride WL_ASM_CORPUS=$out/asm WL_LOCK_OUT=$out/lock \
   timeout 7200 "$py" -m pytest -q -p no:cacheprovider -p capture_plugin \
-  --ignore=test/model/test_swd.py -n 8 --dist loadfile test/model > "$out/pytest.log" 2>&1
+  --ignore=test/model/test_swd.py -n "${WL_JOBS:-8}" --dist loadfile test/model > "$out/pytest.log" 2>&1
 tail -8 "$out/pytest.log"
 summary() {
   python3 - "$@" <<'EOF'
