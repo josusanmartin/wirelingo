@@ -74,7 +74,7 @@ def main(argv=None):
     ap.add_argument("--sdf-log", help=argparse.SUPPRESS)
     ap.add_argument("--precheck-log", help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
-    failures = []
+    failures, skipped = [], []
     if not finite_number(a.slow_mhz) or not 0 < a.slow_mhz <= 50:
         ap.error("--slow-mhz must be finite, positive and no greater than 50")
     waive = {}
@@ -105,7 +105,11 @@ def main(argv=None):
         fresh = None
         if a.slow_sta_receipt:
             fresh = receipts.verify(a.slow_sta_receipt, wt, "sta")
-            print(f"slow-corner STA verified: {a.slow_sta_receipt} ({fresh['plan']['period_ns']:g} ns)")
+            print(f"slow-corner STA verified: {a.slow_sta_receipt} ({fresh['plan']['period_ns']:g} ns, "
+                  f"image {fresh['plan']['image_id']}, LibreLane {fresh['plan']['librelane_version']})")
+            skipped += fresh["skipped"]
+            for check in fresh["skipped"]:
+                print(f"slow-corner STA receipt, SKIPPED: {check}")
         for corner in signoff.CORNERS:
             target = a.slow_mhz if corner.startswith("nom_slow") else 50
             sta = receipts.one(run.glob("*-openroad-stapostpnr"), "final STA directory")
@@ -173,7 +177,9 @@ def main(argv=None):
         print("RELEASE FAILED:\n" + "\n".join(f"- {failure}" for failure in failures))
     else:
         print(f"RELEASE PASSED (SDF profile {a.sdf_profile}, slow target {a.slow_mhz:g} MHz"
-              + (", WITH ELECTRICAL WAIVERS" if waive else "") + ")")
+              + (", WITH ELECTRICAL WAIVERS" if waive else "")
+              + (f", {len(skipped)} STA RECEIPT CHECKS SKIPPED (the run's STA inputs are absent)" if skipped else "")
+              + ")")
     return int(bool(failures))
 
 
