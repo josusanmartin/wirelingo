@@ -21,6 +21,11 @@ up to the write. With a larger stride a poke shows as a mismatch, and the test
 is rerun with stride 1 to tell the two apart. A deepcopy of a chip (a few USB
 tests fork a run that way) is not compared; TOTALS counts those copies.
 
+The bus read compared is sim.Chip.read, the model's own. A test may replace a
+chip's read with a stub (test_kv260_3core.py fakes the ID register that way);
+the chip still runs on the model, so its model read is what is compared, and
+TOTALS["read_stubbed_chips"] counts such chips.
+
 Totals go to $WL_LOCK_OUT.<pid>.json at exit, for the summary.
 
 SPDX-License-Identifier: Apache-2.0
@@ -39,7 +44,8 @@ SIMCHECK = pathlib.Path(__file__).resolve().parents[1] / "_build/default/bin/wl_
 EVERY = int(os.environ.get("WL_LOCK_EVERY", "1"))
 RESYNC = EVERY == 1 and os.environ.get("WL_LOCK_RESYNC", "1") != "0"
 TOTALS = {"chips": 0, "cycles": 0, "state_compares": 0, "poked_chips": 0, "resyncs": 0, "mismatches": 0,
-          "coverage_events": 0, "copies_not_compared": 0, "cycles_after_mismatch_ignored": 0}
+          "coverage_events": 0, "copies_not_compared": 0, "cycles_after_mismatch_ignored": 0,
+          "read_stubbed_chips": 0}
 FAILS = []
 LIVE = []
 
@@ -89,13 +95,14 @@ class Link:
         self.poked = False
         self.pokes = 0
         self.dead = False
+        self.stubbed = False
         TOTALS["chips"] += 1
         LIVE.append(self)
 
     def __deepcopy__(self, memo):
         TOTALS["copies_not_compared"] += 1
         c = Link.__new__(Link)
-        c.dead, c.poked, c.pokes, c.cycles = True, False, 0, 0
+        c.dead, c.poked, c.pokes, c.cycles, c.stubbed = True, False, 0, 0, False
         return c
 
     def resync(self, chip):
@@ -142,6 +149,7 @@ class Link:
 
 _init = sim.Chip.__init__
 _step = sim.Chip.step
+_read = sim.Chip.read
 
 
 class Stats(dict):
@@ -180,7 +188,10 @@ def step(self, ui_in=0, uio_in=0, we=False, addr=0, wdata=0, commit=False, snap=
             link.finish(self, stats=False)
             return _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)
     uo, uio_out, uio_oe = self.outputs()
-    rd = self.read(addr)
+    if "read" in self.__dict__ and not link.stubbed:
+        link.stubbed = True
+        TOTALS["read_stubbed_chips"] += 1
+    rd = _read(self, addr)
     _step(self, ui_in, uio_in, we, addr, wdata, commit, snap, cancel, ui_mid, uio_mid)
     link.cycles += 1
     try:
