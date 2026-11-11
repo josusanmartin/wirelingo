@@ -1,0 +1,5 @@
+sta outputs ~/protoemu-flow/aq-search/results/aqf-d44/sta48/sta.kljdt8dc
+nom_typ_1p20V_25C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.16507562450879568, 0 violators
+nom_slow_1p08V_125C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.34754600181477063, 0 violators
+nom_fast_1p32V_m40C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.05219724800129319, 0 violators
+receipt: ~/protoemu-flow/aq-search/results/aqf-d44/sta48/sta.kljdt8dc/receipt.json

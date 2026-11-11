@@ -1,0 +1,5 @@
+== aqf-d44l8 [aqf-d44l8 2 -- --density 44 --late-clock 8]: signoff PASSED, nl 5124a6f5e9cd0c7a, util 0.3580, Metal3 46.55% ovf 8, wire 1899826, drc/klayout/lvs/antenna [0, 0, 0, 0], score +0.208
+   nom_typ_1p20V_25C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.183 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.434; @20.832 (0.0, 0)
+   nom_slow_1p08V_125C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.366 vio 0; slew 0 cap 0 fanout 0; worst flop@20 0.208; @20.832 (0.0, 0)
+   nom_fast_1p32V_m40C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.059 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.582; @20.832 (0.0, 0)
+    harden rc=0 minutes=99

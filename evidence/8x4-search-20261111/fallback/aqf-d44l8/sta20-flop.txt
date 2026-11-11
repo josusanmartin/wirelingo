@@ -1,0 +1,60 @@
+=== typ_1p20V_25C (SRAM view typ_1p20V_25C), period 20 ns
+period 20 corner sg13cmos5l_stdcell_typ_1p20V_25C.lib
+worst slack max 0.000
+tns max 0.000
+worst slack min 0.183
+tns min 0.000
+setup_violating_endpoints 0
+--- worst flop or SRAM endpoint
+max_delay/setup group asynchronous
+---------------------------------------------------------------
+_39351_/RESET_B (sg13cmos5l_dfrbpq_1)    9.956    5.550    4.406 (MET)
+max_delay/setup group path delay
+---------------------------------------------------------------
+_39394_/D (sg13cmos5l_dfrbpq_1)        19.868    6.532   13.336 (MET)
+max_delay/setup group clk
+---------------------------------------------------------------
+_40235_/D (sg13cmos5l_dfrbpq_1)        10.417    4.983    5.434 (MET)
+max_delay/setup group sck
+---------------------------------------------------------------
+_39343_/D (sg13cmos5l_dfrbpq_1)         9.996    2.414    7.582 (MET)
+=== slow_1p08V_125C (SRAM view slow_1p08V_125C), period 20 ns
+period 20 corner sg13cmos5l_stdcell_slow_1p08V_125C.lib
+worst slack max 0.000
+tns max 0.000
+worst slack min 0.366
+tns min 0.000
+setup_violating_endpoints 0
+--- worst flop or SRAM endpoint
+max_delay/setup group asynchronous
+---------------------------------------------------------------
+_39351_/RESET_B (sg13cmos5l_dfrbpq_1)   10.025    6.519    3.506 (MET)
+max_delay/setup group path delay
+---------------------------------------------------------------
+_39390_/D (sg13cmos5l_dfrbpq_1)        19.814    8.084   11.730 (MET)
+max_delay/setup group clk
+---------------------------------------------------------------
+_38618_/D (sg13cmos5l_dfrbpq_1)        21.352   21.143    0.208 (MET)
+max_delay/setup group sck
+---------------------------------------------------------------
+_39343_/D (sg13cmos5l_dfrbpq_1)        10.086    3.828    6.258 (MET)
+=== fast_1p32V_m40C (SRAM view fast_1p32V_m55C), period 20 ns
+period 20 corner sg13cmos5l_stdcell_fast_1p32V_m40C.lib
+worst slack max 0.000
+tns max 0.000
+worst slack min 0.059
+tns min 0.000
+setup_violating_endpoints 0
+--- worst flop or SRAM endpoint
+max_delay/setup group asynchronous
+---------------------------------------------------------------
+_39351_/RESET_B (sg13cmos5l_dfrbpq_1)    9.903    5.033    4.870 (MET)
+max_delay/setup group path delay
+---------------------------------------------------------------
+_39390_/D (sg13cmos5l_dfrbpq_1)        19.930    5.658   14.273 (MET)
+max_delay/setup group clk
+---------------------------------------------------------------
+_40235_/D (sg13cmos5l_dfrbpq_1)        10.224    4.642    5.582 (MET)
+max_delay/setup group sck
+---------------------------------------------------------------
+_39343_/D (sg13cmos5l_dfrbpq_1)         9.932    1.610    8.322 (MET)

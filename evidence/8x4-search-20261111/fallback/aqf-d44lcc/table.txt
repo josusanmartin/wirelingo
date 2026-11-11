@@ -1,0 +1,5 @@
+== aqf-d44lcc [aqf-d44lcc 2 -- --density 44 --late-clock-core 4]: signoff PASSED, nl aea21c07b19d15fb, util 0.3581, Metal3 46.56% ovf 7, wire 1902563, drc/klayout/lvs/antenna [0, 0, 0, 0], score -1.846
+   nom_typ_1p20V_25C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.144 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.412; @20.832 (0.0, 0)
+   nom_slow_1p08V_125C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.320 vio 0; slew 2 cap 0 fanout 0; worst flop@20 0.154; @20.832 (0.0, 0)
+   nom_fast_1p32V_m40C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.034 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.574; @20.832 (0.0, 0)
+    harden rc=0 minutes=71

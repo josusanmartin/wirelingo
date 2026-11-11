@@ -1,0 +1,12 @@
+[INFO GPL-0019] Utilization:                    32.258 %                        
+[INFO DPL-0022] HPWL after           1539317.6 u                                
+[INFO DPL-0022] HPWL after           1539317.6 u                                
+[INFO DPL-0022] HPWL after           1615166.8 u                                
+LATE_CLOCK_COMPLETE 160 registers 49 branches                                   
+[INFO DPL-0022] HPWL after           1620740.5 u                                
+[INFO DPL-0022] HPWL after           1625743.9 u                                
+[INFO DPL-0022] HPWL after           1626635.9 u                                
+[INFO DPL-0022] HPWL after           1639380.1 u                                
+[INFO DPL-0022] HPWL after           1647210.5 u                                
+[INFO DPL-0022] HPWL after           1648247.2 u                                
+[INFO DPL-0022] HPWL after           1654248.8 u                                
