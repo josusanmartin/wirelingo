@@ -1,4 +1,4 @@
-# Physical design notes (IHP SG13CMOS5L, Tiny Tapeout 6x4)
+# Physical design notes (IHP SG13CMOS5L, Tiny Tapeout 6x4, then 8x4)
 
 A running log of what the flow taught us. The numbers come from local LibreLane
 3.1.0.dev3 runs. `flow/harden.sh NAME` hardens HEAD in its own worktree and
@@ -49,6 +49,128 @@ IHP buffers' fanout limit of eight and legalizes the added buffers.
   layer**, and Metal4 also carries the power stripes.
 * Cells: `dfrbpq_1` 49 µm², `mux2_1` 18, `mux4_1` 38, `dlhq_1` 31, `lgcp_1` 27 (ICG).
   There is no flop with an enable input, so every held flop costs a mux as well.
+
+## 8x4 (2026-11-10)
+
+The organizers confirmed 8x4 tiles; the 8x4 build lives on the branch
+`next-8x4`, where `info.yaml` says `tiles: "8x4"`. `main` stays the 6x4 fo6
+design until an 8x4 netlist has a full harden, precheck and release receipts.
+The study that chose what to add is [8x4-study.md](8x4-study.md).
+
+* **The die** is 1724.16 × 710.64 µm (tt-support-tools `d66cf17`,
+  `tt_block_8x4_pgvdd.def`): only wider. The pins are the same 43, in the same
+  top-left place; Metal3 is still the one horizontal layer, with 34 % longer
+  tracks.
+* **`flow/gen_config.py` reads the tile from `info.yaml`** (6x4 or 8x4; it
+  checks the size against `tt/`'s `tile_sizes.yaml` when present) and puts
+  the core corner at the die less the margins (6 sites, 1 row): 8x4
+  (1721.28, 706.86), 6x4 (1286.40, 706.86) as before. `flow/harden.sh`
+  refuses a `tt/` without that tile.
+* **Banks.** The bank count defaults to `src/project.v`'s `PE_NCORES`, and
+  the submission preset requires that count (`harden.sh` picks it for the
+  committed core count). Two banks sit in the swapped bottom corners (8x4:
+  x = 4.32 and 1302.72 µm). On 8x4, three or four default to `spread` (the
+  study's layout, now in the generator): along the bottom edge, mirrored,
+  bank 0 leftmost, bank 1 rightmost, banks 2 and 3 between (3 banks: 4.32,
+  1302.72, 653.28; 4 banks: 4.32, 1302.72, 436.8, 869.76). With two banks
+  `spread` is exactly corners-swap.
+* **6x4 is unchanged.** A 6x4 `info.yaml` gives fo6's `src/config.json` byte
+  for byte (`test/model/test_flow_8x4.py`), and 24 option sets gave the old
+  generator's output exactly; on 6x4 the default layout stays corners-swap
+  for every bank count.
+
+**Reproduction of the study's base through the real flow (run `apbase`,
+2026-11-10).** `flow/harden.sh apbase` at `a395f5b` (today's 2-core RTL,
+`src/*.sv` unchanged from fo6), on runner1, 1 h 44 min on a loaded
+machine (the study's run took 43 min). Its `src/config.json` differs from
+the study run's only in the comment line that names the tile (`8x4` against
+`6x4`). Result:
+netlist sha256 `982444c9e60151fc…`, the study's; the final `pnl`, DEF, odb
+and LEF are byte-identical to the study run's, the GDS is identical with
+its timestamps zeroed (`5cfd5256cb00634d…`; raw `c6144510eedcc628…`), the
+SPEF and SDFs differ only in their `DATE` header line, and all 225 final
+metrics are equal. All 14 step netlists, synthesis on, match too.
+So the signoff summary is the study's: `flow/signoff.py`
+PASSED; setup WS 0 / −0.643 / 0 ns (typ / slow / fast; slow 90 endpoints),
+hold +0.158 / +0.362 / +0.059 ns, no slew or capacitance violation, 0
+routing and KLayout DRC, LVS clean, 0 antenna.
+
+**48 MHz at the slow corner, released (apbase, 2026-11-10).** The author
+accepts 48 MHz at the slow corner; apbase misses 50 MHz there by 0.643 ns.
+`flow/sta_rerun.py` re-times the run's own final STA step at another period
+([release-evidence.md](release-evidence.md#48-mhz-at-the-slow-corner-8x4)).
+Its self-check: at 20 ns, on the study's `base` run, all 21 STA metrics of
+each corner equal the run's own. At 20.832 ns, apbase's slow corner has
+setup WS 0 (the latch floor) with 0 violators, hold unchanged (+0.362 ns).
+`flow/release_evidence.py apbase --slow-mhz 48` (validation root `3cb9f46`,
+runner1, 17:40–19:51 UTC) then gave **`RELEASE PASSED (SDF profile v2,
+slow target 48 MHz)`**, no waiver: functional GL 32/32 (test 28, test_pio 2,
+test_eth_service 2); SDF standard typ/fast 20 ns and slow 20.832 ns 5/5
+each, the slow 10 ns control failing as required; SDF v2 typ/fast 20 ns and
+slow 20.832 ns 3/3, USB full speed 20.834 ns 1/1 at each corner; autonomous
+USB 2/2 at 20.834 ns at each corner; precheck passed on the 8x4 GDS; the
+fresh slow STA at 20.832 ns. The same receipts without the STA receipt fail
+(slow −0.643 ns at 20 ns), and at 50 MHz fail on both the STA and the SDF
+slow coverage. The archive
+`wirelingo-release-evidence-3cb9f46-apbase.tar.gz` (sha256
+`63735078…f928`, 523 members) re-verifies when extracted. This
+is the 2-core RTL of today, a dry run of the path for the 8x4 release, not a
+release candidate.
+
+**A first settings sweep at 8x4 (2026-11-10/11).** Today's 2-core RTL (the
+apbase netlist's), `flow/harden.sh NAME -- <one change>` against fo6's
+defaults, one harden at a time on runner1, one placement each. Every run
+passed `flow/signoff.py` with 0 routing DRC, 0 KLayout DRC, LVS clean and 0
+antenna; every run met setup at typical and fast (WS 0, the latch floor, 0
+violators) and had 0 slew, capacitance and fanout violations at every
+corner. "Worst flop" is the slow corner's worst flop or SRAM endpoint at 20
+ns (`syn/8x4-study/sta_period.sh`; it equals WS when WS is negative). At
+48 MHz every run met the slow corner (fresh STA at 20.833 ns,
+`flow/sta_rerun.py`: WS 0, 0 violators). Metal3 is the last congestion
+report of the run (after post-GRT repair).
+
+| Run | Change | Slow WS at 20 ns (endpoints, TNS) | Slow worst flop | Hold typ / slow / fast | Metal3 / overflow | Wire (µm) | Time |
+|---|---|---|---|---|---|---|---|
+| apbase | none (study base) | −0.643 (90, −33.8) | −0.643 | +0.158 / +0.362 / +0.059 | 46.6 % / 1 | 1,883,658 | 104 min* |
+| apl10 | `--late-clock 10` | −0.517 (77, −15.4) | −0.517 | +0.178 / +0.353 / +0.062 | 46.7 % / 1 | 1,885,779 | 70 min* |
+| apg15 | `--grt-adjust 0.15` | −0.468 (81, −13.1) | −0.468 | +0.175 / +0.362 / +0.063 | 50.3 % / 13 | 1,918,586 | 56 min |
+| aprow | `--layout row` (banks at x 444.0, 863.52) | −0.266 (47, −4.2) | −0.266 | +0.204 / +0.380 / +0.088 | 46.2 % / 0 | 1,858,256 | 59 min |
+| aplcc | `--late-clock-core 4` | **0 (0)** | **+0.068** | +0.145 / +0.349 / **+0.050** | 46.7 % / 1 | 1,883,270 | 57 min |
+| apd40 | `--density 40` | −0.439 (88, −12.7) | −0.439 | +0.194 / +0.342 / +0.057 | 44.4 % / 7 | 1,781,998 | 47 min |
+| apd44 | `--density 44` | **0 (0)** | **+0.404** | +0.147 / +0.331 / +0.051 | 41.3 % / 10 | 1,716,089 | 243 min* |
+| apd48 | `--density 48` | −0.370 (25, −3.8) | −0.370 | +0.171 / +0.365 / +0.051 | 40.3 % / 10 | 1,666,604 | 59 min |
+| apd52 | `--density 52` | −0.081 (1, −0.08) | −0.081 | +0.192 / +0.358 / +0.088 | 38.5 % / 32 | 1,628,590 | 76 min |
+| apd44lcc | `--density 44 --late-clock-core 4` | **0 (0)** | **+0.437** | +0.177 / +0.344 / +0.064 | 41.3 % / 9 | 1,717,596 | 142 min |
+
+(* runner1 shared with other builders' simulations; the study's base took 43
+min.) What it says, with one placement per row and the ±0.4 ns between
+placements of one configuration ("Slow corner: useful skew", below) in mind:
+
+* **Two single changes closed 50 MHz at the slow corner**: density 44
+  (+0.404 ns at the worst flop, against −0.643) and core 0's R0–R3/CRC
+  clocked 4 buffers late (+0.068). Both keep fast-corner hold thin (+0.051
+  and +0.050 ns; fo6 had +0.095). **The two together** (apd44lcc): +0.437
+  ns, fast hold +0.064, no electrical exception: the best of the set, on one
+  placement. The two density-44 runs took 2.4 and 4 h, the others about
+  an hour: their post-GRT repair kept rerunning incremental global routing
+  (apd44's log had 35 overflow-iteration rounds while still in that step,
+  apbase's whole log 7).
+* **Density is the strongest knob, and not monotonic in one sample each**:
+  34 / 40 / 44 / 48 / 52 gave −0.643 / −0.439 / +0.404 / −0.370 / −0.081.
+  Routed wire falls steadily with density (1.88M → 1.63M µm) and Metal3
+  demand with it, while overflow after repair rises (1 → 32; all cleared by
+  detailed routing). 44 sits about 0.8 ns above both neighbours, the
+  whole ±0.4 ns spread seen between placements, so it may be a
+  good placement rather than a trend; a search should sample around it.
+* **Late pin clocks help little** (8 buffers: +0.02 ns in the study, 10:
+  +0.13); clocking core 0's R0–R3 and CRC registers late as well
+  (`--late-clock-core 4`, pin registers at the default 6) gained 0.71 ns.
+* **The SRAM row layout** (both banks side by side at the bottom centre)
+  gained 0.38 ns and, with apd52, the best fast hold of the set (+0.088), with no
+  overflow left; at 6x4 the same layout stayed congested in global routing
+  (2026-10-03, older RTL).
+* **GRT_ADJUSTMENT** 0.15 gained 0.17 ns at higher Metal3 use (50 %, 13
+  overflows), within the noise.
 
 ## SRAM macros
 

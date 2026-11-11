@@ -739,6 +739,12 @@ PROTO="$B V3_CRC32 V8_CRCW V8_TICK" syn/8x4-study/harden8x4.sh pkg3 3 -- --layou
 The runs above were made at commits `a91f85c` (base) and `6f8242f` (the
 rest) of this branch; the later commits change only `budget.py`, a label in
 `harden8x4.sh`'s summary, `run_all.sh`'s last row and this page.
+Since backlog item AP, `flow/` supports 8x4 itself (`gen_config.py` reads
+the tile from `info.yaml` and has the `spread` layout), and `harden8x4.sh`
+refuses to run on such a commit: there, `flow/harden.sh NAME` gives the
+base run, and `flow/harden.sh NAME 3` the 3-bank ones (on 8x4, `spread`
+is the default for three or four banks;
+[physical.md](physical.md#8x4-2026-11-10)).
 
 `harden8x4.sh` is `flow/harden.sh`'s steps with two edits made only in the
 run's own worktree: `info.yaml` says `tiles: "8x4"`, and `src/config.json`
