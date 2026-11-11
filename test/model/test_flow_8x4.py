@@ -1,7 +1,8 @@
 """flow/gen_config.py on Tiny Tapeout's 6x4 and 8x4 IHP tiles, and N SRAM banks.
 
-The tile comes from info.yaml. A 6x4 info.yaml must still give the signed-off
-run fo6's configuration byte for byte; 8x4 moves only the right-hand bank."""
+The tile comes from info.yaml. A 6x4 info.yaml with a 2-core project.v must
+still give the signed-off run fo6's configuration byte for byte; on 8x4, with
+a 2-core project.v, only the right-hand bank moves."""
 import hashlib
 import importlib.util
 import json
@@ -32,7 +33,7 @@ def info_with(tmp_path, tiles):
 def generate(tmp_path, *options, name="config.json", cores=None):
     """Run the generator; with `cores`, a copy of it beside a src/project.v of that
     many cores (the generator reads PE_NCORES next to itself), so the 2-core
-    cases below hold whatever this repository's project.v says (3 on next-8x4)."""
+    cases below hold whatever this repository's project.v says (3 since AO)."""
     gen = GEN
     if cores is not None:
         root = tmp_path / f"root-{cores}"
