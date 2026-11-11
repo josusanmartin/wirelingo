@@ -28,7 +28,7 @@ The builder's claims:
    - the tailnet label, any `tail` + 4 hex, and the hex part alone;
    - `*.ts.net` names;
    - 100.64/10 addresses other than the class base, and the Tailscale IPv6 range (class forms allowed);
-   - `vmi` + digits and `[build host provider redacted]server`;
+   - `[build host name class redacted]` + digits and `[build host provider redacted]server`;
    - `[home directory redacted]` and `[home directory redacted]`;
    - keys, tokens, and `password=`/`psk=`/`ssid=` assignments;
    - universally administered MACs;

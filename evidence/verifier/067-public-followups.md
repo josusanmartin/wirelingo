@@ -153,7 +153,7 @@ pairing of each old hash with its new one."
 - The orchestrator's `git grep -inIcE` for the label's hex part, the host pattern and
   the provider word (pattern not quoted here, since it holds the label hex): rc 1.
 - A diff scan for home paths, `ts.net`, tailnet labels, `@`, CGNAT addresses,
-  `ssid`, `password` and `vmi`: no hits.
+  `ssid`, `password` and `[build host name class redacted]`: no hits.
 - `record_check.py --tree HEAD --commits HEAD`: 708 files and 575 commit messages,
   "TOTAL flagged: 0". The tree of `refs/remotes/public/main` also gives 0.
 - `record_check.py` on this item: 0.

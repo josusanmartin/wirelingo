@@ -392,7 +392,9 @@ themselves (backlog item AL, from report 066's finding 1).
 **What was searched for.** Every class of the 030-038 table; the Kria's
 Ethernet MAC in any form; any IPv4 or IPv6 address; the tailnet label, its hex
 part alone and the hex part split by one separator; the build machine's
-hostname, its ident email and the provider word, in any case; the local
+hostname, its ident email and the provider word, in any case, and the
+hostname's fixed part (its letters without the digits, which is also the
+provider's naming scheme), bounded by non-letters, in any case; the local
 user's home directory in every form `test/model/test_home_paths.py` knows (an
 absolute or relative home path, the dashed directory-name form, `/Users/`,
 `~` and the name) and Claude scratch paths; session ids; and, with AK's
@@ -406,6 +408,7 @@ than one.
 | the tailnet label's hex part | 2 lines, each the `git grep` needle an item quotes (060 item `:31`, 064 item `:22`) | both, as `[tailnet label's hex part redacted]` |
 | tailnet names and addresses | 1 line that names the label-plus-domain form as a class to search for (068 item `:39`). Elsewhere the domain, `tail` and hex, the 100.64.0.0/10 range and the Tailscale IPv6 prefix appear only as classes, as in 042-050 | the 1, as `[tailnet name form redacted]`, so that `test_private_hosts.py` passes |
 | the build machine's hostname or its ident email | none | nothing |
+| the build machine's hostname class: its fixed part, the host name with its digits removed, which is also the provider's naming scheme (found by verifier 079, finding 1) | 5 lines, each in a list of what was searched for: 058 report `:30`, 065 item `:31` and 066 item `:141` (both beside the provider word), 067 item `:156`, 068 item `:71` | all 5, as `[build host name class redacted]` |
 | the provider word | 3 lines, each in a list of what was searched for or kept (053 report `:61`, 065 item `:31`, 066 item `:141`) | all 3, as `[build host provider redacted]` |
 | the local user's home directory | 4 lines: 051 item `:10`; 065 item `:32` (twice: the path, and `~` with the name) and `:67`; 066 item `:142` | all 5, as `[home directory redacted]` |
 | scratch paths | 3 lines: the rewrite's working directory (065 item `:7`, 066 item `:11`), which also holds the home directory's dashed form and a session id; and a bare scratch prefix with a uid (051 item `:29`) | all 3, the path up to `scratchpad` (or the prefix) as `[scratch path redacted]` |
@@ -418,8 +421,10 @@ than one.
 | IP addresses | none beyond the range base 100.64.0.0, quoted as a class: `0.0.0.0` and `3.4.1.1` (053 report `:49`), `7.1.18.1` (a USB 2.0 section number) and `10.77.0.2` (the test's own network namespace); the other matches are times such as `0:07:22` | nothing |
 | Wi-Fi names (SSIDs), credentials and keys | none: `ssid`, `psk`, `password` and key headers appear only as classes searched for; "token" is a USB token, and "secrets" names the rewrite's private values, never a value | nothing |
 
-That is 58 replacements on 44 lines of 16 files; the other 48 files are
-unchanged. Each replacement changes exactly the redacted string (inside its
+That is 63 replacements on 47 lines of 17 files; the other 47 files are
+unchanged. (Of the 5 lines with the hostname class, 065 item `:31` and 066
+item `:141` also hold a provider-word replacement, and only 067 item is a
+file with no other replacement.) Each replacement changes exactly the redacted string (inside its
 backticks where it had them) and nothing else on the line. No file has a
 Markdown link outside a code span, so none was turned into plain text.
 
@@ -429,6 +434,9 @@ Why each new marker:
   private part; the existing `[tailnet label redacted]` is for the whole label.
 * `[tailnet name form redacted]`: a class mention, not a name, replaced only so
   that the tree-wide tailnet scan finds nothing.
+* `[build host name class redacted]`: the fixed part of the build machine's
+  name, which leaves only its digits to guess and names the provider (it is
+  the provider's naming scheme for machines).
 * `[scratch path redacted]`: a Claude scratch directory, which names the local
   user and a session.
 * `/home/<other>`, `/Users/<other>`: a home directory that is not the local
@@ -445,10 +453,16 @@ Why each new marker:
   instead.
 * `[round-1 id redacted]`: round 1 of the rewrite (065) was never published. Its
   files still cited old host-only commit ids (the pass that translated them came
-  in round 2), so its commit and tag ids may depend on the build host's name
-  alone. The checker can't classify them, as they are not in the old object
-  store, so they are redacted as a precaution. Report 066 gives the published
-  ids.
+  in round 2), so its commit and tag ids depend on the build host's name. The
+  checker can't classify them, as they are not in the old object store, but
+  verifier 079 (check 4) computed them over the round-1 store: counting every
+  hex token already in public text as known, 12 of the 13 redacted round-1
+  objects need only the build host to be tested (main^ and the tree at 065
+  report `:86` also need the guessable provider word), and only round-1 main
+  needs the label too. Report 066 gives the published ids. The verifier counts
+  21 tokens in 13 objects; the table above counts 20 in 12, because the tree
+  at 065 report `:86` is also an old host-only tree (round 1 kept b2fa7f3's
+  tree) and is counted on that row.
 
 The 4 translated ids: 060 report `:111` is now `c8f311e`, the root commit of
 public main, in which `test/tb.gtkw` arrived; 061 report `:26` is `37dd63a`,
@@ -464,16 +478,19 @@ store and in this branch's and public main's objects:
   history (the 4 translations and 2 markers above included); 5 more are trees,
   3 tag objects and 2 blobs of public main, and 1 is the published
   `signoff-g4` tag object (066 item `:28`).
-* 650 occurrences are old commits, in the items and reports written before
-  or about the rewrite (051-068): 542 (58 distinct) have a published
-  counterpart, and 108 (17 distinct) have none (builder commits that were
-  rebased or never merged). 2 more are old trees: 053 report `:79` and 066
+* 651 occurrences are old commits, counted as verifier 079 counts them:
+  lowercase tokens of 7 to 40 hex, bounded by non-alphanumerics, that prefix
+  an old commit of the old object store. 624 are in 051-068 (the items and
+  reports written before or about the rewrite): 515 (57 distinct) have a
+  published counterpart, and 109 (16 distinct) have none (builder commits
+  that were rebased or never merged). The other 27 (3 distinct, all with a
+  counterpart) are in 069-078b, 25 of them `b2fa7f3` in the ancestry checks. 2 more are old trees: 053 report `:79` and 066
   report `:46`, the second also cited in `docs/`. AK's checker classes every
   one of these as joint-only: its id depends on two private values, the build
   host's name and the tailnet label, so it can't be used to test a guess at
   either alone. RULES allow joint-only ids in published files, so they are
   kept verbatim. They are not in this repository under these ids.
-  `evidence/history-map.txt`, written at the rewrite, already lists all 17
+  `evidence/history-map.txt`, written at the rewrite, already lists all 16
   without a counterpart (as cited but not published) and 20 of the 58 with
   one; the other 38 are not in it.
 * 29 occurrences (7 distinct) are commits made after the rewrite, from public
@@ -508,7 +525,7 @@ unchanged file has the same digest in the inbox.
 | `057-present.md` | `37fc7e8cb446f08ddd4b469d4e18a2c4fa7a36b7c84b043e120560c5a34ba62a` | yes |
 | `057-present.report.md` | `db7927babec2d325df27b077855c27df96cfe47b714d53a6a82810518ea368e7` | yes |
 | `058-tidy.md` | `cd716d6c154d97713265ed683823e0cff7795dae8cfde5c2a4531bbe493bb786` | yes |
-| `058-tidy.report.md` | `a9dda47d1a4a96a29804129c25818219c831d684e4cc1f371c86a070d81ba5f2` | no: lines 27, 28, 29 |
+| `058-tidy.report.md` | `a24460cd63ffd98436e869e83af3699273eada8e77963848df4d5e98984eca63` | no: lines 27, 28, 29, 30 |
 | `059-present-fix.md` | `6453b4602b64a92a928f6fab40c16f91c02b494a5ce4766ae0fe44d8c1ebbe14` | yes |
 | `059-present-fix.report.md` | `749900870e72a3034ad9f2e96dbd3767d9960e27d169d0bf5c2f3ea5e1181e56` | yes |
 | `060-privacy-needles.md` | `e8a231627993b05699943455cfec814e20fe4bb331f2a14d8607966459504927` | no: lines 31, 47 |
@@ -521,13 +538,13 @@ unchanged file has the same digest in the inbox.
 | `063-present3.report.md` | `dafd1d3b6c188d583630a09a79f24832b7fc54ff9f2c6729dc202d19381e0c7b` | no: line 39 |
 | `064-privacy-needles2.md` | `1b403d22c46786f23f72135c125cf1c69d7def29123294d69a26ec83648f2282` | no: line 22 |
 | `064-privacy-needles2.report.md` | `440aa7edd39c169f7fc0b4ffb9df86d4753a4a7a566124da2c5db5a3b4b00538` | no: line 75 |
-| `065-public-history.md` | `9e4d99f3a0de0a8135a62fec9007b4b359a75d5eca77c26dc424717b977e1a7c` | no: lines 7, 18, 19, 20, 21, 22, 23, 31, 32, 62, 67 |
+| `065-public-history.md` | `355e3361c94a6eb38ba23775dcf9628630bf249f4b7358394e34441abbceea18` | no: lines 7, 18, 19, 20, 21, 22, 23, 31, 32, 62, 67 |
 | `065-public-history.report.md` | `a370fe8e9d819c5ba51df873ab8af2de745a6d88c75e596c839ce6ff4efd1ad1` | no: lines 86, 106, 114, 128, 154 |
-| `066-public-history2.md` | `99765c1d58549a490760e085fbf6a0b563060047fa8fa7d5cf5b4db32d13d712` | no: lines 11, 28, 141, 142 |
+| `066-public-history2.md` | `968e96fa08a799f7e3758a9cae9e56480c9eb50dfc75821c697d79d88687c65d` | no: lines 11, 28, 141, 142 |
 | `066-public-history2.report.md` | `b8072a6eb3f85b886af53c0db7fe493ad9ca452aae9d5aaf4c0cd9a7808b9348` | yes |
-| `067-public-followups.md` | `a1e0d8aa3e6a551fd70ff2aa93d7ace860b9eeccf8e9fcb01019c8122aa81b89` | yes |
+| `067-public-followups.md` | `c3c3cdc1d574a926989aa9c5bdf238732eb1fcae24444479da43777497f42189` | no: line 156 |
 | `067-public-followups.report.md` | `32da09f9ba2975cbc22adfb1fe257b9521fb9a748c498674c2e50d9d6178e870` | yes |
-| `068-public-followups2.md` | `677d130687b54f016a9470a24478c0fd0607baadd8ca06f2fbc91c6163eff261` | no: line 39 |
+| `068-public-followups2.md` | `07d55fbb3d423e777e2e0495c18c75d2dfb2750c7a6ee6ccc4df92f15729ee67` | no: lines 39, 71 |
 | `068-public-followups2.report.md` | `6b5110b2cbd4f4878fd70d206b0bac7557b4240c1a6efd99cf7d67c9481dc05a` | yes |
 | `069-8x4-study.md` | `eb886c3e350e2380e86d7a1f8e29bb7952e772c656d61324dad18d6a7500f65a` | yes |
 | `069-8x4-study.report.md` | `66908b851e75d3a326a07df764f3a168827bc773150a4bae90663b1da92567cd` | yes |
@@ -558,7 +575,7 @@ unchanged file has the same digest in the inbox.
 | `078b-home-path-fix.md` | `92e59e6968cc84974ea17293582ba298f584d78e0709b33c701e7932c159fa24` | no: line 79 |
 | `078b-home-path-fix.report.md` | `c3faf5aa28e56f45917ab6ac56979c0d70509dcfc62eea8d8eb90b82bdec24d9` | yes |
 
-To check: `sha256sum evidence/verifier/05[1-9]-*.md evidence/verifier/0[67]*-*.md`
+To check: `sha256sum evidence/verifier/05[1-9]-*.md evidence/verifier/06*-*.md evidence/verifier/07[0-8]*-*.md`
 gives the middle column.
 
 Item 079 and later items and reports are not here.

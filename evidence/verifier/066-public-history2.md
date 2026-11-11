@@ -138,7 +138,7 @@ All run by `verify.py`; `final3-b2fa7f3/verify.out` ends "RESULT: PASS".
   - the tailnet label and its split hex part;
   - `*.ts.net`;
   - 100.64/10 (class base aside) and the Tailscale IPv6 range (class forms aside);
-  - `vmi…`/`[build host provider redacted]server`, and the provider word;
+  - `[build host name class redacted]…`/`[build host provider redacted]server`, and the provider word;
   - `[home directory redacted]`;
   - keys and tokens, and `password/psk/ssid=`;
   - universal MACs, and non-allowlisted emails.

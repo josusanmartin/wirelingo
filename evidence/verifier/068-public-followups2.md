@@ -68,7 +68,7 @@ version of that tree", so it is no longer implied that only the id changed.
 - `python3 test/model/test_evidence_index.py`: "evidence/README.md: one row per
   folder".
 - The orchestrator's privacy `git grep`: rc 1. A diff scan for home paths,
-  `ts.net`, labels, `@`, CGNAT addresses, `ssid`, `password` and `vmi`: no hits.
+  `ts.net`, labels, `@`, CGNAT addresses, `ssid`, `password` and `[build host name class redacted]`: no hits.
 - `record_check.py --tree HEAD --commits HEAD` at `aa958a7`: 708 files and 576
   messages, "TOTAL flagged: 0".
 - The header still covers every unpublished old commit visible in the public

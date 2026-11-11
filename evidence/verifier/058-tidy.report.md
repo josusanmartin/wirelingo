@@ -27,7 +27,7 @@ The privacy finding the builder reports is real, and I found one more line of it
      - `/home/<other>` in `.devcontainer/Dockerfile`;
      - `/home/<other>` in a test;
      - `/home/<other>/…` in `test/tb.gtkw`, from the upstream Tiny Tapeout template.
-   - **Build machine and provider.** No build-machine hostname (`vmi` followed by digits: 0). The provider's *name* appears 8 times in 6 `evidence/verifier/` files, as a word in earlier verifiers' sweep lists. So does the author's mail provider's name. Reports 041/042 kept these on purpose. Whether a public repo should say which hosting provider the build ran on is the author's call; it doesn't identify a machine.
+   - **Build machine and provider.** No build-machine hostname (`[build host name class redacted]` followed by digits: 0). The provider's *name* appears 8 times in 6 `evidence/verifier/` files, as a word in earlier verifiers' sweep lists. So does the author's mail provider's name. Reports 041/042 kept these on purpose. Whether a public repo should say which hosting provider the build ran on is the author's call; it doesn't identify a machine.
    - **Emails.** All public addresses: the competition address, the T13 forum, `root@example.org`, and `@click.com` decorators misread as addresses in `flow/odb_*.py`.
    - **Tailnet.** The CGNAT range 100.64.0.0/10 appears only as a search class. Apart from the label in finding 1, `.ts.net` also appears only as a search class.
    - **IPv4.** Only 10.77.0.x, the TAP namespace.

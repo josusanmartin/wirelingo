@@ -31,7 +31,7 @@ build machine's provider hostname, and anything that looks like a credential
 or key were searched for and would be replaced by a bracketed `[... redacted]`
 note. What was found and replaced is listed in each folder's README: six
 replacements in the USB kernel logs, and 17 in verifier files 030-038 (none
-in 039-041, 2 in 042-050, and 58 in 051-078b), which were also searched for the Kria's tailnet label, the local
+in 039-041, 2 in 042-050, and 63 in 051-078b), which were also searched for the Kria's tailnet label, the local
 user's home directory, MAC addresses and Wi-Fi network names. The READMEs of
 `kv260-usbfs-zlp-20261103/` and `model-usb-fs-enum-sweep-20261104/` have no
 redaction section: a search of both for all of these classes on 2026-11-04
