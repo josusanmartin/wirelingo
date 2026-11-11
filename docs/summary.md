@@ -80,8 +80,8 @@ rest on an agent's word:
 * **Two implementations of the spec**, a Python cycle model and the RTL, run
   random programs, pin stimulus and host traffic side by side, compared
   every cycle ([verification.md](verification.md)). A third, a Hardcaml and
-  OCaml port, generates Verilog that is formally proved equal to the RTL
-  ([hardcaml-port.md](hardcaml-port.md)).
+  OCaml port, generates Verilog that is formally proved equal to the v0.3 RTL
+  at 3 cores and at 2 ([hardcaml-port.md](hardcaml-port.md)).
 * **Formal proofs** of the FIFOs, the host port against a pin-level
   reference, core invariants and line-unit bounds; **mutation testing**
   (34 of 34 mutants killed, recorded 2026-10-05).

@@ -137,7 +137,7 @@ network stack in
 | Method | What it checks | Level | Evidence |
 |---|---|---|---|
 | Two implementations, compared every cycle | A Python cycle model and the RTL on random programs, pins and host traffic, with required coverage goals | RTL simulation | [docs/verification.md](docs/verification.md) |
-| A third implementation | A Hardcaml and OCaml port whose generated Verilog is proved equal to the RTL | Formal, simulation | [docs/hardcaml-port.md](docs/hardcaml-port.md) |
+| A third implementation | A Hardcaml and OCaml port whose generated Verilog is proved equal to the v0.3 RTL, at 3 cores (the 8x4 tapeout) and at 2 (its fallback) | Formal, simulation | [docs/hardcaml-port.md](docs/hardcaml-port.md) |
 | Formal proofs | FIFOs (with join), the host port against a pin-level reference, core invariants, line-unit bounds | Formal | [docs/verification.md](docs/verification.md), [docs/formal-hostport.md](docs/formal-hostport.md) |
 | Mutation testing | 34 of 34 mutants killed (recorded 2026-10-05) | Model, RTL | [docs/verification.md](docs/verification.md) |
 | Netlist equivalence | fo6's netlist equals the RTL: 7429 of 7429 points, two engines, 5 of 5 planted netlist bugs caught | Formal, on the netlist | [docs/equivalence.md](docs/equivalence.md) |

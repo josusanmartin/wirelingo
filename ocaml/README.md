@@ -9,7 +9,7 @@ proved, how, and what is not done.
 | directory | what |
 |---|---|
 | `rtl/` | every module of `src/` in Hardcaml (`Signal`, `Always`, `Interface`, `Hierarchy`) |
-| `bin/gen_rtl` | writes the Verilog; `tapeout` is the frozen configuration |
+| `bin/gen_rtl` | writes the Verilog; `tapeout` is the 8x4 chip (3 cores), `fallback` its 2-core fallback |
 | `formal/` | proof of the generated Verilog against `src/` (yosys, ABC) |
 | `asm/` | the assembler (`tools/pe/asm.py`), `isa.py`, `host.py`, `profile.py` |
 | `sim/` | the cycle model (`sim.py`, `line.py`) and `modelhost.py` |
@@ -36,7 +36,7 @@ cd ocaml && dune build && dune test
 ## Use
 
 ```
-_build/default/bin/gen_rtl.exe tapeout OUT          # OUT/wirelingo_hc.v and friends
+_build/default/bin/gen_rtl.exe tapeout OUT          # OUT/wirelingo_hc.v and friends (fallback, flop4)
 _build/default/bin/wl_asm.exe ../firmware/uart_rx.pasm -D RX=16
 _build/default/bin/wl_export.exe ../firmware/uart_tx.pasm --define TX=8 --out-pins 8,1
 _build/default/bin/wl_run.exe ../firmware/uart_tx.pasm --define TX=8 --out-pins 8,1 \
@@ -48,7 +48,8 @@ _build/default/bin/wl_run.exe ../firmware/uart_tx.pasm --define TX=8 --out-pins 
 Run these on runner1 (heavy compute does not belong on the shared box):
 
 ```
-formal/equiv_port.sh -j 6 --mutants OUT      # proof against src/
+formal/equiv_port.sh -j 4 --mutants OUT      # proof against src/, 3 cores
+formal/equiv_port.sh -j 4 --mutants --build fallback OUT2   # the same at 2 cores
 scripts/run_cocotb.sh WORK test lockstep     # the repo's cocotb suites on the generated Verilog
 scripts/stage3_model_suite.sh OUT            # model suite, every Chip in lockstep with OCaml
 python3 test/asm_parity.py                   # assembler against asm.py
