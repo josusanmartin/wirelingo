@@ -155,7 +155,7 @@ async def cold_load(dut, spi, program, row):
     await Timer(10 * CYCLE_PS, unit='ps')
     dut.rst_n.value = 1
     await Timer(5 * CYCLE_PS, unit='ps')
-    assert (await spi.read(sim.A_ID))[0] == sim.ID_VALUE
+    assert (await spi.read(sim.A_ID))[0] == sim.id_value(2, 2)   # the 2-core profile it pins
     await spi.write(sim.A_CTRL, [1 << 16])  # The sole cold FIFO clear.
     await load_bursts(spi, [(sim.A_POE, 0), (sim.A_SYNCBYP, 0)] + host.pin_owner_writes({RX:0}))
     writes = host.load_program(0, program, profile=TAPEOUT, in_pins=RX, clkdiv=DIVIDER)
