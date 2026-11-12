@@ -14,6 +14,9 @@ foreach inst [[ord::get_db_block] getInsts] {
     }
 }
 protoemu_sram_clk::run
+if {[info exists ::env(PROTOEMU_REG_CLOCK_DELAY)] && $::env(PROTOEMU_REG_CLOCK_DELAY) > 0} {
+    protoemu_reg_clk::run $::env(PROTOEMU_REG_CLOCK_DELAY)
+}
 if {[info exists ::env(PROTOEMU_LATE_CLOCK_REGS)] && [llength $::env(PROTOEMU_LATE_CLOCK_REGS)]} {
     protoemu_late_clk::run $::env(PROTOEMU_LATE_CLOCK_REGS) $::env(PROTOEMU_LATE_CLOCK_STAGES)
 }

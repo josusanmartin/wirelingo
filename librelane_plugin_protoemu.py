@@ -127,6 +127,10 @@ class SramClockAdvanceTcl(OpenROADStep):
         Variable("PROTOEMU_LATE_CLOCK_STAGES", int,
                  "Clock buffers inserted in front of the PROTOEMU_LATE_CLOCK_REGS registers.",
                  default=2),
+        Variable("PROTOEMU_REG_CLOCK_DELAY", int,
+                 "Clock buffers inserted at the root of every chip-clock branch except the SRAMs' "
+                 "(flow/sram_clock_advance.tcl, protoemu_reg_clk); 0 = off.",
+                 default=0),
     ]
 
     def get_script_path(self):

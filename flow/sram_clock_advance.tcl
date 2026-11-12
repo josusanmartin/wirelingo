@@ -157,3 +157,77 @@ namespace eval protoemu_late_clk {
         puts "LATE_CLOCK_COMPLETE $count registers [dict size $groups] branches"
     }
 }
+
+# One delay for the whole register clock tree (--reg-clock-delay), after the
+# SRAM advance. Every sink of the chip clock except the SRAMs' A_CLK pins moves
+# behind `stages` more buffers: the flops (CTS's clk_regs branch, which hangs
+# off the port net) and the clock gates with the latches and gated registers
+# behind them (the branches that share the SRAMs' root net). Flop-to-flop,
+# flop-to-latch and gate-to-latch paths keep their relative skew, so only the
+# paths that start or end at an SRAM, or at a port, see the shift: SRAM-launched
+# setup and flop-to-SRAM hold gain it; SRAM-to-flop hold, flop-to-SRAM setup,
+# input hold and output setup lose it. The SRAMs' own paths (the fetch loop)
+# are unchanged.
+namespace eval protoemu_reg_clk {
+    variable buffer_cell sg13cmos5l_buf_8
+
+    proc chain {pins stages loc ndr} {
+        variable buffer_cell
+        set block [ord::get_db_block]
+        for {set s 0} {$s < $stages} {incr s} {
+            set ps [get_pins $pins]
+            if {[llength $ps] != [llength $pins]} { error "pin lookup failed: $pins" }
+            insert_buffer -buffer_cell $buffer_cell -load_pins $ps \
+                -buffer_name clkbuf_regdly_ -net_name clknet_regdly_ -location $loc
+            set new [[$block findITerm [lindex $pins 0]] getNet]
+            $new setSigType CLOCK
+            if {$ndr ne "NULL"} { $new setNonDefaultRule $ndr }
+        }
+    }
+
+    proc loads_except {net skip} {
+        set out {}
+        foreach it [$net getITerms] {
+            if {[$it getIoType] eq "OUTPUT"} { continue }
+            set name "[[$it getInst] getName]/[[$it getMTerm] getName]"
+            if {$name ni $skip} { lappend out $name }
+        }
+        return $out
+    }
+
+    proc run {stages} {
+        set block [ord::get_db_block]
+        # the SRAM path: A_CLK <- clkbuf_sram_adv_* <- tap <- tap buffer <- port net
+        set taps {}
+        set adv {}
+        foreach inst [$block getInsts] {
+            if {![string match RM_IHPSG13_* [[$inst getMaster] getName]]} { continue }
+            set b [[protoemu_sram_clk::out_driver [[$inst findITerm A_CLK] getNet]] getInst]
+            if {![string match clkbuf_sram_adv_* [$b getName]]} {
+                error "[$inst getName]: A_CLK is not driven by an SRAM advance buffer"
+            }
+            lappend adv "[$b getName]/A"
+            set tap [[$b findITerm A] getNet]
+            if {[lsearch -exact $taps [$tap getName]] < 0} { lappend taps [$tap getName] }
+        }
+        if {[llength $taps] != 1} { error "expected one SRAM clock root net, found: $taps" }
+        set tap [$block findNet [lindex $taps 0]]
+        set tap_buf [[protoemu_sram_clk::out_driver $tap] getInst]
+        set port [[$tap_buf findITerm A] getNet]
+        if {[llength [$port getBTerms]] != 1} { error "the SRAM root buffer [$tap_buf getName] is not driven by a port" }
+        set ndr [$tap getNonDefaultRule]
+        lassign [$tap_buf getLocation] px py
+        set loc [list [ord::dbu_to_microns $px] [ord::dbu_to_microns $py]]
+        set n 0
+        foreach {net skip} [list $port [list "[$tap_buf getName]/A"] $tap $adv] {
+            set pins [loads_except $net $skip]
+            if {[llength $pins]} {
+                chain $pins $stages $loc $ndr
+                puts "REG_CLOCK_DELAY [$net getName]: [llength $pins] loads behind $stages buffers"
+                incr n [llength $pins]
+            }
+        }
+        if {!$n} { error "no register clock branch found beside the SRAM path" }
+        puts "REG_CLOCK_DELAY_COMPLETE $stages stages on $n branch loads"
+    }
+}

@@ -201,3 +201,42 @@ def test_tuned_options_come_first_and_names_are_checked(tmp_path):
                 ["--tune", "fallback-8x4"], ["--tu", "fallback-8x4"], ["--tune=fallback-8x4"]):
         r, dst = generate(tmp_path, *bad, name="bad.json")
         assert r.returncode != 0 and not dst.exists()
+
+
+@pytest.mark.parametrize("layout,bank2", [("spread-right", ([869.76, 3.78], "FS")), ("corners-top", ([1302.72, 578.34], "N"))])
+def test_three_bank_layouts_keep_core_0_side_free(tmp_path, layout, bank2):
+    # bank 2 on the right half, so core 0 keeps the left and centre (screen T5)
+    r, dst = generate(tmp_path, "--preset", "experiment", "--banks", "3", "--layout", layout)
+    assert r.returncode == 0, r.stderr
+    c = json.loads(dst.read_text())
+    pl = banks(dst)
+    assert pl[0] == ([4.32, 3.78], "FS") and pl[1] == ([1302.72, 3.78], "FS") and pl[2] == bank2
+    W, H, halo_x, halo_y = 416.64, 118.78, c["FP_MACRO_HORIZONTAL_HALO"], c["FP_MACRO_VERTICAL_HALO"]
+    boxes = [(x, y, x + W, y + H) for (x, y), _ in pl.values()]
+    for i, a in enumerate(boxes):
+        assert a[2] <= 1721.28 and a[3] <= 706.86                          # inside the core area
+        for b in boxes[i + 1:]:
+            assert (a[2] + 2 * halo_x <= b[0] or b[2] + 2 * halo_x <= a[0]
+                    or a[3] + 2 * halo_y <= b[1] or b[3] + 2 * halo_y <= a[1])   # no overlap, halos clear
+    assert len(c["PDN_MACRO_CONNECTIONS"]) == 6
+    r, dst = generate(tmp_path, "--preset", "experiment", "--banks", "2", "--layout", layout, name="two.json")
+    assert r.returncode != 0 and not dst.exists()
+
+
+def test_reg_clock_delay_option(tmp_path):
+    r, dst = generate(tmp_path, "--preset", "experiment", "--reg-clock-delay", "10")
+    assert r.returncode == 0, r.stderr
+    c = json.loads(dst.read_text())
+    assert c["PROTOEMU_REG_CLOCK_DELAY"] == 10 and c["//generator"]["reg_clock_delay"] == 10
+    assert c["meta"]["substituting_steps"]["+OpenROAD.CTS"] == "Project.SramClockAdvance"
+    r0, d0 = generate(tmp_path, "--preset", "experiment", name="zero.json")
+    assert "PROTOEMU_REG_CLOCK_DELAY" not in json.loads(d0.read_text())
+    assert "reg_clock_delay" not in json.loads(d0.read_text())["//generator"]
+    for bad in (["--reg-clock-delay", "4", "--no-sram-clock-advance", "--late-clock", "0"], ["--reg-clock-delay", "-1"]):
+        r, d = generate(tmp_path, "--preset", "experiment", *bad, name="bad.json")
+        assert r.returncode != 0 and not d.exists()
+    # the step runs it after the SRAM advance and before the late clocks; the plugin declares it
+    step = (ROOT / "flow/sram_clock_advance_step.tcl").read_text()
+    assert step.index("protoemu_sram_clk::run") < step.index("protoemu_reg_clk::run") < step.index("protoemu_late_clk::run")
+    assert 'Variable("PROTOEMU_REG_CLOCK_DELAY", int,' in (ROOT / "librelane_plugin_protoemu.py").read_text()
+    assert "namespace eval protoemu_reg_clk" in (ROOT / "flow/sram_clock_advance.tcl").read_text()
