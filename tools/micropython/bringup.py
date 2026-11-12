@@ -3,7 +3,7 @@
 Copy protoemu.py, protoemu_fw.py and this file to the board, then:
 
     import bringup
-    pe = bringup.setup()          # select the project, 48 MHz, reset, check the ID
+    pe = bringup.setup()          # select the project, 48 MHz, reset, check the ID, take its geometry
     bringup.uart_loopback(pe)     # no wiring: core 0 UART TX -> virtual pin 24 -> core 1 UART RX
     bringup.uart_tx(pe, b"hi\\r\\n")  # 115200 8N1 on uo0 (to a USB-UART's RX)
     bringup.spi_transfer(pe, b"\\x9f\\0\\0\\0", mode=0)   # SPI master, CS on uio5
@@ -20,11 +20,13 @@ from protoemu import (ProtoEmu, A_ID, A_CTRL, A_FSET, A_FCLR, A_POUT, A_POE, C_R
                       ST_HALTED, ST_FAULT, known_id)
 
 PROJECT = "tt_um_josusanmartin_protoemu"
-ID = 0x50450002                      # v0.2 (the 6x4 tapeout); v0.3 builds: known_id()
+ID = 0x50450002                      # v0.2 (the 6x4 tapeout); setup() takes every known_id()
 
 
-def setup(clock_hz=48_000_000):
-    """Select the project, clock it, reset it and check the chip ID."""
+def setup(clock_hz=48_000_000, ncores=None, nbanks=None):
+    """Select the project, clock it, reset it and check the chip ID. The
+    driver takes its core and bank counts from that ID (v0.2: 2 and 2; v0.3:
+    the ID's), unless ncores/nbanks are given: those win."""
     import time
     from ttboard.demoboard import DemoBoard
     from ttboard.mode import RPMode
@@ -39,11 +41,12 @@ def setup(clock_hz=48_000_000):
         raise RuntimeError("project clock %r Hz, requested %r Hz" % (actual, clock_hz))
     time.sleep_ms(10)
     tt.reset_project(False)
-    pe = ProtoEmu(tt)
+    pe = ProtoEmu(tt, ncores=ncores, nbanks=nbanks)
     got = pe.read(A_ID)
     if not known_id(got):
         raise RuntimeError("ID %08x, expected %08x or a v0.3 0x5045BC03: wrong project, clock or SPI pins"
                            % (got, ID))
+    pe.use_id(got)
     return pe
 
 
@@ -176,8 +179,8 @@ def usb_uart(pe, mode="overlap4", rx_pin=None):
     if rx_pin is not None and rx_pin != image["rx"]:
         raise ValueError("this bundle's %s image takes RX on logical pin %d, not %r: "
                          "regenerate protoemu_fw.py for another pin" % (mode, image["rx"], rx_pin))
-    if (pe.ncores, pe.nbanks, pe.bank_words, pe.depth) != (2, 2, 256, 8):
-        raise ValueError("the UART/USB pairs need the tapeout profile: 2 cores and banks, 256 words, depth 8")
+    if pe.ncores < 2 or pe.nbanks < 2 or (pe.bank_words, pe.depth) != (256, 8):
+        raise ValueError("the UART/USB pairs need at least 2 cores and banks, 256 words, depth 8")
     pe.stop(3)                          # both stopped with empty FIFOs before the cold load
     pe.clear_fifos(3)
     for addr, words in image["writes"]:

@@ -7,7 +7,7 @@ PIO/DMA backend (docs/board-transport.md).
 
     from protoemu import ProtoEmu
     pe = ProtoEmu(tt)
-    assert known_id(pe.read(0x800))      # 0x50450002 (v0.2) or 0x5045BC03 (v0.3)
+    pe.read_id()                         # 0x50450002 (v0.2) or 0x5045BC03 (v0.3); sets the geometry
     pe.load(core=0, words=[...], base=0, clkdiv=..., pinctrl0=..., pinctrl1=..., shiftctrl=..., wrap=...)
     pe.start(0b0001)
     pe.push(0, ord('A'))
@@ -30,16 +30,31 @@ def known_id(v):
     nc, nb = (v >> 8) & 15, (v >> 12) & 15
     return v == 0x50450002 or (v >> 16 == 0x5045 and v & 0xFF == 3 and 1 <= nb <= nc <= 4)
 
+
+def id_geometry(v):
+    """(cores, banks) of a known ID: v0.2's is the 2-core 6x4 tapeout's, a v0.3
+    ID carries them (as pe.profile.for_id). ValueError for any other value."""
+    if not isinstance(v, int) or not known_id(v):
+        raise ValueError("chip ID %r is not a protoemu ID (v0.2 0x50450002 or a v0.3 0x5045BC03)" % (v,))
+    if v == 0x50450002:
+        return 2, 2
+    return (v >> 8) & 15, (v >> 12) & 15
+
 MOSI, SCK, CS = 5, 6, 7
 
 
 class ProtoEmu:
-    def __init__(self, tt, fifo_depth=8, ncores=2, bank_words=256, owners=None, nbanks=None):
-        """Defaults match the tapeout (2 cores, a 256-word bank each, 8-deep
-        FIFOs). PIN_OWNER is write-only, so the driver keeps its own copy of
-        the owner map, starting from the reset state; pass `owners` (pin ->
-        core) when attaching to a chip that was configured before.
+    def __init__(self, tt, fifo_depth=8, ncores=None, bank_words=256, owners=None, nbanks=None):
+        """A 256-word bank per core and 8-deep FIFOs, as every build with an ID.
+        The core and bank counts: `ncores`/`nbanks` if given (they win);
+        otherwise the chip's, from its ID, once read_id() or use_id() has run
+        (bringup.setup() does that); until then 2 and 2, the tapeout's.
+        PIN_OWNER is write-only, so the driver keeps its own copy of the owner
+        map, starting from the reset state; pass `owners` (pin -> core) when
+        attaching to a chip that was configured before.
         """
+        self._explicit = ncores is not None or nbanks is not None
+        ncores = 2 if ncores is None else ncores
         if not 1 <= ncores <= 4 or bank_words not in (16, 32, 64, 128, 256):
             raise ValueError("invalid hardware profile")
         nbanks = ncores if nbanks is None else nbanks
@@ -53,6 +68,26 @@ class ProtoEmu:
         self.transport = None
         self.ui = 1 << CS
         self._set_ui()
+
+    def use_id(self, v):
+        """Take the core and bank counts from ID value v, unless they were given
+        to the constructor (those win). ValueError for an unknown ID, or for an
+        owner map that names a core the chip lacks; nothing changes then."""
+        nc, nb = id_geometry(v)
+        if self._explicit:
+            return
+        lo, hi = self._owners
+        for w in (lo, hi):
+            for i in range(16):
+                if (w >> 2 * i) & 3 >= nc:
+                    raise ValueError("pin owner does not exist on this chip")
+        self.ncores, self.nbanks = nc, nb
+
+    def read_id(self):
+        """Read the ID register, check it and take the geometry from it (use_id); returns the ID."""
+        v = self.read(A_ID)
+        self.use_id(v)
+        return v
 
     # -- low level
     def _set_ui(self):
