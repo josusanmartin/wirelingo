@@ -12,7 +12,7 @@ let impl_module = "pe_chip_hc"
 let core_wires =
   [ "pc", 10; "r0", 16; "r1", 16; "r2", 16; "r3", 16; "isr", 32; "isr_cnt", 6; "osr", 32
   ; "osr_cnt", 6; "z", 1; "c", 1; "t", 1; "dcnt", 8; "in_wait", 1; "halted", 1; "fault", 1
-  ; "stalled", 1; "cnt", 16; "facc", 8; "lr", 10; "crc", 32; "tcnt", 16; "tbl_pend", 1; "wprev", 1; "wevent", 1
+  ; "stalled", 1; "cnt", 16; "facc", 8; "lr", 10; "crc", 32; "crc_eff", 32; "tcnt", 16; "tbl_pend", 1; "wprev", 1; "wevent", 1
   ; "res_n", 2; "res_v", 2; "div_int", 16; "div_frac", 8
   ; "out_base", 5; "out_count", 6; "set_base", 5; "set_count", 3; "side_base", 5
   ; "side_count", 3; "side_opt", 1; "side_pindir", 1; "in_base", 5; "out_shr", 1

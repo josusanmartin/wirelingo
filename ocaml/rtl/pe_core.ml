@@ -159,10 +159,28 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let fault = reg "fault" 1 in
   let stalled = reg "stalled" 1 in
   let crc = reg "crc" 32 in
+  (* the retimed CRC step (src/pe_core.sv, crc_eff): a feed leaves its bit pending *)
+  let crc_pend = reg "crc_pend" 1 in
+  let crc_fbq = reg "crc_fbq" 1 in
+  let crc_w_q = reg "crc_w_q" 5 in
+  let crc_pm_q = reg "crc_pm_q" 32 in
   let lr = reg "lr" 10 in
   let tcnt = reg "tcnt" 16 in (* the tick counter, source 15 *)
   let tbl_pend = reg "tbl_pend" 1 in (* a table read last clock: instr is its word *)
   let res_n = reg "res_n" 2 in
+  (* CRC tap: any width 1..32. The step is retimed: crc_eff applies last
+     clock's pending feed, from flops, with the settings that feed saw; it is
+     the architectural CRC (IN, MOV, the host, the next feed) *)
+  let crc_mask = shift_right (ones 32) (of_int_trunc ~width:5 31 -: crc_w) in
+  let crc_poly_m = (crc_poly_hi @: crc_poly) &: crc_mask in
+  let crc_mask_q = shift_right (ones 32) (of_int_trunc ~width:5 31 -: crc_w_q.value) in
+  let crc_eff =
+    mux2
+      crc_pend.value
+      ((sll_const crc.value 1 &: crc_mask_q) ^: mux2 crc_fbq.value crc_pm_q.value (zero 32))
+      crc.value
+    -- "crc_eff"
+  in
   let res_v = reg "res_v" 2 in
   (* ---- execute outputs (assigned in the block below, used by the FIFOs) *)
   let wire d = Always.Variable.wire ~default:d in
@@ -292,7 +310,7 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
       ; zero 21 @: status16.:[10, 0]
       ; zero 24 @: i.flags
       ; zero 22 @: pc.value
-      ; crc.value
+      ; crc_eff
       ; zero 32 (* 13: LINE *)
       ; zero 22 @: lr.value
       ; zero 16 @: tcnt.value (* L_TICKS *)
@@ -404,14 +422,9 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
   let w_treg = x.:[9, 8] in
   let w_tr = rsel w_treg in
   let w_timeout = ~:wbase &: w_to &: (w_tr ==:. 0) in
-  (* CRC tap: any width 1..32 *)
-  let crc_mask = shift_right (ones 32) (of_int_trunc ~width:5 31 -: crc_w) in
-  let crc_poly_m = (crc_poly_hi @: crc_poly) &: crc_mask in
+  (* CRC feed: the bit, against the architectural CRC *)
   let crc_bit = wire gnd in
-  let crc_fb = mux crc_w (bits_lsb crc.value) ^: crc_bit.value in
-  let crc_fed =
-    (sll_const crc.value 1 &: crc_mask) ^: mux2 crc_fb crc_poly_m (zero 32)
-  in
+  let crc_fb = mux crc_w (bits_lsb crc_eff) ^: crc_bit.value in
   let pc_seq = mux2 (pc.value ==: wrap_top) wrap_bottom (pc.value +:. 1) in
   (* ---- execute (combinational) *)
   let complete = wire vdd in
@@ -658,7 +671,7 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
     mux
       i.bus_off
       (List.init 7 ~f:(fun _ -> z32)
-       @ [ crc.value
+       @ [ crc_eff
          ; zero 22 @: pc.value
          ; zero 16 @: status16
          ; zero 16 @: r0.value
@@ -715,6 +728,15 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
              []
       ; pc <-- mux2 tbl_issue pc_seq fetch_addr
       ; tbl_pend <-- tbl_issue
+      ; (* the CRC: commit last clock's pending step; a feed this clock leaves
+           only its bit pending; a set (below) or a host write wins *)
+        crc <-- crc_eff
+      ; crc_pend
+        <-- (exec &: crc_feed.value &: ~:(crc_set.value)
+             &: ~:(host_w &: (i.bus_off ==:. 0x07)))
+      ; crc_fbq <-- crc_fb
+      ; crc_w_q <-- crc_w
+      ; crc_pm_q <-- crc_poly_m
       ; (* the table word, straight from the bank's output: first, so a restart
            (and nothing else: the core doesn't execute this clock) overrides it *)
         when_ tbl_pend.value [ osr <-- instr; osr_cnt <-- zero 6 ]
@@ -763,10 +785,9 @@ let create ~idx ~fifo_log2 ~fifo_no_cg scope (i : _ I.t) =
                             z_we.value
                             [ z <-- (alu_res.:[15, 0] ==:. 0); c <-- bit alu_res 16 ]
                         ; when_ t_we.value [ t <-- t_nv.value ]
-                        ; if_
+                        ; when_
                             crc_set.value
                             [ crc <-- (crc_set_val.value &: crc_mask) ]
-                            [ when_ crc_feed.value [ crc <-- crc_fed ] ]
                         ; when_ lr_we.value [ lr <-- lr_nv.value ]
                         ]
                  ]

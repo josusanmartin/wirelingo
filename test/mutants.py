@@ -36,6 +36,7 @@ def lockstep3(test):
 
 V03 = lockstep3("test_v03_corners")              # the v0.3 additions, every corner of the table read
 V03_MODEL = "test/model/test_v03_isa.py"
+CRC_RETIME = lockstep3("test_crc_retime")    # every corner of the retimed CRC step, 3 cores
 
 
 def top(test):
@@ -675,6 +676,17 @@ MUTANTS = {
                              "{bus_wdata[15:0], 1'b0, bus_wdata[19:16],", V03),
     "rtl-crc-host-write-32": ("src/pe_core.sv", "5'h07: crc <= {crc_w[4] ? bus_wdata[31:16] : 16'd0, bus_wdata[15:0]};",
                               "5'h07: crc <= bus_wdata;", V03),
+    # the retimed CRC step (src/pe_core.sv crc_eff): each a way the pending step shows
+    "rtl-crc-step-new-settings": ("src/pe_core.sv", "(((crc << 1) & crc_mask_q) ^ (crc_fbq ? crc_pm_q : 32'd0))",
+                                  "(((crc << 1) & crc_mask) ^ (crc_fbq ? crc_poly_m : 32'd0))", CRC_RETIME),
+    "rtl-crc-pend-survives-host-write": ("src/pe_core.sv", "exec && crc_feed && !crc_set && !(host_w && bus_off == 5'h07);",
+                                         "exec && crc_feed && !crc_set;", CRC_RETIME),
+    "rtl-crc-pend-survives-set": ("src/pe_core.sv", "exec && crc_feed && !crc_set && !(host_w", "exec && crc_feed && !(host_w",
+                                  CRC_RETIME),
+    "rtl-crc-read-before-step": ("src/pe_core.sv", "L_CRC:    src_val = crc_eff;", "L_CRC:    src_val = crc;", CRC_RETIME),
+    "rtl-crc-host-read-before-step": ("src/pe_core.sv", "5'h07: bus_rdata = crc_eff;", "5'h07: bus_rdata = crc;", CRC_RETIME),
+    "rtl-crc-feed-reads-register": ("src/pe_core.sv", "wire        crc_fb = crc_eff[crc_w] ^ crc_bit;",
+                                    "wire        crc_fb = crc[crc_w] ^ crc_bit;", CRC_RETIME),
     "rtl-id-v02": ("src/pe_chip.sv", "{16'h5045, ID_NB, ID_NC, 8'h03}", "32'h5045_0002", lockstep3("test_registers")),
     "model-table-no-extra-tick": ("tools/pe/sim.py", "        if self.tbl is not None:              # the clock after",
                                   "        if False:              # the clock after", pytest(V03_MODEL)),
