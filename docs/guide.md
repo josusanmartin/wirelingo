@@ -92,12 +92,14 @@ board measurements still need their own evidence.
 
 ## Known limits
 
-* Two cores are selected for tapeout. The demos run at 48 MHz, with margin;
-  50 MHz is met at signoff at all three corners (run fo6), with thin margins:
-  the worst flop or SRAM setup slack at the slow corner is +0.010 ns, and
-  fast-corner hold passes by 0.095 ns (docs/physical.md).
+* Three cores on 8x4 are the target; two cores on 8x4 are the fallback.
+  Neither inherits the historical 6x4 fo6 release receipts. At reviewed
+  base `fb4228d`, the 3-core target has no passing routed signoff/precheck/
+  release receipt; see [physical.md](physical.md#8x4-2026-11-10).
 * 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (a one-off model sweep, not a regression test: 0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
-* USB: endpoint 0 in firmware; requests and data toggles are host software.
+* USB has host-serviced examples and autonomous firmware. `usb_enum`
+  handles endpoint 0 in core code; `usb_enum_ep1` adds interrupt IN endpoint
+  1. Their tests and version-specific limits are in [usb-enumeration.md](usb-enumeration.md).
 * Host link: 193 Mbit/s simulated payload (quad SPI, SDR, SCK = clk = 50 MHz,
   96.5 % of the wire rate); no sustained board measurement. DDR was evaluated
   and left out: words would arrive every 4 SCK,

@@ -2,13 +2,21 @@
 
 Wirelingo (repository name protoemu) is an entry for the
 [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/):
-a Tiny Tapeout design on IHP SG13CMOS5L, 6x4 tiles. It has not been
+a Tiny Tapeout design on IHP SG13CMOS5L, 8x4 tiles. It has not been
 fabricated. Every result below names its evidence level: model, RTL
 simulation, formal, gate level, RTL in FPGA fabric. FPGA is not silicon.
 
+**Current development target:** 8x4 tiles, three cores, three 256-word
+instruction SRAM banks and 8-word FIFOs, implementing ISA v0.3. The target
+clock is 50 MHz; 48 MHz is a possible release decision, with protocol limits
+that must be stated separately. The reviewed base `fb4228d` has no passing
+3-core routed signoff/precheck/release receipt. The 2-core 8x4 build is a
+fallback. The 6x4, 2-core run fo6 below is historical v0.2 evidence; its
+physical results do not certify this target. See [physical.md](physical.md).
+
 ## What it is
 
-Two small processor cores built for bit-banging. Each has its own SRAM bank
+Three small processor cores built for bit-banging. Each has its own SRAM bank
 of 256 32-bit instructions, 8-word FIFOs to the host, a fractional clock
 divider, four 16-bit registers with an ALU, and a CRC tap fed by its shift
 registers. Beside core 0 sits a line unit: a configurable line coder (NRZ,
@@ -23,8 +31,7 @@ second pin; registers and arithmetic; per-pin open drain; CALL/RET
 ## What it does after fabrication
 
 **A protocol is a program.** No protocol is fixed in the silicon. UART, SPI,
-I2C, CAN, USB, 10BASE-T and the rest are files in `firmware/` (68 firmware
-files), assembled on a PC and loaded over SPI. A new protocol needs a new
+I2C, CAN, USB, 10BASE-T and the rest are files in `firmware/`, assembled on a PC and loaded over SPI. A new protocol needs a new
 program, not a new chip.
 
 **The line unit is a fixed menu that software picks from.** It offers line
@@ -42,8 +49,8 @@ the sender's phase, while a core sees one sample per clock; this is the
 mechanism, not a measured comparison). [line-unit-settings.md](line-unit-settings.md) lists
 each setting a test uses, the protocols it serves and the firmware.
 
-**This was rehearsed.** With the chip's Verilog frozen at tag
-`rc-01ce16d-t48ba` (unchanged since), three rounds of protocols the chip was
+**This was rehearsed on v0.2.** With that Verilog frozen at tag
+`rc-01ce16d-t48ba` for the rehearsal (v0.3 changes the RTL), three rounds of protocols the chip was
 not designed for were added in firmware only: DMX512, LIN, NEC and RC-5
 infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU, MIDI,
 a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with PEC:
@@ -64,7 +71,7 @@ simulation, [blind-test.md](blind-test.md)).
 | Result | Level | Where |
 |---|---|---|
 | A full-speed USB device on one core at 48 MHz, handshake 10.5 clocks after the host's packet (spec 8-26) | RTL simulation; gate level on the signed-off netlist (141-word firmware, before the got_in guard) | [usb-full-speed.md](usb-full-speed.md) |
-| USB enumeration with no host software after loading: Linux enumerated and configured it at low and full speed, 32 of 32 attaches, 66,000 of 66,000 descriptor reads, 188 of 188 bus resets | RTL in FPGA fabric, with the 246-word `usb_enum` from before `fault-fixes` (the current 253-word one has not run there) | [fpga/kv260](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30) |
+| USB enumeration with no host software after loading: Linux enumerated and configured it at low and full speed, 32 of 32 attaches, 66,000 of 66,000 descriptor reads, 188 of 188 bus resets | RTL in FPGA fabric, with the 246-word `usb_enum` from before `fault-fixes` (the current 254-word one has not run there) | [fpga/kv260](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30) |
 | 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz | RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
 | 10BASE-T cut-through match: a pin rises 200-220 ns after a frame field's last mid-bit edge, before the frame ends | Model; RTL in FPGA fabric on generator frames | [eth10-cut-through.md](eth10-cut-through.md) |
 | Logic analyzer, then an I2C target that clones what it captured | RTL simulation; RTL in FPGA fabric | [reverse-engineering.md](reverse-engineering.md) |
@@ -85,7 +92,7 @@ rest on an agent's word:
 * **Formal proofs** of the FIFOs, the host port against a pin-level
   reference, core invariants and line-unit bounds; **mutation testing**
   (34 of 34 mutants killed, recorded 2026-10-05).
-* **The signed-off netlist is formally equivalent to the RTL** (7429 of 7429
+* **The historical fo6 netlist is formally equivalent to its v0.2 RTL** (7429 of 7429
   points, two engines, 5 of 5 planted bugs caught) and passes all 29
   top-level tests at gate level ([equivalence.md](equivalence.md),
   [release-evidence.md](release-evidence.md)).
@@ -96,7 +103,7 @@ rest on an agent's word:
   reports (000-078b), 52 PASS and 31 FAIL, kept verbatim apart from listed redactions
   ([evidence/verifier](../evidence/verifier/README.md)).
 
-## Physical status (run fo6)
+## Historical physical status (6x4 run fo6)
 
 Signoff passes with no waiver: 0 routing violations, KLayout DRC clean, LVS
 clean, no antenna violation, and no slew, capacitance or fanout violation at
