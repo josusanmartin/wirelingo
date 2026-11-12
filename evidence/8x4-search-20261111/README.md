@@ -5,7 +5,8 @@ release netlist (backlog item AQ), one folder per harden. The table and what
 it says are in [docs/physical.md](../../docs/physical.md#8x4-settings-searches-2026-11-11).
 Evidence level: harden (LibreLane 3.1.0.dev3 in its docker image, on the
 compute runner), plus static timing of the finished runs. No gate-level or
-silicon result is here; the release receipts are separate.
+silicon result is in `fallback/`; `fallback-release/` holds the fallback
+candidate's release receipts.
 
 * `fallback/<run>/`: the 2-core fallback (the package RTL with `PE_NCORES` 2,
   `flow/harden.sh <run> 2 -- <options>`), one folder per run:
@@ -23,6 +24,16 @@ silicon result is here; the release receipts are separate.
   * `table.txt`: `tools/table.py`'s reading of the above and of the run's
     `final/metrics.json` (kept on the runner with the full log);
   * `config.json` (the two candidates only): the run's generated `src/config.json`.
+* `fallback-release/`: the fallback candidate `aqf-d44l8lcch15`'s release
+  receipts and equivalence, run from a clean clone of `aq-fallback-val`
+  (`15dd367`): `release-evidence.out` (the jobs and their exit status),
+  `release-check.log`, `verdict.json` (without its candidate digest table),
+  `archive.sha256` (the evidence archive, kept on the runner, not in the repository),
+  `equiv.out` and `equiv.rc` (`formal/equiv/equiv_check.sh -j 4 --mutants`),
+  and `negctl-3core-root.log`: the same receipts checked against the 3-core
+  `aq-search` checkout (`998fccf`) as validation root, refused (it differs
+  in `src/project.v` and in `test/`). Evidence level: gate-level and SDF
+  simulation, Tiny Tapeout precheck, formal equivalence.
 * `tools/`: the queue that ran them (`queue.sh`, one harden at a time) and
   the scripts that read the results (`table.py`, `mdtable.py`) and pruned
   run directories to the best two (`prune.py`).
@@ -32,6 +43,7 @@ each run's `metrics.json`, `resolved.json`, the full `exp.log` (gzipped), the
 slow corner's max report head and the fast corner's min report head; the
 best two run worktrees are kept in `~/protoemu-flow/aq-search/runs/`.
 
-Redactions: the runner's home directory is written `~` (in `sta48.out`).
+Redactions: the runner's home directory is written `~` (in `sta48.out` and
+the `fallback-release/` logs).
 Searched for tailnet hostnames and addresses, LAN addresses, email
 addresses, the build machine's provider hostname and credentials: none.

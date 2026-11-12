@@ -185,10 +185,12 @@ MHz); no slew, capacitance or fanout violation; fast-corner hold about
 **The fallback: two cores** (`flow/harden.sh NAME 2 -- <options>`: the
 package RTL with `PE_NCORES` 2 and two banks in the bottom corners, the
 experiment preset). Runs at `aq-search` commits `1205c17`, `a7035b6`,
-`7a01486` and `263a355`, which differ only in the release tools
-(`flow/release_*.py`, `flow/sta_rerun.py`, `flow/archive_evidence.py`): the
-harden's inputs (`src/`, `info.yaml`, the plugin, `syn/` and every other
-`flow/` file) are the same at all four. Options: d = `--density`, L =
+`7a01486`, `263a355` and (the last seed) `998fccf`, which differ only in the release tools
+(`flow/release_*.py`, `flow/sta_rerun.py`, `flow/archive_evidence.py`) and,
+at `998fccf`, in `flow/gen_config.py`'s new `--tuned` (not used by these
+runs, which name their options): the harden's other inputs (`src/`,
+`info.yaml`, the plugin, `syn/` and every other `flow/` file) are the same
+at all five. Options: d = `--density`, L =
 `--late-clock` (pin registers' stages, default 6), C = `--late-clock-core`
 (core 0's R0–R3 and CRC registers), h = `--set
 GRT_RESIZER_HOLD_SLACK_MARGIN=` (default 0.13), phi = `--set
@@ -212,10 +214,13 @@ setup at typical and fast (WS 0, 0 violators).
 | aqf-d44lcch15p6 | d44 C4 h0.15 phi1.06 | −0.484 (94, −25.7) | −0.484 | 0 (0) | +0.211 / +0.428 / +0.088 | 0 | 46.5 % / 16 | 1,938,828 | 1,561,782 | 170 min | `fd18d58b86d691bc` |
 | aqf-d43lcch15 | d43 C4 h0.15 | −0.677 (80, −18.4) | −0.677 | 0 (0) | +0.211 / +0.397 / +0.103 | 0 | 47.2 % / 13 | 1,938,120 | 1,565,409 | 121 min | `b9d831ec7aa71f25` |
 | aqf-d45lcch15 | d45 C4 h0.15 | −0.783 (90, −40.4) | −0.783 | 0 (0) | +0.199 / +0.391 / +0.085 | 0 | 45.5 % / 2 | 1,882,229 | 1,522,789 | 69 min | `b89a55d14742a217` |
+| aqf-d44l8lcch15p4 | d44 L8 C4 h0.15 phi1.04 | 0 (0) | +0.117 | 0 (0) | +0.224 / +0.421 / +0.102 | 0 | 44.7 % / 5 | 1,880,273 | 1,539,318 | 161 min | `bde26c8fef82b957` |
+| aqf-d44l8lcch15p6 | d44 L8 C4 h0.15 phi1.06 | −0.526 (83, −19.0) | −0.526 | 0 (0) | +0.218 / +0.422 / +0.080 | 0 | 46.6 % / 12 | 1,947,701 | 1,561,782 | 158 min | `1925ee238fe35990` |
 
 HPWL is detailed placement's first figure (`DPL-0022`), so equal HPWL means
 the same global placement: the five density-44 runs without phi share one
-placement and differ from clock-tree synthesis on (late clocks) and in
+placement (A), the two phi 1.04 runs another (B), the two phi 1.06 runs a
+third (C), and runs on one placement differ from clock-tree synthesis on (late clocks) and in
 post-GRT repair (hold margin). Times are wall-clock on a runner shared with
 other builders' simulations. Metal3 is the run's last congestion report.
 What it says (a reading; one harden per row):
@@ -229,12 +234,15 @@ What it says (a reading; one harden per row):
   +0.034 to +0.071 on the same placement, and here it also gained setup
   (+0.154 to +0.346) and cleared the 2 slow slew violations (one net, 2.58
   against 2.51 ns): post-GRT repair of one placement is itself a sample.
-* **Placement noise is about 1.1 ns.** The settings d44 C4 h0.15 on three
-  global placements of density 44 (phi 1.05, 1.04, 1.06) gave +0.346,
-  +0.243 and −0.484 ns; densities 43 and 45 gave −0.677 and −0.783. All
-  nine runs at density 43–45 met 48 MHz at the slow corner
-  (0 violators at 20.832 ns); at 20 ns, 2 of the 3 density-44 placements
-  of those settings met it.
+* **Placement noise is about 1 ns, and it decides 50 MHz.** On the three
+  global placements of density 44 (A, B, C: phi 1.05, 1.04, 1.06), the
+  settings d44 C4 h0.15 gave +0.346 / +0.243 / −0.484 ns and d44 L8 C4
+  h0.15 gave +0.506 / +0.117 / −0.526; densities 43 and 45 gave −0.677 and
+  −0.783. So each of the two best settings met 50 MHz at the slow corner on
+  2 of 3 placements, and placement C missed with both by about half a
+  nanosecond. All eleven runs at density 43–45 met 48 MHz at the slow
+  corner (0 violators at 20.832 ns). Fast hold was +0.071 to +0.107 ns at
+  hold margin 0.15 and +0.034 to +0.059 at the default 0.13.
 * **Candidate: aqf-d44l8lcch15**, `flow/harden.sh NAME 2 -- --tuned
   fallback-8x4` (`flow/gen_config.py`'s `TUNED["fallback-8x4"]` = d44 L8 C4
   h0.15; `test/model/test_flow_8x4.py` checks that it generates this run's
@@ -243,7 +251,33 @@ What it says (a reading; one harden per row):
   capacitance or fanout violation at any corner, 160 late-clocked
   registers. Netlist sha256 `d28939c86405ee67f162ef208a88c59f902820e3b3691e136b012e30e09bbe7b`,
   GDS `a71bb79681bd976dcc0ac6fb5215aaf52996af3271326e40de6799fcfa452e17`.
-  One placement: its seeds (phi 1.04 and 1.06) are being hardened.
+  Its settings met 50 MHz on 2 of the 3 placements tried (above), so a
+  re-harden of them is not sure to meet 50 MHz again; this netlist does.
+
+**The fallback candidate's release receipts (2026-11-11/12).** The GL and
+SDF receipts need a validation checkout whose `src/*.v` equal the
+candidate's, and `flow/harden.sh NAME 2` hardens with `PE_NCORES` 2, so the
+receipts use the branch `aq-fallback-val` (`15dd367`, one commit on
+`998fccf`: `PE_NCORES` 3 → 2 in `src/project.v`, and `src/config.json`
+regenerated by `python3 flow/gen_config.py`, the 2-bank submission preset).
+That branch is for the receipts only; whether the release has three cores
+or two is the Dec 6 gate's decision. `val-15dd367/flow/release_evidence.py
+runs/protoemu-exp-aqf-d44l8lcch15 --validation-root val-15dd367 --jobs 4`,
+22:58–01:20 UTC: **`RELEASE PASSED (SDF profile v2, slow target 50 MHz)`**,
+no waiver. Functional GL 34/34 (test 30, test_pio 2, test_eth_service 2);
+SDF standard typ/slow/fast at 20 ns 5/5 each, the slow 10 ns control
+failing as required; SDF v2 typ/slow/fast at 20 ns 3/3 and USB full speed at
+20.834 ns 1/1 at each corner; autonomous USB 2/2 at 20.834 ns at each
+corner; precheck passed. The archive
+`wirelingo-release-evidence-15dd367-aqf-d44l8lcch15.tar.gz` (47,949,505
+bytes, sha256 `e9685d320f82613328193c6abffed7a0911015a932d73c64d938962bb0023d6b`,
+516 payload files, 7 receipts), extracted into an empty directory,
+re-verifies with its own `release_check.py`. RTL-to-netlist equivalence
+(`formal/equiv/equiv_check.sh -j 4 --mutants`, from the same checkout):
+**EQUIVALENT**, 7729/7729 points proved (1747 flops matched, 27 inverted;
+1080 latches, clock gates and SRAMs by name; 6 RTL-only flops proved
+unobservable), all 5 planted netlist mutants caught. Records:
+[evidence/8x4-search-20261111/fallback-release/](../evidence/8x4-search-20261111/fallback-release/).
 
 ## SRAM macros
 

@@ -5,7 +5,8 @@
 
 Only worktrees under ~/protoemu-flow/aq-search/runs/protoemu-exp-aq* whose
 results/NAME/done exists are considered; a run without a done marker (still
-running) is never touched. Ranking: table.score().
+running) is never touched, nor one with results/NAME/keep (pinned, e.g. while
+its release receipts run); pinned runs count against KEEP. Ranking: table.score().
 """
 import os
 import pathlib
@@ -38,10 +39,11 @@ def main():
     group = sys.argv[1][:3]
     done = [n for n in table.names() if n.startswith(group)]
     present = [n for n in done if (RUNS / f"protoemu-exp-{n}").exists()]
-    ranked = sorted(present, key=lambda n: table.score(table.load(n)), reverse=True)
-    for n in ranked[KEEP:]:
+    pinned = [n for n in present if os.path.exists(f"{table.B}/{n}/keep")]   # e.g. receipts running
+    ranked = sorted((n for n in present if n not in pinned), key=lambda n: table.score(table.load(n)), reverse=True)
+    for n in ranked[max(KEEP - len(pinned), 0):]:
         remove(n)
-    print(f"kept {ranked[:KEEP]} ({group})")
+    print(f"kept {pinned + ranked[:max(KEEP - len(pinned), 0)]} ({group}; pinned {pinned})")
 
 
 if __name__ == "__main__":
