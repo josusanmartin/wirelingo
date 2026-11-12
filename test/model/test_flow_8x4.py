@@ -240,3 +240,21 @@ def test_reg_clock_delay_option(tmp_path):
     assert step.index("protoemu_sram_clk::run") < step.index("protoemu_reg_clk::run") < step.index("protoemu_late_clk::run")
     assert 'Variable("PROTOEMU_REG_CLOCK_DELAY", int,' in (ROOT / "librelane_plugin_protoemu.py").read_text()
     assert "namespace eval protoemu_reg_clk" in (ROOT / "flow/sram_clock_advance.tcl").read_text()
+
+
+def test_late_clock_core_register_list(tmp_path):
+    base = ["--preset", "experiment", "--banks", "2", "--tuned", "fallback-8x4"]
+    r, full = generate(tmp_path, *base, name="full.json")
+    r2, named = generate(tmp_path, *base, "--late-clock-core-regs", "r0,r1,r2,r3,crc", name="named.json")
+    assert r.returncode == r2.returncode == 0
+    assert full.read_bytes() == named.read_bytes() == (FALLBACK_RUN / "config.json").read_bytes()   # default: unchanged
+    r, nocrc = generate(tmp_path, *base, "--late-clock-core-regs", "r0,r1,r2,r3", name="nocrc.json")
+    assert r.returncode == 0, r.stderr
+    c = json.loads(nocrc.read_text())
+    regs = c["PROTOEMU_LATE_CLOCK_REGS"]
+    assert not any(".crc" in p for p in regs) and sum(".u_core.r" in p for p in regs) == 4
+    assert c["//generator"]["late_clock_core_regs"] == "r0,r1,r2,r3"
+    for bad in (["--late-clock-core-regs", "r0"], [*base, "--late-clock-core-regs", "r0,,r1"],
+                [*base, "--late-clock-core-regs", "r0,r0"], [*base, "--late-clock-core-regs", "R0"]):
+        r, d = generate(tmp_path, *bad, name="bad.json")
+        assert r.returncode != 0 and not d.exists()
