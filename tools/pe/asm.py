@@ -137,8 +137,8 @@ def _assemble_block(name, lines, defs):
                 prog.side_count = _eval(args[0], defs, lineno)
                 prog.side_opt = int("opt" in args[1:])
                 prog.side_pindir = int("pindirs" in args[1:])
-                if prog.side_count > 4:
-                    raise AsmError(f"line {lineno}: side_set too wide")
+                if not 0 <= prog.side_count <= 4:
+                    raise AsmError(f"line {lineno}: side_set count must be 0..4")
             elif d == ".wrap_target":
                 prog.wrap_bottom = pc
             elif d == ".wrap":
@@ -152,9 +152,18 @@ def _assemble_block(name, lines, defs):
                 except ValueError as e:
                     raise AsmError(f"line {lineno}: {e}") from None
             elif d in (".out_pins", ".set_pins"):
-                prog.config[d[1:]] = (_eval(args[0], defs, lineno), _eval(args[1], defs, lineno))
+                base, count = _eval(args[0], defs, lineno), _eval(args[1], defs, lineno)
+                limit = 32 if d == ".out_pins" else 5
+                if not 0 <= base < 32:
+                    raise AsmError(f"line {lineno}: {d} base must be 0..31")
+                if not 0 <= count <= limit:
+                    raise AsmError(f"line {lineno}: {d} count must be 0..{limit}")
+                prog.config[d[1:]] = (base, count)
             elif d in (".side_pins", ".in_pins"):
-                prog.config[d[1:]] = _eval(args[0], defs, lineno)
+                base = _eval(args[0], defs, lineno)
+                if not 0 <= base < 32:
+                    raise AsmError(f"line {lineno}: {d} base must be 0..31")
+                prog.config[d[1:]] = base
             elif d == ".fifo":
                 if args != ["join_tx"]:
                     raise AsmError(f"line {lineno}: .fifo takes join_tx")
