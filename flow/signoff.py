@@ -11,6 +11,7 @@ corner's setup slack is reported, not required (docs/physical.md).
 import glob
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -33,13 +34,22 @@ def sha(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()[:16] if os.path.exists(path) else "-"
 
 
+def clean_count(value):
+    """A missing, boolean, fractional or non-finite count is not evidence."""
+    return type(value) is int and value == 0
+
+
+def clean_slack(value):
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
 def main(run):
     failures = []
     m = json.load(open(os.path.join(run, "final", "metrics.json")))
     for label, k in KEYS:
         print(f"{label:28s} {m.get(k)}")
     for label, k in MUST_BE_ZERO:
-        if m.get(k) != 0:
+        if not clean_count(m.get(k)):
             failures.append(f"{label}: {m.get(k)}")
     for c in CORNERS:
         g = lambda k: m.get(f"{k}__corner:{c}")
@@ -47,10 +57,11 @@ def main(run):
               f"setup/hold violators {g('timing__setup_vio__count')}/{g('timing__hold_vio__count')}, "
               f"max slew/cap violations {g('design__max_slew_violation__count')}/"
               f"{g('design__max_cap_violation__count')}")
-        if g("timing__hold__ws") is None or g("timing__hold__ws") < 0:
-            failures.append(f"{c}: hold WS {g('timing__hold__ws')}")
-        if c.startswith("nom_typ") and (g("timing__setup__ws") is None or g("timing__setup__ws") < 0):
-            failures.append(f"{c}: setup WS {g('timing__setup__ws')}")
+        checks = ("hold", "setup") if c.startswith("nom_typ") else ("hold",)
+        for check in checks:
+            slack, count = g(f"timing__{check}__ws"), g(f"timing__{check}_vio__count")
+            if not clean_slack(slack) or not clean_count(count):
+                failures.append(f"{c}: {check} WS {slack}, violators {count}")
     sta = sorted(glob.glob(os.path.join(run, "*-openroad-stapostpnr")))
     for c, view in CORNERS.items():
         log = os.path.join(sta[-1], c, "sta.log") if sta else ""
