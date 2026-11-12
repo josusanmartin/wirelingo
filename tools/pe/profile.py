@@ -4,10 +4,16 @@ The ID register gives the core and bank counts (docs/isa.md §6.2); it does
 not give the bank size or the FIFO depth, which are 256 words and 8 on every
 build that has an ID (the v0.2 6x4 tapeout and the v0.3 builds).
 
-The rule (resolve()): an explicit profile wins; otherwise, when the caller
-has read a chip's ID, the geometry comes from that ID (for_id()); otherwise
-(an offline tool, no chip) the default is TAPEOUT, the 2-core profile, and
-PKG3 is selected by passing it (or `--profile pkg3` on the command lines).
+The rule (resolve()): an explicit profile wins, but with a chip ID it may
+not have more cores or banks than the ID gives, nor another bank size or
+FIFO depth; otherwise, when the caller has read a chip's ID, the geometry
+comes from that ID (for_id()); otherwise (an offline tool, no chip) the
+default is TAPEOUT, the 2-core profile, and PKG3 is selected by passing it
+(or `--profile pkg3` on the command lines).
+
+The chosen profile says which cores a tool loads and gives pins to. A CTRL
+write-back always keeps every core the chip has (enable_mask() bounds the
+mask by the chip ID's core count when one is given).
 """
 from dataclasses import dataclass
 
@@ -54,16 +60,21 @@ def for_id(chip_id, bank_words=256, fifo_depth=8):
 
 def resolve(profile=None, chip_id=None):
     """The profile a tool uses: `profile` if given (it wins over a chip ID,
-    but may not claim more cores or banks than that ID gives: ValueError);
-    else the geometry of `chip_id` (for_id) if the caller read one; else
-    OFFLINE_DEFAULT. A smaller profile on a bigger chip is allowed: it just
-    leaves the extra cores alone."""
+    but may not claim more cores or banks than that ID gives, nor another
+    bank size or FIFO depth than the ID builds' 256 and 8: ValueError); else
+    the geometry of `chip_id` (for_id) if the caller read one; else
+    OFFLINE_DEFAULT. A smaller profile on a bigger chip is allowed: it loads
+    only its own cores (and enable_mask keeps the others' enables)."""
     if profile is not None:
         if chip_id is not None:
             chip = for_id(chip_id)
             if profile.ncores > chip.ncores or profile.nbanks > chip.nbanks:
                 raise ValueError(f"profile {profile.name} has {profile.ncores} cores and {profile.nbanks} banks, "
                                  f"more than chip ID 0x{chip_id:08X} gives ({chip.ncores} and {chip.nbanks})")
+            if (profile.bank_words, profile.fifo_depth) != (chip.bank_words, chip.fifo_depth):
+                raise ValueError(f"profile {profile.name} has {profile.bank_words}-word banks and depth "
+                                 f"{profile.fifo_depth}; chip ID 0x{chip_id:08X} is a build with "
+                                 f"{chip.bank_words}-word banks and depth {chip.fifo_depth}")
         return profile
     if chip_id is not None:
         return for_id(chip_id)
@@ -71,13 +82,17 @@ def resolve(profile=None, chip_id=None):
 
 
 def enable_mask(enabled, profile=None, chip_id=None):
-    """`enabled`, a CTRL enable mask read back by the caller, checked against
-    resolve(profile, chip_id): an int with no bit above the geometry's cores.
-    Returns it unchanged; ValueError otherwise."""
+    """`enabled`, a CTRL enable mask read back by the caller, checked for no
+    bit above the chip's cores: the chip ID's count when chip_id is given
+    (whatever smaller profile the tool uses: the profile says which cores it
+    loads, a CTRL write-back keeps every core the chip has), else
+    resolve(profile)'s. resolve(profile, chip_id) is still applied. Returns
+    `enabled` unchanged; ValueError otherwise."""
     p = resolve(profile, chip_id)
-    if type(enabled) is not int or not 0 <= enabled < 1 << p.ncores:
-        raise ValueError(f"enabled_before must be an enable mask of the {p.ncores}-core geometry "
-                         f"in 0..{(1 << p.ncores) - 1}")
+    n = for_id(chip_id).ncores if chip_id is not None else p.ncores
+    if type(enabled) is not int or not 0 <= enabled < 1 << n:
+        raise ValueError(f"enabled_before must be an enable mask of the {n}-core geometry "
+                         f"in 0..{(1 << n) - 1}")
     return enabled
 
 

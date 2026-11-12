@@ -36,6 +36,8 @@ def load_writes(programs=None, rx_pin=RX):
     Applying this list replaces both cores and consumes all virtual pins and
     flags. Call only for this optional workload, with cores disabled. After
     start, the peer uses USB packets and physical READY/RX, not loading APIs.
+    On a 3-core chip the first write (CTRL = 0) also stops core 2, and the
+    start enables only cores 0 and 1.
     """
     if TAPEOUT.ncores < 2 or TAPEOUT.nbanks < 2 or (TAPEOUT.bank_words, TAPEOUT.fifo_depth) != (256, 8):
         raise ValueError("fixed4 helper requires at least 2 cores and banks, 256 words, depth 8")
