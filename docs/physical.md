@@ -282,9 +282,11 @@ unobservable), all 5 planted netlist mutants caught. Records:
 
 ### The CRC step off the decode path (2026-11-12)
 
-On the untuned 2-core harden (`aqf-base`) the worst slow-corner endpoint was
-core 0's `crc[22]`: in v0.3's RTL a feed stepped the register in its own
-clock, so decode, the source or shifter bit, the feedback XOR, its fan-out
+On the untuned 2-core harden (`aqf-base`) the worst slow-corner endpoint
+(−1.847 ns) is reported only as an anonymous flop; a design review read it
+from that run's netlist, which is not kept, as core 0's `crc[22]`. Treat
+that as motivation, not a recorded result. In v0.3's RTL a feed stepped
+the register in its own clock, so decode, the source or shifter bit, the feedback XOR, its fan-out
 to 32 bits and the polynomial all came after the SRAM's output. Branch
 `aw-crc-retime` moves the step one clock later (`src/pe_core.sv`, `crc_eff`):
 a feed stores only its feedback bit and a pending flag, and the next clock
@@ -315,8 +317,8 @@ mapping of the original seems to select late on the bit already). Without the se
 gap was +0.136, so the copy costs area, not timing. Not measured: placement
 and routing (`flow/core_route.sh` on core 0 before and after, then a
 harden), and so the chip's slack; R0–R3 and the pin writes remain, with the
-fetch loop as the floor (see the 8x4 audit's T1 and T9). Checked in RTL
-simulation and formally, not in a netlist: `test_lockstep.py`'s
+fetch loop as the floor (see the 8x4 design review's T1 and T9, not in
+this repository). Checked in RTL simulation and formally, not in a netlist: `test_lockstep.py`'s
 `test_crc_retime` (every corner of the pending step, at 3 and 2 cores,
 compared with the model every clock); the core proof (`formal/core.sby`,
 now at depth 12, and its core-0 task `prove0`) asserts that `crc_eff`, the
