@@ -5,7 +5,9 @@ prove0
 [options]
 multiclock on
 mode prove
-depth 6
+# multiclock: two steps a clock. 12 (six clocks) reaches the CRC mutants of
+# core_mutants.sh, which need a tap configured and two clocks of feeds; 6 ended UNKNOWN
+depth 12
 
 [engines]
 smtbmc yices

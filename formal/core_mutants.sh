@@ -2,7 +2,7 @@
 # Planted v0.3 bugs (and the retimed CRC's) that formal/core.sby's properties (in src/pe_core.sv) must
 # catch: each runs the core proof on a scratch copy with one line changed and
 # must end DONE (FAIL). (Counting every active clock instead of every tick
-# ends UNKNOWN at depth 6, not FAIL, so it is not in the list.) Needs sby +
+# ended UNKNOWN at depth 6, not FAIL, so it is not in the list.) Needs sby +
 # yices (OSS CAD Suite). Not in `make all`.
 #   formal/core_mutants.sh            # from the repository root or formal/
 set -u
