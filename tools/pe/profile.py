@@ -53,14 +53,32 @@ def for_id(chip_id, bank_words=256, fifo_depth=8):
 
 
 def resolve(profile=None, chip_id=None):
-    """The profile a tool uses: `profile` if given (it wins, even over a chip
-    ID); else the geometry of `chip_id` (for_id) if the caller read one; else
-    OFFLINE_DEFAULT."""
+    """The profile a tool uses: `profile` if given (it wins over a chip ID,
+    but may not claim more cores or banks than that ID gives: ValueError);
+    else the geometry of `chip_id` (for_id) if the caller read one; else
+    OFFLINE_DEFAULT. A smaller profile on a bigger chip is allowed: it just
+    leaves the extra cores alone."""
     if profile is not None:
+        if chip_id is not None:
+            chip = for_id(chip_id)
+            if profile.ncores > chip.ncores or profile.nbanks > chip.nbanks:
+                raise ValueError(f"profile {profile.name} has {profile.ncores} cores and {profile.nbanks} banks, "
+                                 f"more than chip ID 0x{chip_id:08X} gives ({chip.ncores} and {chip.nbanks})")
         return profile
     if chip_id is not None:
         return for_id(chip_id)
     return OFFLINE_DEFAULT
+
+
+def enable_mask(enabled, profile=None, chip_id=None):
+    """`enabled`, a CTRL enable mask read back by the caller, checked against
+    resolve(profile, chip_id): an int with no bit above the geometry's cores.
+    Returns it unchanged; ValueError otherwise."""
+    p = resolve(profile, chip_id)
+    if type(enabled) is not int or not 0 <= enabled < 1 << p.ncores:
+        raise ValueError(f"enabled_before must be an enable mask of the {p.ncores}-core geometry "
+                         f"in 0..{(1 << p.ncores) - 1}")
+    return enabled
 
 
 def validate_image(core, words, base, wrap, profile=None, data=(), *, chip_id=None):

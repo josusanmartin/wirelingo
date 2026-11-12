@@ -270,6 +270,21 @@ def _spi_pins(pe, mode, cs):
     pe.write(A_POUT, (pe.read(A_POUT) & ~m) | (cs << SPI_CS) | ((mode >> 1) << SPI_SCK))
 
 
+def _enabled(pe):
+    """The CTRL enable bits of the cores this chip has."""
+    return pe.read(A_CTRL) & ((1 << pe.ncores) - 1)
+
+
+def _enable_mask(enabled_before, ncores):
+    """As pe.profile.enable_mask: no enable bit above the chip's cores."""
+    if not isinstance(ncores, int) or not 1 <= ncores <= 4:
+        raise ValueError("ncores must be 1..4")
+    if not isinstance(enabled_before, int) or not 0 <= enabled_before < 1 << ncores:
+        raise ValueError("enabled_before must be an enable mask of the %d-core geometry in 0..%d"
+                         % (ncores, (1 << ncores) - 1))
+    return enabled_before
+
+
 def _spi_load(pe, image, mode, div):
     """Stop core 0, set CS high and SCK idle, then drive them; load the image."""
     if not isinstance(div, int) or not 3 <= div <= 0xFFFF:
@@ -411,11 +426,12 @@ def spi_packed_transfer(pe, messages, timeout_ms=5000):
     return out[0] if single else out
 
 
-def spi_preload_plan(payload, enabled_before=0):
-    """pe.spipacked.preload_plan for core 0, mode 0, depth 8; no I/O."""
+def spi_preload_plan(payload, enabled_before=0, ncores=2):
+    """pe.spipacked.preload_plan for core 0, mode 0, depth 8; no I/O.
+    enabled_before: the CTRL enable mask of an ncores-core chip; every other
+    core's enable is kept."""
     payload = _payload(payload, SPI_PRELOADED_MAX, "preloaded")
-    if not isinstance(enabled_before, int) or not 0 <= enabled_before <= 3:
-        raise ValueError("enabled_before must be the two-core enable mask")
+    _enable_mask(enabled_before, ncores)
     n = len(payload)
     disabled = enabled_before & ~1
     return dict(length=n, tx_words=spi_packed_encode(payload)[1:], rx_words=(n + 3) // 4,
@@ -443,7 +459,7 @@ def spi_preloaded_transfer(pe, tx, timeout_ms=2000):
     RX count; after the drain, empty FIFOs and CS high with SCK idle.
     """
     st, ctl = pe.status(0), pe.read(A_CTRL)
-    plan = spi_preload_plan(tx, ctl & 3)
+    plan = spi_preload_plan(tx, ctl & ((1 << pe.ncores) - 1), pe.ncores)
     pout = pe.read(A_POUT)
     if st & (ST_FAULT | 0xFF) or (ctl & 1 and not st & ST_HALTED) \
             or pout & ((1 << SPI_CS) | (1 << SPI_SCK)) != 1 << SPI_CS:
@@ -486,14 +502,13 @@ def uart_clkdiv(clock_hz, baud):
     return (i << 8) | f
 
 
-def uart_capture_plan(n, enabled_before=0):
-    """pe.uartcapture.capture_plan's five writes: disable core 0 (core 1's
-    enable kept), R1 = N, R2 = N % 4, clear F0, restart core 0. No I/O."""
+def uart_capture_plan(n, enabled_before=0, ncores=2):
+    """pe.uartcapture.capture_plan's five writes: disable core 0 (every other
+    core's enable kept), R1 = N, R2 = N % 4, clear F0, restart core 0. No I/O.
+    enabled_before: the CTRL enable mask of an ncores-core chip."""
     if not isinstance(n, int) or not 1 <= n <= UART_CAPTURE_MAX:
         raise ValueError("capture length must be an integer in 1..32")
-    if not isinstance(enabled_before, int) or not 0 <= enabled_before <= 3:
-        raise ValueError("enabled_before must be a two-core enable mask in 0..3")
-    peer = enabled_before & 2
+    peer = _enable_mask(enabled_before, ncores) & ~1
     return [(A_CTRL, peer), (ProtoEmu.core_reg(0, C_R0 + 1), n),
             (ProtoEmu.core_reg(0, C_R0 + 2), n % 4), (A_FCLR, 1), (A_CTRL, peer | 1 | (1 << 8))]
 
@@ -562,7 +577,7 @@ def uart_capture(pe, n, baud=115200, clock_hz=48_000_000, timeout_ms=2000, after
     pe.load(**image)
     nwords = (n + 3) // 4
     if n <= UART_CAPTURE_MAX:
-        _apply(pe, uart_capture_plan(n, pe.read(A_CTRL) & 3))
+        _apply(pe, uart_capture_plan(n, _enabled(pe), pe.ncores))
         if after_arm:
             after_arm()
         try:

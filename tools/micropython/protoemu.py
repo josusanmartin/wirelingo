@@ -71,10 +71,15 @@ class ProtoEmu:
 
     def use_id(self, v):
         """Take the core and bank counts from ID value v, unless they were given
-        to the constructor (those win). ValueError for an unknown ID, or for an
-        owner map that names a core the chip lacks; nothing changes then."""
+        to the constructor (those win, but may not exceed the ID's: a smaller
+        geometry just leaves the extra cores alone). ValueError for an unknown
+        ID, for given counts above the ID's, or for an owner map that names a
+        core the chip lacks; nothing changes then."""
         nc, nb = id_geometry(v)
         if self._explicit:
+            if self.ncores > nc or self.nbanks > nb:
+                raise ValueError("driver geometry %d cores, %d banks exceeds chip ID %08x (%d cores, %d banks)"
+                                 % (self.ncores, self.nbanks, v, nc, nb))
             return
         lo, hi = self._owners
         for w in (lo, hi):
