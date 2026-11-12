@@ -1,8 +1,10 @@
 """The host tools pick the chip's geometry by one rule (pe.profile.resolve): an
-explicit profile wins; otherwise, where a chip is present, its ID gives the core
-and bank counts; otherwise (offline, no chip) TAPEOUT, with PKG3 selectable.
-Each changed default runs at 2 and at 3 cores; a 3-core ID reaches core 2
-through the default bring-up path; unknown IDs are refused.
+explicit profile wins (but may not claim more cores or banks than the chip's
+ID); otherwise, where a chip is present, its ID gives the core and bank counts;
+otherwise (offline, no chip) TAPEOUT, with PKG3 selectable. Each changed
+default runs at 2 and at 3 cores; a 3-core ID reaches core 2 through the
+default bring-up path; unknown IDs are refused; the core-0 UART capture and
+preloaded SPI plans keep every other core's enable, core 2's included.
 
 Evidence level: model."""
 import sys
@@ -10,7 +12,7 @@ import types
 
 import pytest
 
-from pe import asm, export, host, mdio, pps, rmii, sim
+from pe import asm, export, host, mdio, pps, rmii, sim, spipacked, uartcapture, uartcapture_peer
 from pe import usb_uart_batch4, usb_uart_envelope3, usb_uart_overlap4
 from pe import profile
 from pe.modelhost import ModelHost
@@ -79,7 +81,7 @@ def test_resolve_explicit_wins_then_chip_id_then_tapeout():
     assert profile.resolve(chip_id=ID3) is PKG3
     assert profile.resolve(chip_id=sim.ID_V2) is TAPEOUT
     assert profile.resolve(TAPEOUT, chip_id=ID3) is TAPEOUT          # explicit wins
-    assert profile.resolve(PKG3, chip_id=ID2) is PKG3
+    assert profile.resolve(PKG3, chip_id=ID3) is PKG3
     with pytest.raises(ValueError):
         profile.resolve(chip_id=0x50450003)
     assert profile.PROFILES == {"tapeout": TAPEOUT, "pkg3": PKG3, "full": FULL}
@@ -382,3 +384,118 @@ def test_bringup_refuses_unknown_id(board, bad):
     mh.chip.read = lambda addr: bad if addr == sim.A_ID else real(addr)
     with pytest.raises(RuntimeError, match="wrong project"):
         board(mh)
+
+
+# ---------------------------------------------------------------- explicit against the chip ID
+
+BIGGER = [(PKG3, sim.ID_V2), (PKG3, ID2), (FULL, ID3), (Profile("3c3b", 3, 3), sim.id_value(3, 2)),
+          (Profile("2c2b", 2, 2), sim.id_value(2, 1))]
+
+
+@pytest.mark.parametrize("prof,chip_id", BIGGER)
+def test_explicit_profile_bigger_than_the_chip_refused(prof, chip_id):
+    p = asm.assemble(CORE2)
+    for call in (lambda: profile.resolve(prof, chip_id=chip_id),
+                 lambda: profile.validate_image(0, [0x08000000], 0, 0, prof, chip_id=chip_id),
+                 lambda: host.load_program(0, p, profile=prof, chip_id=chip_id),
+                 lambda: host.pin_owner_writes({}, profile=prof, chip_id=chip_id),
+                 lambda: pps.load_writes(pps.assemble(), profile=prof, chip_id=chip_id),
+                 lambda: uartcapture.capture_plan(3, profile=prof, chip_id=chip_id)):
+        with pytest.raises(ValueError, match="more than chip ID"):
+            call()
+
+
+@pytest.mark.parametrize("prof,chip_id", [(TAPEOUT, ID3), (Profile("3c2b", 3, 2), ID3), (PKG3, ID3),
+                                          (PKG3, sim.id_value(4, 4)), (TAPEOUT, sim.ID_V2)])
+def test_explicit_profile_not_bigger_than_the_chip_allowed(prof, chip_id):
+    assert profile.resolve(prof, chip_id=chip_id) is prof
+    p = asm.assemble(CORE2)
+    assert host.load_program(1, p, profile=prof, chip_id=chip_id) == host.load_program(1, p, profile=prof)
+
+
+def test_driver_explicit_geometry_bigger_than_the_chip_refused():
+    pe = protoemu.ProtoEmu(FakeTT(model(2)), ncores=3)
+    for v in (sim.ID_V2, ID2):
+        with pytest.raises(ValueError, match="exceeds chip ID"):
+            pe.use_id(v)
+        assert (pe.ncores, pe.nbanks) == (3, 3)
+    pe = protoemu.ProtoEmu(FakeTT(model(3)), ncores=3, nbanks=3)
+    with pytest.raises(ValueError, match="exceeds chip ID"):
+        pe.use_id(sim.id_value(3, 2))                    # banks, not cores
+    for nc, nb in ((2, 2), (3, 2), (3, 3), (1, 1)):     # smaller or equal: allowed, and kept
+        pe = protoemu.ProtoEmu(FakeTT(model(3)), ncores=nc, nbanks=nb)
+        pe.use_id(ID3)
+        assert (pe.ncores, pe.nbanks) == (nc, nb)
+
+
+def test_bringup_explicit_geometry_bigger_than_the_chip_refused(board):
+    with pytest.raises(ValueError, match="exceeds chip ID"):
+        board(model(2), ncores=3)
+    assert (board(model(3), ncores=2).ncores) == 2
+
+
+# ---------------------------------------------------------------- CTRL write-back keeps every core
+
+@pytest.mark.parametrize("chip_id", TWO_CORE_IDS)
+def test_core0_plans_two_core_id_unchanged(chip_id):
+    for en in range(4):
+        assert uartcapture.capture_plan(5, enabled_before=en, chip_id=chip_id) \
+            == uartcapture.capture_plan(5, enabled_before=en)
+        assert uartcapture_peer.capture_plan(5, enabled_before=en, chip_id=chip_id) \
+            == uartcapture_peer.capture_plan(5, enabled_before=en)
+        assert spipacked.preload_plan(b"abcde", enabled_before=en, chip_id=chip_id) \
+            == spipacked.preload_plan(b"abcde", enabled_before=en)
+    for en in (4, 5, 7):                                # a core-2 bit on a 2-core chip: refused, not dropped
+        for call in (lambda: uartcapture.capture_plan(5, enabled_before=en, chip_id=chip_id),
+                     lambda: uartcapture.capture_plan(5, enabled_before=en),
+                     lambda: uartcapture_peer.capture_plan(5, enabled_before=en, chip_id=chip_id),
+                     lambda: spipacked.preload_plan(b"x", enabled_before=en, chip_id=chip_id),
+                     lambda: bringup.uart_capture_plan(5, en),
+                     lambda: bringup.spi_preload_plan(b"x", en)):
+            with pytest.raises(ValueError, match="2-core geometry"):
+                call()
+
+
+@pytest.mark.parametrize("en", range(8))
+def test_core0_plans_three_core_keep_core_2(en):
+    other = en & ~1
+    w = uartcapture.capture_plan(5, enabled_before=en, chip_id=ID3)
+    assert w[0] == (sim.A_CTRL, other) and w[-1] == (sim.A_CTRL, other | 1 | (1 << 8))
+    assert w == uartcapture.capture_plan(5, enabled_before=en, profile=PKG3) == bringup.uart_capture_plan(5, en, 3)
+    plan = spipacked.preload_plan(b"abcde", enabled_before=en, chip_id=ID3)
+    assert plan["disable_writes"] == [(sim.A_CTRL, other)]
+    assert plan["start_writes"] == [(sim.A_CTRL, other | 1 | (1 << 8))]
+    got = bringup.spi_preload_plan(b"abcde", en, 3)
+    assert got == {k: plan[k] for k in got}
+    peer = en & ~2
+    w = uartcapture_peer.capture_plan(5, enabled_before=en, chip_id=ID3)
+    assert w[0] == (sim.A_CTRL, peer) and w[-1] == (sim.A_CTRL, peer | 2 | (2 << 8))
+    with pytest.raises(ValueError, match="3-core geometry"):
+        uartcapture.capture_plan(5, enabled_before=en | 8, chip_id=ID3)
+
+
+def test_bringup_core0_capture_and_preloaded_spi_leave_core_2_running():
+    """3-core chip, core 2 running a loop; then a UART capture and a preloaded
+    SPI transfer on core 0 through bringup.py: core 2 stays enabled and keeps
+    running in its bank."""
+    from test_micropython_spi_uart import LONG, Wire, messages, spi_device, uart_source
+    mh = model(3)
+    wire = Wire(mh)
+    pe = protoemu.ProtoEmu(FakeTT(mh), ncores=3)        # explicit, so the same driver call works before the change
+    bringup.load(pe, dict(core=2, base=512, words=asm.assemble("l: jmp l").relocate(512)))
+    assert mh.chip.enable & 4
+
+    def core2_alive():
+        c0 = mh.chip.cycle
+        mh.step(20)
+        return bool(mh.chip.enable & 4) and 512 <= mh.chip.cores[2].pc < 768 and mh.chip.cycle > c0
+    arm = uart_source(wire, mh, b"\x39\xd3\x81")
+    assert bringup.uart_capture(pe, 3, timeout_ms=LONG, after_arm=arm) == (b"\x39\xd3\x81", False)
+    assert core2_alive(), "UART capture on core 0 stopped core 2"
+    wire.devices.clear()
+    msgs = messages([5])
+    _, device = spi_device(0, msgs)
+    wire.devices.append(device)
+    bringup.spi_preloaded_setup(pe)
+    assert bringup.spi_preloaded_transfer(pe, msgs[0][0], timeout_ms=LONG) == msgs[0][1]
+    assert core2_alive(), "preloaded SPI on core 0 stopped core 2"
