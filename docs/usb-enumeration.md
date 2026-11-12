@@ -11,7 +11,7 @@ SET_ADDRESS.
 ## Bottom line
 
 **It fits on one core, at low speed and at full speed, with the same
-firmware.** `firmware/usb_enum.pasm` is 253 of core 0's 256 instruction words (246 until `fault-fixes`)
+firmware.** `firmware/usb_enum.pasm` is 254 of core 0's 256 instruction words (246 until `fault-fixes`)
 (36 of them the descriptors), uses the line unit, and leaves core 1 free.
 `pe.usbenum.load_writes()` is the whole host side: the program, CRCCTRL, the
 line unit's three registers and the start. From then on the host transport is
@@ -370,3 +370,15 @@ this result applies to it.
 * **Full speed on silicon** needs the chip at exactly 48 MHz and the line
   unit's receive jitter margin (docs/usb-full-speed.md: v2's half-cycle NRZI
   sample point); none of that changes here.
+
+## Rejected configuration requests
+
+Both autonomous programs validate `SET_CONFIGURATION` before changing the
+configured flag. `usb_enum_ep1` also preserves its endpoint-1 DATA toggle
+when the requested configuration is unsupported. Previously a STALL could
+silently deconfigure an active device. The regression
+`test/model/test_usb_config_reject.py` checks real USB packets on the cycle
+model, at low and full speed with 2 and 3 cores, including valid requests
+after a refusal. The change costs one word: `usb_enum` is 254 words and
+`usb_enum_ep1` is 256. The timing-checker turnaround limits are unchanged.
+Historical gate-level and FPGA results above predate this change.
