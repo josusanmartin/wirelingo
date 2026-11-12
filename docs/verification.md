@@ -125,9 +125,13 @@ lost when pushed 210 clocks into the read).
   margins. Covers reach each case; planted RTL bugs are caught
   (`make -C formal hostport_mutants`).
 * **`pe_core`**, with a completely unconstrained instruction stream, pins,
-  flags and host:
+  flags and host, at core indices 0, 1 and 2 and FIFO depths 4 and 8
+  (`make -C formal` includes all six configurations):
   * no side effects (pins, flags, FIFOs) unless executing on a tick;
   * none while disabled or restarting;
+  * the line-unit handshake uses room/valid, and disabled, restarting or
+    nonzero-index cores never push or consume line data (the harness
+    discharges these assumptions of the separate line-unit proof);
   * halted/fault are sticky until restart;
   * the PC changes only on a completed instruction, a restart or a host write;
   * a disabled core's state is frozen;
@@ -143,6 +147,10 @@ lost when pushed 210 clocks into the read).
   induction. For any legal RX period (P ≥ 4) the NRZ/NRZI sample counter's
   load after a transition (P/2 − 1, or P/2 − 2 with the half-cycle sample
   point) doesn't wrap.
+
+The two line-handshake mutants in `formal/core_mutants.sh` remove the
+execution gate from a push or a take; the core-0 depth-8 task must reject
+each with a formal counterexample.
 
 These are safety properties of the pieces. Functional equivalence of the
 whole core is covered by lockstep, not by formal.

@@ -166,7 +166,7 @@ jobs:
         run: |
           make -C formal 2>&1 | tee formal.log
           ! grep -E "DONE \((FAIL|ERROR|UNKNOWN)" formal.log
-          test "$(grep -c 'DONE (PASS' formal.log)" -ge 9
+          test "$(grep -c 'DONE (PASS' formal.log)" -ge 14
 
   mutants:
     runs-on: ubuntu-24.04

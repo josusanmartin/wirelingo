@@ -1,7 +1,8 @@
 // Formal harness: pe_core with every input unconstrained (properties live in pe_core).
 `default_nettype none
 module core_props #(
-    parameter [1:0] IDX = 2'd1        // core.sby: task prove (IDX 1), prove0 (IDX 0: the line-unit ports live)
+    parameter [1:0] IDX = 2'd1,
+    parameter FIFO_LOG2 = 2          // core.sby covers each active core at depths 4 and 8
 ) (
     input wire        clk,
     input wire        enable, restart, fifo_clear,
@@ -20,7 +21,15 @@ module core_props #(
   wire [9:0]  fetch_addr;
   wire [31:0] wr_out_en, wr_out_val, wr_oe_en, wr_oe_val, bus_rdata;
   wire [7:0]  flag_set, flag_clr;
-  pe_core #(.IDX(IDX)) dut (
+  wire line_push, line_take;
+  // Discharge the handshake assumptions used by line_props.sv at the core
+  // boundary. Inactive cores must not consume or queue line data.
+  always @(*) if (rst_n) begin
+    assert (!line_push || line_room);
+    assert (!line_take || line_ok);
+    if (!enable || restart || IDX != 0) assert (!line_push && !line_take);
+  end
+  pe_core #(.IDX(IDX), .FIFO_LOG2(FIFO_LOG2)) dut (
       .clk(clk), .rst_n(rst_n), .enable(enable), .restart(restart), .fifo_clear(fifo_clear),
       .fetch_addr(fetch_addr), .instr(instr),
       .pins_in(pins_in), .pin_out_cur(pin_out_cur),
@@ -29,6 +38,6 @@ module core_props #(
       .bus_sel(bus_sel), .bus_off(bus_off), .bus_we(bus_we), .bus_wdata(bus_wdata),
       .bus_commit(bus_commit), .bus_snap(bus_snap), .bus_cancel(bus_cancel), .bus_rdata(bus_rdata),
       .line_room(line_room), .line_ok(line_ok), .line_k(line_k), .line_t(line_t), .line_val(line_val),
-      .line_push(), .line_push_data(), .line_push_n(), .line_push_msb(), .line_in_n(), .line_in_shr(),
-      .line_take());
+      .line_push(line_push), .line_push_data(), .line_push_n(), .line_push_msb(), .line_in_n(), .line_in_shr(),
+      .line_take(line_take));
 endmodule
