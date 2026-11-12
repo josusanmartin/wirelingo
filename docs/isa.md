@@ -163,7 +163,13 @@ if cnt == 0:  tick = 1; {carry, facc} = facc + FRAC; cnt = INT - 1 + carry   (mo
 else:         tick = 0; cnt = cnt - 1
 ```
 
-`INT=1, FRAC=0` ticks every cycle (reset value). `INT=0` means 65536.
+`INT=1, FRAC=0` ticks every cycle (reset value). With `INT=0`, a tick
+without fractional carry reloads 65535, so the next tick is 65536 clocks
+later. A tick with fractional carry reloads 0, so the next clock is a tick.
+Thus `INT=0, FRAC=0` means 65536 clocks per tick; nonzero FRAC mixes
+65536-clock and 1-clock intervals, not 65536-clock and 65537-clock intervals.
+For example, FRAC=128 alternates those intervals after restart. Software
+that needs a conventional fractional period should use INT >= 1.
 Restart clears `cnt` and `facc`, so the first enabled cycle after a restart
 is a tick.
 
@@ -634,9 +640,10 @@ it arrives one clock later:
   it is in the OSR. That clock belongs to the read: if it is one of the
   core's ticks, the core spends it there (no instruction is attempted and a
   delay doesn't count down). So at CLKDIV 1 a table read takes 2 + *delay*
-  ticks; at INT ≥ 2 (or 0) the clock is never a tick and it takes 1 + *delay*;
+  ticks; at INT ≥ 2 the clock is never a tick and it takes 1 + *delay*;
   at INT 1 with a fraction it is a tick unless the divider's carry
-  stretched that period;
+  stretched that period. At INT 0 it is a tick exactly when the MOV's
+  tick generated fractional carry (the modulo-65536 reload in §4.1);
 * the write happens whether or not the core is enabled in that clock. A
   restart in that clock wins (the OSR is cleared), and a host write to the
   core's PC in the MOV's own clock cancels it (the OSR keeps its value; the
