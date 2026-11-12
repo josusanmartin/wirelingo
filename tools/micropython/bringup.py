@@ -158,6 +158,8 @@ def usb_uart(pe, mode="overlap4", rx_pin=None):
     """Cold-load a UART -> low-speed USB pair (docs/usb-uart-overlap4.md,
     usb-uart-envelope3.md, usb-uart-byte.md) and start both cores; after
     this call the chip needs no host-port traffic. 48 MHz project clock.
+    On a 3-core chip the cold load also stops core 2 (its first write is
+    CTRL = 0, and it starts only cores 0 and 1).
 
     The driver writes the whole ui_in byte, so the board images take UART
     RX on uio6 (logical pin 6), not on ui0 as the default helpers do.
@@ -271,8 +273,9 @@ def _spi_pins(pe, mode, cs):
 
 
 def _enabled(pe):
-    """The CTRL enable bits of the cores this chip has."""
-    return pe.read(A_CTRL) & ((1 << pe.ncores) - 1)
+    """The CTRL enable bits of every core the chip has (pe.ctrl_mask(): the
+    chip ID's count, not a smaller driver geometry's)."""
+    return pe.read(A_CTRL) & pe.ctrl_mask()
 
 
 def _enable_mask(enabled_before, ncores):
@@ -459,7 +462,7 @@ def spi_preloaded_transfer(pe, tx, timeout_ms=2000):
     RX count; after the drain, empty FIFOs and CS high with SCK idle.
     """
     st, ctl = pe.status(0), pe.read(A_CTRL)
-    plan = spi_preload_plan(tx, ctl & ((1 << pe.ncores) - 1), pe.ncores)
+    plan = spi_preload_plan(tx, ctl & pe.ctrl_mask(), pe.chip_cores())
     pout = pe.read(A_POUT)
     if st & (ST_FAULT | 0xFF) or (ctl & 1 and not st & ST_HALTED) \
             or pout & ((1 << SPI_CS) | (1 << SPI_SCK)) != 1 << SPI_CS:
@@ -577,7 +580,7 @@ def uart_capture(pe, n, baud=115200, clock_hz=48_000_000, timeout_ms=2000, after
     pe.load(**image)
     nwords = (n + 3) // 4
     if n <= UART_CAPTURE_MAX:
-        _apply(pe, uart_capture_plan(n, _enabled(pe), pe.ncores))
+        _apply(pe, uart_capture_plan(n, _enabled(pe), pe.chip_cores()))
         if after_arm:
             after_arm()
         try:
