@@ -280,6 +280,55 @@ re-verifies with its own `release_check.py`. RTL-to-netlist equivalence
 unobservable), all 5 planted netlist mutants caught. Records:
 [evidence/8x4-search-20261111/fallback-release/](../evidence/8x4-search-20261111/fallback-release/).
 
+### The CRC step off the decode path (2026-11-12)
+
+On the untuned 2-core harden (`aqf-base`) the worst slow-corner endpoint
+(−1.847 ns) is reported only as an anonymous flop; a design review read it
+from that run's netlist, which is not kept, as core 0's `crc[22]`. Treat
+that as motivation, not a recorded result. In v0.3's RTL a feed stepped
+the register in its own clock, so decode, the source or shifter bit, the feedback XOR, its fan-out
+to 32 bits and the polynomial all came after the SRAM's output. Branch
+`aw-crc-retime` moves the step one clock later (`src/pe_core.sv`, `crc_eff`):
+a feed stores only its feedback bit and a pending flag, and the next clock
+applies the shift and polynomial from flops, with last clock's width and
+masked polynomial (`crc_w_q`, `crc_pm_q`), so a CRCCTRL or POLY_HI write in
+the feed's own clock still has no effect on that feed. `crc_eff` is what
+every reader sees (IN/MOV source 12, the host read at offset 7, the next
+feed), and a set or a host write drops the pending step as it won before;
+the spec (docs/isa.md §4.5) is unchanged. Cost: 39 flops per core (37 of
+them the settings copy, which only exactness needs). Measured at synthesis
+level only (core 0 alone, IDX 0, 8-deep FIFOs, `flow/core_route.sh`'s
+constraints, no placement or wires, slow corner at 20 ns):
+
+| Synthesis, pre-placement STA | v0.3 (`bb014d1`) | retimed (this branch) | both candidates precomputed, late select |
+|---|---|---|---|
+| LibreLane synthesis: CRC, worst R0–R3, ISR (ns) | +0.729, +2.219, +2.448 | +1.022, +0.787, +0.967 | −2.203, −0.686, −0.428 |
+| CRC − worst R0–R3 (typical corner) | −1.490 (−0.912) | **+0.235** (+0.156) | −1.517 (−0.986) |
+| yosys + ABC: CRC − worst R0–R3 | −1.149 | **+0.262** | −1.485 |
+| cell area (LibreLane / yosys + ABC, µm²) | 112,727 / 110,857 | 114,656 / 113,738 | 112,293 / 111,880 |
+
+Each netlist maps differently as a whole, so the families that do not
+involve the CRC moved by up to 2.4 ns between columns (fetch address −0.42,
+−1.52, −2.81 ns): only the gap within a column is the change's effect. The
+retimed CRC sits with R0–R3 and the ISR, its worst path now ends through
+the set (decode to the set's select and value), and the fed bit's flop has more
+slack than R0–R3; precomputing both candidates gained nothing (ABC's
+mapping of the original seems to select late on the bit already). Without the settings copy (not exact) the
+gap was +0.136, so the copy costs area, not timing. Not measured: placement
+and routing (`flow/core_route.sh` on core 0 before and after, then a
+harden), and so the chip's slack; R0–R3 and the pin writes remain, with the
+fetch loop as the floor (see the 8x4 design review's T1 and T9, not in
+this repository). Checked in RTL simulation and formally, not in a netlist: `test_lockstep.py`'s
+`test_crc_retime` (every corner of the pending step, at 3 and 2 cores,
+compared with the model every clock); the core proof (`formal/core.sby`,
+now at depth 12, and its core-0 task `prove0`) asserts that `crc_eff`, the
+CRC source and the host read equal a reference of v0.3's register in every
+clock; 8 formal and 6 lockstep mutants of the retiming are killed; the
+Hardcaml port mirrors it and is proved equal to `src/` at 3 and 2 cores. A
+late clock on `crc` (`--late-clock-core`) now gains less, and its new D
+inputs come from flops on the normal clock, so it likely costs hold
+buffers (an estimate; `flow/` settings are not changed here).
+
 ## SRAM macros
 
 * `RM_IHPSG13_1P_256x32_c2_bm_bist`: 416.64 × 118.78 µm, all signal pins on the

@@ -62,7 +62,7 @@ def core_state_rtl(core):
         z=v(core.z), c=v(core.c), t=v(core.t), dcnt=v(core.dcnt), in_wait=v(core.in_wait),
         halted=v(core.halted), fault=v(core.fault), stalled=v(core.stalled),
         cnt=v(core.cnt), facc=v(core.facc), lr=v(core.lr),
-        txl=v(core.u_fifos.txf.cnt), rxl=v(core.u_fifos.rxf.cnt), crc=v(core.crc),
+        txl=v(core.u_fifos.txf.cnt), rxl=v(core.u_fifos.rxf.cnt), crc=v(core.crc_eff),   # the architectural CRC (pe_core.sv)
         ticks=v(core.tcnt), tbl=v(core.tbl_pend),
         wprev=v(core.wprev), wevent=v(core.wevent), res=reservations(v(core.res_n), v(core.res_v)),
         # FIFO heads (when occupied): every entry is compared as it reaches the head
@@ -642,3 +642,190 @@ async def test_v03_corners(dut):
     missing = [g for g in want if not h.model.stats.get(g)]
     assert not missing, (missing, {k: v for k, v in h.model.stats.items() if k.split(":")[0] in
                                    ("table", "ticks", "cmpw", "jmp", "flag")})
+
+
+@cocotb.test()
+async def test_crc_retime(dut):
+    """Directed, compared every cycle: the retimed CRC step (src/pe_core.sv
+    crc_eff) is invisible. Feeds at CLKDIV 1 meet, in the clock after a feed:
+    another feed, an IN/MOV read of CRC, a set, a host read and a host write of
+    CRC, CRCCTRL and POLY_HI writes, disable, restart, FIFO clear and reset;
+    and in the feed's own clock: a set (OUT crc, 1), a host CRC write and a
+    CRCCTRL or POLY_HI write. Widths 1..32 with POLY_HI, and the 16-bit host
+    write of the v0.2 widths. Coverage is read from the model, so the
+    Hardcaml port's run (ocaml/scripts/run_cocotb.sh) needs no extra wires."""
+    from pe import asm, host
+    from pe.isa import CRC
+    from pe.profile import Profile
+    h = await start(dut)
+    prof = Profile("lockstep", NCORES, NBANKS, BANK_WORDS)
+    progs = [asm.assemble("""
+    .shift_in left
+    top:
+        in pins, 1                ; feed
+        in pins, 1                ; a feed after a feed
+        mov r0, crc               ; a read in the clock after a feed
+        in crc, 1                 ; a read and a feed (CRC bit 0)
+        mov crc, r0               ; a set after a feed
+        in pins, 1                ; a feed after a set
+        in pins, 1
+        mov isr, crc
+        push noblock
+        in pins, 1
+        mov crc, ~null
+        in osr, 1
+        jmp top
+    """), asm.assemble("""
+    top:
+        pull noblock
+        out r2, 1                 ; feed (OUT_TAP)
+        out r2, 1
+        out crc, 1                ; a set and a feed in one clock: the set wins
+        out r3, 1
+        mov r1, crc
+        out r3, 1
+        out crc, 16
+        out r2, 1
+        mov osr, crc
+        out r3, 1
+        jmp top
+    """)]
+    cores = list(range(min(NCORES, NBANKS)))
+    taps = [(1, 0), (0, 1), (1, 1), (0, 1)]       # (IN_TAP, OUT_TAP) per core
+    divs = [1 << 8, 1 << 8, (1 << 8) | 0x40, 2 << 8]
+    rng = random.Random(0xC3C)
+
+    # what the model does in each clock, per core (the class is patched, so the
+    # Chip that h.reset() builds is covered too)
+    ev = []
+    orig = (sim.Core._crc_feed, sim.Core._write_dst, sim.Core._src)
+
+    def feed(core, b):
+        ev.append((core.idx, "feed"))
+        return orig[0](core, b)
+
+    def write_dst(core, e, dst, v, isr_count):
+        if dst == CRC:
+            ev.append((core.idx, "set"))
+        return orig[1](core, e, dst, v, isr_count)
+
+    def src(core, e, code):
+        if code == CRC:
+            ev.append((core.idx, "read"))
+        return orig[2](core, e, code)
+    sim.Core._crc_feed, sim.Core._write_dst, sim.Core._src = feed, write_dst, src
+    seen = {}
+    widths = set()
+
+    def cov(k):
+        seen[k] = seen.get(k, 0) + 1
+
+    def crcctrl(c):
+        width = rng.choice([1, 5, 8, 15, 16, 17, 21, 31, 32]) if rng.random() < 0.5 else rng.randrange(1, 33)
+        ti, to = taps[c] if rng.random() < 0.9 else (rng.getrandbits(1), rng.getrandbits(1))
+        return isa.crcctrl(rng.getrandbits(width), width, in_tap=ti, out_tap=to)
+
+    try:
+        prev = {c: set() for c in cores}               # last clock's events
+        pend = {c: False for c in cores}               # a feed last clock that nothing overrode
+        for rnd in range(4):
+            await h.reset()
+            prev = {c: set() for c in cores}
+            pend = {c: False for c in cores}
+            for c in cores:
+                for addr, data in host.load_program(c, progs[c % 2], c * 256, profile=prof, clkdiv=divs[c]):
+                    await h.write(addr, data)
+                ctrl, hi = crcctrl(c)
+                for off, val in ((sim.C_CRCCTRL, ctrl), (sim.C_POLY_HI, hi), (sim.C_CRC, rng.getrandbits(32))):
+                    await h.write(sim.core_reg(c, off), val)
+            mask = sum(1 << c for c in cores)
+            enabled = mask
+            await h.write(sim.A_CTRL, mask | (mask << 8))
+            for cyc in range(6000 + (1 << 20 if rnd == 3 else 0)):
+                c = rng.choice(cores)
+                m = h.model
+                # this clock's core inputs: last clock's CTRL write (§6.2), and
+                # the settings a feed in this clock uses
+                ctrl_now = m.ctrl_pend
+                restart = (ctrl_now >> 8) & 15 if ctrl_now is not None else 0
+                fclear = (ctrl_now >> 16) & 15 if ctrl_now is not None else 0
+                en_now = m.enable
+                cfg = {cc: (m.cores[cc].crc_w, m.cores[cc].crc_poly_hi) for cc in cores}
+                k = rng.random()
+                kw = dict(addr=sim.core_reg(c, sim.C_CRC))          # default: the host reads CRC
+                act = "read"
+                if k < 0.04:
+                    act = "w_crc"
+                    kw = dict(we=True, addr=sim.core_reg(c, sim.C_CRC), wdata=rng.getrandbits(32))
+                    if cfg[c][0] < 16 and kw["wdata"] >> 16:
+                        cov("v02_host_write_16_bits")
+                elif k < 0.07:
+                    act = "w_ctrl"
+                    kw = dict(we=True, addr=sim.core_reg(c, sim.C_CRCCTRL), wdata=crcctrl(c)[0])
+                elif k < 0.09:
+                    act = "w_ctrl"
+                    kw = dict(we=True, addr=sim.core_reg(c, sim.C_POLY_HI), wdata=rng.getrandbits(16))
+                elif k < 0.10:
+                    act = "other"
+                    enabled ^= 1 << c
+                    if not enabled & (1 << c) and rng.random() < 0.5:
+                        enabled |= 1 << c
+                    kw = dict(we=True, addr=sim.A_CTRL, wdata=enabled)
+                elif k < 0.11:
+                    act = "other"
+                    kw = dict(we=True, addr=sim.A_CTRL, wdata=enabled | (1 << (8 + c)))
+                elif k < 0.12:
+                    act = "other"
+                    kw = dict(we=True, addr=sim.A_CTRL, wdata=enabled | (1 << (16 + c)))
+                elif k < 0.15:
+                    act = "other"
+                    kw = dict(we=True, addr=sim.core_reg(c, sim.C_FIFO), wdata=rng.getrandbits(32))
+                elif k < 0.20:
+                    act = "other"
+                    kw = dict(addr=sim.core_reg(c, sim.C_FIFO), snap=True, commit=True)
+                ev.clear()
+                await h.cycle_step(rng.getrandbits(5), rng.getrandbits(8), **kw)
+                now = {cc: {kind for i, kind in ev if i == cc} for cc in cores}
+                for cc in cores:
+                    host_here = cc == c and act != "other"
+                    if pend[cc]:
+                        for kind in now[cc]:
+                            cov(f"{kind}_after_feed")
+                        if host_here:
+                            cov(f"host_{act}_after_feed")
+                        if not (en_now >> cc) & 1:
+                            cov("disabled_after_feed")
+                        if (restart >> cc) & 1:
+                            cov("restart_after_feed")
+                        if (fclear >> cc) & 1:
+                            cov("fifo_clear_after_feed")
+                    if "set" in prev[cc] and "feed" in now[cc]:
+                        cov("feed_after_set")
+                    if "feed" in now[cc]:
+                        if "set" in now[cc]:
+                            cov("set_with_feed")
+                        if host_here and act != "read":
+                            cov(f"host_{act}_with_feed")
+                    pend[cc] = "feed" in now[cc] and "set" not in now[cc] and not (host_here and act == "w_crc")
+                    if pend[cc]:
+                        widths.add(cfg[cc][0])                  # the width the pending step uses
+                        if cfg[cc][0] >= 16 and cfg[cc][1]:
+                            cov("poly_hi_feed")
+                prev = now
+                if rnd == 3 and cyc >= 6000 and any(pend.values()):
+                    cov("reset_after_feed")
+                    break                               # the reset below lands on a pending step
+        await h.reset()
+        await h.cycle_step(addr=sim.core_reg(0, sim.C_CRC))   # compared: CRC 0 after the reset
+        await h.write(sim.A_CTRL, 0)
+    finally:
+        sim.Core._crc_feed, sim.Core._write_dst, sim.Core._src = orig
+    dut._log.info("crc coverage: " + ", ".join(f"{k}={n}" for k, n in sorted(seen.items())))
+    want = ["feed_after_feed", "read_after_feed", "set_after_feed", "feed_after_set", "set_with_feed",
+            "host_read_after_feed", "host_w_crc_after_feed", "host_w_ctrl_after_feed",
+            "host_w_crc_with_feed", "host_w_ctrl_with_feed",
+            "disabled_after_feed", "restart_after_feed", "fifo_clear_after_feed", "reset_after_feed",
+            "poly_hi_feed", "v02_host_write_16_bits"]
+    missing = [g for g in want if not seen.get(g)]
+    assert not missing, (missing, seen)
+    assert widths == set(range(32)), sorted(set(range(32)) - widths)   # every width with a step pending

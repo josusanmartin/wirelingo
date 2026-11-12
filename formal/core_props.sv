@@ -1,6 +1,8 @@
 // Formal harness: pe_core with every input unconstrained (properties live in pe_core).
 `default_nettype none
-module core_props (
+module core_props #(
+    parameter [1:0] IDX = 2'd1        // core.sby: task prove (IDX 1), prove0 (IDX 0: the line-unit ports live)
+) (
     input wire        clk,
     input wire        enable, restart, fifo_clear,
     input wire [31:0] instr,
@@ -18,7 +20,7 @@ module core_props (
   wire [9:0]  fetch_addr;
   wire [31:0] wr_out_en, wr_out_val, wr_oe_en, wr_oe_val, bus_rdata;
   wire [7:0]  flag_set, flag_clr;
-  pe_core #(.IDX(2'd1)) dut (
+  pe_core #(.IDX(IDX)) dut (
       .clk(clk), .rst_n(rst_n), .enable(enable), .restart(restart), .fifo_clear(fifo_clear),
       .fetch_addr(fetch_addr), .instr(instr),
       .pins_in(pins_in), .pin_out_cur(pin_out_cur),
