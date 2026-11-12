@@ -1,5 +1,6 @@
 [tasks]
 prove
+prove0
 
 [options]
 multiclock on
@@ -11,6 +12,7 @@ smtbmc yices
 
 [script]
 read_verilog -sv -formal pe_core.sv pe_fifos.sv pe_fifo.sv pe_cg.sv core_props.sv
+prove0: hierarchy -top core_props -chparam IDX 0
 prep -top core_props
 
 [files]

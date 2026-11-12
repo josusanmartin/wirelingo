@@ -228,6 +228,23 @@ module pe_core #(
   wire [31:0] side_mask = rotl32({28'd0, (4'd1 << sc) - 4'd1}, side_base);
   wire [31:0] side_val  = rotl32({28'd0, side_v}, side_base);
 
+  // CRC tap (docs/isa.md §4.5): any width 1..32; 1-bit IN/OUT feed one bit; MOV/OUT to CRC set it
+  wire [31:0] crc_mask = 32'hFFFF_FFFF >> (5'd31 - crc_w);
+  wire [31:0] crc_poly_m = {crc_poly_hi, crc_poly} & crc_mask;
+  // The step is retimed off the decode path (docs/physical.md): a feed stores
+  // only its feedback bit (crc_fbq) and sets crc_pend, and the shift and the
+  // polynomial are applied in the next clock, from flops, with the settings the
+  // feed saw (crc_w_q, crc_pm_q: last clock's width and masked polynomial, so a
+  // CRCCTRL or POLY_HI write in the feed's clock changes nothing). crc_eff is
+  // the architectural CRC in every clock: what IN and MOV read, what the host
+  // reads, and what the next feed steps. Every clock commits it to crc unless a
+  // set or a host write takes the register, which also drops the pending step.
+  reg         crc_pend, crc_fbq;
+  reg  [4:0]  crc_w_q;
+  reg  [31:0] crc_pm_q;
+  wire [31:0] crc_mask_q = 32'hFFFF_FFFF >> (5'd31 - crc_w_q);
+  wire [31:0] crc_eff = crc_pend ? (((crc << 1) & crc_mask_q) ^ (crc_fbq ? crc_pm_q : 32'd0)) : crc;
+
   // sources
   wire [3:0]  src_code = (op == OP_MOV) ? x[12:9] : x[18:15];
   reg  [31:0] src_val;
@@ -240,7 +257,7 @@ module pe_core #(
       L_STATUS: src_val = {21'd0, status16[10:0]};
       L_FLAGS:  src_val = {24'd0, flags};
       L_PC:     src_val = {22'd0, pc};
-      L_CRC:    src_val = crc;
+      L_CRC:    src_val = crc_eff;
       L_LR:     src_val = {22'd0, lr};
       L_TICKS:  src_val = {16'd0, tcnt};
       default:  src_val = 32'd0;
@@ -352,13 +369,10 @@ module pe_core #(
   wire [15:0] w_tr = rsel(w_treg, r0, r1, r2, r3);
   wire        w_timeout = !wbase && w_to && w_tr == 16'd0;
 
-  // CRC tap (docs/isa.md §4.5): any width 1..32; 1-bit IN/OUT feed one bit; MOV/OUT to CRC set it
-  wire [31:0] crc_mask = 32'hFFFF_FFFF >> (5'd31 - crc_w);
-  wire [31:0] crc_poly_m = {crc_poly_hi, crc_poly} & crc_mask;
+  // CRC feed (docs/isa.md §4.5; crc_eff above)
   reg         crc_feed, crc_bit, crc_set;
   reg  [31:0] crc_set_val;
-  wire        crc_fb = crc[crc_w] ^ crc_bit;
-  wire [31:0] crc_fed = ((crc << 1) & crc_mask) ^ (crc_fb ? crc_poly_m : 32'd0);
+  wire        crc_fb = crc_eff[crc_w] ^ crc_bit;
 
   // the PC after a completed instruction that doesn't jump (also CALL's link)
   wire [9:0]  pc_seq = (pc == wrap_top) ? wrap_bottom : (pc + 10'd1);
@@ -689,7 +703,7 @@ module pe_core #(
   // third of the chip's global-routing overflow (docs/physical.md).
   always @(*) begin
     case (bus_off)
-      5'h07: bus_rdata = crc;
+      5'h07: bus_rdata = crc_eff;
       5'h08: bus_rdata = {22'd0, pc};
       5'h09: bus_rdata = {16'd0, status16};
       5'h0A: bus_rdata = {16'd0, r0};
@@ -776,12 +790,23 @@ module pe_core #(
       fault <= 1'b0;
       stalled <= 1'b0;
       crc <= 32'd0;
+      crc_pend <= 1'b0;
+      crc_fbq <= 1'b0;
+      crc_w_q <= 5'd0;
+      crc_pm_q <= 32'd0;
       lr <= 10'd0;
       tcnt <= 16'd0;
       tbl_pend <= 1'b0;
     end else begin
       pc <= tbl_issue ? pc_seq : fetch_addr;
       tbl_pend <= tbl_issue;
+      // the CRC (see crc_eff): commit last clock's pending step; a feed this
+      // clock leaves only its bit pending; a set (below) or a host write wins
+      crc <= crc_eff;
+      crc_pend <= exec && crc_feed && !crc_set && !(host_w && bus_off == 5'h07);
+      crc_fbq <= crc_fb;
+      crc_w_q <= crc_w;
+      crc_pm_q <= crc_poly_m;
       // the table word (§5.2), straight from the bank's output: first here, so a
       // restart (and nothing else, the core doesn't execute this clock) overrides it
       if (tbl_pend) begin
@@ -859,8 +884,7 @@ module pe_core #(
               c <= alu_res[16];
             end
             if (t_we) t <= t_nv;
-            if (crc_set) crc <= crc_set_val & crc_mask;
-            else if (crc_feed) crc <= crc_fed;
+            if (crc_set) crc <= crc_set_val & crc_mask;   // a feed: crc_pend above
             if (lr_we) lr <= lr_nv;
           end
         end
@@ -917,7 +941,10 @@ module pe_core #(
   reg        p_tbl_issue, p_tbl_pend, p_active, p_tick;
   reg [31:0] p_instr;
   reg [15:0] p_tcnt;
+  reg [31:0] p_crc_eff;
+  reg        p_crc_host_w;
   always @(posedge clk) begin
+    p_crc_eff <= crc_eff; p_crc_host_w <= host_w && bus_off == 5'h07;
     p_tbl_issue <= tbl_issue; p_tbl_pend <= tbl_pend; p_instr <= instr;
     p_active <= active; p_tick <= tick; p_tcnt <= tcnt;
     p_link <= commit && op == OP_CALL && cond_ok; p_lr <= lr; p_pc_seq <= pc_seq;
@@ -955,7 +982,28 @@ module pe_core #(
       if (p_restart) assert (tcnt == 16'd0);
       else if (p_active) assert (tcnt == p_tcnt + {15'd0, p_tick});
       else assert (tcnt == p_tcnt);
+      // the CRC of a core that did not execute is frozen, host writes to it aside
+      // (a CRCCTRL or POLY_HI write, restart and a FIFO clear leave it)
+      if (!p_active && !p_crc_host_w) assert (crc_eff == p_crc_eff);
     end
   end
+
+  // The retimed CRC is the CRC as it was before the retiming: f_crc is v0.3's
+  // register, stepped in the feed's own clock (docs/isa.md §4.5), and crc_eff
+  // equals it in every clock, so every reader (IN, MOV, the host, the next
+  // feed) sees what it saw before.
+  reg  [31:0] f_crc;
+  wire [31:0] f_crc_fed = ((f_crc << 1) & crc_mask) ^ ((f_crc[crc_w] ^ crc_bit) ? crc_poly_m : 32'd0);
+  always @(posedge clk or negedge rst_n)
+    if (!rst_n) f_crc <= 32'd0;
+    else if (host_w && bus_off == 5'h07) f_crc <= {crc_w[4] ? bus_wdata[31:16] : 16'd0, bus_wdata[15:0]};
+    else if (exec && crc_set) f_crc <= crc_set_val & crc_mask;
+    else if (exec && crc_feed) f_crc <= f_crc_fed;
+  always @(*)
+    if (rst_n) begin
+      assert (crc_eff == f_crc);
+      if (src_code == L_CRC) assert (src_val == f_crc);       // IN crc / MOV x, crc
+      if (bus_off == 5'h07) assert (bus_rdata == f_crc);      // the host's read
+    end
 `endif
 endmodule
