@@ -131,6 +131,9 @@ class SramClockAdvanceTcl(OpenROADStep):
                  "Clock buffers inserted at the root of every chip-clock branch except the SRAMs' "
                  "(flow/sram_clock_advance.tcl, protoemu_reg_clk); 0 = off.",
                  default=0),
+        Variable("PROTOEMU_REG_CLOCK_DELAY_GATES", int,
+                 "With PROTOEMU_REG_CLOCK_DELAY: the clock-gate branches' buffer count instead (-1 = the same).",
+                 default=-1),
     ]
 
     def get_script_path(self):

@@ -195,7 +195,11 @@ namespace eval protoemu_reg_clk {
         return $out
     }
 
-    proc run {stages} {
+    # stages: the flops' branch; gate_stages: the clock-gate branches (default
+    # the same). Equal counts do not give equal shifts: the dry run on aqp-base
+    # (placement parasitics) shifted the flops 0.215 ns (slow) more than the gates.
+    proc run {stages {gate_stages -1}} {
+        if {$gate_stages < 0} { set gate_stages $stages }
         set block [ord::get_db_block]
         # the SRAM path: A_CLK <- clkbuf_sram_adv_* <- tap <- tap buffer <- port net
         set taps {}
@@ -219,15 +223,15 @@ namespace eval protoemu_reg_clk {
         lassign [$tap_buf getLocation] px py
         set loc [list [ord::dbu_to_microns $px] [ord::dbu_to_microns $py]]
         set n 0
-        foreach {net skip} [list $port [list "[$tap_buf getName]/A"] $tap $adv] {
+        foreach {net skip k} [list $port [list "[$tap_buf getName]/A"] $stages $tap $adv $gate_stages] {
             set pins [loads_except $net $skip]
-            if {[llength $pins]} {
-                chain $pins $stages $loc $ndr
-                puts "REG_CLOCK_DELAY [$net getName]: [llength $pins] loads behind $stages buffers"
+            if {[llength $pins] && $k > 0} {
+                chain $pins $k $loc $ndr
+                puts "REG_CLOCK_DELAY [$net getName]: [llength $pins] loads behind $k buffers"
                 incr n [llength $pins]
             }
         }
         if {!$n} { error "no register clock branch found beside the SRAM path" }
-        puts "REG_CLOCK_DELAY_COMPLETE $stages stages on $n branch loads"
+        puts "REG_CLOCK_DELAY_COMPLETE $stages stages (flops), $gate_stages (clock gates) on $n branch loads"
     }
 }

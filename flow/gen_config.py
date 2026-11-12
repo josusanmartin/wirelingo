@@ -217,6 +217,9 @@ def main():
     ap.add_argument("--reg-clock-delay", type=int, default=0, metavar="STAGES",
                     help="with --sram-clock-advance: delay every chip-clock branch except the SRAMs' by STAGES "
                          "buffers (the whole register tree against the SRAMs; flow/sram_clock_advance.tcl)")
+    ap.add_argument("--reg-clock-delay-gates", type=int, default=None, metavar="STAGES",
+                    help="with --reg-clock-delay: the clock-gate branches get STAGES buffers instead (default: the "
+                         "same count), to match the flops' shift")
     ap.add_argument("--sram-clock-advance", action=argparse.BooleanOptionalAction, default=True,
                     help="clock each SRAM from the clock root (useful skew: reads launch earlier, flow/sram_clock_advance.tcl)")
     ap.add_argument("--tuned", choices=sorted(TUNED),
@@ -268,7 +271,8 @@ def main():
                "SRAM settings follow kdp1965/ihp-um-janestreet-prism.")
     c["//generator"] = {k: v for k, v in vars(a).items() if k not in ("output", "check", "info", "tuned")
                         and (k not in ("clock_fanout_fix", "sram_clock_advance", "final_design_repair", "pnr_electrical_margins", "sram_pin_buffers", "antenna_fanout_repair", "late_clock", "late_clock_oe", "late_clock_core", "reg_clock_delay", "pnr_setup_margin", "set") or v)
-                        and not (k == "late_clock_core_regs" and v == LATE_CORE_REGS)}
+                        and not (k == "late_clock_core_regs" and v == LATE_CORE_REGS)
+                        and not (k == "reg_clock_delay_gates" and v is None)}
     if a.clock_fanout_fix:
         c["CTS_SINK_CLUSTERING_SIZE"] = 8
         if a.sram_clock_advance:
@@ -290,6 +294,12 @@ def main():
         if not a.sram_clock_advance or a.reg_clock_delay < 0:
             ap.error("--reg-clock-delay N (N > 0) runs in the --sram-clock-advance step")
         c["PROTOEMU_REG_CLOCK_DELAY"] = a.reg_clock_delay
+        if a.reg_clock_delay_gates is not None:
+            if a.reg_clock_delay_gates < 0:
+                ap.error("--reg-clock-delay-gates must be 0 or more")
+            c["PROTOEMU_REG_CLOCK_DELAY_GATES"] = a.reg_clock_delay_gates
+    elif a.reg_clock_delay_gates is not None:
+        ap.error("--reg-clock-delay-gates needs --reg-clock-delay")
     c["PL_TARGET_DENSITY_PCT"] = a.density
     c["CLOCK_PERIOD"] = 20
     # The FIFOs store into latches that open in the half cycle after a push;

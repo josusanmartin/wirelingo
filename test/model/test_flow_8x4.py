@@ -232,13 +232,20 @@ def test_reg_clock_delay_option(tmp_path):
     r0, d0 = generate(tmp_path, "--preset", "experiment", name="zero.json")
     assert "PROTOEMU_REG_CLOCK_DELAY" not in json.loads(d0.read_text())
     assert "reg_clock_delay" not in json.loads(d0.read_text())["//generator"]
-    for bad in (["--reg-clock-delay", "4", "--no-sram-clock-advance", "--late-clock", "0"], ["--reg-clock-delay", "-1"]):
+    r, dg = generate(tmp_path, "--preset", "experiment", "--reg-clock-delay", "4", "--reg-clock-delay-gates", "6", name="gates.json")
+    cg = json.loads(dg.read_text())
+    assert r.returncode == 0 and cg["PROTOEMU_REG_CLOCK_DELAY"] == 4 and cg["PROTOEMU_REG_CLOCK_DELAY_GATES"] == 6
+    assert "PROTOEMU_REG_CLOCK_DELAY_GATES" not in c and "reg_clock_delay_gates" not in c["//generator"]
+    for bad in (["--reg-clock-delay", "4", "--no-sram-clock-advance", "--late-clock", "0"], ["--reg-clock-delay", "-1"],
+                ["--reg-clock-delay-gates", "6"], ["--reg-clock-delay", "4", "--reg-clock-delay-gates", "-2"]):
         r, d = generate(tmp_path, "--preset", "experiment", *bad, name="bad.json")
         assert r.returncode != 0 and not d.exists()
     # the step runs it after the SRAM advance and before the late clocks; the plugin declares it
     step = (ROOT / "flow/sram_clock_advance_step.tcl").read_text()
     assert step.index("protoemu_sram_clk::run") < step.index("protoemu_reg_clk::run") < step.index("protoemu_late_clk::run")
-    assert 'Variable("PROTOEMU_REG_CLOCK_DELAY", int,' in (ROOT / "librelane_plugin_protoemu.py").read_text()
+    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    assert 'Variable("PROTOEMU_REG_CLOCK_DELAY", int,' in plugin and 'Variable("PROTOEMU_REG_CLOCK_DELAY_GATES", int,' in plugin
+    assert "PROTOEMU_REG_CLOCK_DELAY_GATES" in step
     assert "namespace eval protoemu_reg_clk" in (ROOT / "flow/sram_clock_advance.tcl").read_text()
 
 
