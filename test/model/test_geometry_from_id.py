@@ -289,7 +289,7 @@ def test_driver_explicit_geometry_wins_and_unknown_ids_refused():
     assert (pe.ncores, pe.nbanks) == (2, 2)           # explicit wins
     pe = protoemu.ProtoEmu(FakeTT(model(3)), nbanks=1)
     pe.use_id(ID3)
-    assert (pe.ncores, pe.nbanks) == (2, 1)
+    assert (pe.ncores, pe.nbanks) == (3, 1)           # the unspecified core count is the ID's
     pe = protoemu.ProtoEmu(FakeTT(model(2)))
     for v in UNKNOWN_IDS:
         with pytest.raises(ValueError, match="not a protoemu ID"):
@@ -499,3 +499,108 @@ def test_bringup_core0_capture_and_preloaded_spi_leave_core_2_running():
     bringup.spi_preloaded_setup(pe)
     assert bringup.spi_preloaded_transfer(pe, msgs[0][0], timeout_ms=LONG) == msgs[0][1]
     assert core2_alive(), "preloaded SPI on core 0 stopped core 2"
+
+
+# ---------------------------------------------------------------- 089 findings: the chip bounds CTRL write-back
+
+def start_core2_loop(mh):
+    """Core 2 runs `l: jmp l` in its bank, loaded and started straight on the model."""
+    mh.apply(host.load_program(2, asm.assemble("l: jmp l"), chip_id=mh.chip.read(sim.A_ID)))
+    mh.start(1 << 2)
+    mh.step(10)
+    assert mh.chip.enable & 4
+
+
+@pytest.mark.parametrize("how", ["use_id", "setup"])
+def test_smaller_driver_geometry_keeps_core_2_through_capture_and_spi(board, how):
+    """The verifier's reproduction (089 finding 1): a 2-core driver on a 3-core
+    chip (allowed: it leaves core 2 alone) runs a UART capture and a preloaded
+    SPI transfer on core 0 while core 2 runs; core 2 stays enabled."""
+    from test_micropython_spi_uart import LONG, Wire, messages, spi_device, uart_source
+    mh = model(3)
+    wire = Wire(mh)
+    if how == "use_id":
+        pe = protoemu.ProtoEmu(FakeTT(mh), ncores=2)
+        pe.use_id(pe.read(protoemu.A_ID))
+    else:
+        pe = board(mh, ncores=2)
+    assert (pe.ncores, pe.nbanks) == (2, 2)            # allowed: the driver leaves core 2 alone
+    start_core2_loop(mh)
+    arm = uart_source(wire, mh, b"\x39\xd3\x81")
+    assert bringup.uart_capture(pe, 3, timeout_ms=LONG, after_arm=arm) == (b"\x39\xd3\x81", False)
+    mh.step(20)
+    assert mh.chip.enable & 4, "UART capture through a 2-core driver stopped core 2"
+    wire.devices.clear()
+    msgs = messages([5])
+    _, device = spi_device(0, msgs)
+    wire.devices.append(device)
+    bringup.spi_preloaded_setup(pe)
+    assert bringup.spi_preloaded_transfer(pe, msgs[0][0], timeout_ms=LONG) == msgs[0][1]
+    mh.step(20)
+    assert mh.chip.enable & 4 and 512 <= mh.chip.cores[2].pc < 768, "preloaded SPI stopped core 2"
+
+
+def test_driver_ctrl_mask_follows_the_chip():
+    pe = protoemu.ProtoEmu(FakeTT(model(3)), ncores=2)
+    assert (pe.chip_cores(), pe.ctrl_mask()) == (2, 3)          # no ID yet: the driver's count
+    pe.use_id(ID3)
+    assert (pe.chip_cores(), pe.ctrl_mask()) == (3, 7)
+    pe = protoemu.ProtoEmu(FakeTT(model(2)))
+    pe.use_id(sim.ID_V2)
+    assert (pe.chip_cores(), pe.ctrl_mask()) == (2, 3)
+
+
+def test_unspecified_count_comes_from_the_id(board):
+    """089 minor: nbanks alone no longer pins ncores to 2."""
+    for kw, chip_id, want in (({"nbanks": 2}, ID3, (3, 2)), ({"nbanks": 3}, ID3, (3, 3)),
+                              ({"nbanks": 1}, sim.id_value(4, 4), (4, 1)),
+                              ({"ncores": 2}, sim.id_value(3, 1), (2, 1)), ({"ncores": 2}, ID3, (2, 2)),
+                              ({}, sim.id_value(3, 2), (3, 2))):
+        pe = protoemu.ProtoEmu(FakeTT(model(2)), **kw)
+        pe.use_id(chip_id)
+        assert (pe.ncores, pe.nbanks) == want, (kw, hex(chip_id))
+    pe = board(model(3), nbanks=2)
+    assert (pe.ncores, pe.nbanks) == (3, 2)
+
+
+def test_smaller_profile_keeps_core_2_enable_in_the_plans():
+    """089 finding 1, pe side: a smaller profile (TAPEOUT) with the 3-core
+    chip's ID accepts a CTRL mask with core 2 running and keeps its bit."""
+    prof = TAPEOUT
+    w = uartcapture.capture_plan(5, enabled_before=0b101, profile=prof, chip_id=ID3)
+    assert w[0] == (sim.A_CTRL, 0b100) and w[-1] == (sim.A_CTRL, 0b100 | 1 | (1 << 8))
+    plan = spipacked.preload_plan(b"abcde", enabled_before=0b101, profile=prof, chip_id=ID3)
+    assert plan["disable_writes"] == [(sim.A_CTRL, 0b100)]
+    assert plan["start_writes"] == [(sim.A_CTRL, 0b100 | 1 | (1 << 8))]
+    w = uartcapture_peer.capture_plan(5, enabled_before=0b101, profile=prof, chip_id=ID3)
+    assert w[0] == (sim.A_CTRL, 0b101) and w[-1] == (sim.A_CTRL, 0b101 | 2 | (2 << 8))
+    with pytest.raises(ValueError, match="3-core geometry"):
+        uartcapture.capture_plan(5, enabled_before=0b1001, profile=prof, chip_id=ID3)
+    with pytest.raises(ValueError, match="2-core geometry"):            # no ID: the profile's bound
+        uartcapture.capture_plan(5, enabled_before=0b101, profile=TAPEOUT)
+
+
+@pytest.mark.parametrize("prof", [Profile("tiny", 2, 2, bank_words=128, fifo_depth=4),
+                                  Profile("d4", 2, 2, fifo_depth=4), Profile("b128", 2, 2, bank_words=128)])
+def test_explicit_profile_of_another_bank_size_or_depth_refused_with_an_id(prof):
+    """089 minor: an ID build has 256-word banks and depth 8."""
+    for chip_id in (ID3, sim.ID_V2, sim.id_value(4, 4)):
+        with pytest.raises(ValueError, match="-word banks and depth"):
+            profile.resolve(prof, chip_id=chip_id)
+        with pytest.raises(ValueError, match="-word banks and depth"):
+            host.load_program(0, asm.assemble(CORE2), profile=prof, chip_id=chip_id)
+    assert profile.resolve(prof) is prof                                # offline: still allowed
+
+
+def test_kv260_spi_uart_demo_masks_ctrl_by_the_chip(monkeypatch):
+    """fpga/kv260/host/spi_uart_demo.chip(): the ID without a bus transaction
+    (the board's from v2_demo.Hw's geometry, the model's from its chip) and
+    the enable bits of every core it has. Host-side Python only."""
+    monkeypatch.syspath_prepend(str(rmii.ROOT / "fpga/kv260/host"))
+    import spi_uart_demo
+    from postfreeze_demo import ModelRig
+    for v, mask in ((sim.ID_V2, 3), (ID2, 3), (ID3, 7)):
+        rig = types.SimpleNamespace(model=False, hw=types.SimpleNamespace(geom=types.SimpleNamespace(id=v)))
+        assert spi_uart_demo.chip(rig) == (v, mask)
+    rig = ModelRig()
+    assert spi_uart_demo.chip(rig) == (rig.mh.chip.read(sim.A_ID), (1 << rig.mh.chip.ncores) - 1)
