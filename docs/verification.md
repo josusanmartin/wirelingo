@@ -423,3 +423,11 @@ candidate, run fo6, passes 29/29 and meets 50 MHz at every corner (§5).
 | WS2812 firmware | a 0 bit was 2 ticks high, not the header's 3: 240-260 ns at 50 MHz, outside WS2812B's T0H window | the KV260 run script's model pass at 50 MHz, before the board; `test_ws2812_bit_timing_is_the_documented_one` |
 | CAN RX firmware | a stuff bit after a CRC ending in five equal bits was not skipped, so the ACK came a bit early (about one random frame in 31; the model tests' frames avoided it) | the KV260 run script's model pass on a generator frame, before the board; three tests in `test_can.py` |
 | assembler | `/` truncated each half of a split delay, so bidirectional DShot ran a clock short per level at 50 MHz | the KV260 board (pins captured by `la_capture`), then the cycle model; `/` is now integer division |
+
+### Additional firmware in the RTL regression
+
+The test workflow runs `test_blind`, `test_rmii_rtl`, `test_eth_stack_rtl`
+and `test_eth_reply_rtl` on the 3-core SRAM build. Each module gets a separate
+results file and `check_results.py` requires every declared case to pass.
+These were previously manual suites. This is functional simulation through
+the host port and pins; sigrok checks still require a separate installation.
