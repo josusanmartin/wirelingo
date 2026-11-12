@@ -1,0 +1,27 @@
+== minimum signoff
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.36253
+utilization incl. macros     0.414753
+nom_typ_1p20V_25C            setup WS 0, hold WS 0.22263158613460188, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS 0, hold WS 0.41464544083016264, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0, hold WS 0.10700907129952386, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl d28939c86405ee67  gds a71bb79681bd976d
+SIGNOFF PASSED
+== release criteria
+nom_typ_1p20V_25C: actual constraint 20 ns; setup 0 ns; hold 0.22263158613460188 ns
+nom_slow_1p08V_125C: actual constraint 20 ns; setup 0 ns; hold 0.41464544083016264 ns
+nom_fast_1p32V_m40C: actual constraint 20 ns; setup 0 ns; hold 0.10700907129952386 ns
+GL verified: ~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/candidate/test/sim_build/gl.bzDZ4i/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.pikatH/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.WQJ4Ii/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.YuD04I/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.Q2BfWP/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.1JAydA/receipt.json
+precheck verified: ~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/precheck/receipt.json
+RELEASE PASSED (SDF profile v2, slow target 50 MHz)

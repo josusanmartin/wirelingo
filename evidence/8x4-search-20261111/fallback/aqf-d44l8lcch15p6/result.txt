@@ -1,0 +1,25 @@
+flow exit status: 0
+998fccf7 8x4 fallback search: --tuned fallback-8x4 and the first 11 runs
+tiles 8x4, cores 2, preset experiment, FIFO_LOG2 3, STOP none
+macros {'bank0': [4.32, 3.78], 'bank1': [1302.72, 3.78]} period 20 density 44
+[04:09:30] INFO     Flow complete.                             sequential.py:413
+[INFO GPL-0019] Utilization:                    32.258 %                        
+Layer         Resource        Demand        Usage (%)    Max H / Max V / Total  
+Metal2          237739        105083           44.20%             1 /  1 /  6   
+Metal3          312432        145453           46.56%             1 /  0 / 12   
+Metal4          223226         13355            5.98%             0 /  0 /  0   
+[INFO DPL-0022] HPWL after           1561781.9 u
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.365718
+utilization incl. macros     0.41768
+nom_typ_1p20V_25C            setup WS 0, hold WS 0.21786351117589386, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS -0.5257252559869056, hold WS 0.42200111266554674, setup/hold violators 83/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0, hold WS 0.08035217163515539, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl 1925ee238fe35990  gds abe240cfb1b462a0
+SIGNOFF PASSED

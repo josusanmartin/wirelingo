@@ -1,0 +1,25 @@
+flow exit status: 0
+1205c17 Merge branch 'ap-flow8x4' into aq-search
+tiles 8x4, cores 2, preset experiment, FIFO_LOG2 3, STOP none
+macros {'bank0': [4.32, 3.78], 'bank1': [1302.72, 3.78]} period 20 density 44
+[06:58:17] INFO     Flow complete.                             sequential.py:413
+[INFO GPL-0019] Utilization:                    32.258 %                        
+Layer         Resource        Demand        Usage (%)    Max H / Max V / Total  
+Metal2          237739        103298           43.45%             0 /  1 /  1   
+Metal3          312432        145467           46.56%             1 /  0 /  7   
+Metal4          223226          9712            4.35%             0 /  0 /  0   
+[INFO DPL-0022] HPWL after           1552523.8 u
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.358144
+utilization incl. macros     0.410727
+nom_typ_1p20V_25C            setup WS 0, hold WS 0.14353540984272692, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS 0, hold WS 0.32022629898595556, setup/hold violators 0/0, max slew/cap violations 2/0
+nom_fast_1p32V_m40C          setup WS 0, hold WS 0.03380795739052729, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl aea21c07b19d15fb  gds ada65b48a04c4db8
+SIGNOFF PASSED

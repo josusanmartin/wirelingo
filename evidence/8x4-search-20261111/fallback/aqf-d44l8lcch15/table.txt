@@ -1,0 +1,5 @@
+== aqf-d44l8lcch15 [aqf-d44l8lcch15 2 -- --density 44 --late-clock 8 --late-clock-core 4 --set GRT_RESIZER_HOLD_SLACK_MARGIN=0.15]: signoff PASSED, nl d28939c86405ee67, util 0.3625, Metal3 46.63% ovf 8, wire 1908028, drc/klayout/lvs/antenna [0, 0, 0, 0], score +0.506
+   nom_typ_1p20V_25C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.223 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.442; @20.832 (0.0, 0)
+   nom_slow_1p08V_125C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.415 vio 0; slew 0 cap 0 fanout 0; worst flop@20 0.506; @20.832 (0.0, 0)
+   nom_fast_1p32V_m40C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.107 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.589; @20.832 (0.0, 0)
+    harden rc=0 minutes=62

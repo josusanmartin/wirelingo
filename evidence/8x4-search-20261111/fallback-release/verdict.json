@@ -1,0 +1,114 @@
+{
+ "archive": "~/protoemu-flow/aq-search/wirelingo-release-evidence-15dd367-aqf-d44l8lcch15.tar.gz",
+ "created_utc": "2026-11-11T22:58:24.773260+00:00",
+ "exit": 0,
+ "finished_utc": "2026-11-12T01:20:32.257634+00:00",
+ "jobs": {
+  "gl": {
+   "returncode": 0,
+   "seconds": 7100
+  },
+  "precheck": {
+   "returncode": 0,
+   "seconds": 355
+  },
+  "sdf_auto_fast": {
+   "returncode": 0,
+   "seconds": 2530
+  },
+  "sdf_auto_slow": {
+   "returncode": 0,
+   "seconds": 2660
+  },
+  "sdf_auto_typ": {
+   "returncode": 0,
+   "seconds": 2585
+  },
+  "sdf_standard": {
+   "returncode": 0,
+   "seconds": 355
+  },
+  "sdf_v2": {
+   "returncode": 0,
+   "seconds": 1060
+  }
+ },
+ "peak_simulators": 4,
+ "receipts": [
+  {
+   "job": "gl",
+   "kind": "gl",
+   "path": "~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/candidate/test/sim_build/gl.bzDZ4i/receipt.json",
+   "sha256": "60f5756562ef821546488cff24c8cc6a8f40a09f3fc6c4deaa1631305ef15ca6"
+  },
+  {
+   "job": "sdf_auto_slow",
+   "kind": "sdf",
+   "path": "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.pikatH/receipt.json",
+   "sha256": "a44bf2545fdbe7dbe5d6d62fdb70e4d616f3d67f2f93a61dc60930066f342df9"
+  },
+  {
+   "job": "sdf_auto_typ",
+   "kind": "sdf",
+   "path": "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.WQJ4Ii/receipt.json",
+   "sha256": "4d046473c81ef2007aecdc72ffed2d1d50cb3b2eb1b1ef7dd1c1d12a390bf962"
+  },
+  {
+   "job": "sdf_auto_fast",
+   "kind": "sdf",
+   "path": "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.YuD04I/receipt.json",
+   "sha256": "54a3abf9d3320d24eca1c9675ab3a348838ec0e068fbcc3e3c67d9781d42049f"
+  },
+  {
+   "job": "precheck",
+   "kind": "precheck",
+   "path": "~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/precheck/receipt.json",
+   "sha256": "8459602c6dd87627e8d87b7aa5404c882fbc58986e03af44fb3bf81a6b212f5e"
+  },
+  {
+   "job": "sdf_standard",
+   "kind": "sdf",
+   "path": "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.Q2BfWP/receipt.json",
+   "sha256": "40b409c14696c2775ab46b63ec6910aad7ad2a94e4721e22b67e6f3df1e16adc"
+  },
+  {
+   "job": "sdf_v2",
+   "kind": "sdf",
+   "path": "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.1JAydA/receipt.json",
+   "sha256": "7c0630efa3a9bcc5ce0663fd98dc6a6a7aa6fa0588fd45818927336e8b32903f"
+  }
+ ],
+ "release_check": [
+  "/usr/bin/python3",
+  "~/protoemu-flow/aq-search/val-15dd367/flow/release_check.py",
+  "~/protoemu-flow/aq-search/runs/protoemu-exp-aqf-d44l8lcch15",
+  "--validation-root",
+  "~/protoemu-flow/aq-search/val-15dd367",
+  "--sdf-profile",
+  "v2",
+  "--require-sta-inputs",
+  "--gl-receipt",
+  "~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/candidate/test/sim_build/gl.bzDZ4i/receipt.json",
+  "--sdf-receipt",
+  "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.pikatH/receipt.json",
+  "--sdf-receipt",
+  "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.WQJ4Ii/receipt.json",
+  "--sdf-receipt",
+  "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.YuD04I/receipt.json",
+  "--precheck-receipt",
+  "~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/precheck/receipt.json",
+  "--sdf-receipt",
+  "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.Q2BfWP/receipt.json",
+  "--sdf-receipt",
+  "~/protoemu-flow/aq-search/val-15dd367/test/sim_build/gl_sdf.1JAydA/receipt.json"
+ ],
+ "run": "~/protoemu-flow/aq-search/runs/protoemu-exp-aqf-d44l8lcch15",
+ "runner_head": "15dd367175f1608dee9dd0185db5b7afd190ad5d",
+ "runner_root": "~/protoemu-flow/aq-search/val-15dd367/flow",
+ "schema": 1,
+ "validation_head": "15dd367175f1608dee9dd0185db5b7afd190ad5d",
+ "validation_root": "~/protoemu-flow/aq-search/val-15dd367",
+ "verdict": "RELEASE PASSED (SDF profile v2, slow target 50 MHz)",
+ "view": "~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z/candidate",
+ "work": "~/protoemu-flow/aq-search/rcpt-aqf-d44l8lcch15-15dd367-20261111T225824Z"
+}

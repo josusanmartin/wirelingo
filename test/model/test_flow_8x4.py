@@ -172,3 +172,32 @@ def test_harden_reads_tile_and_core_count():
     text = (ROOT / "flow/harden.sh").read_text()
     assert 'tt_block_${TILE}_pgvdd.def' in text
     assert 'if [ "$NC" != "$NC0" ] || [ -n "${STOP:-}" ]; then PRESET=experiment; fi' in text
+
+
+# The 2-core fallback's search candidate (docs/physical.md, "8x4 settings
+# searches"): its run's src/config.json, as flow/harden.sh NAME 2 generated it.
+FALLBACK_RUN = ROOT / "evidence/8x4-search-20261111/fallback/aqf-d44l8lcch15"
+
+
+def test_tuned_fallback_gives_the_searched_runs_config_byte_for_byte(tmp_path):
+    # harden.sh NAME 2 runs the generator before setting PE_NCORES 2, so it sees
+    # the committed core count and needs --preset experiment --banks 2
+    r, dst = generate(tmp_path, "--preset", "experiment", "--banks", "2", "--tuned", "fallback-8x4")
+    assert r.returncode == 0, r.stderr
+    assert dst.read_bytes() == (FALLBACK_RUN / "config.json").read_bytes()
+    spec = (FALLBACK_RUN / "spec.txt").read_text().split()
+    assert spec[:3] == ["aqf-d44l8lcch15", "2", "--"]
+    r2, dst2 = generate(tmp_path, "--preset", "experiment", "--banks", "2", *spec[3:], name="explicit.json")
+    assert r2.returncode == 0 and dst2.read_bytes() == dst.read_bytes()
+
+
+def test_tuned_options_come_first_and_names_are_checked(tmp_path):
+    r, dst = generate(tmp_path, "--preset", "experiment", "--banks", "2", "--tuned=fallback-8x4", "--density", "40")
+    assert r.returncode == 0, r.stderr
+    c = json.loads(dst.read_text())
+    assert c["PL_TARGET_DENSITY_PCT"] == 40 and c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.15
+    assert "tuned" not in c["//generator"]
+    for bad in (["--tuned", "nope"], ["--tuned", "fallback-8x4", "--tuned", "fallback-8x4"], ["--tuned"],
+                ["--tune", "fallback-8x4"], ["--tu", "fallback-8x4"], ["--tune=fallback-8x4"]):
+        r, dst = generate(tmp_path, *bad, name="bad.json")
+        assert r.returncode != 0 and not dst.exists()

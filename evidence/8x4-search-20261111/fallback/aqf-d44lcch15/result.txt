@@ -1,0 +1,25 @@
+flow exit status: 0
+7a014860 Merge next-8x4 (0e88c39: AT's STA receipt binding, 082 PASS) into aq-search
+tiles 8x4, cores 2, preset experiment, FIFO_LOG2 3, STOP none
+macros {'bank0': [4.32, 3.78], 'bank1': [1302.72, 3.78]} period 20 density 44
+[10:48:21] INFO     Flow complete.                             sequential.py:413
+[INFO GPL-0019] Utilization:                    32.258 %                        
+Layer         Resource        Demand        Usage (%)    Max H / Max V / Total  
+Metal2          237739        102735           43.21%             0 /  0 /  0   
+Metal3          312432        145560           46.59%             1 /  0 /  8   
+Metal4          223226         10332            4.63%             0 /  0 /  0   
+[INFO DPL-0022] HPWL after           1552523.8 u
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.361049
+utilization incl. macros     0.413394
+nom_typ_1p20V_25C            setup WS 0, hold WS 0.20157132089565247, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS 0, hold WS 0.3941036497583766, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0, hold WS 0.07051198713384704, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl 0b39b33c2b3c2cef  gds 26825d6cc0d6ac3b
+SIGNOFF PASSED

@@ -1,0 +1,1 @@
+aqf-d44lcch15 2 -- --density 44 --late-clock-core 4 --set GRT_RESIZER_HOLD_SLACK_MARGIN=0.15

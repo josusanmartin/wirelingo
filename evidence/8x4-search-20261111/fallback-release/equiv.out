@@ -1,0 +1,41 @@
+[equiv 02:21:59] inputs ...
+[equiv 02:21:59] inputs done in 0.0 s
+[equiv 02:21:59] cells ...
+[equiv 02:21:59] cells done in 0.2 s
+[equiv 02:21:59] gold ...
+[equiv 02:21:59] gold done in 0.4 s
+[equiv 02:21:59] gate ...
+[equiv 02:22:03] gate done in 3.9 s
+[equiv 02:22:03] synth-netlist ...
+[equiv 02:22:05] synth-netlist done in 1.4 s
+[equiv 02:22:05] match ...
+[equiv 02:22:19] match done in 14.3 s
+[equiv 02:22:19] abc ...
+[equiv 02:22:33] abc done in 14.1 s
+[equiv 02:22:33] ABC: equivalent
+[equiv 02:22:33] simple ...
+[equiv 02:26:48] simple done in 255.1 s
+[equiv 02:26:48] equiv_simple: 7729/7729 proven, 0 unproven
+[equiv 02:26:48] mutants ...
+[equiv 02:27:03]   mutant 0: hold-fix delay cell on a data path made an inverter: not equivalent
+[equiv 02:27:18]   mutant 1: clock-tree buffer made an inverter: not equivalent
+[equiv 02:27:32]   mutant 2: D nets of flops _38669_ and _39469_ swapped: not equivalent
+[equiv 02:27:47]   mutant 3: GATE nets of clock gates \u_chip.g_core[0].g_on.u_core.g_cfg_cg[3].u_cg.cg and \u_chip.g_core[1].g_on.u_core.u_fifos.rxf.u_wd_cg.cg swapped: not equivalent
+[equiv 02:28:01]   mutant 4: two address bits of an SRAM macro swapped: not equivalent
+[equiv 02:28:01] mutants done in 73.3 s
+
+==== equivalence: tt_um_josusanmartin_protoemu (~/protoemu-flow/aq-search/runs/protoemu-exp-aqf-d44l8lcch15/runs/wokwi)
+netlist sha256      d28939c86405ee67f162ef208a88c59f902820e3b3691e136b012e30e09bbe7b
+checker             Yosys 0.69+158 (git sha1 a1a0ad7d4-dirty, Release, Clang /usr/bin/clang++ 21.1.8); LibreLane 3.1.0.dev3
+cells               59 types used; 50 combinational models = Liberty functions
+rtl parameters      AW=8, BANK_AW=8, FIFO_LOG2=3, IDX=2'00, IDX=2'01, LOG2=3, NBANKS=2, NCORES=2, W=32
+state elements      flops gold 1752 / gate 1747: matched 1747 {'final-net': 1709, 'simulation-pair': 35, 'fsm-name': 3} (27 inverted)
+                    instances (latches, clock gates, SRAMs) 1080/1080 by name; FSMs re-encoded: ['u_host.phase']
+gold-only flops     6 (proven unobservable): u_chip.ctrl_data[6], u_chip.ctrl_data[7], u_chip.ctrl_data[10], u_chip.ctrl_data[11], u_host.sh[31], u_host.cmd[7]
+compared points     {'port': 24, 'D': 1747, 'C': 1747, 'R': 1747, 'I:icg': 108, 'I:latch': 2048, 'I:sram': 308}
+ABC &cec            equivalent (RTL x values free)
+equiv_simple        7729/7729 proven, unproven: []
+mutants             m0:caught, m1:caught, m2:caught, m3:caught, m4:caught
+time                {'inputs': 0.0, 'cells': 0.2, 'gold': 0.4, 'gate': 3.9, 'synth-netlist': 1.4, 'match': 14.3, 'abc': 14.1, 'simple': 255.1, 'mutants': 73.3, 'total': 362.7}
+VERDICT             EQUIVALENT
+

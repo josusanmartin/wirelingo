@@ -1,0 +1,5 @@
+== aqf-base [aqf-base 2]: signoff PASSED, nl 1a90e672e33c9244, util 0.3579, Metal3 52.12% ovf 1, wire 2104286, drc/klayout/lvs/antenna [0, 0, 0, 0], score -1.847
+   nom_typ_1p20V_25C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.183 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.38; @20.832 (0.0, 0)
+   nom_slow_1p08V_125C: setup WS -1.847 vio 191 TNS -175.35; hold WS 0.367 vio 0; slew 0 cap 0 fanout 0; worst flop@20 -1.847; @20.832 (-1.0154100070399243, 104)
+   nom_fast_1p32V_m40C: setup WS 0.000 vio 0 TNS 0.00; hold WS 0.073 vio 0; slew 0 cap 0 fanout 0; worst flop@20 5.552; @20.832 (0.0, 0)
+    harden rc=0 minutes=42

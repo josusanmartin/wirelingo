@@ -172,6 +172,114 @@ placements of one configuration ("Slow corner: useful skew", below) in mind:
 * **GRT_ADJUSTMENT** 0.15 gained 0.17 ns at higher Metal3 use (50 %, 13
   overflows), within the noise.
 
+### 8x4 settings searches (2026-11-11)
+
+The searches that pick the 8x4 release netlist (backlog item AQ), on the
+real RTL of `next-8x4` (the package: bundle, any-width CRC, tick counter),
+one harden at a time on the compute runner. Per-run records:
+[evidence/8x4-search-20261111/](../evidence/8x4-search-20261111/README.md).
+Target: setup met at every corner at 20 ns (50 MHz), else 20.832 ns (48
+MHz); no slew, capacitance or fanout violation; fast-corner hold about
++0.05 ns or more; routing DRC, KLayout DRC, LVS and antenna clean.
+
+**The fallback: two cores** (`flow/harden.sh NAME 2 -- <options>`: the
+package RTL with `PE_NCORES` 2 and two banks in the bottom corners, the
+experiment preset). Runs at `aq-search` commits `1205c17`, `a7035b6`,
+`7a01486`, `263a355` and (the last seed) `998fccf`, which differ only in the release tools
+(`flow/release_*.py`, `flow/sta_rerun.py`, `flow/archive_evidence.py`) and,
+at `998fccf`, in `flow/gen_config.py`'s new `--tuned` (not used by these
+runs, which name their options): the harden's other inputs (`src/`,
+`info.yaml`, the plugin, `syn/` and every other `flow/` file) are the same
+at all five. Options: d = `--density`, L =
+`--late-clock` (pin registers' stages, default 6), C = `--late-clock-core`
+(core 0's R0–R3 and CRC registers), h = `--set
+GRT_RESIZER_HOLD_SLACK_MARGIN=` (default 0.13), phi = `--set
+PL_MAX_PHI_COEFFICIENT=` (OpenROAD's default 1.05). "Worst flop" is the slow
+corner's worst flop or SRAM endpoint at 20 ns (`syn/8x4-study/sta_period.sh`;
+it equals setup WS when WS is negative); "48 MHz" is a fresh STA at
+20.832 ns (`flow/sta_rerun.py`). Every run passed `flow/signoff.py` with 0
+routing DRC, 0 KLayout DRC, LVS clean and 0 antenna violations, and met
+setup at typical and fast (WS 0, 0 violators).
+
+| Run | Options | Slow WS at 20 ns (endpoints, TNS) | Slow worst flop | 48 MHz slow WS (violators) | Hold typ / slow / fast | Slew+cap+fanout | Metal3 / overflow | Wire (µm) | HPWL (µm) | Time | Netlist |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| aqf-base | none | −1.847 (191, −175.4) | −1.847 | −1.015 (104) | +0.183 / +0.367 / +0.073 | 0 | 52.1 % / 1 | 2,104,286 | 1,752,606 | 42 min | `1a90e672e33c9244` |
+| aqf-lcc | C4 | −1.170 (121, −85.0) | −1.170 | −0.338 (46) | +0.203 / +0.383 / +0.081 | 0 | 52.1 % / 1 | 2,105,611 | 1,752,606 | 58 min | `bf006fcae8fe7806` |
+| aqf-d44 | d44 | −0.080 (4, −0.16) | −0.080 | 0 (0) | +0.165 / +0.348 / +0.052 | 0 | 46.5 % / 8 | 1,900,975 | 1,552,524 | 68 min | `8d513520374e306f` |
+| aqf-d44lcc | d44 C4 | 0 (0) | +0.154 | 0 (0) | +0.144 / +0.320 / **+0.034** | **2** (slow slew) | 46.6 % / 7 | 1,902,563 | 1,552,524 | 71 min | `aea21c07b19d15fb` |
+| aqf-d44l8 | d44 L8 | 0 (0) | +0.208 | 0 (0) | +0.183 / +0.366 / +0.059 | 0 | 46.6 % / 8 | 1,899,826 | 1,552,524 | 99 min | `5124a6f5e9cd0c7a` |
+| aqf-d44lcch15 | d44 C4 h0.15 | 0 (0) | +0.346 | 0 (0) | +0.202 / +0.394 / +0.071 | 0 | 46.6 % / 8 | 1,904,217 | 1,552,524 | 54 min | `0b39b33c2b3c2cef` |
+| **aqf-d44l8lcch15** | d44 L8 C4 h0.15 | 0 (0) | **+0.506** | 0 (0) | +0.223 / +0.415 / **+0.107** | 0 | 46.6 % / 8 | 1,908,028 | 1,552,524 | 62 min | `d28939c86405ee67` |
+| aqf-d44lcch15p4 | d44 C4 h0.15 phi1.04 | 0 (0) | +0.243 | 0 (0) | +0.214 / +0.409 / +0.095 | 0 | 44.6 % / 5 | 1,874,916 | 1,539,318 | 178 min | `4ca16d3d73ade8a1` |
+| aqf-d44lcch15p6 | d44 C4 h0.15 phi1.06 | −0.484 (94, −25.7) | −0.484 | 0 (0) | +0.211 / +0.428 / +0.088 | 0 | 46.5 % / 16 | 1,938,828 | 1,561,782 | 170 min | `fd18d58b86d691bc` |
+| aqf-d43lcch15 | d43 C4 h0.15 | −0.677 (80, −18.4) | −0.677 | 0 (0) | +0.211 / +0.397 / +0.103 | 0 | 47.2 % / 13 | 1,938,120 | 1,565,409 | 121 min | `b9d831ec7aa71f25` |
+| aqf-d45lcch15 | d45 C4 h0.15 | −0.783 (90, −40.4) | −0.783 | 0 (0) | +0.199 / +0.391 / +0.085 | 0 | 45.5 % / 2 | 1,882,229 | 1,522,789 | 69 min | `b89a55d14742a217` |
+| aqf-d44l8lcch15p4 | d44 L8 C4 h0.15 phi1.04 | 0 (0) | +0.117 | 0 (0) | +0.224 / +0.421 / +0.102 | 0 | 44.7 % / 5 | 1,880,273 | 1,539,318 | 161 min | `bde26c8fef82b957` |
+| aqf-d44l8lcch15p6 | d44 L8 C4 h0.15 phi1.06 | −0.526 (83, −19.0) | −0.526 | 0 (0) | +0.218 / +0.422 / +0.080 | 0 | 46.6 % / 12 | 1,947,701 | 1,561,782 | 158 min | `1925ee238fe35990` |
+
+HPWL is detailed placement's first figure (`DPL-0022`), so equal HPWL means
+the same global placement: the five density-44 runs without phi share one
+placement (A), the two phi 1.04 runs another (B), the two phi 1.06 runs a
+third (C), and runs on one placement differ from clock-tree synthesis on (late clocks) and in
+post-GRT repair (hold margin). Times are wall-clock on a runner shared with
+other builders' simulations. Metal3 is the run's last congestion report.
+What it says (a reading; one harden per row):
+
+* **The package's additions cost about 1.2 ns at the slow corner on two
+  cores**: the base misses 50 MHz by 1.847 ns (today's 2-core RTL, apbase:
+  0.643) and 48 MHz by 1.015. Density is again the largest lever (44:
+  −0.080, wire −10 %), and the late clocks add to it: core 0's registers
+  +0.68 ns at density 34, +0.23 at 44; pin registers at 8 stages +0.29 at 44.
+* **The post-GRT hold margin 0.15** (0.13 before) raised fast hold from
+  +0.034 to +0.071 on the same placement, and here it also gained setup
+  (+0.154 to +0.346) and cleared the 2 slow slew violations (one net, 2.58
+  against 2.51 ns): post-GRT repair of one placement is itself a sample.
+* **Placement noise is about 1 ns, and it decides 50 MHz.** On the three
+  global placements of density 44 (A, B, C: phi 1.05, 1.04, 1.06), the
+  settings d44 C4 h0.15 gave +0.346 / +0.243 / −0.484 ns and d44 L8 C4
+  h0.15 gave +0.506 / +0.117 / −0.526; densities 43 and 45 gave −0.677 and
+  −0.783. So each of the two best settings met 50 MHz at the slow corner on
+  2 of 3 placements, and placement C missed with both by about half a
+  nanosecond. All eleven runs at density 43–45 met 48 MHz at the slow
+  corner (0 violators at 20.832 ns). Fast hold was +0.071 to +0.107 ns at
+  hold margin 0.15 and +0.034 to +0.059 at the default 0.13 (at density
+  43–45; at density 34, +0.073 and +0.081).
+* **Candidate: aqf-d44l8lcch15**, `flow/harden.sh NAME 2 -- --tuned
+  fallback-8x4` (`flow/gen_config.py`'s `TUNED["fallback-8x4"]` = d44 L8 C4
+  h0.15; `test/model/test_flow_8x4.py` checks that it generates this run's
+  `src/config.json` byte for byte). Setup met at every corner at 20 ns,
+  slow worst flop +0.506 ns, hold +0.223 / +0.415 / +0.107 ns, no slew,
+  capacitance or fanout violation at any corner, 160 late-clocked
+  registers. Netlist sha256 `d28939c86405ee67f162ef208a88c59f902820e3b3691e136b012e30e09bbe7b`,
+  GDS `a71bb79681bd976dcc0ac6fb5215aaf52996af3271326e40de6799fcfa452e17`.
+  Its settings met 50 MHz on 2 of the 3 placements tried (above), so a
+  re-harden of them is not sure to meet 50 MHz again; this netlist does.
+
+**The fallback candidate's release receipts (2026-11-11/12).** The GL and
+SDF receipts need a validation checkout whose `src/*.v` equal the
+candidate's, and `flow/harden.sh NAME 2` hardens with `PE_NCORES` 2, so the
+receipts use the branch `aq-fallback-val` (`15dd367`, one commit on
+`998fccf`: `PE_NCORES` 3 → 2 in `src/project.v`, and `src/config.json`
+regenerated by `python3 flow/gen_config.py`, the 2-bank submission preset).
+That branch is for the receipts only; whether the release has three cores
+or two is the Dec 6 gate's decision. `val-15dd367/flow/release_evidence.py
+runs/protoemu-exp-aqf-d44l8lcch15 --validation-root val-15dd367 --jobs 4`,
+22:58–01:20 UTC: **`RELEASE PASSED (SDF profile v2, slow target 50 MHz)`**,
+no waiver. Functional GL 34/34 (test 30, test_pio 2, test_eth_service 2);
+SDF standard typ/slow/fast at 20 ns 5/5 each, the slow 10 ns control
+failing as required; SDF v2 typ/slow/fast at 20 ns 3/3 and USB full speed at
+20.834 ns 1/1 at each corner; autonomous USB 2/2 at 20.834 ns at each
+corner; precheck passed. The archive
+`wirelingo-release-evidence-15dd367-aqf-d44l8lcch15.tar.gz` (47,949,505
+bytes, sha256 `e9685d320f82613328193c6abffed7a0911015a932d73c64d938962bb0023d6b`,
+516 payload files, 7 receipts), extracted into an empty directory,
+re-verifies with its own `release_check.py`. RTL-to-netlist equivalence
+(`formal/equiv/equiv_check.sh -j 4 --mutants`, from the same checkout):
+**EQUIVALENT**, 7729/7729 points proved (1747 flops matched, 27 inverted;
+1080 latches, clock gates and SRAMs by name; 6 RTL-only flops proved
+unobservable), all 5 planted netlist mutants caught. Records:
+[evidence/8x4-search-20261111/fallback-release/](../evidence/8x4-search-20261111/fallback-release/).
+
 ## SRAM macros
 
 * `RM_IHPSG13_1P_256x32_c2_bm_bist`: 416.64 × 118.78 µm, all signal pins on the
