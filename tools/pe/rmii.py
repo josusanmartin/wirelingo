@@ -12,6 +12,7 @@ import pathlib
 import zlib
 
 from . import asm, host, sim
+from . import profile as profile_mod
 
 MIN_GAP = 48          # 96 bit times at 2 bits per clock
 BUS_NS = 20           # one REF_CLK
@@ -346,10 +347,15 @@ def firmware(name):
 
 
 class Bench:
-    """The tapeout configuration with RMII pins on both sides and the port model."""
+    """A model chip with RMII pins on both sides and the port model. The chip's
+    geometry is `profile` (profile.resolve: TAPEOUT, the 2-core tapeout, if
+    none is given); the loads take the geometry from the chip's ID."""
 
-    def __init__(self, fifo_depth=8, late=False):
-        self.chip = sim.Chip(bank_words=256, ncores=2, nbanks=2, fifo_depth=fifo_depth)
+    def __init__(self, fifo_depth=8, late=False, profile=None):
+        p = profile_mod.resolve(profile)
+        self.chip = sim.Chip(bank_words=p.bank_words, ncores=p.ncores, nbanks=p.nbanks, fifo_depth=fifo_depth)
+        self.profile = profile_mod.for_id(self.chip.read(sim.A_ID), bank_words=self.chip.bank_words,
+                                          fifo_depth=self.chip.fifo_depth)
         self.port = QuadPort(self.chip, late=late)
         self.phy_rx = PhyRx()
         self.phy_tx = PhyTx()
@@ -365,12 +371,12 @@ class Bench:
             self.write(a, d)
 
     def load_rx(self, prog=None, core=0):
-        self.apply(host.load_program(core, prog or firmware("rmii_rx.pasm")))
+        self.apply(host.load_program(core, prog or firmware("rmii_rx.pasm"), profile=self.profile))
         self.write(sim.A_SYNCBYP, SYNC_BYPASS)
 
     def load_tx(self, prog=None, core=1):
-        self.apply(host.load_program(core, prog or firmware("rmii_tx.pasm")))
-        self.apply(host.pin_owner_writes({TX_PINS + i: core for i in range(3)}))
+        self.apply(host.load_program(core, prog or firmware("rmii_tx.pasm"), profile=self.profile))
+        self.apply(host.pin_owner_writes({TX_PINS + i: core for i in range(3)}, profile=self.profile))
 
     def start(self, mask):
         self.write(sim.A_CTRL, mask | (mask << 8))

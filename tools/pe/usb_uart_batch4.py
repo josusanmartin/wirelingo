@@ -37,8 +37,8 @@ def load_writes(programs=None, rx_pin=RX):
     flags. Call only for this optional workload, with cores disabled. After
     start, the peer uses USB packets and physical READY/RX, not loading APIs.
     """
-    if (TAPEOUT.ncores, TAPEOUT.nbanks, TAPEOUT.bank_words, TAPEOUT.fifo_depth) != (2, 2, 256, 8):
-        raise ValueError("fixed4 helper requires tapeout2/2/256/8")
+    if TAPEOUT.ncores < 2 or TAPEOUT.nbanks < 2 or (TAPEOUT.bank_words, TAPEOUT.fifo_depth) != (256, 8):
+        raise ValueError("fixed4 helper requires at least 2 cores and banks, 256 words, depth 8")
     rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
     usb, uart = assemble(rx_pin) if programs is None else programs
     writes = [(sim.A_CTRL, 0), (sim.A_FCLR, 0xff), (sim.A_SYNCBYP, 0),
