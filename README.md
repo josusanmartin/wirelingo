@@ -395,8 +395,8 @@ make -C formal                                                   # proofs
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
   delays. (These receipts ran software `5457d8e`, with the firmware of that
-  time; `uart_rx`, `i2c_master`, `can_rx` and the 253-word `usb_enum` changed
-  by `fault-fixes` need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
+  time; `uart_rx`, `i2c_master`, `can_rx` and the current 254-word `usb_enum`,
+  with subsequent fault/configuration fixes, need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,
   hash-bound receipt). With SDF at the typical corner all 16 pass
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)), and at the

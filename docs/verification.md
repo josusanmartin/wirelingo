@@ -69,8 +69,8 @@ The RTL `pe_chip` and the model run side by side in cocotb:
 The first mismatch stops the run with a register diff, recent bus traffic and
 the disassembly of every core's current instruction. Coverage counters (per
 opcode: attempted, completed, stalled) are printed. The regression runs on the
-tapeout configuration (2 cores, 2 SRAM banks, 8-deep FIFOs) and on the full
-4-core flop build.
+8x4 target (3 cores, 3 SRAM banks, 8-deep FIFOs), its 2-core SRAM fallback,
+and the full 4-core flop build.
 
 **CALL / RET**: random programs contain CALLs (conditions and targets as
 JMP), RETs, and MOVs to and from LR, with coverage goals for a taken CALL, a
@@ -369,7 +369,7 @@ fo6 passes all of it (test_usb_fs_device with `usb_fs_dev` before the got_in
 guard of 2026-11-04; not re-run at gate level with it), and the release adds the autonomous USB enumeration
 tests (low and full speed) with SDF at all three corners (receipts for
 software `5457d8e`, with the 246-word `usb_enum` before `fault-fixes`; the
-253-word one needs a gate-level rerun). Historically v2c
+current 254-word one needs a gate-level rerun). Historically v2c
 passed the older version of this set (typ 20 ns, slow 23 ns, and full-speed
 USB at slow/48 MHz, which its STA didn't meet). `v2long` runs the full-length
 test_la_capture_rate and test_reverse_engineering (v2c: pass at typ and slow, ~50 minutes each). Under SDF the

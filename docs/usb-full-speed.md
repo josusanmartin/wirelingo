@@ -14,12 +14,12 @@ lists what the runs can't show.
 > where g4 ACKed 11/24, and the turnarounds are 10.5 / 13.4 / 14.9 clocks.
 > Like g4's, these are digital simulations at exactly 48 MHz: whether the v2
 > chip runs at 48 MHz is up to its own signoff (g4's slow corner reaches about
-> 44 MHz; typ met 50 MHz). The current candidate, run fo6, meets 50 MHz at all
+> 44 MHz; typ met 50 MHz). The historical 6x4 candidate, run fo6, meets 50 MHz at all
 > three corners, and its release receipts run `test_usb_fs_device` and the
 > autonomous enumeration on the netlist with SDF at 20.834 ns (48 MHz) at typ,
 > slow and fast ([release-evidence.md](release-evidence.md)). Those receipts
 > are for software `5457d8e`: the autonomous enumeration ran with the
-> 246-word `usb_enum` from before `fault-fixes`, and the 253-word one needs a
+> 246-word `usb_enum` from before `fault-fixes`, and the current 254-word one needs a
 > gate-level rerun before they apply to it.
 
 > **got_in guard update (branch `usb-guard`, 2026-11-04).** `usb_fs_dev` now
@@ -474,10 +474,10 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   Linux xHCI through the board's USB5744 hub: 14 of 14 attaches, 56,000 of 56,000
   descriptor reads (`GET_DESCRIPTOR` control transfers), 130 of 130 bus resets ([fpga/kv260/README.md](../fpga/kv260/README.md)).
   Both `usb_enum` results are for the 246-word firmware before `fault-fixes`.
-  The 253-word one (a bus reset is seen wherever it starts:
-  [fault-testing.md](fault-testing.md), finding 6) has run on the model and in
-  RTL simulation only, and needs an FPGA and a gate-level rerun before these
-  results apply to it.
+  The current 254-word image includes the bus-reset fix
+  ([fault-testing.md](fault-testing.md), finding 6) and the configuration-state
+  repair ([usb-enumeration.md](usb-enumeration.md#rejected-configuration-requests)).
+  It needs FPGA and gate-level reruns before these results apply to it.
   That is the RTL in FPGA fabric with 3.3 V LVCMOS pins and no scope, so the
   analogue items above stay open, and it doesn't measure the jitter margin.
   `usb_fs_dev` carried data to and from Linux the same day, 350 round trips over

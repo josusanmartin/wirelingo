@@ -54,9 +54,9 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
 * **Real USB host (2026-10-30):** on the KV260, Linux enumerated and configured
   the autonomous USB firmware at both speeds with no host software on the chip's
   side after loading: 32 of 32 attaches, 66,000 of 66,000 descriptor reads
-  (`GET_DESCRIPTOR` control transfers) and 188 of 188 bus resets. (That was the 246-word `usb_enum`; the 253-word one
-  from `fault-fixes`, which sees a reset wherever it starts, has not run on the
-  FPGA, and these results apply to it only after a rerun there.) With
+  (`GET_DESCRIPTOR` control transfers) and 188 of 188 bus resets. (That was the
+  246-word `usb_enum`; the current 254-word image includes later bus-reset
+  and configuration-state fixes and needs a rerun before these results apply.) With
   `usb_fs_dev` and Python on the SPI port, a Linux
   process then wrote random data through USB and read it back, 350 of 350 round
   trips equal, over 2 MB at 17.6 kB/s, a rate set by the Python loop. (That was
@@ -99,7 +99,7 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   generator, with every device edge at the clock the cycle model gives when
   the model samples the pads the way the FPGA drives them. (That was the
   2026-10-14 replay with the 246-word `usb_enum` from before `fault-fixes`;
-  the 253-word one needs a KV260 rerun before it applies.)
+  the current 254-word one needs a KV260 rerun before it applies.)
 * A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
   handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
   gate-level simulation of the signed-off netlist
