@@ -1,9 +1,10 @@
 # Claims audit (2026-10-14)
 
 *Historical record: it describes the repository as it was on 2026-10-14 and
-is not kept up to date. Later state is in [rules-check.md](rules-check.md)
-(2026-11-03) and the docs it points to; where a recommendation below has
-since been acted on, it says so.*
+is not kept up to date. [rules-check.md](rules-check.md) is a later dated
+audit (2026-11-03), also historical. Current target and evidence limits are
+in [summary.md](summary.md) and [physical.md](physical.md#8x4-2026-11-10);
+where a recommendation below has since been acted on, it says so.*
 
 An adversarial read of what the documentation claims against what the
 repository's evidence shows, as a skeptical judge would do it. Base: `main`

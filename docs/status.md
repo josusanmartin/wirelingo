@@ -6,14 +6,19 @@ repository and the state of each line of work. The README now opens with a
 shorter version; [summary.md](summary.md) is the two-page one. Nothing here
 was removed from the repository, only moved.
 
+The current development target is 8x4 with three cores, ISA v0.3. At
+reviewed base `fb4228d`, it has no passing routed signoff/precheck/release
+receipt. The fo6 results below belong to the earlier 6x4, 2-core v0.2 chip;
+see [physical.md](physical.md#8x4-2026-11-10).
+
 ## What is proven, and at what level
 
 | Level | What has been shown | Limit |
 |---|---|---|
 | **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
 | **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
-| **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study and the blind-test firmware; `eth10_tx_cs` only in the 2026-11-03 fabric ping, pending verification ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun |
-| **Signed-off layout (run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
+| **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study and the blind-test firmware; `eth10_tx_cs` in the 2026-11-03 fabric ping, verified by report 037 ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun |
+| **Historical signed-off layout (6x4 run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
 | **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
 
 ## Failures we found in our own work, and a test we did not prepare for
@@ -60,7 +65,7 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   limits: [fpga/kv260/README.md](../fpga/kv260/README.md); the kernel and step logs
   of the enumeration runs, which hold part of these counts, are in
   [evidence/kv260-usb-20261030/](../evidence/kv260-usb-20261030/README.md).
-* **Release candidate: run fo6**, passing the strict release gate with no
+* **Historical 6x4 release: run fo6**, passing the strict release gate with no
   waiver. The certified software is **`5457d8e`** (2026-10-14): `main`
   `ee3dd25`'s firmware, tools and tests, so the third post-freeze round and
   the `ws2812` and `can_rx` timing fixes are covered. It adds one new,
