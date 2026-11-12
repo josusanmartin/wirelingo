@@ -197,6 +197,7 @@ def test_tuned_options_come_first_and_names_are_checked(tmp_path):
     c = json.loads(dst.read_text())
     assert c["PL_TARGET_DENSITY_PCT"] == 40 and c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.15
     assert "tuned" not in c["//generator"]
-    for bad in (["--tuned", "nope"], ["--tuned", "fallback-8x4", "--tuned", "fallback-8x4"], ["--tuned"]):
+    for bad in (["--tuned", "nope"], ["--tuned", "fallback-8x4", "--tuned", "fallback-8x4"], ["--tuned"],
+                ["--tune", "fallback-8x4"], ["--tu", "fallback-8x4"], ["--tune=fallback-8x4"]):
         r, dst = generate(tmp_path, *bad, name="bad.json")
         assert r.returncode != 0 and not dst.exists()

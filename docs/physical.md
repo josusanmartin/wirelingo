@@ -242,7 +242,8 @@ What it says (a reading; one harden per row):
   2 of 3 placements, and placement C missed with both by about half a
   nanosecond. All eleven runs at density 43–45 met 48 MHz at the slow
   corner (0 violators at 20.832 ns). Fast hold was +0.071 to +0.107 ns at
-  hold margin 0.15 and +0.034 to +0.059 at the default 0.13.
+  hold margin 0.15 and +0.034 to +0.059 at the default 0.13 (at density
+  43–45; at density 34, +0.073 and +0.081).
 * **Candidate: aqf-d44l8lcch15**, `flow/harden.sh NAME 2 -- --tuned
   fallback-8x4` (`flow/gen_config.py`'s `TUNED["fallback-8x4"]` = d44 L8 C4
   h0.15; `test/model/test_flow_8x4.py` checks that it generates this run's

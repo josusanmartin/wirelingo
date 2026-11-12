@@ -201,6 +201,10 @@ def main():
     ap.add_argument("--tuned", choices=sorted(TUNED),
                     help="a tuned option set from the 8x4 searches (TUNED), given before the other options")
     a = ap.parse_args(expand_tuned(sys.argv[1:]))
+    if a.tuned is not None:
+        # expand_tuned took every full spelling; argparse matched an abbreviation
+        # (--tune, --tu), which would otherwise be ignored silently
+        ap.error("spell --tuned in full")
     tile = tile_of(a.info)
     core = core_corner(tile)
     cores = project_cores()

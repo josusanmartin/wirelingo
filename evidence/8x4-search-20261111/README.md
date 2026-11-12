@@ -44,6 +44,10 @@ slow corner's max report head and the fast corner's min report head; the
 best two run worktrees are kept in `~/protoemu-flow/aq-search/runs/`.
 
 Redactions: the runner's home directory is written `~` (in `sta48.out` and
-the `fallback-release/` logs).
+the `fallback-release/` logs). The committed `placement.txt` files keep the
+`GPL-0019`, `DPL-0022` and `LATE_CLOCK_COMPLETE` lines and drop the
+per-branch `LATE_CLOCK <net>: N registers behind S buffers` lines (one per
+clock branch, 46 in the candidate; they are in the runner's
+`results/<run>/placement.txt`).
 Searched for tailnet hostnames and addresses, LAN addresses, email
 addresses, the build machine's provider hostname and credentials: none.
