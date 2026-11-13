@@ -89,6 +89,11 @@ for corner in ("nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C"
     else:
         open(os.path.join(out, corner, "sta.log"), "w").write("\n".join(lines[:1]) + "\n")
     open(os.path.join(out, corner, "clock.rpt"), "w").write(f"Clock: clk\nSources: clk\nPeriod: {period:f}\n")
+    # flow/check_rerun.py's report Tcl: its report, from FAKE_CHECK_DIR/<tcl>.<corner>.rpt
+    tcl = os.path.basename(config.get("STA_EXTRA_CORNER_TCL_FILE", ""))
+    if tcl in ("check_types.tcl", "pulse_checks.tcl"):
+        text = open(os.path.join(os.environ["FAKE_CHECK_DIR"], f"{tcl}.{corner}.rpt")).read()
+        open(os.path.join(out, corner, tcl.replace(".tcl", ".rpt")), "w").write(text)
 open(os.path.join(out, "state_out.json"), "w").write("{}\n")
 sys.exit(int(os.environ.get("FAKE_DOCKER_RC", "0")))
 '''
@@ -372,8 +377,10 @@ def test_archive_without_the_sta_inputs_says_what_it_skipped(tmp_path, fake_dock
     assert "(the step netlist against final/nl)" in skipped[0] and "59-fill/design.nl.v" not in skipped[0]
     assert "runs/wokwi/60-odb/design.odb" in skipped[0] and "STA step config not compared" in skipped[1]
     verdict = [line for line in text.splitlines() if line.startswith("RELEASE PASSED")]
-    assert verdict == ["RELEASE PASSED (SDF profile v2, slow target 48 MHz, 2 STA RECEIPT CHECKS SKIPPED "
-                       "(the run's STA inputs are absent))"]
+    # 2 of the slow-corner STA receipt and 2 of the clock/reset checks receipt; the
+    # two power gates and the shipping build have no inputs in an archive (092)
+    assert verdict == ["RELEASE PASSED (SDF profile v2, slow target 48 MHz, 4 STA RECEIPT CHECKS SKIPPED "
+                       "(the run's STA inputs are absent), 3 RELEASE GATES SKIPPED)"]
     assert len(module("release_receipts").verify(out / "receipt.json", wt, "sta")["skipped"]) == 2
 
 
@@ -387,7 +394,8 @@ def test_partial_sta_inputs_are_still_checked(tmp_path, fake_docker, capsys, cas
     else:                                    # one of the step's two files gone: not an archive
         (run / STEP / ("state_in.json" if case == "state-removed" else "config.json")).unlink()
     rc, text = release_output(args, capsys)
-    assert rc == 1 and "SKIPPED" not in text
+    # no STA receipt check is skipped (an archive-shaped tree skips the power gates, 092)
+    assert rc == 1 and not receipts_skipped(text) and "checks receipt, SKIPPED" not in text
 
 
 @pytest.mark.parametrize("forgery", ["other-version", "other-image-ran", "no-image-id"])
@@ -566,7 +574,7 @@ def test_release_evidence_plans_the_48mhz_release(tmp_path):
     inherited = dict(PATH="/usr/bin", SLOW_CLK_NS="23", HOME="/home/x")
     jobs = ev.plan_jobs(a, tmp_path / "view", tmp_path / "V", tmp_path / "work", base_env=inherited)
     by = {j.name: j for j in jobs}
-    assert sorted(by) == ["gl", "precheck", "sdf_auto_fast", "sdf_auto_slow", "sdf_auto_typ",
+    assert sorted(by) == ["checks", "gl", "precheck", "sdf_auto_fast", "sdf_auto_slow", "sdf_auto_typ",
                           "sdf_standard", "sdf_v2", "sta_slow"]
     assert by["sdf_standard"].env["SLOW_CLK_NS"] == "20.832" and by["sdf_v2"].env["SLOW_CLK_NS"] == "20.832"
     assert all("SLOW_CLK_NS" not in j.env for n, j in by.items() if n not in ("sdf_standard", "sdf_v2"))
@@ -575,7 +583,7 @@ def test_release_evidence_plans_the_48mhz_release(tmp_path):
     cmd = ev.release_command(tmp_path / "run", tmp_path / "V", [("gl", "g"), ("sta", "s")], slow_mhz=48)
     assert cmd[cmd.index("--slow-mhz") + 1] == "48" and cmd[cmd.index("--slow-sta-receipt") + 1] == "s"
     assert "--slow-mhz" not in ev.release_command(tmp_path / "run", tmp_path / "V", [])
-    # 50 MHz: the seven jobs as before
+    # 50 MHz: the eight jobs (the seven, and the clock/reset checks) without sta_slow
     a50 = ev.parse_args(evidence_args(tmp_path, "--validation-commit", "HEAD"))
     assert "sta_slow" not in {j.name for j in ev.plan_jobs(a50, tmp_path / "view", tmp_path / "V", tmp_path / "work",
                                                           base_env=inherited)}

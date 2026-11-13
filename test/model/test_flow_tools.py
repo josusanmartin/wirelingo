@@ -278,8 +278,9 @@ def test_release_evidence_plan_sets_every_runner_variable(tmp_path):
                      VALIDATION_ROOT="/elsewhere", NEGATIVE_CLK_NS="30", HOME="/home/x")
     jobs = ev.plan_jobs(a, tmp_path / "view", tmp_path / "V", tmp_path / "work", base_env=inherited)
     by = {j.name: j for j in jobs}
-    assert sorted(by) == ["gl", "precheck", "sdf_auto_fast", "sdf_auto_slow", "sdf_auto_typ",
+    assert sorted(by) == ["checks", "gl", "precheck", "sdf_auto_fast", "sdf_auto_slow", "sdf_auto_typ",
                           "sdf_standard", "sdf_v2"]
+    assert by["checks"].kind == "checks" and by["checks"].argv[2] == str(tmp_path / "view")
     assert jobs[0].name == "gl"                                    # the longest job starts first
     assert [by[n].kind for n in ("gl", "precheck", "sdf_v2")] == ["gl", "precheck", "sdf"]
     assert by["sdf_v2"].weight == 6 and by["sdf_standard"].weight == 4
@@ -390,9 +391,9 @@ def test_release_evidence_scheduler_respects_the_simulator_budget():
 
 def evidence_bundle(tmp_path):
     """Fixture receipts sharing one validation root, and the verdict for them."""
-    from test_release_evidence import candidate, sdf_output, precheck_output, xml
+    from test_release_evidence import candidate, sdf_output, precheck_output, xml, final_sta_state, checks_output
     rec = flow_module("release_receipts")
-    wt = candidate(tmp_path)
+    wt = final_sta_state(candidate(tmp_path))
     validator = wt.parent / "validator"
     (validator / "test").mkdir(parents=True)
     for name in ("test_pio", "test_eth_service"):
@@ -404,7 +405,7 @@ def evidence_bundle(tmp_path):
     for name in rec.GL_MODULES:
         (gl / f"{name}.xml").write_text(xml(rec.test_names(validator / "test" / f"{name}.py")))
         (gl / f"{name}.log").write_text("simulator completed\n")
-    paths = dict(gl=rec.finish(gl), sdf=sdf, precheck=rec.finish(precheck_output(wt)))
+    paths = dict(gl=rec.finish(gl), sdf=sdf, precheck=rec.finish(precheck_output(wt)), checks=checks_output(wt))
     work = tmp_path / "work"
     (work / "logs").mkdir(parents=True)
     for name in ("logs/gl.log", "release-evidence.log", "release-check.log", "source.bundle"):
@@ -416,7 +417,9 @@ def evidence_bundle(tmp_path):
     (work / "verdict.json").write_text(json.dumps(verdict))
     assert flow_module("release_check").main([str(wt), "--validation-root", str(validator),
                                               "--gl-receipt", str(paths["gl"]), "--sdf-receipt", str(paths["sdf"]),
-                                              "--precheck-receipt", str(paths["precheck"])]) == 0
+                                              "--precheck-receipt", str(paths["precheck"]),
+                                              "--checks-receipt", str(paths["checks"]), "--shipping-root", str(wt),
+                                              "--require-sta-inputs"]) == 0
     return wt, verdict, paths
 
 
@@ -427,7 +430,7 @@ def test_archive_manifest_binds_every_hashed_file_and_never_overwrites(tmp_path)
     wt, verdict, paths = evidence_bundle(tmp_path)
     manifest = ar.Manifest("/")
     verified = ar.collect(verdict, manifest)
-    assert [v["kind"] for v in verified] == ["gl", "sdf", "precheck"]
+    assert [v["kind"] for v in verified] == ["gl", "sdf", "precheck", "checks"]
     names = set(manifest.files)
     rel = lambda p: str(pathlib.Path(p).resolve().relative_to("/"))
     for kind, path in paths.items():

@@ -28,7 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_receipts as receipts  # noqa: E402
 
 RELEASE_SCRIPTS = ("flow/release_check.py", "flow/signoff.py", "flow/release_evidence.py",
-                   "flow/archive_evidence.py", "docs/release-evidence.md")
+                   "flow/archive_evidence.py", "flow/release_gates.py", "flow/build_manifest.py",
+                   "docs/release-evidence.md")
 
 
 class Manifest:
@@ -62,9 +63,13 @@ def collect(verdict, manifest, *, verify=receipts.verify, repro=(), extras=()):
         raise ValueError(f"verdict is not a pass: {verdict.get('verdict')}")
     if receipts.SKIPPED_VERDICT in verdict["verdict"]:
         raise ValueError(f"verdict skipped STA receipt checks, not a live run's release: {verdict['verdict']}")
+    if receipts.GATES_SKIPPED_VERDICT in verdict["verdict"]:
+        raise ValueError(f"verdict skipped release gates, not a live run's release: {verdict['verdict']}")
     kinds = sorted(r["kind"] for r in verdict["receipts"])
     if kinds.count("gl") != 1 or kinds.count("precheck") != 1 or "sdf" not in kinds:
         raise ValueError(f"verdict lacks a GL, SDF or precheck receipt: {kinds}")
+    if kinds.count("checks") != 1:
+        raise ValueError(f"verdict lacks one clock/reset checks receipt: {kinds}")
     verified = []
     for entry in verdict["receipts"]:
         path = Path(entry["path"])

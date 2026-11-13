@@ -13,7 +13,10 @@ SDF at typ/slow/fast (20.834 ns) and Tiny Tapeout precheck, each in its own
 fresh output directory, with at most --jobs simulator processes at once. With
 --slow-mhz F below 50 (the 8x4 build accepts 48 MHz at the slow corner), the
 SDF sets run their slow cases at slow_period(F) and an eighth job re-times the
-run there (flow/sta_rerun.py); typical and fast stay at 50 MHz. It
+run there (flow/sta_rerun.py); typical and fast stay at 50 MHz. A further
+job re-runs the run's STA for its clock/reset checks (flow/check_rerun.py), and
+the validation root (or --shipping-root) is the shipping commit whose build
+inputs the run must have used (flow/build_manifest.py). It
 collects each receipt from that job's own output (never an older receipt),
 runs flow/release_check.py, writes verdict.json and release-check.log, and
 on a pass packs the evidence archive (flow/archive_evidence.py). Any failed
@@ -99,6 +102,9 @@ def parse_args(argv=None):
                     help="slow-corner rate to release (default 50). Below 50, a fresh STA of the run at "
                          "slow_period(F) (flow/sta_rerun.py) times the slow corner and the SDF sets run "
                          "their slow cases there; typical and fast stay at 50 MHz")
+    ap.add_argument("--shipping-root",
+                    help="checkout of the commit that ships, whose build inputs must equal the run's "
+                         "(flow/build_manifest.py; default: the validation root)")
     a = ap.parse_args(argv)
     if a.jobs < 1:
         ap.error("--jobs must be at least 1")
@@ -149,6 +155,7 @@ def preflight(a, validation, work, archive):
         if not Path(path).exists():
             problems.append(f"{what} not found: {path}")
     for name in ("gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "release_check.py", "archive_evidence.py",
+                 "check_rerun.py", "release_gates.py", "build_manifest.py", *receipts.CHECK_PASSES.values(),
                  *(("sta_rerun.py",) if a.slow_mhz < 50 else ())):
         if not (FLOW / name).is_file():
             problems.append(f"runner missing: {FLOW / name}")
@@ -200,6 +207,9 @@ def plan_jobs(a, view, validation, work, base_env=None):
         jobs.append(Job("sta_slow", "sta", [sys.executable, str(FLOW / "sta_rerun.py"), str(view),
                                             f"{slow_period(slow):g}", "--out-parent", str(repo_sim)],
                         1, sim, out_parent=repo_sim))
+    # clock/reset/pulse-width checks: two STA passes of the run (flow/check_rerun.py)
+    jobs.append(Job("checks", "checks", [sys.executable, str(FLOW / "check_rerun.py"), str(view),
+                                         "--out-parent", str(repo_sim)], 1, sim, out_parent=repo_sim))
     return jobs
 
 
@@ -285,15 +295,17 @@ def terminate(jobs):
                 pass
 
 
-def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50):
+def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50, shipping=None):
     # the run is live here: an STA receipt's run-side checks may not be skipped
     cmd = [sys.executable, str(FLOW / "release_check.py"), str(run), "--validation-root", str(validation),
            "--sdf-profile", sdf_profile, "--require-sta-inputs"]
     if slow_mhz != 50:
         cmd += ["--slow-mhz", f"{slow_mhz:g}"]
+    # the shipping commit is the validation clone unless another is named
+    cmd += ["--shipping-root", str(shipping or validation)]
     for kind, path in receipt_paths:
         cmd += [{"gl": "--gl-receipt", "sdf": "--sdf-receipt", "precheck": "--precheck-receipt",
-                 "sta": "--slow-sta-receipt"}[kind], str(path)]
+                 "sta": "--slow-sta-receipt", "checks": "--checks-receipt"}[kind], str(path)]
     return cmd
 
 
@@ -310,6 +322,8 @@ def verdict_failures(returncode, line):
         return [f"release check exited 0 without a pass: {line}"]
     if receipts.SKIPPED_VERDICT in line:
         return [f"release check skipped STA receipt checks on a live run: {line}"]
+    if receipts.GATES_SKIPPED_VERDICT in line:
+        return [f"release check skipped release gates on a live run: {line}"]
     return []
 
 
@@ -381,7 +395,8 @@ def main(argv=None):
                    receipts=collected, release_check=None, verdict=None, exit=None,
                    work=str(work), archive=None)
     if not failures:
-        cmd = release_command(a.run, validation, [(r["kind"], r["path"]) for r in collected], slow_mhz=a.slow_mhz)
+        cmd = release_command(a.run, validation, [(r["kind"], r["path"]) for r in collected], slow_mhz=a.slow_mhz,
+                              shipping=getattr(a, "shipping_root", None))
         say("release check: " + " ".join(cmd))
         check = subprocess.run(cmd, cwd=FLOW.parent, capture_output=True, text=True)
         (work / "release-check.log").write_text(check.stdout + check.stderr)
