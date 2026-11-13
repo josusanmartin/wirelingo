@@ -282,8 +282,8 @@ def test_a_macro_power_pin_without_its_stripe_cannot_release(tmp_path, capsys, p
     assert rc == 1 and failures[0] in out
 
 
-@pytest.mark.parametrize("case", ["not-in-special-net", "short", "no-pdn-rule", "orientation", "instance-missing",
-                                  "flipped-north"])
+@pytest.mark.parametrize("case", ["not-in-special-net", "short", "no-pdn-rule", "conflicting-pdn-rules",
+                                  "orientation", "instance-missing", "flipped-north"])
 def test_macro_power_connectivity(tmp_path, case):
     wt = candidate(tmp_path)
     d = wt / "runs/wokwi/final/def/design.def"
@@ -301,6 +301,11 @@ def test_macro_power_connectivity(tmp_path, case):
         r["PDN_MACRO_CONNECTIONS"] = r["PDN_MACRO_CONNECTIONS"][:1]
         resolved.write_text(json.dumps(r))
         expected = r"u_mem\[0\].sram VDDARRAY!: PDN_MACRO_CONNECTIONS gives no net"
+    elif case == "conflicting-pdn-rules":                # a later rule puts VDD! on VGND
+        r = json.loads(resolved.read_text())
+        r["PDN_MACRO_CONNECTIONS"].append(r"u_mem\\?\[0\\?\]\.sram VGND VPWR VDD! VSS!")
+        resolved.write_text(json.dumps(r))
+        expected = r"u_mem\[0\].sram VDD!: PDN_MACRO_CONNECTIONS gives ['VGND', 'VPWR']"
     elif case == "orientation":
         d.write_text(sram_def(orient="E"))
         expected = r"u_mem\[0\].sram: unsupported macro orientation E"
