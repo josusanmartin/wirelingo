@@ -128,6 +128,9 @@ def gate_inputs(wt):
     (run / "22-project-extendpowerstripes/project-extendpowerstripes.log").write_text(STRIPES_LOG)
     (run / "final/def").mkdir()
     (run / "final/def/design.def").write_text(sram_def())
+    # the generator a shipping checkout's `gen_config.py --preset submission --check` runs (exit 0)
+    (wt / "flow").mkdir(exist_ok=True)
+    (wt / "flow/gen_config.py").write_text("# generator\n")
     return wt
 
 
@@ -183,10 +186,28 @@ def signoff_report(corner, *, worst=None, violators=None):
     return text + "== end of checks\n"
 
 
-def pulse_report(corner, *, worst="   9.598153   slack (MET)", violators="", pins=None):
+REGISTERS = {"clk": ["_001_/CLK", "_002_/CLK"], "sck": ["_003_/CLK"]}
+
+
+def pulse_table(registers=REGISTERS, extra=""):
+    """report_pulse_width_checks -no_line_splits: one row per check."""
+    rows = [f"{SRAM_INST}/A_CLK (high)    0.400000    9.998153    9.598153 (MET)"]
+    for pins in registers.values():
+        for pin in pins:
+            rows += [f"{pin} (high)    0.247479    9.940100    9.692620 (MET)",
+                     f"{pin} (low)    0.190000    9.950000    9.760000 (MET)"]
+    return "    Required      Actual\nPin    Width       Width       Slack\n" + "\n".join(rows) + "\n" + extra
+
+
+def pulse_report(corner, *, worst="   9.598153   slack (MET)", violators="", pins=None, registers=REGISTERS,
+                 table=None, header=None):
     pins = {f"{SRAM_INST}/A_CLK": "   9.598153   slack (MET)"} if pins is None else pins
-    text = f"== corner {corner}\n== worst min_pulse_width\n{worst}\n== violators min_pulse_width\n{violators}\n"
+    text = f"== corner {header or corner}\n== worst min_pulse_width\n{worst}\n== violators min_pulse_width\n{violators}\n"
     text += "== sram clock pins\n" + "".join(f"pin {pin}\n{body}\n" for pin, body in pins.items())
+    if registers is not None:
+        text += "== clock register pins\n" + "".join(
+            f"clock {clock} {len(ps)}\n" + "".join(f"  {pin}\n" for pin in ps) for clock, ps in registers.items())
+        text += "== all pulse width checks\n" + (pulse_table(registers) if table is None else table)
     return text + "== end of checks\n"
 
 

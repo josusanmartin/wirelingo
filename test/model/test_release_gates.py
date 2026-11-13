@@ -23,9 +23,9 @@ import sys
 
 import pytest
 
-from test_release_evidence import (ROOT, SRAM, SRAM_INST, SRAM_PINS, STA_STEP, XCLK_SDC, candidate, checks_output,
-                                   complete_receipts, final_sta_state, module, pulse_report, signoff_report,
-                                   sram_def)
+from test_release_evidence import (REGISTERS, ROOT, SRAM, SRAM_INST, SRAM_PINS, STA_STEP, XCLK_SDC, candidate,
+                                   checks_output, complete_receipts, final_sta_state, module, pulse_report,
+                                   pulse_table, signoff_report, sram_def)
 from test_flow_slow48 import fake_docker, fake_image_id, DEFAULT_IMAGE  # noqa: F401 (fixture)
 
 CORNERS = ("nom_typ_1p20V_25C", "nom_slow_1p08V_125C", "nom_fast_1p32V_m40C")
@@ -90,6 +90,22 @@ FAULTS = {
                                "min_pulse_width violated under the signoff SDC"),
     "section-missing": (dict(signoff=lambda c: signoff_report(c).replace("== worst removal\n", "")),
                         "removal: missing from the signoff pass's report"),
+    # 092b: a partial loss of pulse checks (an exception's -from clock drives
+    # these flops) still leaves a met worst check; the per-clock coverage fails it
+    "clock-unchecked": (dict(pulse=lambda c: pulse_report(c, table=pulse_table({"clk": REGISTERS["clk"]}))),
+                        "clock sck: 1 of 1 register clock pins have no pulse width check (first: _003_/CLK)"),
+    "pin-unchecked": (dict(pulse=lambda c: pulse_report(c, table=pulse_table({"clk": ["_001_/CLK"],
+                                                                               "sck": ["_003_/CLK"]}))),
+                      "clock clk: 1 of 2 register clock pins have no pulse width check (first: _002_/CLK)"),
+    "table-violated": (dict(pulse=lambda c: pulse_report(c, table=pulse_table(
+                           extra="_009_/CLK (low)    0.190000    0.100000   -0.090000 (VIOLATED)\n"))),
+                       "pulse width violated"),
+    "no-register-list": (dict(pulse=lambda c: pulse_report(c, registers=None)),
+                         "lists no clock register pins or no pulse width checks"),
+    "other-corner": (dict(pulse=lambda c: pulse_report(c, header="nom_typ_1p20V_25C")),
+                     "nom_slow_1p08V_125C: the pulse pass's report is not this corner's"),
+    "other-corner-signoff": (dict(signoff=lambda c: signoff_report(c).replace(f"== corner {c}", "== corner x")),
+                             "the signoff pass's report is not this corner's"),
 }
 
 
@@ -135,8 +151,8 @@ def reseal(out, **plan):
     (out / "receipt.json").write_text(json.dumps(data))
 
 
-@pytest.mark.parametrize("case", ["report-edited", "pulse-sdc-forged", "pass-config-forged", "other-tcl",
-                                  "run-sdc-changed", "other-image-ran", "run-odb-changed"])
+@pytest.mark.parametrize("case", ["report-edited", "pulse-sdc-forged", "older-tcl", "pass-config-forged",
+                                  "other-tcl", "run-sdc-changed", "other-image-ran", "run-odb-changed"])
 def test_the_checks_receipt_is_bound_to_the_run(tmp_path, capsys, case):
     wt = candidate(tmp_path)
     args = complete_receipts(wt)
@@ -145,10 +161,16 @@ def test_the_checks_receipt_is_bound_to_the_run(tmp_path, capsys, case):
         p = out / "pulse/sta" / SLOW / "pulse_checks.rpt"
         p.write_text(p.read_text().replace("9.598153", "9.9"))
         expected = "evidence changed after receipt was written"
-    elif case == "pulse-sdc-forged":             # the cross-clock exceptions kept: digests resealed
+    elif case == "pulse-sdc-forged":             # the exceptions left active: digests resealed
         (out / "pulse/pulse.sdc").write_text(XCLK_SDC)
         reseal(out)
-        expected = "the pulse pass's SDC is not the run's signoff SDC without its clock-to-clock exceptions"
+        expected = "the pulse pass's SDC is not the run's signoff SDC with its path exceptions disabled"
+    elif case == "older-tcl":                    # an honest receipt from other report Tcl (092 finding 4)
+        p = out / "pulse/pulse_checks.tcl"
+        p.write_text(p.read_text().replace('puts "== clock register pins"', 'puts "== clocks"'))
+        reseal(out, tcl=dict(json.loads((out / "receipt.json").read_text())["plan"]["tcl"],
+                             pulse=module("release_receipts").digest(p)))
+        expected = "checks receipt ran other report Tcl than this checkout's flow/: ['pulse']"
     elif case == "pass-config-forged":
         p = out / "signoff/config.json"
         p.write_text(json.dumps(dict(json.loads(p.read_text()), CLOCK_PERIOD=40)))
@@ -175,19 +197,35 @@ def test_the_checks_receipt_is_bound_to_the_run(tmp_path, capsys, case):
     assert rc == 1 and expected in text
 
 
-def test_the_pulse_pass_drops_exactly_the_clock_to_clock_exceptions():
+# 092b (092 finding 1): one exception whose -from is a clock already drops the
+# pulse width checks of every pin that clock drives, so the pulse pass disables
+# every path exception, in any form, rather than removing some lines
+OTHER_FORMS = ("set_max_delay 5 -from [get_clocks clk] -to [get_clocks clk]\n"        # same clock
+               "set_max_delay 5 -from [get_clocks clk]\n"                             # no -to
+               "set_min_delay 0 -from [get_clocks sck] -to [get_clocks clk]\n"
+               "set_multicycle_path 2 -setup \\\n    -from [get_clocks sck]\n"        # continued
+               "foreach c {clk} { set_false_path -hold -from [get_clocks $c] }\n"      # in a Tcl construct
+               "# set_max_delay in a comment is not a command\n")
+
+
+def test_the_pulse_pass_disables_every_path_exception():
     rec = module("release_receipts")
-    text, removed = rec.pulse_sdc(XCLK_SDC)
-    assert removed == [line for line in XCLK_SDC.splitlines() if "-from [get_clocks" in line
-                       and "clk] -to [get_clocks clk]" not in line]
-    assert len(removed) == 4
-    assert "set_false_path -from [get_clocks clk] -to [get_clocks clk]\n" in text   # same clock: kept
-    assert text.count("\n") == XCLK_SDC.count("\n") - 4
-    # the real signoff SDC's four lines (src/protoemu.sdc)
+    for sdc in (XCLK_SDC, XCLK_SDC + OTHER_FORMS):
+        text, named = rec.pulse_sdc(sdc)
+        assert text == rec.PULSE_SDC_PREAMBLE + sdc                 # the run's SDC itself, after the preamble
+        assert named == [line for line in sdc.splitlines() if not line.startswith("#")
+                         and any(cmd in line for cmd in rec.PATH_EXCEPTIONS)]
+    assert len(rec.pulse_sdc(XCLK_SDC)[1]) == 5                     # the same-clock false path too
+    assert len(rec.pulse_sdc(XCLK_SDC + OTHER_FORMS)[1]) == 10
+    # the preamble redefines exactly the four path-exception commands as no-ops
+    for cmd in ("set_max_delay", "set_min_delay", "set_false_path", "set_multicycle_path"):
+        assert cmd in rec.PULSE_SDC_PREAMBLE.split("foreach protoemu_pulse_cmd {")[1].split("}")[0].split()
+    assert "proc $protoemu_pulse_cmd {args} {}" in rec.PULSE_SDC_PREAMBLE
+    # the real signoff SDC: its four lines named, nothing removed
     real = (ROOT / "src/protoemu.sdc").read_text()
-    kept, dropped = rec.pulse_sdc(real)
-    assert len(dropped) == 4 and all("get_clocks sck" in line and "get_clocks clk" in line for line in dropped)
-    assert "set_propagated_clock [all_clocks]" in kept and "create_clock -name sck" in kept
+    text, named = rec.pulse_sdc(real)
+    assert len(named) == 4 and all("get_clocks sck" in line and "get_clocks clk" in line for line in named)
+    assert text.endswith(real)
 
 
 def test_check_rerun_runs_both_passes_read_only_in_the_runs_image(tmp_path, fake_docker, monkeypatch, capsys):
@@ -214,10 +252,10 @@ def test_check_rerun_runs_both_passes_read_only_in_the_runs_image(tmp_path, fake
     assert signoff == dict(original, STA_EXTRA_CORNER_TCL_FILE=str(out / "signoff/check_types.tcl"))
     assert pulse == dict(original, STA_EXTRA_CORNER_TCL_FILE=str(out / "pulse/pulse_checks.tcl"),
                          SIGNOFF_SDC_FILE=str(out / "pulse/pulse.sdc"))
-    assert "-from [get_clocks" not in (out / "pulse/pulse.sdc").read_text().replace(
-        "set_false_path -from [get_clocks clk] -to [get_clocks clk]", "")
+    rec = module("release_receipts")
+    assert (out / "pulse/pulse.sdc").read_text() == rec.PULSE_SDC_PREAMBLE + XCLK_SDC
     plan = json.loads((out / "receipt.json").read_text())["plan"]
-    assert plan["image_id"] == image and len(plan["sdc_removed"]) == 4
+    assert plan["image_id"] == image and len(plan["sdc_removed"]) == 5
     rc, text = release(with_checks(args, out / "receipt.json"), capsys)
     assert rc == 0 and "RELEASE PASSED" in text
 
@@ -343,6 +381,7 @@ PLUGIN = '''HERE = "flow"
 import os
 def a(): return os.path.join(HERE, "odb_stripes.py")
 def b(): return os.path.join(HERE, "step.tcl")
+def c(): return [HERE + "/" + "extra_step.tcl"]   # named another way: "extra_step.tcl"
 '''
 
 
@@ -355,6 +394,7 @@ def shipping(wt, tmp_path):
     (wt / "flow/step.tcl").write_text("source [file join [file dirname [info script]] helper.tcl]\n")
     (wt / "flow/helper.tcl").write_text("# helper\n")
     (wt / "flow/gen_config.py").write_text("# generator\n")
+    (wt / "flow/extra_step.tcl").write_text("# extra step\n")
     ship = tmp_path / "ship"
     for name in ("src", "flow"):
         shutil.copytree(wt / name, ship / name)
@@ -379,7 +419,11 @@ SHIP_FAULTS = {
                "build input librelane_plugin_protoemu.py differs (layout input)"),
     "executed-script": ("flow/odb_stripes.py", "# other stripes\n", "build input flow/odb_stripes.py differs"),
     "sourced-tcl": ("flow/helper.tcl", "# other helper\n", "build input flow/helper.tcl differs"),
-    "generator": ("flow/gen_config.py", "# other generator\n", "build input flow/gen_config.py differs"),
+    # 092 finding 5: the generator is not read by the build; CI's check of it is
+    "generator-check-fails": ("flow/gen_config.py", "import sys\nsys.exit('src/config.json differs from the preset')\n",
+                              "the checkout's gen_config.py --preset submission --check fails"),
+    # 092 finding 6: a script the plugin names otherwise than os.path.join(HERE, ...)
+    "named-script": ("flow/extra_step.tcl", "# other extra step\n", "build input flow/extra_step.tcl differs"),
     "tiles": ("info.yaml", "project:\n  top_module: design\n  tiles: \"8x2\"\n", "build input info.yaml ("),
     "corner-tcl": ("src/timing_checks.tcl", "# other report\n",
                    "build input src/timing_checks.tcl differs (signoff STA only)"),
@@ -414,7 +458,8 @@ def test_the_old_binding_compares_verilog_only(tmp_path):
     assert len(failures) == 2
 
 
-@pytest.mark.parametrize("change", ["firmware", "tests", "datasheet-text", "unexecuted-flow-tool", "generated-config"])
+@pytest.mark.parametrize("change", ["firmware", "tests", "datasheet-text", "unexecuted-flow-tool", "generated-config",
+                                    "generator-text"])
 def test_what_is_not_a_build_input_may_differ(tmp_path, capsys, change):
     # validating new firmware on a pinned netlist stays a separate, legitimate operation
     wt = candidate(tmp_path)
@@ -435,8 +480,12 @@ def test_what_is_not_a_build_input_may_differ(tmp_path, capsys, change):
                                         "pinout:\n  ui[0]: \"P16\"\n")
     elif change == "unexecuted-flow-tool":
         (ship / "flow/rmii_sta.tcl").write_text("# a standalone STA script\n")
+    elif change == "generator-text":        # 092 finding 5: a preset changed to the run's tuned settings
+        (ship / "flow/gen_config.py").write_text("# generator whose submission preset is the run's config\n")
     rc, text = release(with_shipping(args, ship), capsys)
     assert rc == 0 and "shipping build: the run's build inputs equal" in text
+    if change == "generator-text":
+        assert "flow/gen_config.py differs (the generator, not read by the build)" in text
 
 
 def test_without_a_shipping_root_the_verdict_says_so(tmp_path, capsys):
