@@ -49,11 +49,14 @@ CHECK_REPORT_END = "== end of checks"
 PATH_EXCEPTIONS = ("set_max_delay", "set_min_delay", "set_false_path", "set_multicycle_path")
 PATH_EXCEPTION_RE = r"\b(?:" + "|".join(PATH_EXCEPTIONS) + r")\b"
 PULSE_SDC_PREAMBLE = (
-    "# flow/check_rerun.py, pulse pass: every path-exception command is a no-op here\n"
-    "# (pulse widths depend on none; OpenSTA 2.7.0 drops the pulse width checks of\n"
-    "# the pins an exception's -from clock drives). The run's signoff SDC follows.\n"
+    "# flow/check_rerun.py, pulse pass: the four path-exception commands are no-ops\n"
+    "# here, by their global and sta:: names (pulse widths depend on none; OpenSTA\n"
+    "# 2.7.0 drops the pulse width checks of the pins an exception's -from clock\n"
+    "# drives). An exception made another way is failed by the gate's coverage\n"
+    "# rule (flow/release_gates.py). The run's signoff SDC follows.\n"
     f"foreach protoemu_pulse_cmd {{{' '.join(PATH_EXCEPTIONS)}}} {{\n"
-    "    proc $protoemu_pulse_cmd {args} {}\n"
+    "    proc ::$protoemu_pulse_cmd {args} {}\n"
+    "    if {[namespace exists ::sta]} { proc ::sta::$protoemu_pulse_cmd {args} {} }\n"
     "}\n")
 
 
@@ -178,9 +181,10 @@ def sta_recheck(worktree, data, out, *, allow_absent=False):
 
 def pulse_sdc(text):
     """The pulse-width pass's SDC (flow/check_rerun.py): the run's signoff SDC
-    unchanged, after a preamble that makes every path-exception command a
-    no-op, so no exception exists in whatever form or Tcl construct it is
-    written; and, for the record, the SDC's lines that name one."""
+    unchanged, after a preamble that makes the four path-exception commands
+    no-ops by their global and sta:: names, whatever line or Tcl construct
+    calls them so; an exception made another way is failed by the gate's
+    coverage rule. And, for the record, the SDC's lines that name one."""
     named = [line.rstrip("\n") for line in text.splitlines()
              if re.search(PATH_EXCEPTION_RE, line) and not line.lstrip().startswith("#")]
     return PULSE_SDC_PREAMBLE + text, named

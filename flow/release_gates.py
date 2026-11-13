@@ -132,6 +132,17 @@ def clock_register_pins(text):
     return out
 
 
+def all_register_pins(text):
+    """The pins of pulse_checks.tcl's 'all register clock pins' (all_registers
+    -clock_pins), or None when the section is missing or its count disagrees."""
+    if text is None:
+        return None
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines or not re.fullmatch(r"registers \d+", lines[0]) or int(lines[0].split()[1]) != len(lines) - 1:
+        return None
+    return lines[1:]
+
+
 def check_reports(checks_dir, corner):
     d = Path(checks_dir)
     return {name: (d / name / "sta" / corner / receipts.CHECK_REPORTS[name]).read_text(errors="replace")
@@ -182,6 +193,24 @@ def timing_check_failures(worktree, checks_dir):
                 else:
                     notes.append(f"{corner}: clock {clock}: all {len(clock_pins)} register clock pins have a pulse "
                                  "width check")
+            # a register no clock reaches (case analysis on a clock port, a divided
+            # clock without create_generated_clock) is in no clock's list: every
+            # register clock pin must be in one, and have a check
+            everything = all_register_pins(pulse.get("all register clock pins"))
+            if everything is None:
+                failures.append(f"{corner}: the pulse pass's report lists no register clock pins at all")
+            else:
+                clocked = {pin for clock_pins in registers.values() for pin in clock_pins}
+                unclocked = [pin for pin in everything if pin not in clocked]
+                lost = [pin for pin in everything if pin not in checked]
+                if unclocked:
+                    failures.append(f"{corner}: {len(unclocked)} of {len(everything)} register clock pins are "
+                                    f"reached by no clock (first: {unclocked[0]})")
+                if lost:
+                    failures.append(f"{corner}: {len(lost)} of {len(everything)} register clock pins have no pulse "
+                                    f"width check (first: {lost[0]})")
+                if not unclocked and not lost:
+                    notes.append(f"{corner}: all {len(everything)} register clock pins are clocked and checked")
         for kind in CHECK_KINDS:
             source = pulse if kind == "min_pulse_width" else signoff
             pass_name = "pulse" if kind == "min_pulse_width" else "signoff"

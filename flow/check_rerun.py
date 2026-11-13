@@ -12,11 +12,14 @@ Only the report Tcl changes, plus one SDC change in the second pass:
 * signoff: the run's signoff SDC; flow/check_types.tcl reports the worst check
   and every violator of minimum pulse width, minimum period, recovery,
   removal and clock-gating setup/hold.
-* pulse: the signoff SDC after a preamble that makes every path-exception
-  command (set_max_delay, set_min_delay, set_false_path, set_multicycle_path)
-  a no-op; flow/pulse_checks.tcl reports the worst minimum pulse width check,
-  every violator, each SRAM clock pin's checks, each clock's register clock
-  pins and every pulse width check. OpenSTA 2.7.0 (LibreLane 3.1.0.dev3)
+* pulse: the signoff SDC after a preamble that makes the four path-exception
+  commands (set_max_delay, set_min_delay, set_false_path, set_multicycle_path)
+  no-ops by their global and sta:: names; flow/pulse_checks.tcl reports the
+  worst minimum pulse width check, every violator, each SRAM clock pin's
+  checks, each clock's register clock pins, all register clock pins and every
+  pulse width check. An exception made another way, or a register no clock
+  reaches, shows as a register clock pin without a check, which fails the
+  gate. OpenSTA 2.7.0 (LibreLane 3.1.0.dev3)
   reports no pulse width check on the pins a min/max-type exception's -from
   clock drives (with one each way between two clocks, none at all), violated
   or not (docs/release-evidence.md). Pulse widths depend on the clock network
