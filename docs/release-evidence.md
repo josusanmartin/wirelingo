@@ -19,7 +19,9 @@ git clone -q --no-checkout "$REPO" "$V" && git -C "$V" checkout -q --detach "$RE
 
 It runs the seven receipt jobs below (functional GL; SDF `standard` and `v2`;
 `test_usb_autonomous` and `test_usb_autonomous_fs` with SDF at typ, slow and
-fast at 20.834 ns; precheck), each in its own fresh output directory, with
+fast at 20.834 ns; precheck), and an eighth, the clock/reset check STA
+(`flow/check_rerun.py`, [below](#clock-reset-and-sram-power-gates-and-the-shipping-build)),
+each in its own fresh output directory, with
 at most `--jobs` (default 6) simulator processes at once: the standard set
 counts 4, v2 counts 6, every other job 1. GL starts first (48 minutes for fo6
 on a quiet runner). With the default budget, v2 starts only after GL ends;
@@ -195,6 +197,86 @@ cocotb `Clock` must halve its period at the 1 ps precision, and refuses
 USB full-speed cases run at 20.834 ns). A rerun at the run's own 20 ns
 reproduces the run's final STA metrics, which is how the tool was checked
 (docs/physical.md, 8x4).
+
+## Clock, reset and SRAM power gates, and the shipping build
+
+Added for item 092 (the Astra review's findings 2 and 3). `release_check.py`
+also requires the following; `flow/release_gates.py RUN [--checks-receipt R]`
+prints the three physical gates on their own, read-only.
+
+**Clock and reset checks.** The run's own `gating_pulse_reset.rpt`
+(`src/timing_checks.tcl`; read from each corner's `sta.log`, a candidate file)
+must be present and show no violation. It lists violators only, so it cannot
+tell "no violation" from "no check", and under the signoff SDC it has no pulse
+width check at all: with exceptions both ways between two clocks
+(`set_max_delay` or `set_false_path -hold` from `sck` to `clk` and back),
+OpenSTA 2.7.0 in the LibreLane 3.1.0.dev3 image reports no minimum pulse width
+check, met or violated. Measured on runner1 (2026-11-13), OpenSTA alone: a
+three-flop design with two clocks keeps its pulse-width checks with one
+`set_max_delay` between them and reports none with one each way; at a 0.2 ns
+clock it reports six pulse-width violations without the pair and none with
+it. On fo6's final netlist, applying `src/protoemu.sdc` line by line, the
+checks disappear at the second cross-clock `set_max_delay`, and, with those
+two left out, at the second cross-clock `set_false_path -hold`. `flow/check_rerun.py RUN` therefore re-runs the
+run's own `OpenROAD.STAPostPNR` step twice, read-only, in the run's image by
+its ID (as `flow/sta_rerun.py` does):
+
+* `signoff`: the run's SDC; `flow/check_types.tcl` reports the worst check and
+  every violator of minimum pulse width, minimum period, recovery, removal and
+  clock-gating setup/hold.
+* `pulse`: the run's SDC without its exceptions between two different clocks
+  (the four lines above in `src/protoemu.sdc`); `flow/pulse_checks.tcl`
+  reports the worst pulse-width check, every violator and each SRAM clock
+  pin (`A_CLK`). Pulse widths depend on the clock network alone, which those
+  data-path exceptions do not touch; this pass's other results are not used.
+
+Its receipt (kind `checks`) binds the candidate files, the step's input
+digests, both passes' configs (the run's own except the report Tcl and, for
+`pulse`, the SDC), the derived SDC (recomputed from the run's on verify), the
+report Tcl and the reports, and the image ID. `--checks-receipt R` then
+requires, at every corner, a met worst check of pulse width (every SRAM
+instance's clock pin included), recovery and removal, and no violator of any
+kind. Two kinds may have no check, each for a stated reason (never a
+violation): minimum period (no library the chip uses defines a minimum-period
+arc) and clock-gating setup/hold (the clock gates are the library's integrated
+cells, timed by their setup/hold arcs). `flow/release_evidence.py` runs the
+job and passes the receipt.
+
+**SRAM power.** The `Project.ExtendPowerStripes` log (`flow/odb_stripes.py`)
+must have finished both nets, give each SRAM a VPWR/VGND pair in each of its
+three regions (two arrays and the band), and print no warning or error
+other than a listed one (OpenROAD's `ORD-0039` start-up notice). In the final
+DEF, every power pin of every macro (`VDD!`, `VDDARRAY!`, `VSS!` on the SRAM)
+must be on the net `PDN_MACRO_CONNECTIONS` names, be touched on its own layer
+by a stripe of that net in each half of the macro, and by no stripe of another
+net. The flow's own `ERROR_ON_PDN_VIOLATIONS: 0` (the expected PSM-0069 before
+the step) is unchanged: these gates read the results, they do not change the
+flow.
+
+**The shipping build** (`flow/build_manifest.py`). `--shipping-root CHECKOUT`
+requires the run's build inputs to equal the checkout's: everything under
+`src/` (the generated `config.json` and the `project.v` defines as the run
+used them, the SDCs, PDN and corner Tcl, the RTL and macro models),
+`info.yaml`'s build keys (tiles, top module, source files, language, clock),
+the generator, the LibreLane plugin and every script it runs (and the Tcl
+those source). A run hardened with a tuned configuration or another core count
+than the shipping commit holds fails, however good its receipts.
+Firmware, tools and tests are not build inputs, so validating new firmware on
+a pinned netlist (`--validation-root`) remains a separate operation.
+`flow/release_evidence.py` passes its validation root as the shipping commit
+unless `--shipping-root` names another. The run's tools (the `tt/` tree and
+its commit, the LibreLane version, the PDK's `SOURCES` line), its netlist and
+its GDS with the BGNLIB/BGNSTR dates zeroed are recorded too; a checkout has
+none of them, so `release_check` prints them uncompared. `build_manifest.py
+compare RUN OTHER --require-tools` compares two builds in full, for example
+the receipted run with a CI build's `build-manifest.json`
+(`build_manifest.py write`).
+
+Without `--shipping-root`, or in an evidence archive (which keeps neither the
+DEF, the step logs, `flow/` nor `tt/`), those gates are skipped and the
+verdict says `N RELEASE GATES SKIPPED`; `--require-sta-inputs` makes a skip a
+failure, and `release_evidence.py` and `archive_evidence.py` refuse such a
+verdict. An archive also needs one `checks` receipt.
 
 ## Why receipts replace pass logs
 
