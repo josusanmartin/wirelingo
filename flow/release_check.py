@@ -7,6 +7,12 @@ GL, SDF coverage, and a precheck of the exact GDS. Free-form logs cannot release
 A slow-corner rate below the run's constraint (--slow-mhz 48 on a 50 MHz run)
 needs a fresh STA of the run at that period (--slow-sta-receipt, from
 flow/sta_rerun.py); typical and fast stay at 50 MHz.
+
+It also gates clock/reset checks (pulse width, recovery/removal, gating, from
+a checks receipt of flow/check_rerun.py), the SRAM power hookup (the final DEF
+and the ExtendPowerStripes log; flow/release_gates.py), and, with
+--shipping-root, that the run was built from the shipping commit's build
+inputs (flow/build_manifest.py).
 """
 import argparse
 import math
@@ -18,6 +24,8 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import signoff
 import release_receipts as receipts
+import release_gates as gates
+import build_manifest
 
 ELECTRICAL = {"slew": "design__max_slew_violation__count",
               "cap": "design__max_cap_violation__count",
@@ -65,8 +73,13 @@ def main(argv=None):
                     help="fresh STA of this run at <= 1000/slow-mhz ns (flow/sta_rerun.py): "
                          "the slow corner's timing is taken from it instead of the run's own STA")
     ap.add_argument("--require-sta-inputs", action="store_true",
-                    help="a live run: refuse an STA receipt whose run-side checks would be skipped "
+                    help="a live run: refuse an STA receipt whose run-side checks would be skipped, "
+                         "and a release gate without its inputs "
                          "(flow/release_evidence.py passes it; an archive check leaves it out)")
+    ap.add_argument("--checks-receipt", help="clock/reset/pulse-width check STA of this run (flow/check_rerun.py)")
+    ap.add_argument("--shipping-root",
+                    help="checkout of the shipping commit: the run's build inputs must equal its "
+                         "(flow/build_manifest.py); flow/release_evidence.py passes the validation root")
     ap.add_argument("--waive", action="append", default=[], metavar="KIND=N")
     ap.add_argument("--waiver-reason", help="documented justification for all explicit electrical waivers")
     ap.add_argument("--gl-receipt", help="otherwise discover completed gl.*/receipt.json in this run")
@@ -148,6 +161,83 @@ def main(argv=None):
     except EVIDENCE_ERRORS as e:
         failures.append(f"invalid final run evidence: {e}")
 
+    gate_skipped = []
+    print("== clock and reset checks")
+    try:
+        checks_dir = None
+        if a.checks_receipt:
+            data = receipts.verify(a.checks_receipt, wt, "checks")
+            checks_dir = Path(a.checks_receipt).parent
+            print(f"checks receipt verified: {a.checks_receipt} (image {data['plan']['image_id']}; the pulse pass "
+                  f"disabled the path exceptions of {len(data['plan']['sdc_removed'])} SDC lines)")
+            # the report Tcl that ran must be this checkout's: an older receipt's reports may lack a section
+            stale = [name for name, tcl in receipts.CHECK_PASSES.items()
+                     if data["plan"]["tcl"].get(name) != receipts.digest(Path(__file__).resolve().parent / tcl)]
+            if stale:
+                failures.append(f"checks receipt ran other report Tcl than this checkout's flow/: {stale}")
+            skipped += data["skipped"]
+            for check in data["skipped"]:
+                print(f"checks receipt, SKIPPED: {check}")
+            if a.require_sta_inputs and data["skipped"]:
+                failures.append("--require-sta-inputs: the run lacks the STA inputs its checks receipt records")
+        problems, notes = gates.timing_check_failures(wt, checks_dir)
+        for line in notes:
+            print(line)
+        failures += problems
+    except (*EVIDENCE_ERRORS, AttributeError) as e:
+        failures.append(f"invalid clock/reset check evidence: {e}")
+    try:
+        archive = gates.archive_shaped(wt)
+    except EVIDENCE_ERRORS as e:
+        archive = False
+        failures.append(f"invalid final run evidence: {e}")
+    resolved = {}
+    try:
+        resolved = receipts.read_json(wt / "runs/wokwi/resolved.json")
+    except EVIDENCE_ERRORS:
+        pass        # reported above
+    sram = sorted(pin.rsplit("/", 1)[0] for pin in gates.sram_clock_pins(resolved))
+    for title, gate in (("SRAM power stripes (ExtendPowerStripes log)", lambda: gates.stripes_failures(wt, sram)),
+                        ("macro power pins (final DEF)", lambda: gates.macro_power_failures(wt))):
+        print(f"== {title}")
+        if archive:
+            gate_skipped.append(f"{title}: an evidence archive keeps neither the step logs nor the final DEF")
+            print(f"release gate, SKIPPED: {gate_skipped[-1]}")
+            continue
+        try:
+            problems, notes = gate()
+            for line in notes:
+                print(line)
+            failures += problems
+        except (*EVIDENCE_ERRORS, AttributeError) as e:
+            failures.append(f"invalid {title} evidence: {e}")
+    print("== shipping build")
+    if a.shipping_root and archive:
+        gate_skipped.append("shipping build: an evidence archive keeps neither flow/, the plugin nor tt/")
+        print(f"release gate, SKIPPED: {gate_skipped[-1]}")
+    elif a.shipping_root:
+        try:
+            problems, notes = build_manifest.compare(build_manifest.run_manifest(wt),
+                                                     build_manifest.checkout_manifest(a.shipping_root))
+            for line in notes:
+                print(f"shipping build: {line}")
+            failures += [f"shipping build: {p}" for p in problems]
+            if not problems:
+                print(f"shipping build: the run's build inputs equal {a.shipping_root}'s")
+            # what CI checks: the commit's config.json is its generator's submission preset
+            rc, said = build_manifest.generator_check(a.shipping_root)
+            print(f"shipping build: gen_config.py --preset submission --check: {said} (rc {rc})")
+            if rc != 0:
+                failures.append(f"shipping build: the checkout's gen_config.py --preset submission --check fails "
+                                f"(rc {rc}), as CI's would: {said}")
+        except (*EVIDENCE_ERRORS, AttributeError) as e:
+            failures.append(f"invalid shipping build evidence: {e}")
+    else:
+        gate_skipped.append("shipping build: no --shipping-root, so the run is not bound to a shipping commit")
+        print(f"release gate, SKIPPED: {gate_skipped[-1]}")
+    if a.require_sta_inputs and gate_skipped:
+        failures.append(f"--require-sta-inputs: {len(gate_skipped)} release gates would be skipped")
+
     gl_paths = [Path(a.gl_receipt)] if a.gl_receipt else sorted((wt / "test/sim_build").glob("gl.*/receipt.json"))
     valid_gl = False
     for path in gl_paths:
@@ -185,6 +275,7 @@ def main(argv=None):
         print(f"RELEASE PASSED (SDF profile {a.sdf_profile}, slow target {a.slow_mhz:g} MHz"
               + (", WITH ELECTRICAL WAIVERS" if waive else "")
               + (f", {len(skipped)} {receipts.SKIPPED_VERDICT} (the run's STA inputs are absent)" if skipped else "")
+              + (f", {len(gate_skipped)} {receipts.GATES_SKIPPED_VERDICT}" if gate_skipped else "")
               + ")")
     return int(bool(failures))
 

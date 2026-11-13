@@ -51,7 +51,208 @@ def candidate(tmp_path):
         sdf.parent.mkdir(parents=True)
         sdf.write_text(f"fixture SDF {c}\n")
     (run / "final/metrics.json").write_text(json.dumps(metrics))
+    gate_inputs(wt)
     return wt
+
+
+# ---- the release gates' inputs (flow/release_gates.py): one SRAM instance, FS-placed
+
+SRAM = "RM_IHPSG13_1P_TEST"
+SRAM_INST = "u_mem[0].sram"
+SRAM_DEF_NAME = r"u_mem\[0\].sram"
+# macro-local power columns (microns): one per half for each pin, full height of a 20 x 10 macro
+SRAM_PINS = {"VDD!": [(1, 2), (15, 16)], "VDDARRAY!": [(3, 4), (17, 18)], "VSS!": [(6, 7), (12, 13)]}
+SRAM_AT = (100000, 50000)
+OWN_GATING_REPORT = "%OL_CREATE_REPORT gating_pulse_reset.rpt\nNo paths found.\n%OL_END_REPORT\n"
+STRIPES_LOG = ("[WARNING ORD-0039] .openroad ignored with -python\n"
+               "[INFO] u_mem\\[0\\].sram: array L: 2 pairs, band: 2 pairs, array R: 2 pairs; VPWR 3 / VGND 3 stripes\n"
+               "[INFO] VPWR: tidy: 0 redundant stripe segments dropped\n"
+               "[INFO] VGND: tidy: 0 redundant stripe segments dropped\n")
+
+
+def sram_lef():
+    pins = ""
+    for pin, columns in SRAM_PINS.items():
+        use = "GROUND" if pin == "VSS!" else "POWER"
+        ports = "".join(f"    PORT\n      LAYER Metal4 ;\n        RECT {x0} 0 {x1} 10 ;\n    END\n" for x0, x1 in columns)
+        pins += f"  PIN {pin}\n    DIRECTION INOUT ;\n    USE {use} ;\n{ports}  END {pin}\n"
+    pins += "  PIN A_CLK\n    DIRECTION INPUT ;\n    USE SIGNAL ;\n    PORT\n      LAYER Metal2 ;\n" \
+            "        RECT 9 0 9.5 0.5 ;\n    END\n  END A_CLK\n"
+    return f"VERSION 5.7 ;\nMACRO {SRAM}\n  CLASS BLOCK ;\n  ORIGIN 0 0 ;\n  SIZE 20 BY 10 ;\n{pins}END {SRAM}\nEND LIBRARY\n"
+
+
+def stripe(x_um, width=1000):
+    """A full-height Metal4 stripe over a macro-local column centre (microns)."""
+    x = SRAM_AT[0] + round(x_um * 1000)
+    return f"      NEW Metal4 {width} + SHAPE STRIPE ( {x} 0 ) ( * 200000 )\n"
+
+
+def sram_def(drop=(), extra="", conns=None, orient="FS"):
+    """The final DEF: the SRAM placed, and a stripe over each of its power columns
+    (except the (pin, half) pairs in `drop`)."""
+    nets = {"VPWR": ["VDD!", "VDDARRAY!"], "VGND": ["VSS!"]}
+    conns = conns or {"VPWR": "( PIN VPWR ) ( * VDD ) ( * VDD! ) ( * VDDARRAY! )", "VGND": "( PIN VGND ) ( * VSS ) ( * VSS! )"}
+    special = ""
+    for net, pins in nets.items():
+        wires = "      + ROUTED Metal1 480 + SHAPE FOLLOWPIN ( 0 3780 ) ( 300000 3780 )\n"
+        for pin in pins:
+            for half, (x0, x1) in zip(("left", "right"), SRAM_PINS[pin]):
+                if (pin, half) not in drop:
+                    wires += stripe((x0 + x1) / 2)
+        wires += extra if net == "VGND" else ""
+        use = "GROUND" if net == "VGND" else "POWER"
+        special += f"    - {net} {conns[net]} + USE {use}\n{wires}      ;\n"
+    return (f"VERSION 5.8 ;\nDESIGN design ;\nUNITS DISTANCE MICRONS 1000 ;\nDIEAREA ( 0 0 ) ( 300000 200000 ) ;\n"
+            f"COMPONENTS 2 ;\n    - {SRAM_DEF_NAME} {SRAM} + FIXED ( {SRAM_AT[0]} {SRAM_AT[1]} ) {orient} ;\n"
+            f"    - _001_ sg13cmos5l_buf_1 + PLACED ( 10 10 ) N ;\nEND COMPONENTS\n"
+            f"SPECIALNETS 2 ;\n{special}END SPECIALNETS\nEND DESIGN\n")
+
+
+def gate_inputs(wt):
+    """The release gates' inputs for a clean run: the run's own violator report in
+    each sta.log, the SRAM in resolved.json, the ExtendPowerStripes log, the final
+    DEF and the macro LEF."""
+    run = wt / "runs/wokwi"
+    for log in run.glob("*-openroad-stapostpnr/*/sta.log"):
+        log.write_text(log.read_text() + OWN_GATING_REPORT)
+    lef = wt.parent / "pdk-lef" / f"{SRAM}.lef"
+    lef.parent.mkdir(exist_ok=True)
+    lef.write_text(sram_lef())
+    resolved = json.loads((run / "resolved.json").read_text())
+    resolved.update(MACROS={SRAM: {"lef": [str(lef)], "instances": {SRAM_INST: {"location": [100, 50],
+                                                                                  "orientation": "FS"}}}},
+                    PDN_MACRO_CONNECTIONS=[r"u_mem\\?\[0\\?\]\.sram VPWR VGND VDD! VSS!",
+                                           r"u_mem\\?\[0\\?\]\.sram VPWR VGND VDDARRAY! VSS!"])
+    (run / "resolved.json").write_text(json.dumps(resolved))
+    (run / "22-project-extendpowerstripes").mkdir()
+    (run / "22-project-extendpowerstripes/project-extendpowerstripes.log").write_text(STRIPES_LOG)
+    (run / "final/def").mkdir()
+    (run / "final/def/design.def").write_text(sram_def())
+    return wt
+
+
+STA_STEP = "99-openroad-stapostpnr"
+XCLK_SDC = ("set period $::env(CLOCK_PERIOD)\n"
+            "create_clock -name clk -period $period [get_ports clk]\n"
+            "create_clock -name sck -period $period [get_ports {ui_in[6]}]\n"
+            "set_max_delay -ignore_clock_latency $period -from [get_clocks sck] -to [get_clocks clk]\n"
+            "set_max_delay -ignore_clock_latency $period -from [get_clocks clk] -to [get_clocks sck]\n"
+            "set_false_path -hold -from [get_clocks sck] -to [get_clocks clk]\n"
+            "set_false_path -hold -from [get_clocks clk] -to [get_clocks sck]\n"
+            "set_false_path -from [get_clocks clk] -to [get_clocks clk]\n"
+            "set_propagated_clock [all_clocks]\n")
+
+
+def final_sta_state(wt):
+    """The final STA step's config and input state (as LibreLane writes them),
+    unless a test wrote its own (test_flow_slow48.sta_step). Also the generator
+    that the run, as its own shipping checkout, runs for `gen_config.py --preset
+    submission --check` (exit 0; not a candidate file)."""
+    run = wt / "runs/wokwi"
+    (wt / "flow").mkdir(exist_ok=True)
+    if not (wt / "flow/gen_config.py").exists():
+        (wt / "flow/gen_config.py").write_text("# generator\n")
+    if (run / STA_STEP / "state_in.json").exists():
+        return wt
+    files = {"59-fill/design.nl.v": (run / "final/nl/design.nl.v").read_text(), "59-fill/design.sdc": "sdc\n",
+             "60-odb/design.odb": "odb\n", "61-rcx/nom/design.nom.spef": "spef\n",
+             "final/spef/nom/design.nom.spef": "spef\n"}
+    for name, text in files.items():
+        (run / name).parent.mkdir(parents=True, exist_ok=True)
+        (run / name).write_text(text)
+    (wt / "src/protoemu.sdc").write_text(XCLK_SDC)
+    (wt / "src/timing_checks.tcl").write_text("# fixture\n")
+    state = {"nl": str(run / "59-fill/design.nl.v"), "sdc": str(run / "59-fill/design.sdc"),
+             "odb": str(run / "60-odb/design.odb"), "spef": {"nom_*": str(run / "61-rcx/nom/design.nom.spef")}}
+    config = {"meta": {"librelane_version": "3.1.0.dev3", "step": "OpenROAD.STAPostPNR"}, "CLOCK_PERIOD": 20,
+              "PDK_ROOT": str(wt.parent / "pdk"), "SIGNOFF_SDC_FILE": str(wt / "src/protoemu.sdc"),
+              "STA_EXTRA_CORNER_TCL_FILE": str(wt / "src/timing_checks.tcl")}
+    (run / STA_STEP / "state_in.json").write_text(json.dumps(state))
+    (run / STA_STEP / "config.json").write_text(json.dumps(config))
+    p = run / "resolved.json"
+    p.write_text(json.dumps(dict(json.loads(p.read_text()), meta={"librelane_version": "3.1.0.dev3"})))
+    return wt
+
+
+CHECK_IMAGE_ID = "sha256:" + "c" * 64
+
+
+def signoff_report(corner, *, worst=None, violators=None):
+    """A clean check_types.rpt: met recovery and removal checks, no pulse width
+    check (the signoff SDC's two-way clock exceptions), no minimum-period or
+    gating check. `worst`/`violators` replace a kind's section body."""
+    worst = dict({"recovery": "   2.980012   slack (MET)", "removal": "   1.206076   slack (MET)"}, **(worst or {}))
+    text = f"== corner {corner}\n"
+    for kind in ("min_pulse_width", "min_period", "recovery", "removal", "clock_gating_setup", "clock_gating_hold"):
+        text += f"== worst {kind}\n{worst.get(kind, '')}\n== violators {kind}\n{(violators or {}).get(kind, '')}\n"
+    return text + "== end of checks\n"
+
+
+REGISTERS = {"clk": ["_001_/CLK", "_002_/CLK"], "sck": ["_003_/CLK"]}
+
+
+def pulse_table(registers=REGISTERS, extra=""):
+    """report_pulse_width_checks -no_line_splits: one row per check."""
+    rows = [f"{SRAM_INST}/A_CLK (high)    0.400000    9.998153    9.598153 (MET)"]
+    for pins in registers.values():
+        for pin in pins:
+            rows += [f"{pin} (high)    0.247479    9.940100    9.692620 (MET)",
+                     f"{pin} (low)    0.190000    9.950000    9.760000 (MET)"]
+    return "    Required      Actual\nPin    Width       Width       Slack\n" + "\n".join(rows) + "\n" + extra
+
+
+UNION = object()
+
+
+def pulse_report(corner, *, worst="   9.598153   slack (MET)", violators="", pins=None, registers=REGISTERS,
+                 table=None, header=None, all_pins=UNION, clock_lists=True):
+    """A clean pulse_checks.rpt. `registers` gives each clock's register clock
+    pins, `all_pins` all_registers -clock_pins (default: their union; None
+    leaves the section out), `table` the check table; registers=None leaves
+    out all three, clock_lists=False the per-clock lists only."""
+    pins = {f"{SRAM_INST}/A_CLK": "   9.598153   slack (MET)"} if pins is None else pins
+    text = f"== corner {header or corner}\n== worst min_pulse_width\n{worst}\n== violators min_pulse_width\n{violators}\n"
+    text += "== sram clock pins\n" + "".join(f"pin {pin}\n{body}\n" for pin, body in pins.items())
+    if registers is not None:
+        if clock_lists:
+            text += "== clock register pins\n" + "".join(
+                f"clock {clock} {len(ps)}\n" + "".join(f"  {pin}\n" for pin in ps) for clock, ps in registers.items())
+        if all_pins is UNION:
+            all_pins = [pin for ps in registers.values() for pin in ps]
+        if all_pins is not None:
+            text += f"== all register clock pins\nregisters {len(all_pins)}\n" + "".join(f"  {p}\n" for p in all_pins)
+        text += "== all pulse width checks\n" + (pulse_table(registers) if table is None else table)
+    return text + "== end of checks\n"
+
+
+def checks_output(wt, *, signoff=signoff_report, pulse=pulse_report, finish=True):
+    """A checks receipt (flow/check_rerun.py's) written without docker."""
+    rec = module("release_receipts")
+    final_sta_state(wt)
+    out = wt / "test/sim_build/checks.fresh"
+    flow = ROOT / "flow"
+    config = rec.read_json(wt / "runs/wokwi" / STA_STEP / "config.json")
+    text, removed = rec.pulse_sdc(Path(config["SIGNOFF_SDC_FILE"]).read_text())
+    plan = dict(step=STA_STEP, image="ghcr.io/librelane/librelane:3.1.0.dev3", image_id=CHECK_IMAGE_ID,
+                librelane_version="3.1.0.dev3",
+                tcl={name: rec.digest(flow / tcl) for name, tcl in rec.CHECK_PASSES.items()}, sdc_removed=removed)
+    rec.begin(wt, out, "checks", wt, plan)
+    configs = rec.check_configs(wt, out)
+    for name, tcl in rec.CHECK_PASSES.items():
+        d = out / name
+        d.mkdir()
+        shutil.copyfile(flow / tcl, d / tcl)
+        if name == "pulse":
+            (d / "pulse.sdc").write_text(text)
+        (d / "config.json").write_text(json.dumps(configs[name]))
+        (d / "run.log").write_text(f"docker run --rm --network none -w {d} {CHECK_IMAGE_ID} python3 -m librelane.steps "
+                                   f"run --id OpenROAD.STAPostPNR -c {d}/config.json -i state_in.json -o {d}/sta\n")
+        (d / "status.json").write_text('{"returncode": 0}\n')
+        for corner in rec.CORNERS:
+            (d / "sta" / corner).mkdir(parents=True)
+            report = (signoff if name == "signoff" else pulse)(corner)
+            (d / "sta" / corner / rec.CHECK_REPORTS[name]).write_text(report)
+    return rec.finish(out) if finish else out
 
 
 def xml(names=("test_a", "test_b")):
@@ -125,9 +326,12 @@ def precheck_output(wt):
 
 def complete_receipts(wt):
     rec = module("release_receipts")
+    final_sta_state(wt)
     paths = [rec.finish(out) for out in (gl_output(wt), sdf_output(wt), precheck_output(wt))]
+    # the run is its own shipping checkout here: the same build inputs
     return [str(wt), "--gl-receipt", str(paths[0]), "--sdf-receipt", str(paths[1]),
-            "--precheck-receipt", str(paths[2])]
+            "--precheck-receipt", str(paths[2]), "--checks-receipt", str(checks_output(wt)),
+            "--shipping-root", str(wt)]
 
 
 def test_complete_release_and_relocation(tmp_path):
@@ -135,8 +339,12 @@ def test_complete_release_and_relocation(tmp_path):
     args = complete_receipts(wt)
     assert module("release_check").main(args) == 0
     # Relative artifact hashes remain useful when the whole evidence is archived.
+    # An archive keeps no STA step state (its paths name the original run), so
+    # the run-side STA and gate checks are skipped there, and say so.
     moved = tmp_path / "reports/archive"
     shutil.copytree(wt, moved)
+    for name in ("state_in.json", "config.json"):
+        (moved / "runs/wokwi" / STA_STEP / name).unlink()
     relocated = [s.replace(str(wt), str(moved)) for s in args]
     assert module("release_check").main(relocated) == 0
 
