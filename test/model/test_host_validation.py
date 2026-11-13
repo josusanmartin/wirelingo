@@ -74,20 +74,21 @@ def test_pin_ownership_survives_repeated_and_mixed_assignments():
 
 @pytest.mark.parametrize("actual", [48_000_000, 47_999_000])
 def test_bringup_checks_generated_clock_before_releasing_reset(monkeypatch, actual):
-    resets, clocks, constructed = [], [], []
+    resets, clocks, constructed, used = [], [], [], []
     tt = SimpleNamespace(shuttle=SimpleNamespace(**{bringup.PROJECT: SimpleNamespace(enable=lambda: None)}),
                          uio_oe_pico=SimpleNamespace(value=255), auto_clocking_freq=actual,
                          reset_project=resets.append, clock_project_PWM=clocks.append)
     monkeypatch.setitem(sys.modules, "ttboard.demoboard", SimpleNamespace(DemoBoard=SimpleNamespace(get=lambda: tt)))
     monkeypatch.setitem(sys.modules, "ttboard.mode", SimpleNamespace(RPMode=SimpleNamespace(ASIC_RP_CONTROL=1)))
     monkeypatch.setattr(time, "sleep_ms", lambda _: None, raising=False)
-    pe = SimpleNamespace(read=lambda _: bringup.ID)
-    monkeypatch.setattr(bringup, "ProtoEmu", lambda board: constructed.append(board) or pe)
+    pe = SimpleNamespace(read=lambda _: bringup.ID, use_id=used.append)
+    monkeypatch.setattr(bringup, "ProtoEmu", lambda board, **kw: constructed.append((board, kw)) or pe)
     if actual == 48_000_000:
         assert bringup.setup() is pe
-        assert resets == [True, False] and constructed == [tt]
+        assert resets == [True, False] and constructed == [(tt, {"ncores": None, "nbanks": None})]
+        assert used == [bringup.ID]                     # the geometry comes from the ID it checked
     else:
         with pytest.raises(RuntimeError, match="project clock"):
             bringup.setup()
-        assert resets == [True] and not constructed
+        assert resets == [True] and not constructed and not used
     assert clocks == [48_000_000] and tt.uio_oe_pico.value == 0

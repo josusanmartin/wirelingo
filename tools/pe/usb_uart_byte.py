@@ -35,6 +35,8 @@ def load_writes(programs=None, rx_pin=RX):
     Applying this list replaces both cores and consumes all virtual pins and
     flags. Call only for this optional workload, with cores disabled. After
     start, the peer uses USB packets and physical READY/RX, not loading APIs.
+    On a 3-core chip the first write (CTRL = 0) also stops core 2, and the
+    start enables only cores 0 and 1.
     """
     rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
     usb, uart = assemble(rx_pin) if programs is None else programs
