@@ -128,9 +128,6 @@ def gate_inputs(wt):
     (run / "22-project-extendpowerstripes/project-extendpowerstripes.log").write_text(STRIPES_LOG)
     (run / "final/def").mkdir()
     (run / "final/def/design.def").write_text(sram_def())
-    # the generator a shipping checkout's `gen_config.py --preset submission --check` runs (exit 0)
-    (wt / "flow").mkdir(exist_ok=True)
-    (wt / "flow/gen_config.py").write_text("# generator\n")
     return wt
 
 
@@ -148,8 +145,13 @@ XCLK_SDC = ("set period $::env(CLOCK_PERIOD)\n"
 
 def final_sta_state(wt):
     """The final STA step's config and input state (as LibreLane writes them),
-    unless a test wrote its own (test_flow_slow48.sta_step)."""
+    unless a test wrote its own (test_flow_slow48.sta_step). Also the generator
+    that the run, as its own shipping checkout, runs for `gen_config.py --preset
+    submission --check` (exit 0; not a candidate file)."""
     run = wt / "runs/wokwi"
+    (wt / "flow").mkdir(exist_ok=True)
+    if not (wt / "flow/gen_config.py").exists():
+        (wt / "flow/gen_config.py").write_text("# generator\n")
     if (run / STA_STEP / "state_in.json").exists():
         return wt
     files = {"59-fill/design.nl.v": (run / "final/nl/design.nl.v").read_text(), "59-fill/design.sdc": "sdc\n",
