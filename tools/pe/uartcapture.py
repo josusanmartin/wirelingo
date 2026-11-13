@@ -19,8 +19,10 @@ def capture_plan(length, *, core=0, enabled_before=0, profile=None, chip_id=None
     """Return five ordinary writes, validated before any plan is produced.
 
     Caller observes stopped/disabled core0 and empty RX/TX FIFOs first.
-    enabled_before is the current CTRL enable mask, checked against the
-    geometry (profile.resolve: 0..3 for TAPEOUT, 0..7 for PKG3). Preserve
+    enabled_before is the current CTRL enable mask, checked by
+    profile.enable_mask: bounded by the chip ID's core count when chip_id
+    is given (0..7 on a 3-core chip, even with TAPEOUT), else by the
+    profile's (0..3 for TAPEOUT, 0..7 for PKG3). Preserve
     every other core's enable, pay R1/R2 setup, clear only F0,
     restart/enable only core0.
     No program/configuration/FIFO/other-core register writes are returned.
