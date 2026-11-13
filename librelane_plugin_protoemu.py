@@ -39,6 +39,7 @@ from decimal import Decimal
 
 from librelane.steps.step import CompositeStep
 from librelane.steps.openroad import DetailedPlacement, DetailedRouting, OpenROADStep, dpl_variables
+from librelane.steps.openroad import RepairDesignPostGRT, ResizerTimingPostGRT
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow")
 
@@ -166,6 +167,25 @@ class SramPinBuffers(CompositeStep):
     id = "Project.SramPinBuffers"
     name = "Buffer the SRAM Pins and Legalize"
     Steps = [SramPinBuffersTcl, DetailedPlacement]
+
+
+@Step.factory.register()
+class HoldRepairPostGRT(ResizerTimingPostGRT):
+    """LibreLane's post-GRT timing repair without its setup pass (flow/hold_repair_postgrt.tcl)."""
+    id = "Project.HoldRepairPostGRT"
+    name = "Hold Repair (Post-GRT, after the design repair)"
+
+    def get_script_path(self):
+        return os.path.join(HERE, "hold_repair_postgrt.tcl")
+
+
+@Step.factory.register()
+class RepairDesignThenHold(CompositeStep):
+    """Opt-in (gen_config.py --post-repair-hold): the last post-GRT design repair,
+    then hold repair, so that the buffers it inserts are checked for hold."""
+    id = "Project.RepairDesignThenHold"
+    name = "Repair Design, Then Hold (Post-GRT)"
+    Steps = [RepairDesignPostGRT, HoldRepairPostGRT]
 
 
 @Step.factory.register()

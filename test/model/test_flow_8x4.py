@@ -319,3 +319,23 @@ def test_reg_clock_delay_is_off_unless_asked():
         assert re.search(r"default=(-?[0-9]+)\)", block).group(1) == default
     step = (ROOT / "flow/sram_clock_advance_step.tcl").read_text()
     assert "[info exists ::env(PROTOEMU_REG_CLOCK_DELAY)] && $::env(PROTOEMU_REG_CLOCK_DELAY) > 0" in step
+
+
+def test_post_repair_hold_option(tmp_path):
+    # opt-in: the inserted last design repair becomes design repair then hold repair
+    r, d = generate(tmp_path, "--preset", "experiment", "--post-repair-hold", name="hold.json")
+    c = json.loads(d.read_text())
+    assert r.returncode == 0 and c["//generator"]["post_repair_hold"] is True
+    assert c["meta"]["substituting_steps"]["+Project.SramPinBuffers"] == "Project.RepairDesignThenHold"
+    r0, d0 = generate(tmp_path, "--preset", "experiment", name="plain.json")
+    c0 = json.loads(d0.read_text())
+    assert c0["meta"]["substituting_steps"]["+Project.SramPinBuffers"] == "OpenROAD.RepairDesignPostGRT"
+    assert "post_repair_hold" not in c0["//generator"]
+    r, d = generate(tmp_path, "--preset", "experiment", "--post-repair-hold", "--no-sram-pin-buffers", name="bad.json")
+    assert r.returncode != 0 and not d.exists()
+    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    assert 'id = "Project.RepairDesignThenHold"' in plugin and "Steps = [RepairDesignPostGRT, HoldRepairPostGRT]" in plugin
+    assert 'id = "Project.HoldRepairPostGRT"' in plugin
+    tcl = (ROOT / "flow/hold_repair_postgrt.tcl").read_text()
+    assert "lappend hold_args -hold" in tcl and "-setup\n" not in tcl and "setup_args" not in tcl
+    assert "estimate_parasitics -global_routing" in tcl
