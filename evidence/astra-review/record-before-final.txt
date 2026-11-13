@@ -1,0 +1,4 @@
+store: 10109 objects | published old commits 578 | single-value published commits 145 {'host': 145} | fixed point after 2 passes
+tree HEAD: 979 files checked
+commit messages checked: 10
+TOTAL flagged: 0

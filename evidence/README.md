@@ -6,6 +6,7 @@ source and the redactions made before it was committed.
 
 | Folder | What | Level |
 |---|---|---|
+| [astra-review/](astra-review/README.md) | Review fixes, before/after regressions, formal properties and mutants, assembler parity and final model/RTL runs | Cycle model, RTL simulation and formal; no physical signoff |
 | [verifier/](verifier/README.md) | The independent verifier's items and reports, 000-078b, 52 PASS and 31 FAIL, verbatim apart from the listed redactions | Review records |
 | [kv260-usb-20261030/](kv260-usb-20261030/README.md) | Kernel and step logs of Linux enumerating `usb_enum` (246 words, before `fault-fixes`) at low and full speed | RTL in FPGA fabric |
 | [fabric-ping-20261103/](fabric-ping-20261103/README.md) | Board run of the ARP/ping/UDP stack through the KV260 build, one 64-byte frame at a time, no cable. Verified ([report 037](verifier/037-fabric-ping-fix3.report.md), after FAILs 029, 031 and 034) | RTL in FPGA fabric |

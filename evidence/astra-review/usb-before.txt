@@ -1,0 +1,23 @@
+                assert h.data_in(addr, toggle, endp=1) == bytes([0, 0])
+                toggle ^= 1
+            for invalid in (2, 255, 0x100, 0xFFFF):
+                with pytest.raises(Stall):
+                    h.control_write(addr, bytes([0, 9, invalid & 255, invalid >> 8, 0, 0, 0, 0]))
+>               assert h.control_read(addr, bytes([0x80, 8, 0, 0, 0, 0, 1, 0])) == bytes([configured])
+E               AssertionError: assert b'\x00' == b'\x01'
+E
+E                 At index 0 diff: b'\x00' != b'\x01'
+E                 Use -v to get more diff
+
+test/model/test_usb_config_reject.py:43: AssertionError
+=========================== short test summary info ============================
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-False-low-2]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-False-low-3]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-False-full-2]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-False-full-3]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-True-low-2]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-True-low-3]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-True-full-2]
+FAILED test/model/test_usb_config_reject.py::test_rejected_configuration_keeps_state_and_toggle[1-True-full-3]
+8 failed, 8 passed in 3.54s
+Baseline USB regression exit: 1

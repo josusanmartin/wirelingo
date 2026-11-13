@@ -1,0 +1,6 @@
+firmware files: 70 (swd_probe excluded)
+firmware   agree ok=362 error=411 crash=0 DISAGREE=0
+directed   agree ok=189 error=164 crash=8 DISAGREE=0
+fuzz       agree ok=378 error=1620 crash=2 DISAGREE=0
+bytes compared via --bin: 247080
+PARITY

@@ -1,0 +1,17 @@
+table-word-inverted: DONE (FAIL
+table-clock-executes: DONE (FAIL
+table-pc-jumps: DONE (FAIL
+table-word-dropped: DONE (FAIL
+ticks-plus-2: DONE (FAIL
+ticks-kept-on-restart: DONE (FAIL
+crc-step-new-settings: DONE (FAIL
+crc-step-dropped: DONE (FAIL
+crc-pend-survives-set: DONE (FAIL
+crc-pend-survives-host-write: DONE (FAIL
+crc-feed-reads-register: DONE (FAIL
+crc-mov-reads-register: DONE (FAIL
+crc-host-reads-register: DONE (FAIL
+crc-pend-without-exec: DONE (FAIL
+line-push-without-exec: DONE (FAIL
+line-take-without-exec: DONE (FAIL
+scratch: ~/protoemu-flow/astra-review/agent-runs/astra-review-2501b7a-2802223/.tmp/tmp.BY9jaXtFAA

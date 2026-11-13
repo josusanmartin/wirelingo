@@ -1,0 +1,9 @@
+model rc=0
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 48%]
+........................................................................ [ 97%]
+...                                                                      [100%]
+147 passed in 2.74s
+runner1 checkout: ~/protoemu-flow/astra-review/agent-runs/astra-review-2501b7a-2802223 (HEAD 2501b7a)
