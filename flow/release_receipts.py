@@ -34,11 +34,25 @@ IMAGE_ID_RE = r"sha256:[0-9a-f]{64}"
 # release_check's verdict when an STA receipt was checked without the run's STA
 # inputs (an archive); release_evidence and archive_evidence refuse it
 SKIPPED_VERDICT = "STA RECEIPT CHECKS SKIPPED"
+# release_check's verdict when a release gate had no inputs (an evidence archive
+# keeps neither the final DEF nor the step logs); refused the same way
+GATES_SKIPPED_VERDICT = "RELEASE GATES SKIPPED"
+# The clock/reset check STA (flow/check_rerun.py): two passes of the run's own
+# STA step, each with a report Tcl. "pulse" drops the signoff SDC's
+# clock-to-clock exceptions: with exceptions both ways between two clocks,
+# OpenSTA 2.7.0 (LibreLane 3.1.0.dev3) reports no minimum pulse width check at
+# all, while pulse widths depend on the clock network alone.
+CHECK_PASSES = {"signoff": "check_types.tcl", "pulse": "pulse_checks.tcl"}
+CHECK_REPORTS = {"signoff": "check_types.rpt", "pulse": "pulse_checks.rpt"}
+CHECK_REPORT_END = "== end of checks"
+XCLK_EXCEPTION_RE = (r"set_(?:max_delay|min_delay|false_path|multicycle_path)\b.*"
+                     r"-from \[get_clocks \{?(\S+?)\}?\] -to \[get_clocks \{?(\S+?)\}?\]\s*")
 
 
 def runner_files(root):
     return {name: digest(Path(root) / name) for name in
-            ("release_receipts.py", "gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "sdf_prep.py", "sta_rerun.py")
+            ("release_receipts.py", "gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "sdf_prep.py", "sta_rerun.py",
+             "check_rerun.py", *CHECK_PASSES.values())
             if (Path(root) / name).is_file()}
 
 
@@ -154,6 +168,73 @@ def sta_recheck(worktree, data, out, *, allow_absent=False):
     return []
 
 
+def pulse_sdc(text):
+    """The signoff SDC without its exceptions between two different clocks, and
+    the lines removed (the pulse-width pass of flow/check_rerun.py)."""
+    kept, removed = [], []
+    for line in text.splitlines(True):
+        m = re.fullmatch(XCLK_EXCEPTION_RE, line.rstrip("\n"))
+        if m and m[1] != m[2]:
+            removed.append(line.rstrip("\n"))
+        else:
+            kept.append(line)
+    return "".join(kept), removed
+
+
+def check_configs(worktree, out):
+    """The two passes' expected step configs: the run's own, with only the
+    report Tcl (and, for "pulse", the signoff SDC) pointing into the receipt."""
+    config = read_json(sta_step(worktree) / "config.json")
+    expected = {}
+    for name, tcl in CHECK_PASSES.items():
+        c = dict(config, STA_EXTRA_CORNER_TCL_FILE=str(Path(out) / name / tcl))
+        if name == "pulse":
+            c["SIGNOFF_SDC_FILE"] = str(Path(out) / name / "pulse.sdc")
+        expected[name] = c
+    return expected
+
+
+def checks_recheck(worktree, data, out, *, allow_absent=False):
+    """A checks receipt against the run: the step and its LibreLane version, the
+    pulse pass's SDC derived from the run's signoff SDC, and (live) the step's
+    input digests and both passes' configs. With allow_absent, a tree where
+    nothing stands at the step's state_in.json and config.json (an evidence
+    archive) has its present inputs checked and the skipped checks returned."""
+    # (worded apart from sta_recheck: test/mutants.py finds each mutation site by its text)
+    wt, plan, step = Path(worktree), data["plan"], sta_step(worktree)
+    recorded = plan["inputs"]
+    if plan["step"] != step.name:
+        raise ValueError("the checks receipt names another STA step")
+    version = read_json(wt / "runs/wokwi/resolved.json").get("meta", {}).get("librelane_version")
+    if version != plan.get("librelane_version"):
+        raise ValueError(f"checks STA image has LibreLane {plan.get('librelane_version')}, not the run's {version}")
+    sdc = [name for name in recorded if name.endswith(".sdc") and not name.startswith("runs/")]
+    if len(sdc) != 1:
+        raise ValueError(f"expected one signoff SDC among the recorded inputs, found {sdc}")
+    if digest(wt / sdc[0]) != recorded[sdc[0]]:
+        raise ValueError(f"the run's signoff SDC differs from the receipt's: {sdc[0]}")
+    text, removed = pulse_sdc((wt / sdc[0]).read_text())
+    if removed != plan["sdc_removed"] or (Path(out) / "pulse/pulse.sdc").read_text() != text:
+        raise ValueError("the pulse pass's SDC is not the run's signoff SDC without its clock-to-clock exceptions")
+    archive = not any(os.path.lexists(step / n) for n in ("state_in.json", "config.json"))
+    if allow_absent and archive:
+        present = [n for n in recorded if os.path.lexists(wt / n)]
+        differ = sorted(n for n in present if not (wt / n).is_file() or digest(wt / n) != recorded[n])
+        if differ:
+            raise ValueError(f"checks STA inputs differ from the receipt's: {', '.join(differ)}")
+        return [f"checks STA inputs not recomputed: the run's {step.name}/state_in.json and config.json are absent; "
+                f"{len(present)} of {len(recorded)} recorded input files checked",
+                "checks STA pass configs not compared with the run's: its config.json is absent"]
+    now = sta_inputs(wt)
+    differ = sorted(n for n in set(now) | set(recorded) if now.get(n) != recorded.get(n))
+    if differ:
+        raise ValueError(f"checks STA inputs differ from the receipt's: {', '.join(differ)}")
+    for name, config in check_configs(wt, data["output_directory"]).items():
+        if read_json(Path(out) / name / "config.json") != config:
+            raise ValueError(f"checks STA {name} pass config differs from the run's beyond its report Tcl and SDC")
+    return []
+
+
 def candidate_files(worktree):
     wt = Path(worktree)
     run = wt / "runs/wokwi"
@@ -243,7 +324,7 @@ def check_xml(path, names=None, expect="pass", *, allow_filtered=False):
 
 def begin(worktree, out, kind, validation_root, plan=None):
     wt, out, root = Path(worktree).resolve(), Path(out).resolve(), Path(validation_root).resolve()
-    if kind not in ("gl", "sdf", "precheck", "sta"):
+    if kind not in ("gl", "sdf", "precheck", "sta", "checks"):
         raise ValueError(f"unknown receipt kind {kind}")
     if kind == "sta":
         # a fresh STA of the run's own final step at plan["period_ns"]
@@ -262,6 +343,18 @@ def begin(worktree, out, kind, validation_root, plan=None):
         final_spef = one((wt / "runs/wokwi/final/spef/nom").glob("*.spef"), "final SPEF")
         if digest(rel(state["nl"])) != digest(final_nl) or [digest(rel(p)) for p in state["spef"].values()] != [digest(final_spef)]:
             raise ValueError("the final STA step did not read the final netlist and SPEF")
+    if kind == "checks":
+        # the run's own final STA step, twice, with report Tcl (flow/check_rerun.py)
+        if not isinstance(plan, dict) or set(plan) != {"step", "image", "image_id", "librelane_version", "tcl",
+                                                       "sdc_removed"}:
+            raise ValueError("checks plan needs step, image, image_id, librelane_version, tcl and sdc_removed")
+        if plan["step"] != sta_step(wt).name:
+            raise ValueError("checks plan names another step")
+        if not isinstance(plan["image_id"], str) or not re.fullmatch(IMAGE_ID_RE, plan["image_id"]):
+            raise ValueError("checks plan needs the image's ID (sha256:...)")
+        if not isinstance(plan["tcl"], dict) or set(plan["tcl"]) != set(CHECK_PASSES):
+            raise ValueError(f"checks plan needs a report Tcl digest for each pass {sorted(CHECK_PASSES)}")
+        plan = dict(plan, inputs=sta_inputs(wt))
     if kind == "gl":
         plan = {m: test_names(root / "test" / f"{m}.py") for m in GL_MODULES}
         if hardware_files(wt) != hardware_files(root):
@@ -286,7 +379,8 @@ def begin(worktree, out, kind, validation_root, plan=None):
     data = dict(schema=SCHEMA, kind=kind, worktree=str(wt), validation_root=str(root), output_directory=str(out),
                 runner_root=str(RUNNER_ROOT), runner=runner_files(RUNNER_ROOT),
                 candidate=candidate_files(wt),
-                validation={} if kind == "sta" else validation_files(root, include_hardware=kind in ("gl", "sdf")),
+                validation={} if kind in ("sta", "checks") else
+                validation_files(root, include_hardware=kind in ("gl", "sdf")),
                 plan=plan)
     if kind in ("gl", "sdf"):
         hardware = lambda files: {p: h for p, h in files.items() if p.startswith("src/") and Path(p).suffix in (".v", ".sv")}
@@ -397,6 +491,27 @@ def outputs(out, data):
             sta_metrics(out, corner)
             files += [d / "sta.log", d / "clock.rpt"]
         files += [out / "config.json", out / "status.json", out / "run.log", out / "sta/state_out.json"]
+    elif kind == "checks":
+        ran = plan.get("image_id")
+        if not (isinstance(ran, str) and re.fullmatch(IMAGE_ID_RE, ran)):
+            raise ValueError("the checks receipt records no image ID (sha256:...)")
+        for name, tcl in CHECK_PASSES.items():
+            d = out / name
+            status = read_json(d / "status.json")["returncode"]
+            if type(status) is not int or status != 0:
+                raise ValueError(f"checks STA {name} pass failed")
+            if digest(d / tcl) != plan["tcl"][name]:
+                raise ValueError(f"checks STA {name} pass ran another report Tcl")
+            first = (d / "run.log").read_text(errors="replace").split("\n", 1)[0]
+            if " ".join(["", ran, "python3 -m librelane.steps run --id", STA_STEP_ID, ""]) not in first:
+                raise ValueError(f"the checks STA {name} pass did not run image {ran}")
+            for corner in CORNERS:
+                report = d / "sta" / corner / CHECK_REPORTS[name]
+                if CHECK_REPORT_END not in report.read_text(errors="replace").splitlines():
+                    raise ValueError(f"{report.relative_to(out)}: incomplete check report")
+                files.append(report)
+            files += [d / "config.json", d / "status.json", d / "run.log", d / tcl]
+        files.append(out / "pulse/pulse.sdc")
     else:
         raise ValueError(f"unknown receipt kind {kind}")
     return {str(p.relative_to(out)): digest(p) for p in files}
@@ -411,6 +526,8 @@ def finish(out):
         raise ValueError("candidate changed during verification")
     if data["kind"] == "sta":
         sta_recheck(data["worktree"], data, out)
+    elif data["kind"] == "checks":
+        checks_recheck(data["worktree"], data, out)
     elif validation_files(data["validation_root"], include_hardware=data["kind"] in ("gl", "sdf")) != data["validation"]:
         raise ValueError("validation inputs changed during verification")
     data["artifacts"] = outputs(out, data)
@@ -451,6 +568,11 @@ def verify(path, worktree, kind, validation_root=None):
             skipped = sta_recheck(worktree, data, path.parent, allow_absent=True)
         except (OSError, ValueError, KeyError, TypeError) as e:
             raise ValueError(f"{path}: the run's STA inputs: {e}") from e
+    if kind == "checks":
+        try:
+            skipped = checks_recheck(worktree, data, path.parent, allow_absent=True)
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            raise ValueError(f"{path}: the run's checks STA inputs: {e}") from e
     return dict(data, skipped=skipped)
 
 
