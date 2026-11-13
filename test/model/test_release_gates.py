@@ -106,7 +106,67 @@ FAULTS = {
                      "nom_slow_1p08V_125C: the pulse pass's report is not this corner's"),
     "other-corner-signoff": (dict(signoff=lambda c: signoff_report(c).replace(f"== corner {c}", "== corner x")),
                              "the signoff pass's report is not this corner's"),
+    # 092c (092b finding 1b): set_case_analysis on a clock port leaves sck's flop in
+    # no clock's list, with no check: all_registers -clock_pins still lists it
+    "unclocked-register": (dict(pulse=lambda c: pulse_report(c, registers={"clk": REGISTERS["clk"]},
+                                                             all_pins=REGISTERS["clk"] + REGISTERS["sck"])),
+                           "1 of 3 register clock pins are reached by no clock (first: _003_/CLK)"),
+    "unclocked-register-unchecked": (dict(pulse=lambda c: pulse_report(c, registers={"clk": REGISTERS["clk"]},
+                                                                       all_pins=REGISTERS["clk"] + REGISTERS["sck"])),
+                                     "1 of 3 register clock pins have no pulse width check (first: _003_/CLK)"),
+    "no-all-register-list": (dict(pulse=lambda c: pulse_report(c, all_pins=None)),
+                             "the pulse pass's report lists no register clock pins at all"),
+    "all-register-count-wrong": (dict(pulse=lambda c: pulse_report(c).replace("registers 3\n", "registers 4\n")),
+                                 "the pulse pass's report lists no register clock pins at all"),
+    # 092b finding 9: a check table without the per-clock lists
+    "no-clock-lists": (dict(pulse=lambda c: pulse_report(c, clock_lists=False)),
+                       "lists no clock register pins or no pulse width checks"),
 }
+
+
+def test_a_violated_register_pin_is_reported_as_violated_not_unchecked(tmp_path, capsys):
+    # 092b's equivalent mutant cov-violated-row-dropped: a violated row still counts as a check
+    wt = candidate(tmp_path)
+    args = complete_receipts(wt)
+    shutil.rmtree(wt / "test/sim_build/checks.fresh")
+    table = pulse_table({"clk": REGISTERS["clk"]}) + "".join(
+        f"_003_/CLK ({edge})    0.190000    0.100000   -0.090000 (VIOLATED)\n" for edge in ("high", "low"))
+    receipt = checks_output(wt, pulse=lambda c: pulse_report(c, table=table))
+    rc, text = release(with_checks(args, receipt), capsys)
+    assert rc == 1 and "pulse width violated" in text and "have no pulse width check" not in text
+
+
+def test_the_preamble_makes_the_four_commands_no_ops_in_tcl():
+    # 092b finding 9: run it, not only read it (tkinter's Tcl; an `sta` namespace
+    # stands in for OpenSTA's, whose commands record that they ran)
+    tkinter = pytest.importorskip("tkinter")
+    rec = module("release_receipts")
+    tcl = tkinter.Tcl()
+    tcl.eval("set ::calls {}; namespace eval ::sta {}")
+    for cmd in rec.PATH_EXCEPTIONS:
+        tcl.eval(f"proc ::sta::{cmd} {{args}} {{ lappend ::calls {cmd} }}; "
+                 f"namespace eval ::sta {{ namespace export {cmd} }}; namespace import ::sta::{cmd}")
+    tcl.eval("set_max_delay 1")                         # before: the real commands run
+    assert tcl.eval("set ::calls") == "set_max_delay"
+    tcl.eval("set ::calls {}")
+    tcl.eval(rec.PULSE_SDC_PREAMBLE)
+    for cmd in rec.PATH_EXCEPTIONS:
+        for name in (cmd, f"::{cmd}", f"sta::{cmd}", f"::sta::{cmd}"):
+            assert tcl.eval(f"{name} 5 -from [list clk]") == ""
+        assert tcl.eval(f"info procs ::{cmd}") == f"::{cmd}" and tcl.eval(f"info body ::{cmd}") == ""
+        assert tcl.eval(f"info body ::sta::{cmd}") == ""
+    tcl.eval("eval set_false_path -hold -from clk; foreach c {clk} { set_min_delay 0 -from $c }")
+    assert tcl.eval("set ::calls") == ""
+
+
+def test_the_preamble_text_is_exactly_the_reviewed_one():
+    # runs without Tcl too: the four names and the global and sta:: no-op procs
+    rec = module("release_receipts")
+    assert rec.PULSE_SDC_PREAMBLE.endswith(
+        "foreach protoemu_pulse_cmd {set_max_delay set_min_delay set_false_path set_multicycle_path} {\n"
+        "    proc ::$protoemu_pulse_cmd {args} {}\n"
+        "    if {[namespace exists ::sta]} { proc ::sta::$protoemu_pulse_cmd {args} {} }\n"
+        "}\n")
 
 
 @pytest.mark.parametrize("fault", sorted(FAULTS))
@@ -220,7 +280,7 @@ def test_the_pulse_pass_disables_every_path_exception():
     # the preamble redefines exactly the four path-exception commands as no-ops
     for cmd in ("set_max_delay", "set_min_delay", "set_false_path", "set_multicycle_path"):
         assert cmd in rec.PULSE_SDC_PREAMBLE.split("foreach protoemu_pulse_cmd {")[1].split("}")[0].split()
-    assert "proc $protoemu_pulse_cmd {args} {}" in rec.PULSE_SDC_PREAMBLE
+    assert "proc ::$protoemu_pulse_cmd {args} {}" in rec.PULSE_SDC_PREAMBLE
     # the real signoff SDC: its four lines named, nothing removed
     real = (ROOT / "src/protoemu.sdc").read_text()
     text, named = rec.pulse_sdc(real)
@@ -237,7 +297,7 @@ def test_check_rerun_runs_both_passes_read_only_in_the_runs_image(tmp_path, fake
         (reports / f"check_types.tcl.{corner}.rpt").write_text(signoff_report(corner))
         (reports / f"pulse_checks.tcl.{corner}.rpt").write_text(pulse_report(corner))
     monkeypatch.setenv("FAKE_CHECK_DIR", str(reports))
-    assert module("check_rerun").main([str(wt), "--out-parent", str(tmp_path / "chk")]) == 0
+    assert module("check_rerun").main([str(wt), "--out-parent", str(tmp_path / "chk"), "--cpus", "2"]) == 0
     out = next((tmp_path / "chk").glob("checks.*"))
     calls = [json.loads(line) for line in fake_docker.read_text().splitlines()]
     steps = [c for c in calls if "librelane.steps" in c]
@@ -245,6 +305,7 @@ def test_check_rerun_runs_both_passes_read_only_in_the_runs_image(tmp_path, fake
     image = fake_image_id(DEFAULT_IMAGE)
     for call, name in zip(steps, ("signoff", "pulse")):
         assert f"{wt}:{wt}:ro" in call and call[call.index("--network") + 1] == "none"
+        assert call[call.index("--cpus") + 1] == "2"                  # 092b finding 9
         assert call[call.index("python3") - 1] == image and call[call.index("-c") + 1] == str(out / name / "config.json")
     original = json.loads((wt / "runs/wokwi" / STA_STEP / "config.json").read_text())
     signoff = json.loads((out / "signoff/config.json").read_text())

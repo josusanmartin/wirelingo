@@ -201,14 +201,26 @@ def pulse_table(registers=REGISTERS, extra=""):
     return "    Required      Actual\nPin    Width       Width       Slack\n" + "\n".join(rows) + "\n" + extra
 
 
+UNION = object()
+
+
 def pulse_report(corner, *, worst="   9.598153   slack (MET)", violators="", pins=None, registers=REGISTERS,
-                 table=None, header=None):
+                 table=None, header=None, all_pins=UNION, clock_lists=True):
+    """A clean pulse_checks.rpt. `registers` gives each clock's register clock
+    pins, `all_pins` all_registers -clock_pins (default: their union; None
+    leaves the section out), `table` the check table; registers=None leaves
+    out all three, clock_lists=False the per-clock lists only."""
     pins = {f"{SRAM_INST}/A_CLK": "   9.598153   slack (MET)"} if pins is None else pins
     text = f"== corner {header or corner}\n== worst min_pulse_width\n{worst}\n== violators min_pulse_width\n{violators}\n"
     text += "== sram clock pins\n" + "".join(f"pin {pin}\n{body}\n" for pin, body in pins.items())
     if registers is not None:
-        text += "== clock register pins\n" + "".join(
-            f"clock {clock} {len(ps)}\n" + "".join(f"  {pin}\n" for pin in ps) for clock, ps in registers.items())
+        if clock_lists:
+            text += "== clock register pins\n" + "".join(
+                f"clock {clock} {len(ps)}\n" + "".join(f"  {pin}\n" for pin in ps) for clock, ps in registers.items())
+        if all_pins is UNION:
+            all_pins = [pin for ps in registers.values() for pin in ps]
+        if all_pins is not None:
+            text += f"== all register clock pins\nregisters {len(all_pins)}\n" + "".join(f"  {p}\n" for p in all_pins)
         text += "== all pulse width checks\n" + (pulse_table(registers) if table is None else table)
     return text + "== end of checks\n"
 
