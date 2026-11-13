@@ -19,7 +19,8 @@ CAD Suite).
   receive works.
 * **FIFO join** (from PIO) plus in-core preamble generation make 10BASE-T TX
   fit through the host port; the port itself is source-synchronous (SCK up to
-  the core clock) with a quad mode: 193 Mbit/s payload in RTL simulation.
+  the core clock in RTL; through the pads see [isa.md](isa.md) §6.1, "Pad
+  timing") with a quad mode: 193 Mbit/s payload in RTL simulation.
 * **Verification as part of the design:**
   * a cycle-accurate model is checked against the RTL every cycle on random
     programs, with required coverage goals;
@@ -101,7 +102,11 @@ board measurements still need their own evidence.
   handles endpoint 0 in core code; `usb_enum_ep1` adds interrupt IN endpoint
   1. Their tests and version-specific limits are in [usb-enumeration.md](usb-enumeration.md).
 * Host link: 193 Mbit/s simulated payload (quad SPI, SDR, SCK = clk = 50 MHz,
-  96.5 % of the wire rate); no sustained board measurement. DDR was evaluated
+  96.5 % of the wire rate); no sustained board measurement. STA at the
+  tile's pins (not silicon) closes that SCK only while pads, pin mux and board
+  add at most about 6.8 ns for SCK in plus data back, 3.4 ns each way if
+  equal (3-core, GRT-estimated); nothing has
+  measured them ([isa.md](isa.md) §6.1, "Pad timing"). DDR was evaluated
   and left out: words would arrive every 4 SCK,
   but the clock side needs about 6 cycles to commit a sent word and fetch the
   next, and it reads 2 words ahead, so full-rate DDR reads need a third read
