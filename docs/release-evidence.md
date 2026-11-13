@@ -230,14 +230,15 @@ run's image by its ID (as `flow/sta_rerun.py` does):
 * `signoff`: the run's SDC; `flow/check_types.tcl` reports the worst check and
   every violator of minimum pulse width, minimum period, recovery, removal and
   clock-gating setup/hold.
-* `pulse`: the run's SDC after a preamble that makes every path-exception
-  command (`set_max_delay`, `set_min_delay`, `set_false_path`,
-  `set_multicycle_path`) a no-op, so that no exception exists, in whatever
-  form or Tcl construct it is written; `flow/pulse_checks.tcl` reports the
-  worst pulse-width check, every violator, each SRAM clock pin (`A_CLK`),
-  each clock's register clock pins and every pulse-width check. Pulse widths
-  depend on the clock network alone, which no path exception touches; this
-  pass's other results are not used.
+* `pulse`: the run's SDC after a preamble that makes the four path-exception
+  commands (`set_max_delay`, `set_min_delay`, `set_false_path`,
+  `set_multicycle_path`) no-ops by their global and `sta::` names, whatever
+  line or Tcl construct calls them so. An exception made another way is not
+  prevented; it is failed by the coverage rule below. `flow/pulse_checks.tcl`
+  reports the worst pulse-width check, every violator, each SRAM clock pin
+  (`A_CLK`), each clock's register clock pins, all register clock pins and
+  every pulse-width check. Pulse widths depend on the clock network alone,
+  which no path exception touches; this pass's other results are not used.
 
 Its receipt (kind `checks`) binds the candidate files, the step's input
 digests, both passes' configs (the run's own except the report Tcl and, for
@@ -245,10 +246,16 @@ digests, both passes' configs (the run's own except the report Tcl and, for
 report Tcl and the reports, and the image ID; `release_check` also requires
 the receipt's report Tcl to be its own checkout's, and each report's corner
 header to be its directory's. `--checks-receipt R` then requires, at every
-corner, a met worst check of pulse width, a pulse-width check on every
-register clock pin of every clock (so that a partial loss of checks fails)
-and on every SRAM instance's clock pin, met recovery and removal checks, and
-no violator of any kind. Two kinds may have no check, each for a stated reason (never a
+corner, a met worst check of pulse width, and the coverage rule: every
+register clock pin (`all_registers -clock_pins`) must be reached by a clock
+(in some `all_registers -clock C -clock_pins`) and have a pulse-width check,
+so that a check lost to an exception, or a register no clock reaches (case
+analysis on a clock port, a divided clock without a generated clock), fails.
+A pin counts as checked with one row: one lost polarity of a flop's two
+(high and low; a latch has one) is not caught, which only an exception left
+active by its `-rise_from`/`-fall_from` form would cause. Then a check on
+every SRAM instance's clock pin, met recovery and removal checks, and no
+violator of any kind. Two kinds may have no check, each for a stated reason (never a
 violation): minimum period (no library the chip uses defines a minimum-period
 arc) and clock-gating setup/hold (the clock gates are the library's integrated
 cells, timed by their setup/hold arcs). `flow/release_evidence.py` runs the
