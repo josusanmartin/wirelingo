@@ -104,7 +104,8 @@ board measurements still need their own evidence.
 * Host link: 193 Mbit/s simulated payload (quad SPI, SDR, SCK = clk = 50 MHz,
   96.5 % of the wire rate); no sustained board measurement. STA at the
   tile's pins (not silicon) closes that SCK only while pads, pin mux and board
-  add at most about 3.4 ns each way (3-core, GRT-estimated); nothing has
+  add at most about 6.8 ns for SCK in plus data back, 3.4 ns each way if
+  equal (3-core, GRT-estimated); nothing has
   measured them ([isa.md](isa.md) §6.1, "Pad timing"). DDR was evaluated
   and left out: words would arrive every 4 SCK,
   but the clock side needs about 6 cycles to commit a sent word and fetch the

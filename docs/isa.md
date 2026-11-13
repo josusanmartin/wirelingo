@@ -813,7 +813,10 @@ alone are cut. This requires post-route verification on the selected build.
 phases. `test_spi_port_timing` sweeps slower SCK, duty cycles and CS timing.
 Those digital tests don't establish the physical sampling margin below.
 
-**Pad timing.** Each data line gets half an SCK period. The chip's input
+**Pad timing.** Each data line gets one SCK phase: the read data the SCK
+low time, MOSI/IO the low time too (from the host's fall to the chip's
+rise). That is half an SCK period at 50 % duty, which the SDC assumes; the
+table above allows any duty with high and low ≥ 0.5 clk. The chip's input
 flops take MOSI/IO on SCK rises, and its output register `osh` changes on
 falls (`src/pe_hostport.sv`). The host changes MOSI/IO on falls and samples
 MISO/IO on rises. CS_n resets the SCK side while high, so its edges must keep
@@ -822,23 +825,26 @@ the clk distances in the table above from SCK's edges. The signoff SDC
 assumptions in place of measurements:
 
 * **MOSI/IO** change within ±1 ns of the SCK fall (`PROTOEMU_HOST_SKEW_NS`).
-  SCK and the data share the board flight, so the flight cancels.
+  SCK and the data are assumed to have equal flights, so the flight cancels;
+  a mismatch spends input margin (several ns are left, docs/physical.md).
 * **CS_n** changes at least 1 clk before the next SCK rise and 1 clk after
   the last fall (setup and recovery, hold and removal).
 * **MISO/IO out:** SCK's flight in, the data's flight back
   (`PROTOEMU_HOST_BOARD_NS`, 2 ns each way) and the host's 1 ns setup must
-  fit in the half period after the chip's fall. The 2 ns stands for a short
+  fit in the SCK low time after the chip's fall. The 2 ns stands for a short
   board trace. Tiny Tapeout's pads and pin mux are not in it.
 
 STA with those defaults, not silicon (docs/physical.md, *Host-port pad
 timing*): every host-port check closes at SCK = clk = 50 MHz, on the
 signed-off 6x4 run (extracted parasitics) and on a 3-core layout
-(GRT-estimated). The read data is the tight path, so **at 50 MHz the one-way
-delay between the host's pins and the tile's may be at most 3.6 ns (6x4) or
-3.4 ns (3-core, GRT-estimated)**. That delay includes the pads, the pin
-mux and the board, and nothing has measured them on IHP. A larger one-way
-delay D needs a slower SCK: T_sck ≥ 2 (1.96 + 0.25 + 2D + 1) ns on the
-3-core layout. For D = 10 ns that is about 21 MHz. That D is an analogy taken
+(GRT-estimated). The read data is the tight path, so **at 50 MHz SCK's
+flight in plus the data's flight back, between the host's pins and the
+tile's, may total at most about 7.2 ns (6x4) or 6.8 ns (3-core,
+GRT-estimated)**: 3.6 and 3.4 ns each way if the two are equal. That delay
+includes the pads, the pin mux and the board, and nothing has measured them
+on IHP. A larger one-way delay D needs a longer SCK low time:
+t_low ≥ 1.96 + 0.25 + 2D + 1 ns on the 3-core layout, so at 50 % duty
+T_sck ≥ 2 (1.96 + 0.25 + 2D + 1) ns. For D = 10 ns that is about 21 MHz. That D is an analogy taken
 from TT's published 20 ns SKY130 GPIO round trip, not an IHP figure. Until a
 board measurement exists, SCK = clk is shown in RTL simulation and in FPGA
 fabric (not silicon) only.

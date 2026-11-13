@@ -89,9 +89,9 @@ The host talks to the chip over SPI mode 0:
   Through the Tiny Tapeout pads and the demo board they are unmeasured; at
   SCK = clk the host has half a clock period, less pad and board delays, to
   sample MISO. STA at the tile's pins (not silicon) closes at 50 MHz SCK
-  only while the one-way delay between the host's pins and the tile's (pads,
-  pin mux and board) stays within about 3.4 ns on the 3-core layout
-  (GRT-estimated). A slower path needs a slower SCK, about 21 MHz for 10 ns
+  only while the delay between the host's pins and the tile's (pads, pin mux
+  and board), SCK in plus MISO back, stays within about 6.8 ns, 3.4 ns each
+  way if equal, on the 3-core layout (GRT-estimated). A slower path needs a slower SCK, about 21 MHz for 10 ns
   (docs/isa.md §6.1, "Pad timing"). The default demo-board
   driver (`tools/micropython/protoemu.py`) bit-bangs the port from MicroPython
   and is far slower than either figure (an estimate: it has not been
