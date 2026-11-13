@@ -128,7 +128,8 @@ class SramClockAdvanceTcl(OpenROADStep):
                  "Clock buffers inserted in front of the PROTOEMU_LATE_CLOCK_REGS registers.",
                  default=2),
         Variable("PROTOEMU_REG_CLOCK_DELAY", int,
-                 "Clock buffers inserted at the root of every chip-clock branch except the SRAMs' "
+                 "Clock buffers in front of every chip-clock branch except the SRAMs' (the flops' and the "
+                 "clock gates'), placed on the line from the clock root toward the branch's loads "
                  "(flow/sram_clock_advance.tcl, protoemu_reg_clk); 0 = off.",
                  default=0),
         Variable("PROTOEMU_REG_CLOCK_DELAY_GATES", int,

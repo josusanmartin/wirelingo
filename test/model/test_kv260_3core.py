@@ -321,9 +321,11 @@ def build_sh(tmp_path, *argv, **env):
     return r, log
 
 
-@pytest.mark.parametrize("argv,cores,clk_div", [((), 3, 24), (("--cores", "3"), 3, 24),
+@pytest.mark.parametrize("argv,cores,clk_div", [((), None, 24), (("--cores", "3"), 3, 24),
                                                 (("--cores", "2", "25"), 2, 25), (("--cores=2",), 2, 24)])
 def test_build_sh_stages_the_asked_core_count(tmp_path, argv, cores, clk_div):
+    if cores is None:   # no --cores: the committed src/project.v's count (3 on next-8x4, 2 on a fallback commit)
+        cores = int(re.search(r"^`define PE_NCORES ([0-9])$", (ROOT / "src/project.v").read_text(), re.M).group(1))
     r, log = build_sh(tmp_path, *argv, FETCH="0")
     assert r.returncode == 0, r.stderr
     project = (tmp_path / "staged/rtl/src/project.v").read_text()

@@ -13,7 +13,10 @@
 # PDK_ROOT (default ~/ttpdk). FIFO_LOG2=2|3 overrides the FIFO depth.
 # STOP=grt stops after global routing (~45 min), STOP=cts after clock-tree synthesis,
 # STOP=dpl after detailed placement (~10 min), for routability experiments;
-# result.txt then has the congestion report or the placement wirelength.
+# result.txt then has the congestion report or the placement wirelength. A STOP
+# run uses the experiment preset, so on a commit whose submission preset is a
+# tuned set (gen_config.py SUBMISSION_TUNED, the 2-core fallback) it is untuned
+# unless the options name the set (-- --tuned NAME).
 set -euo pipefail
 NAME=${1:?usage: flow/harden.sh NAME [NCORES] [-- gen_config options]}
 shift

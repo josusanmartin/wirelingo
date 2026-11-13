@@ -263,7 +263,8 @@ def test_late_clock_core_register_list(tmp_path):
     regs = c["PROTOEMU_LATE_CLOCK_REGS"]
     assert not any(".crc" in p for p in regs) and sum(".u_core.r" in p for p in regs) == 4
     assert c["//generator"]["late_clock_core_regs"] == "r0,r1,r2,r3"
-    for bad in (["--late-clock-core-regs", "r0"], [*base, "--late-clock-core-regs", "r0,,r1"],
+    # (the experiment preset: at 2 cores the submission preset itself brings the late clocks)
+    for bad in (["--preset", "experiment", "--late-clock-core-regs", "r0"], [*base, "--late-clock-core-regs", "r0,,r1"],
                 [*base, "--late-clock-core-regs", "r0,r0"], [*base, "--late-clock-core-regs", "R0"]):
         r, d = generate(tmp_path, *bad, name="bad.json")
         assert r.returncode != 0 and not d.exists()
@@ -286,3 +287,18 @@ def test_two_core_8x4_submission_is_the_tuned_fallback(tmp_path):
     # 6x4 and the experiment preset keep the plain defaults
     _, e = generate(tmp_path, "--preset", "experiment", name="exp.json", cores=2)
     assert json.loads(e.read_text())["PL_TARGET_DENSITY_PCT"] == 34
+    # the tuned set comes first: options given to the submission preset override it
+    r, o = generate(tmp_path, "--density", "40", "--late-clock", "6", name="override.json", cores=2)
+    co = json.loads(o.read_text())
+    assert r.returncode == 0 and co["PL_TARGET_DENSITY_PCT"] == 40 and co["PROTOEMU_LATE_CLOCK_STAGES"] == 6
+    assert co["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.15
+
+
+def test_reg_clock_delay_is_off_unless_asked():
+    # a default harden must run the SRAM clock step exactly as before the option existed
+    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    for var, default in (("PROTOEMU_REG_CLOCK_DELAY", "0"), ("PROTOEMU_REG_CLOCK_DELAY_GATES", "-1")):
+        block = plugin[plugin.index(f'Variable("{var}", int,'):]
+        assert re.search(r"default=(-?[0-9]+)\)", block).group(1) == default
+    step = (ROOT / "flow/sram_clock_advance_step.tcl").read_text()
+    assert "[info exists ::env(PROTOEMU_REG_CLOCK_DELAY)] && $::env(PROTOEMU_REG_CLOCK_DELAY) > 0" in step

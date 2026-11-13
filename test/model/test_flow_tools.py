@@ -12,6 +12,16 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
+def tuned_submission():
+    """Whether this commit's submission preset is a tuned option set (gen_config's
+    SUBMISSION_TUNED: the 2-core 8x4 fallback), so these defaults tests hold on a
+    3-core and on a 2-core commit alike."""
+    spec = importlib.util.spec_from_file_location("gen_config_tools", ROOT / "flow/gen_config.py")
+    g = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(g)
+    return (g.tile_of(ROOT / "info.yaml"), g.project_cores()) in g.SUBMISSION_TUNED
+
+
 def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     dst = tmp_path / "config.json"
     cmd = [sys.executable, str(ROOT / "flow/gen_config.py"), "--output", str(dst)]
@@ -37,7 +47,7 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     assert pnr == ["source [file join [file dirname $::env(PNR_SDC_FILE)] protoemu.sdc]",
                    "set_disable_timing -from D -to Q [get_lib_cells */sg13cmos5l_dlhq_1]"]
     assert c["//generator"]["preset"] == "submission"
-    assert c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.13
+    assert c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == (0.15 if tuned_submission() else 0.13)
     steps = c["meta"]["substituting_steps"]
     assert steps["+OpenROAD.ResizerTimingPostGRT"] == "Project.SramPinBuffers"
     assert steps["+Project.SramPinBuffers"] == "OpenROAD.RepairDesignPostGRT"
@@ -67,8 +77,10 @@ def test_submission_clock_defaults_and_overrides_keep_geometry(tmp_path, options
         assert "CTS_SINK_CLUSTERING_SIZE" not in c
     if step == "Project.SramClockAdvance":
         assert c.get("PROTOEMU_CLOCK_FANOUT_FIX", False) is fanout_fix
-        assert c["PROTOEMU_LATE_CLOCK_STAGES"] == 6
-        assert c["PROTOEMU_LATE_CLOCK_REGS"] == ["u_chip.pin_oe*=6", "*.pin_out_cur*"]
+        pins = 8 if tuned_submission() else 6     # the fallback set: --late-clock 8 --late-clock-core 4
+        assert c["PROTOEMU_LATE_CLOCK_STAGES"] == pins
+        assert c["PROTOEMU_LATE_CLOCK_REGS"][:2] == [f"u_chip.pin_oe*={pins}", "*.pin_out_cur*"]
+        assert len(c["PROTOEMU_LATE_CLOCK_REGS"]) == (7 if tuned_submission() else 2)
     else:
         assert "PROTOEMU_CLOCK_FANOUT_FIX" not in c
         assert "PROTOEMU_LATE_CLOCK_STAGES" not in c
