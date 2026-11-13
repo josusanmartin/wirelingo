@@ -729,11 +729,12 @@ effects combine into the state for cycle *t + 1*.
 ### 6.1 Host port (SPI, 1-bit or quad)
 
 SPI mode 0 (CPOL = 0, CPHA = 0), MSB first, `CS_n` active low.
-**Source-synchronous:** SCK clocks the port's shift registers directly, so SCK
-can run at up to the system clock: about 50 Mbit/s in 1-bit mode and
+**Source-synchronous:** SCK clocks the port's shift registers directly, so the
+logic takes SCK at up to the system clock: about 50 Mbit/s in 1-bit mode and
 200 Mbit/s wire rate in quad mode at 50 MHz (`test_host_port_fast` measures
-193 Mbit/s payload for a quad burst in RTL simulation). Board throughput and
-pad timing require separate measurements.
+193 Mbit/s payload for a quad burst in RTL simulation). What a board can run
+also depends on pad and board delays, which nothing has measured; STA at the
+tile's pins, and the delays it assumes, are under *Pad timing* below.
 
 | Line | 1-bit | Quad |
 |---|---|---|
@@ -808,13 +809,39 @@ Words cross from the SCK domain to clk through 2-flop synchronizers, and their
 data is held for at least 8 SCK, longer than the crossing. SDC bounds all
 cross-clock datapaths to one clk period; unrelated cross-clock hold checks
 alone are cut. This requires post-route verification on the selected build.
-MISO/IO outputs
-change on the SCK fall, so at SCK = clk the host gets half a period, less the
-pad and board delays, to sample them. `test_host_port_fast` runs both modes at
-SCK = clk and clk/2 at random phases. `test_spi_port_timing` sweeps slower SCK,
-duty cycles and CS timing. A 0.5-clk half cycle must also satisfy the routed
-SCK-to-output plus board flight time and host input setup. The digital tests
-do not establish that physical sampling margin.
+`test_host_port_fast` runs both modes at SCK = clk and clk/2 at random
+phases. `test_spi_port_timing` sweeps slower SCK, duty cycles and CS timing.
+Those digital tests don't establish the physical sampling margin below.
+
+**Pad timing.** Each data line gets half an SCK period. The chip's input
+flops take MOSI/IO on SCK rises, and its output register `osh` changes on
+falls (`src/pe_hostport.sv`). The host changes MOSI/IO on falls and samples
+MISO/IO on rises. CS_n resets the SCK side while high, so its edges must keep
+the clk distances in the table above from SCK's edges. The signoff SDC
+(`src/protoemu.sdc`) times exactly this at the tile's pins, with labelled
+assumptions in place of measurements:
+
+* **MOSI/IO** change within ±1 ns of the SCK fall (`PROTOEMU_HOST_SKEW_NS`).
+  SCK and the data share the board flight, so the flight cancels.
+* **CS_n** changes at least 1 clk before the next SCK rise and 1 clk after
+  the last fall (setup and recovery, hold and removal).
+* **MISO/IO out:** SCK's flight in, the data's flight back
+  (`PROTOEMU_HOST_BOARD_NS`, 2 ns each way) and the host's 1 ns setup must
+  fit in the half period after the chip's fall. The 2 ns stands for a short
+  board trace. Tiny Tapeout's pads and pin mux are not in it.
+
+STA with those defaults, not silicon (docs/physical.md, *Host-port pad
+timing*): every host-port check closes at SCK = clk = 50 MHz, on the
+signed-off 6x4 run (extracted parasitics) and on a 3-core layout
+(GRT-estimated). The read data is the tight path, so **at 50 MHz the one-way
+delay between the host's pins and the tile's may be at most 3.6 ns (6x4) or
+3.4 ns (3-core, GRT-estimated)**. That delay includes the pads, the pin
+mux and the board, and nothing has measured them on IHP. A larger one-way
+delay D needs a slower SCK: T_sck ≥ 2 (1.96 + 0.25 + 2D + 1) ns on the
+3-core layout. For D = 10 ns that is about 21 MHz. That D is an analogy taken
+from TT's published 20 ns SKY130 GPIO round trip, not an IHP figure. Until a
+board measurement exists, SCK = clk is shown in RTL simulation and in FPGA
+fabric (not silicon) only.
 
 ### 6.2 Register map (32-bit word addresses)
 

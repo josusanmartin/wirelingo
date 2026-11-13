@@ -751,6 +751,79 @@ for it to change) needs pair alignment, but receivers can lose the first
 preamble bits (test_eth10 allows it); a bit-by-bit SFD search costs about 7
 instructions per bit against a 5-clock bit. The host already checks the FCS.
 
+### Host-port pad timing (2026-11-13)
+
+Until 2026-11-13, `src/protoemu.sdc` put the host-port inputs' 4 ns input
+delay on the SCK rise. A mode-0 host changes MOSI and IO on the fall, so STA
+gave the inputs a full SCK period where the bus gives half (finding 7
+of the Astra review, verifier item 090). The SDC now times the
+host lines against the edges SPI mode 0 uses (docs/isa.md §6.1, *Pad
+timing*), with separate min and max delays:
+
+| Lines | Against | Max | Min |
+|---|---|---|---|
+| MOSI/IO in (`ui[5:2]`) | SCK fall | +skew | −skew |
+| CS_n (`ui[7]`) | SCK fall | T_sck/2 − T_clk + skew (≥ 1 clk before the next rise) | T_clk − skew (≥ 1 clk after the last fall) |
+| MISO/IO out (`uo[7:4]`) | SCK rise (the host's sample) | 2 × board + skew | 2 × board − skew |
+
+`board` (`PROTOEMU_HOST_BOARD_NS`, default 2 ns) is the one-way flight
+between a host pin and the tile pin. `skew` (`PROTOEMU_HOST_SKEW_NS`, default
+1 ns) is the host's launch skew and its setup and hold. Both are
+**assumptions**: Tiny Tapeout's pads and pin mux are not in the default, and
+nothing here is measured. `PROTOEMU_SCK_PERIOD` (default `CLOCK_PERIOD`)
+times a slower SCK. The clk-referenced I/O delays, the cross-clock max-delay
+bound and the hold settings are unchanged; `test_host_port_sdc.py` pins all
+of it.
+
+**STA, read-only, on runner1** (OpenSTA/OpenROAD in the LibreLane 3.1.0.dev3
+image). Slack in ns; the worst SCK-to-SCK host-port path in each row,
+**SCK = clk**. fo6 is the signed-off 6x4 run with extracted parasitics. The
+3-core run is aqp-base's step 49 (post-GRT repair), with **GRT-estimated**
+parasitics. The old SDC's fo6 numbers reproduce fo6's signoff hold slacks
+(0.362 / 0.191 / 0.095 ns), and the aqp-base script reproduces its step 50
+(fast hold −0.197 ns).
+
+| Check (slow corner unless noted) | fo6 old, 20 ns | fo6 new, 20 ns | fo6 new, 20.832 ns | 3-core old, 20 ns | 3-core new, 20 ns | 3-core new, 20.832 ns |
+|---|---|---|---|---|---|---|
+| MOSI/IO setup | +14.178 | +7.178 | +7.594 | +14.937 | +7.937 | +8.353 |
+| MOSI/IO hold (fast) | +4.137 | +9.137 | +9.553 | +3.875 | +8.875 | +9.291 |
+| CS_n recovery | +2.980 | +16.728 | +17.560 | +4.412 | +16.545 | +17.377 |
+| MISO/IO setup (read data, launched on the fall) | +4.265 | **+3.265** | +3.681 | +3.793 | **+2.793** | +3.209 |
+| MISO/IO hold (fast) | +4.828 | +3.828 | +3.828 | +4.702 | +3.702 | +3.702 |
+| whole design: setup (slow) / hold (fast) | 0.000 / +0.095 | 0.000 / +0.095 | 0.000 / +0.095 | −0.997 / −0.197 | −0.997 / −0.197 | −0.165 / −0.197 |
+
+So with the default assumption every host-port check closes at 50 MHz SCK,
+and the design's own worst slacks don't move (the 3-core numbers are the
+core logic, before detailed routing). The read data is the tight path: SCK
+pin to `uo_out` takes 1.49 ns on fo6 and 1.96 ns on the 3-core layout (slow),
+inside a half period that must also hold both flights, the host's setup and
+0.25 ns of uncertainty. At 50 MHz the one-way external delay may therefore be
+at most **3.6 ns (fo6) and 3.4 ns (3-core, GRT-estimated)**: STA gives
++0.065 / −0.135 ns at 3.6 / 3.7 ns on fo6 and +0.093 / −0.107 ns at
+3.35 / 3.45 ns on the 3-core layout. At 48 MHz the slack gives 3.8 and 3.6 ns
+(estimates, from the slack's half-period scaling).
+
+**A slower SCK for larger delays.** With a one-way delay D the read path
+closes while T_sck ≥ 2 (t_out + 0.25 + 2D + skew). TT publishes a 20 ns
+worst round trip for its SKY130 GPIO (docs/rules-check.md) and nothing for
+IHP; as an analogy only, D = 10 ns gives T_sck ≥ 46.4 ns on the 3-core
+layout (21.5 MHz). STA: the read data's setup is +0.043 ns at 46.5 ns and
+−0.057 at 46.3 ns (fo6: +0.065 at 45.6 ns, −0.035 at 45.4 ns). At that D
+the CS_n → `io_oe` → `uo[6:4]` path fails as well (fo6 slow: −6.5 ns against
+SCK, −9.3 ns under the one-clk cross-clock bound, where its clk-referenced
+4 ns input delay meets a 21 ns output delay). It carries no value the host
+samples: `io_oe` only turns on at an SCK rise inside a quad read's data phase,
+and CS_n rising ends the transaction. A board that slow needs that path
+constrained on its own. At the default 2 ns it passes.
+
+**Hold at a zero-length board.** With `PROTOEMU_HOST_BOARD_NS=0` the fast
+corner's output hold fails by 0.172 ns (fo6) and 0.298 ns (3-core). The
+failing path starts at a flop clocked by the SCK rise and goes through the
+`phase == PH_DATA && rd` select of `io_out` to `uo_out[7]`
+(`pe_hostport.sv`). Those rises don't change the pin, because `osh` is zero
+until the first fall of a read's data phase, but STA can't see that. A one-way flight of 0.15 ns or more covers it; the
+default leaves +3.70 ns.
+
 ## Signoff runs
 
 | Run | RTL | DRT (final) | KLayout DRC | LVS | Antenna | Setup WS typ / slow | Hold WS typ | Max slew / cap viol. (typ) |
