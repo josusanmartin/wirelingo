@@ -12,12 +12,17 @@ logic. Each core executes one 32-bit instruction per tick and has:
 * a fractional clock divider;
 * registers R0–R3 with a 16-bit ALU;
 * input and output shift registers with auto-push/pull;
-* a configurable CRC tap fed by the shift registers;
+* a configurable CRC tap of 1–32 bits fed by the shift registers;
 * 8-word FIFOs to the host, which can be joined into one 16-word TX FIFO.
 
-This tapeout has two cores. The demos run at 48 MHz (full-speed USB needs
-exactly that; 40 MHz for 10BASE-T), with margin; 50 MHz is met at signoff at all three corners,
-with +0.010 ns of setup slack left at the slow corner (`docs/physical.md`).
+The current target is **8x4 with three cores and three SRAM banks**, ISA
+v0.3. The 2-core 8x4 build is its fallback. At reviewed base `fb4228d`, the
+3-core target has no passing routed signoff/precheck/release receipt.
+50 MHz is the target clock; a 48 MHz release would need a documented set of
+supported protocols. Full-speed USB needs 48 MHz; the in-core 10BASE-T FCS
+receiver and RMII examples require 50 MHz. The +0.010 ns slow setup result
+belongs to the historical 6x4, 2-core fo6 build, not this target
+([physical.md](physical.md#8x4-2026-11-10)).
 
 Programs live in on-chip SRAM: each core has its own bank of 256 instructions.
 
@@ -31,6 +36,8 @@ real protocols fit:
   and FIFO state.
 * Per-pin open drain, direct single-pin control on any pin, virtual pins and
   global flags for coordinating cores.
+* Table reads from the core's instruction bank, a free-running tick counter,
+  16-bit immediate comparisons and flag toggles (v0.3).
 * CALL/RET with one link register, a WAIT until masked pins differ from a
   register, and a per-pin bypass of the input synchroniser.
 * A line unit on core 0 for NRZ, NRZI and Manchester framing with bit
@@ -61,7 +68,7 @@ Four of those programs (UART RX, I2C master, CAN RX
 and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
 need an FPGA rerun before those results apply to them. None of it has run on
 silicon yet.
-The hardened netlist is formally proved equivalent to the RTL: functionally,
+The historical fo6 netlist is formally proved equivalent to its v0.2 RTL: functionally,
 for every input and state, under the assumptions listed in
 `docs/equivalence.md`. Timing is checked separately, by STA.
 
@@ -158,8 +165,9 @@ derived from the specifications, not yet validated on silicon):
   answers the PC's enumeration by itself (vendor ID 0x1209, product 0x5634,
   one configuration, no data endpoint), and `bringup.usb_enum_state(pe)` reads
   the address and Configured state afterwards. The firmware it loads today
-  (253 words, since `fault-fixes`: a bus reset is seen wherever it starts) is
-  tested in RTL simulation and on the cycle model only. The 246-word firmware
+  has 254 words; its rejected-configuration fix is tested on the cycle model
+  at both speeds and both core counts. The prior 253-word bus-reset fix has
+  model and RTL coverage. The 246-word firmware
   before it was also tested in timing-annotated gate-level simulation, and on
   the KV260 FPGA build of the RTL against a host model's waveform replayed on
   its pins (no PHY); on that FPGA build, wired to the board's own USB port,

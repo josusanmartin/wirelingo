@@ -17,7 +17,15 @@ logs, partial suites and arithmetic estimates at another clock cannot pass.
 [Release evidence](release-evidence.md) gives the commands, coverage and limits.
 v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
 
-**Status:** the physical candidate is run **fo6** (2026-10-13): run t48ba's
+**Current development target:** 8x4 tiles, three cores, three 256-word
+instruction SRAM banks and 8-word FIFOs, implementing ISA v0.3. The target
+clock is 50 MHz; 48 MHz is a possible release decision, with protocol limits
+that must be stated separately. The reviewed base `fb4228d` has no passing
+3-core routed signoff/precheck/release receipt. The 2-core 8x4 build is a
+fallback. The 6x4, 2-core run fo6 below is historical v0.2 evidence; its
+physical results do not certify this target. See [physical.md](#8x4-2026-11-10).
+
+**Historical 6x4 release:** run **fo6** (2026-10-13): run t48ba's
 v2 RTL and settings plus `Project.DetailedRouting`, which keeps antenna
 diodes within the fanout limit (see "Antenna diodes and the fanout limit"
 below). It passes signoff and the physical part of
@@ -36,11 +44,13 @@ clean checkout of `00dfa75` reproduces it (run ci7). A run is a commit:
 confirms `src/config.json` is the generator's, and `flow/signoff.py` judges
 the result.
 
-`flow/gen_config.py --clock-fanout-fix` (enabled by the submission preset) clusters CTS sinks by
-eight and adds `Project.FixClockFanout`, which splits clock branches above the
-IHP buffers' fanout limit of eight and legalizes the added buffers.
+`flow/gen_config.py --clock-fanout-fix` clusters CTS sinks by eight. When
+SRAM clock advance is enabled, `Project.SramClockAdvance` also performs the
+fanout repair; otherwise `Project.FixClockFanout` performs it. These steps
+split branches above the IHP buffers' fanout limit of eight and legalize the
+added buffers.
 
-## The tile
+## The historical 6x4 tile
 
 * The 6x4 die is 1289.28 × 710.64 µm. The core is about 1283.5 × 703.1 µm (0.90 mm²).
 * All 43 signal pins sit on Metal4 along the top edge, between x ≈ 30 and 191 µm.

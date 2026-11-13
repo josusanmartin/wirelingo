@@ -7,6 +7,7 @@ and mode are caller-known command context, not an autonomous RX descriptor.
 WORD_BITS=8 offers the same header/frame contract for traffic comparisons.
 """
 from . import host, sim
+from .profile import enable_mask
 
 MAX_BYTES = 8192  # 16-bit inclusive bit counter: 8*N-1 <= 65535.
 
@@ -83,7 +84,7 @@ def host_sck_cost(length, *, word_bytes=4, burst_words=8):
 
 
 def preload_plan(payload, *, core=0, mode=0, enabled_before=0, fifo_depth=8,
-                 padding=0xD3):
+                 padding=0xD3, profile=None, chip_id=None):
     """Prepare one headerless mode0 frame of 1..32 bytes; perform no bus I/O.
 
     Load spi_master_preloaded_once first (32-bit shifts, synchronized MISO,
@@ -96,15 +97,16 @@ def preload_plan(payload, *, core=0, mode=0, enabled_before=0, fifo_depth=8,
     wait, require HALT/no fault, TX empty and exactly rx_words available;
     drain exactly that count, verify empty STATUS and returned idle POUT.
     Repeat the whole plan to rearm, without reloading/resetting the chip.
-    Other core enables are retained from caller-supplied enabled_before.
+    Other core enables are retained from caller-supplied enabled_before, the
+    CTRL enable mask, checked by profile.enable_mask (the chip ID's core
+    count when chip_id is given, else the profile's).
     This plan does not infer clock timing, completion or simulator state.
     """
     if type(core) is not int or core != 0:
         raise ValueError("preloaded firmware reserves core0")
     if type(mode) is not int or mode != 0:
         raise ValueError("preloaded firmware supports mode0 only")
-    if type(enabled_before) is not int or not 0 <= enabled_before <= 3:
-        raise ValueError("enabled_before must be the two-core enable mask")
+    enable_mask(enabled_before, profile, chip_id)
     if type(fifo_depth) is not int or fifo_depth != 8:
         raise ValueError("preloaded firmware requires depth8 FIFOs")
     if not isinstance(payload, (bytes, bytearray, memoryview)):

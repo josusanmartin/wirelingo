@@ -5,7 +5,7 @@ register writes that can be sent over SPI (cocotb, RP2350 MicroPython) or
 applied directly to the model.
 """
 from . import isa, sim
-from .profile import TAPEOUT, validate_image
+from .profile import resolve, validate_image
 
 CMD_WRITE, CMD_READ, CMD_WRITE_FIXED, CMD_READ_FIXED = 0x02, 0x03, 0x0A, 0x0B
 QUAD = 0x40        # cmd | QUAD: address and data 4 bits per SCK (HOSTCFG.QUAD_EN)
@@ -67,9 +67,11 @@ def input_pad(pin, *, avoid=()):
     return pin
 
 
-def load_program(core, prog, base=None, *, profile=TAPEOUT, **cfg_kw):
+def load_program(core, prog, base=None, *, profile=None, chip_id=None, **cfg_kw):
     """Register writes to load `prog` into IMEM at `base` and configure `core`.
-    The core must be disabled. Doesn't enable it."""
+    The core must be disabled. Doesn't enable it. The geometry checked is
+    profile.resolve(profile, chip_id): an explicit profile, else the chip's
+    ID if the caller read one, else TAPEOUT."""
     if base is None:
         base = prog.origin if prog.origin is not None else core * 256
     if not prog.words:
@@ -78,7 +80,7 @@ def load_program(core, prog, base=None, *, profile=TAPEOUT, **cfg_kw):
         raise ValueError("program has no wrap top")
     words = prog.relocate(base)
     wrap = (base + prog.wrap_bottom) | ((base + prog.wrap_top) << 16)
-    validate_image(core, words, base, wrap, profile, data=prog.data)   # `.data` tables are not jumps
+    validate_image(core, words, base, wrap, resolve(profile, chip_id), data=prog.data)   # `.data` tables are not jumps
     w = [(base + i, word) for i, word in enumerate(words)]
     c = core_config(prog, **cfg_kw)
     reg = lambda off: sim.core_reg(core, off)
@@ -93,8 +95,10 @@ def load_program(core, prog, base=None, *, profile=TAPEOUT, **cfg_kw):
     return w
 
 
-def pin_owner_writes(owners, *, profile=TAPEOUT):
-    """owners: dict pin -> core. Returns writes for PIN_OWNER_LO/HI (others -> core 0)."""
+def pin_owner_writes(owners, *, profile=None, chip_id=None):
+    """owners: dict pin -> core. Returns writes for PIN_OWNER_LO/HI (others -> core 0).
+    Owners must exist in profile.resolve(profile, chip_id), as for load_program."""
+    profile = resolve(profile, chip_id)
     lo = hi = 0
     for p, c in owners.items():
         if not isinstance(p, int) or not 0 <= p < 32:

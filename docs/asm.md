@@ -49,6 +49,10 @@ writes = host.load_program(core=1, prog=prog, in_pins=16, clkdiv=host.clkdiv_for
 
 Pin and shift directives are defaults. `host.load_program(..., out_pins=…)`
 and friends override them.
+The assembler rejects pin bases outside 0–31, OUT counts outside 0–32,
+SET counts outside 0–5, and side-set counts outside 0–4. A zero count
+disables that mapping; a valid mapping may wrap past P31. This prevents a
+mistyped count or base from silently becoming a different register field.
 
 ## Instruction suffixes
 

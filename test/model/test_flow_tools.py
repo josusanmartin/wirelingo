@@ -171,6 +171,8 @@ def test_signoff_verdict(tmp_path, fault):
     for c, view in gate.CORNERS.items():
         for k in ("timing__setup__ws", "timing__hold__ws"):
             metrics[f"{k}__corner:{c}"] = 0.5
+        for k in ("timing__setup_vio__count", "timing__hold_vio__count"):
+            metrics[f"{k}__corner:{c}"] = 0
         log = run / "99-openroad-stapostpnr" / c / "sta.log"
         log.parent.mkdir(parents=True)
         log.write_text(f"RM_IHPSG13_1P_256x32_c2_bm_bist_{'typ_1p20V_25C' if fault == 'wrong-sram' else view}.lib\n")

@@ -208,9 +208,29 @@ side 1
 .out_pins
 .out_pins 1
 .out_pins 1 2
+.out_pins -1 1
+.out_pins 32 1
+.out_pins 0 -1
+.out_pins 0 33
+.out_pins 0 64
+.out_pins 31 32\nnop
+.out_pins 0 0\nnop
 .set_pins 1 2 3
+.set_pins -1 1
+.set_pins 32 1
+.set_pins 0 -1
+.set_pins 0 6
+.set_pins 0 8
+.set_pins 31 5\nnop
+.set_pins 0 0\nnop
 .side_pins
 .in_pins 4
+.side_pins -1
+.side_pins 32
+.in_pins -1
+.in_pins 32
+.side_pins 31\nnop
+.in_pins 31\nnop
 .fifo
 .fifo join_tx
 .fifo join_rx

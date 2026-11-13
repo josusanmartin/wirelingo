@@ -1,0 +1,10 @@
+model rc=0
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 48%]
+..................................ss.................................... [ 97%]
+...                                                                      [100%]
+SIGROK CHECKS SKIPPED: 2 tests: a pass here says nothing about them (set SIGROK_CLI, flow/install_sigrok.sh)
+145 passed, 2 skipped in 42.58s
+runner1 checkout: ~/protoemu-flow/astra-review/agent-runs/astra-review-20186e4-2787689 (HEAD 20186e4)

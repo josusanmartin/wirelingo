@@ -63,7 +63,7 @@ sys.path.insert(0, str(HERE))
 import postfreeze_demo as pfd  # noqa: E402  (sets up sys.path for tools/)
 from postfreeze_demo import (FIFO, STATUS, PG, SPI, TRIG, PRE, HALTED, FAULT, HwRig, ModelRig,  # noqa: E402
                              check, fw, load, setup, finish, model_clock, poll_records)
-from pe import asm, host, la, sim, spipacked, uartcapture, uartcapture_peer  # noqa: E402
+from pe import asm, host, la, profile, sim, spipacked, uartcapture, uartcapture_peer  # noqa: E402
 
 SCK, MOSI, MISO, CS = 2, 3, 4, 5
 LA_MASK = (1 << SCK) | (1 << MOSI) | (1 << CS) | (1 << TRIG)
@@ -79,6 +79,14 @@ def rd(rig, addr, n):
         return []
     w = rig.read(addr, n, fixed=True)
     return [w] if n == 1 else list(w)
+
+
+def chip(rig):
+    """(chip ID, CTRL enable bits of every core the chip has), with no bus
+    transaction: the board's ID as v2_demo.Hw read it at bring-up, the
+    model's from its chip object. CTRL write-backs keep all of those bits."""
+    v = rig.mh.chip.read(sim.A_ID) if rig.model else rig.hw.geom.id
+    return v, (1 << profile.for_id(v).ncores) - 1
 
 
 def ctrl(rig, v):
@@ -325,7 +333,8 @@ def spi_preloaded_device(rig, store):
         tx, resp = rng_bytes(rng, n), rng_bytes(rng, 16)
         st, ctl = rig.read(STATUS(0)), rig.read(sim.A_CTRL)
         check(st & 0xFF == 0 and not st & FAULT and (not ctl & 1 or st & HALTED), f"precondition STATUS {st:#x}")
-        plan = spipacked.preload_plan(tx, enabled_before=ctl & 3)
+        chip_id, mask = chip(rig)
+        plan = spipacked.preload_plan(tx, enabled_before=ctl & mask, chip_id=chip_id)
         rig.spid_arm(dev_resp(resp, 0), 0)
         apply(rig, plan["disable_writes"])
         rig.write(plan["register_writes"][0][0], [v for _, v in plan["register_writes"]])
@@ -688,7 +697,8 @@ class CaptureCore:
         st, ctl = rig.read(STATUS(c)), rig.read(sim.A_CTRL)
         check(st & 0xFF == 0, f"core {c}: FIFOs not empty before arming ({st:#x})")
         check(not (ctl >> c) & 1 or st & HALTED, f"core {c}: running before arming")
-        apply(rig, self.mod.capture_plan(n, enabled_before=ctl & 3))
+        chip_id, mask = chip(rig)
+        apply(rig, self.mod.capture_plan(n, enabled_before=ctl & mask, chip_id=chip_id))
 
     def result(self, n):
         """STATUS, flag, then exactly ceil(n/4) words (only if HALT, no fault, right count)."""
@@ -710,7 +720,7 @@ class CaptureCore:
         """After an out-of-contract source (not part of the normal rearm): stop the core, clear its FIFOs and flag."""
         rig, c = self.rig, self.core
         ctl = rig.read(sim.A_CTRL)
-        ctrl(rig, (ctl & 3 & ~(1 << c)) | (1 << (16 + c)))
+        ctrl(rig, (ctl & chip(rig)[1] & ~(1 << c)) | (1 << (16 + c)))
         rig.write(sim.A_FCLR, self.flag)
 
 

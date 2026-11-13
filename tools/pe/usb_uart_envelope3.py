@@ -36,8 +36,8 @@ def load_writes(programs=None, rx_pin=RX):
     All flags and virtual pins belong to this pair. Core1 CRC is scratch,
     not UART CRC. No register deposits or loading-host service follow start.
     """
-    if (TAPEOUT.ncores, TAPEOUT.nbanks, TAPEOUT.bank_words, TAPEOUT.fifo_depth) != (2, 2, 256, 8):
-        raise ValueError("envelope3 requires ordinary tapeout2/2/256/depth8")
+    if TAPEOUT.ncores < 2 or TAPEOUT.nbanks < 2 or (TAPEOUT.bank_words, TAPEOUT.fifo_depth) != (256, 8):
+        raise ValueError("envelope3 requires at least 2 cores and banks, 256 words, depth 8")
     rx_pin = host.input_pad(rx_pin, avoid=(0, 1))
     consumer, producer = assemble(rx_pin) if programs is None else programs
     writes = [(sim.A_CTRL, 0), (sim.A_FCLR, 255), (sim.A_SYNCBYP, 0),

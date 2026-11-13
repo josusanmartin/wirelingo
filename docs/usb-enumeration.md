@@ -11,7 +11,7 @@ SET_ADDRESS.
 ## Bottom line
 
 **It fits on one core, at low speed and at full speed, with the same
-firmware.** `firmware/usb_enum.pasm` is 253 of core 0's 256 instruction words (246 until `fault-fixes`)
+firmware.** `firmware/usb_enum.pasm` is 254 of core 0's 256 instruction words (246 until `fault-fixes`)
 (36 of them the descriptors), uses the line unit, and leaves core 1 free.
 `pe.usbenum.load_writes()` is the whole host side: the program, CRCCTRL, the
 line unit's three registers and the start. From then on the host transport is
@@ -19,7 +19,8 @@ idle (the tests fail on any host bus access, and the RTL test watches CS_n,
 SCK and MOSI on the pads) until the host chooses to read the outcome: the
 address is in core 0's r3, and flag F5 means Configured.
 
-The binding constraint is **instruction memory** (10 words to spare since the ACK tail guard; 15 before), then
+The binding constraint is **instruction memory** (2 words to spare after the
+configuration-rejection repair; 10 after the earlier ACK tail guard), then
 **registers** (four 16-bit registers hold the token filter, the transfer state
 and the prepared answer; every other bit of state is a global flag). Cycles
 are not the limit at low speed (32 clocks per bit). At full speed (4 clocks
@@ -29,6 +30,10 @@ nothing else sits on the token's path, not even a pending address's commit:
 see [the turnaround fix](#the-lost-status-ack-and-an-in-first) below), the
 receive loop (3 instructions per bit) and the transmit loop (3 per bit plus 4
 between table entries, which the line unit's 2-entry queue absorbs).
+
+The following figures are historical measurements of the earlier firmware,
+before the configuration-rejection repair. The current regression and its
+limits are described [below](#rejected-configuration-requests).
 
 | Check | Low speed (1.5 Mbit/s) | Full speed (12 Mbit/s) |
 |---|---|---|
@@ -306,9 +311,8 @@ Gate level was not run on this branch. It has run since: run fo6's release
 receipts include `test_usb_autonomous` and `test_usb_autonomous_fs` on the
 netlist with SDF at typ, slow and fast at 20.834 ns (48 MHz), validation root
 `4f5179d` and again `5457d8e` ([release-evidence.md](release-evidence.md)).
-That was the 246-word `usb_enum.pasm` of `5457d8e`. The 253-word one from
-`fault-fixes` has not run at gate level, and needs a gate-level rerun
-before that result applies to it.
+That was the 246-word `usb_enum.pasm` of `5457d8e`. The current 254-word image, including the bus-reset and configuration-rejection
+fixes, needs a gate-level rerun before that result applies to it.
 
 ## On the KV260, with a replayed host (2026-10-14)
 
@@ -333,21 +337,18 @@ asynchronous edge the full-speed answers come one clock later.) Turnaround on th
 speed), 3.25-4.00 (full speed; 4.75 for the IN that commits a new address).
 This is the RTL on FPGA fabric with digital pad levels: no transceiver, no
 analogue receiver, no real host controller. It ran the 246-word firmware
-before `fault-fixes`; the 253-word one needs a rerun on the KV260 before
+before `fault-fixes`; the current 254-word one needs a rerun on the KV260 before
 this result applies to it.
 
 ## What remains
 
-* **Data endpoints.** An interrupt IN endpoint (HID, or vendor) needs an
-  endpoint descriptor (7 bytes: 4 table words, wTotalLength 25), a second
-  token filter (the endpoint field and so the CRC5 differ; no register is
-  free to hold it, so it would be recomputed per token or kept elsewhere), its
-  own toggle (a flag), and a data source: core 1 through virtual pins, or the
-  host through the TX FIFO, which brings the host back for data, though not
-  for enumeration. The descriptor (8 table words) fits in the 10 spare words; the token
-  dispatch and data path need room made first (candidates: GET_CONFIGURATION,
-  6 words; the interface/endpoint GET_STATUS range, 2; the SETUP length check,
-  3).
+* **Data endpoints.** `firmware/usb_enum_ep1.pasm` now implements a vendor
+  interrupt IN endpoint reporting two bytes of pin state, using the v0.3
+  instructions. It occupies all 256 words. Its current retry path samples
+  the pins again rather than retaining the original payload until ACK;
+  a reliable data endpoint needs that state preserved across retries and
+  endpoint-0 traffic. Class-specific descriptors and event queues remain
+  separate work.
 * **String descriptors** cost one word per byte (UTF-16LE: two bytes per
   character), so a product name of 8 characters is ~20 words: over budget
   today.
@@ -362,11 +363,22 @@ this result applies to it.
   which hosts accept (Windows' 0xEE string, the device qualifier); SET_INTERFACE
   is STALLed too, which Linux tolerates for single-setting interfaces.
   **These runs used the 246-word firmware from before `fault-fixes`.** The
-  253-word one (a bus reset is now seen wherever it starts:
-  [fault-testing.md](fault-testing.md), finding 6) has run on the model only;
-  it needs a rerun against Linux on the KV260 before these results apply to
-  it. Its answers leave on the same clock as before in the model's sessions at
-  both speeds, which is a reason to expect the same, not evidence of it.
+  current 254-word image includes the bus-reset fix
+  ([fault-testing.md](fault-testing.md), finding 6) and the configuration-state
+  repair below. It needs a rerun against Linux on the KV260 before these
+  results apply to it; simulation cannot establish real-host compatibility.
 * **Full speed on silicon** needs the chip at exactly 48 MHz and the line
   unit's receive jitter margin (docs/usb-full-speed.md: v2's half-cycle NRZI
   sample point); none of that changes here.
+
+## Rejected configuration requests
+
+Both autonomous programs validate `SET_CONFIGURATION` before changing the
+configured flag. `usb_enum_ep1` also preserves its endpoint-1 DATA toggle
+when the requested configuration is unsupported. Previously a STALL could
+silently deconfigure an active device. The regression
+`test/model/test_usb_config_reject.py` checks real USB packets on the cycle
+model, at low and full speed with 2 and 3 cores, including valid requests
+after a refusal. The change costs one word: `usb_enum` is 254 words and
+`usb_enum_ep1` is 256. The timing-checker turnaround limits are unchanged.
+Historical gate-level and FPGA results above predate this change.

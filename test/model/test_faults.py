@@ -1064,7 +1064,7 @@ def test_finding_can_rx_a_frame_after_an_idle_glitch_is_received():
     check_can_frame_after_glitch()
 
 
-USB_ENUM_WORDS = 253
+USB_ENUM_WORDS = 254
 
 
 def usb_reset_in_token(bit, cycles, text=None):

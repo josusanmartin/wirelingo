@@ -10,7 +10,22 @@ Evidence levels as used throughout the repository: model, RTL simulation,
 formal, gate level (GL), GL with SDF, RTL in FPGA fabric, silicon. FPGA is not
 silicon.
 
-## 1. What the competition says
+## Current scope of this historical audit
+
+The tables below retain the 2026-11-03 snapshot; they are not a current
+submission checklist. The competition's November 9 update confirms 8x4
+for March 2027. Its FAQ requires a public repository with RTL, tests and a
+passing Tiny Tapeout GDS/precheck, plus architecture/ISA documentation,
+tooling/examples and a verification write-up. AI use is allowed with a
+write-up describing it. The deadline remains January 18, 2027.
+These are paraphrases of the [official rules and FAQ](https://blog.janestreet.com/protocol-emulator-asic-competition/),
+checked during the Astra review. The FAQ specifies no target clock or fixed
+protocol speed; the selected clock must close timing and support the claimed
+protocols. See [summary.md](summary.md) for the current 3-core target and
+[physical.md](physical.md#8x4-2026-11-10) for its physical limits.
+The older statements below about a missing FAQ and 6x4 limits are superseded.
+
+## 1. What the competition said at the audit date
 
 Everything below was fetched on 2026-11-03. The competition page has no judging
 rubric, no FAQ, no eligibility clause, no AI-use rule and no submission format

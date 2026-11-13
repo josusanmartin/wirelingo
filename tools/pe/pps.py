@@ -19,7 +19,6 @@ import math
 import pathlib
 
 from . import asm, host, sim
-from .profile import TAPEOUT
 
 FW = pathlib.Path(__file__).resolve().parents[2] / "firmware" / "pps_capture.pasm"
 
@@ -38,13 +37,14 @@ def assemble():
     return asm.assemble(FW.read_text())
 
 
-def load_writes(prog, pin=16, core=0, start=WRAP - 1, run=True, profile=TAPEOUT):
+def load_writes(prog, pin=16, core=0, start=WRAP - 1, run=True, profile=None, chip_id=None):
     """Register writes: the program, CLKDIV 1, the counter's start value (the
     counter at the first WAIT attempt), then the start. `pin`: any input a
-    core can read as a pad, or any logical pin."""
+    core can read as a pad, or any logical pin. The geometry is
+    host.load_program's: an explicit profile, else chip_id's, else TAPEOUT."""
     if not 0 <= start < WRAP:
         raise ValueError("start must fit in 48 bits")
-    w = host.load_program(core, prog, in_pins=pin, clkdiv=1 << 8, profile=profile)
+    w = host.load_program(core, prog, in_pins=pin, clkdiv=1 << 8, profile=profile, chip_id=chip_id)
     for reg, v in ((1, start >> 32), (2, start & 0xFFFF), (3, (start >> 16) & 0xFFFF)):
         w.append((sim.core_reg(core, sim.C_R0 + reg), v))
     if run:

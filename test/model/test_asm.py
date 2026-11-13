@@ -67,6 +67,29 @@ def test_clkdiv_rounding_carries():
             asm.assemble(f".clkdiv {bad}\nnop")
 
 
+@pytest.mark.parametrize("directive", [
+    ".side_set -1", ".side_set 5", ".out_pins -1 1", ".out_pins 32 1",
+    ".out_pins 0 -1", ".out_pins 0 33", ".out_pins 0 64",
+    ".set_pins -1 1", ".set_pins 32 1", ".set_pins 0 -1",
+    ".set_pins 0 6", ".set_pins 0 8", ".side_pins -1", ".side_pins 32",
+    ".in_pins -1", ".in_pins 32",
+])
+def test_pin_directives_do_not_silently_wrap(directive):
+    with pytest.raises(asm.AsmError, match=r"line 1: .* must be"):
+        asm.assemble(directive + "\nnop")
+
+
+@pytest.mark.parametrize("base", [0, 31])
+@pytest.mark.parametrize("out_count,set_count", [(0, 0), (32, 5)])
+def test_pin_directive_boundaries_preserve_encoded_fields(base, out_count, set_count):
+    prog = asm.assemble(f".out_pins {base} {out_count}\n.set_pins {base} {set_count}\n"
+                        f".side_pins {base}\n.in_pins {base}\n.side_set 4 opt\nnop side 15")
+    cfg = host.core_config(prog)
+    assert cfg["pinctrl0"] == base | out_count << 8 | base << 16 | set_count << 24
+    assert cfg["pinctrl1"] == base | 4 << 8 | 1 << 12 | base << 16
+    assert isa.fields(prog.words[0])[1] == 0xF8
+
+
 @pytest.mark.parametrize("src", [
     "pull blcok",                       # typo used to mean `pull block`
     "push iffull ifempty",

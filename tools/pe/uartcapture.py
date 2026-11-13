@@ -6,6 +6,7 @@ empty. This module does not clear FIFO leftovers or infer completion.
 F0 is owned by capture; an independently running peer must not use it.
 """
 from . import sim
+from .profile import enable_mask
 
 
 def _length(length):
@@ -14,20 +15,22 @@ def _length(length):
     return length
 
 
-def capture_plan(length, *, core=0, enabled_before=0):
+def capture_plan(length, *, core=0, enabled_before=0, profile=None, chip_id=None):
     """Return five ordinary writes, validated before any plan is produced.
 
     Caller observes stopped/disabled core0 and empty RX/TX FIFOs first.
-    enabled_before is the current tapeout enable mask (0..3). Preserve the
-    peer enable, pay R1/R2 setup, clear only F0, restart/enable only core0.
+    enabled_before is the current CTRL enable mask, checked by
+    profile.enable_mask: bounded by the chip ID's core count when chip_id
+    is given (0..7 on a 3-core chip, even with TAPEOUT), else by the
+    profile's (0..3 for TAPEOUT, 0..7 for PKG3). Preserve
+    every other core's enable, pay R1/R2 setup, clear only F0,
+    restart/enable only core0.
     No program/configuration/FIFO/other-core register writes are returned.
     """
     length = _length(length)
     if type(core) is not int or core != 0:
         raise ValueError("declared UART capture supports only core0")
-    if type(enabled_before) is not int or not 0 <= enabled_before <= 3:
-        raise ValueError("enabled_before must be a two-core enable mask in 0..3")
-    peer = enabled_before & 2
+    peer = enable_mask(enabled_before, profile, chip_id) & ~1
     return [(sim.A_CTRL, peer),
             (sim.core_reg(0, sim.C_R0 + 1), length),
             (sim.core_reg(0, sim.C_R0 + 2), length % 4),

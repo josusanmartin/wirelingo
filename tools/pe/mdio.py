@@ -60,8 +60,9 @@ def master_defines(mdio=0, mdc=8, t=20, pre=32):
     return {"MDIO": mdio, "MDC": mdc, "T": t, "PRE": pre}
 
 
-def master_load(core, prog, mdio=0, mdc=8, clkdiv=1 << 8):
-    return host.load_program(core, prog, side_pins=mdc, clkdiv=clkdiv)
+def master_load(core, prog, mdio=0, mdc=8, clkdiv=1 << 8, *, profile=None, chip_id=None):
+    """profile, chip_id: as host.load_program (TAPEOUT if neither is given)."""
+    return host.load_program(core, prog, side_pins=mdc, clkdiv=clkdiv, profile=profile, chip_id=chip_id)
 
 
 def phy_defines(mdio=1, mdc=16, phyad=1, base=256, regs=None):
@@ -80,12 +81,14 @@ def phy_timing_defines():
     return phy_defines()
 
 
-def phy_setup(core, prog, regs=None, base=None):
+def phy_setup(core, prog, regs=None, base=None, *, profile=None, chip_id=None):
     """Register writes: load mdio_phy, set R2 (BMCR), R3 (BMSR), the CRC tap
-    to a plain 16-bit register and its value (ANAR)."""
+    to a plain 16-bit register and its value (ANAR). profile, chip_id: as
+    host.load_program (TAPEOUT if neither is given)."""
     regs = regs or {}
     r = lambda off: sim.core_reg(core, off)
-    return (host.load_program(core, prog, core * 256 if base is None else base, clkdiv=1 << 8)
+    return (host.load_program(core, prog, core * 256 if base is None else base, clkdiv=1 << 8,
+                              profile=profile, chip_id=chip_id)
             + [(r(sim.C_CRCCTRL), CRC16_NO_TAPS), (r(sim.C_CRC), regs.get(ANAR, 0)),
                (r(sim.C_R0 + 2), regs.get(BMCR, 0) & BMCR_READ_MASK), (r(sim.C_R0 + 3), regs.get(BMSR, 0))])
 

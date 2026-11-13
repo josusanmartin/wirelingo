@@ -2,7 +2,7 @@
 ; docs/isa.md): usb_enum plus an interrupt IN endpoint 1 that reports pins:
 ; each IN to endpoint 1 (once configured) gets a 2-byte DATA0/DATA1 packet,
 ; [0] = P16-P23 (ui[4:0]) and [1] = P24-P31 (V0-V7, e.g. written by core 1), so
-; the device is a USB input device with no host CPU at all. 255 of the bank's
+; the device is a USB input device with no host CPU at all. 256 of the bank's
 ; 256 words. First written for the v3 study (on its branch, which measured 280
 ; words for the same firmware in v2 instructions), then merged with today's
 ; usb_enum (the timed J WAITs, the echo check, the ACK dribble rule); the
@@ -383,12 +383,13 @@ clamp:                             ; bytes left = min(length, wLength)
 set_addr:                          ; r2 = the address, bit-reversed (its filter
     flag set F_ADDR                ; is computed while the status stage's
     jmp done                       ; zero-length packet goes out)
-set_cfg:                           ; wValue 0 or 1
+set_cfg:                           ; validate wValue before changing configuration or toggles
+    mov r0, r2                     ; r2 = rev16(wValue); 0 and 0x8000 are valid
+    shl r0, 1
+    jmp !z, stall                  ; a rejected request leaves the active configuration intact
     flag clr F_CFG
-    flag clr F_T1                  ; endpoint 1 starts with DATA0
+    flag clr F_T1                  ; a valid SET_CONFIGURATION resets endpoint 1 to DATA0
     jmp !r2, cfg_ok
-    shl r2, 1                      ; rev16(1) = 0x8000: 0 after the shift
-    jmp !z, stall
     flag set F_CFG
 cfg_ok:
     ldi r2, dev                    ; status stage: zero-length DATA1

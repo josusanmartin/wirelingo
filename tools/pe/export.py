@@ -1,11 +1,14 @@
 """Export an assembled program as a MicroPython snippet for tools/micropython/protoemu.py.
 
     python -m pe.export firmware/uart_tx.pasm --core 0 --define TX=8 --out-pins 8,1 --side-pins 8 --clkdiv 54.25
+
+No chip is attached, so the geometry checked is --profile: tapeout (2 cores,
+the default), pkg3 (the 3-core 8x4 package, needed for --core 2) or full.
 """
 import argparse
 
 from . import asm, host, isa
-from .profile import TAPEOUT, FULL
+from .profile import PROFILES
 
 
 def main():
@@ -14,7 +17,7 @@ def main():
     ap.add_argument("--program", help="select a named .program from a multi-program file")
     ap.add_argument("--core", type=int, default=0)
     ap.add_argument("--base", type=int)
-    ap.add_argument("--profile", choices=["tapeout", "full"], default="tapeout")
+    ap.add_argument("--profile", choices=list(PROFILES), default="tapeout")
     ap.add_argument("--define", action="append", default=[], help="NAME=value")
     ap.add_argument("--out-pins")
     ap.add_argument("--set-pins")
@@ -32,7 +35,7 @@ def main():
         if len(matches) != 1:
             ap.error(f"--program {a.program!r} must match exactly one .program (got {len(matches)})")
         prog = matches[0]
-    profile = TAPEOUT if a.profile == "tapeout" else FULL
+    profile = PROFILES[a.profile]
     base = a.base if a.base is not None else (prog.origin if prog.origin is not None else a.core * 256)
     kw = {}
     if a.out_pins:

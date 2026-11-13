@@ -7,7 +7,7 @@ PIO/DMA backend (docs/board-transport.md).
 
     from protoemu import ProtoEmu
     pe = ProtoEmu(tt)
-    assert known_id(pe.read(0x800))      # 0x50450002 (v0.2) or 0x5045BC03 (v0.3)
+    pe.read_id()                         # 0x50450002 (v0.2) or 0x5045BC03 (v0.3); sets the geometry
     pe.load(core=0, words=[...], base=0, clkdiv=..., pinctrl0=..., pinctrl1=..., shiftctrl=..., wrap=...)
     pe.start(0b0001)
     pe.push(0, ord('A'))
@@ -30,16 +30,36 @@ def known_id(v):
     nc, nb = (v >> 8) & 15, (v >> 12) & 15
     return v == 0x50450002 or (v >> 16 == 0x5045 and v & 0xFF == 3 and 1 <= nb <= nc <= 4)
 
+
+def id_geometry(v):
+    """(cores, banks) of a known ID: v0.2's is the 2-core 6x4 tapeout's, a v0.3
+    ID carries them (as pe.profile.for_id). ValueError for any other value."""
+    if not isinstance(v, int) or not known_id(v):
+        raise ValueError("chip ID %r is not a protoemu ID (v0.2 0x50450002 or a v0.3 0x5045BC03)" % (v,))
+    if v == 0x50450002:
+        return 2, 2
+    return (v >> 8) & 15, (v >> 12) & 15
+
 MOSI, SCK, CS = 5, 6, 7
 
 
 class ProtoEmu:
-    def __init__(self, tt, fifo_depth=8, ncores=2, bank_words=256, owners=None, nbanks=None):
-        """Defaults match the tapeout (2 cores, a 256-word bank each, 8-deep
-        FIFOs). PIN_OWNER is write-only, so the driver keeps its own copy of
-        the owner map, starting from the reset state; pass `owners` (pin ->
-        core) when attaching to a chip that was configured before.
+    def __init__(self, tt, fifo_depth=8, ncores=None, bank_words=256, owners=None, nbanks=None):
+        """A 256-word bank per core and 8-deep FIFOs, as every build with an ID.
+        The core and bank counts: each of `ncores`/`nbanks` that is given wins
+        (up to the chip's); each one that is not comes from the chip's ID,
+        once read_id() or use_id() has run (bringup.setup() does that); until
+        then 2 and 2, the tapeout's (or nbanks cores, if only nbanks is given).
+        These counts say which cores the driver loads and owns pins for; CTRL
+        write-backs keep every core the chip has (ctrl_mask()).
+        PIN_OWNER is write-only, so the driver keeps its own copy of the owner
+        map, starting from the reset state; pass `owners` (pin -> core) when
+        attaching to a chip that was configured before.
         """
+        self._given = (ncores, nbanks)
+        self.chip_ncores = None             # the chip's core count, once use_id() has seen its ID
+        if ncores is None:
+            ncores = 2 if nbanks is None else max(2, nbanks)
         if not 1 <= ncores <= 4 or bank_words not in (16, 32, 64, 128, 256):
             raise ValueError("invalid hardware profile")
         nbanks = ncores if nbanks is None else nbanks
@@ -53,6 +73,43 @@ class ProtoEmu:
         self.transport = None
         self.ui = 1 << CS
         self._set_ui()
+
+    def use_id(self, v):
+        """Take the core and bank counts from ID value v, except a count given
+        to the constructor: that one wins, but may not exceed the ID's (a
+        smaller geometry leaves the extra cores alone). An unspecified bank
+        count is the ID's, capped at the core count. Records the chip's core
+        count for ctrl_mask(). ValueError for an unknown ID, for counts above
+        the ID's, or for an owner map that names a core the driver lacks;
+        nothing changes then."""
+        nc, nb = id_geometry(v)
+        gc, gb = self._given
+        c = nc if gc is None else gc
+        b = min(nb, c) if gb is None else gb
+        if c > nc or b > nb or not 1 <= b <= c:
+            raise ValueError("driver geometry %d cores, %d banks exceeds chip ID %08x (%d cores, %d banks)"
+                             % (c, b, v, nc, nb))
+        lo, hi = self._owners
+        for w in (lo, hi):
+            for i in range(16):
+                if (w >> 2 * i) & 3 >= c:
+                    raise ValueError("pin owner does not exist on this chip")
+        self.ncores, self.nbanks, self.chip_ncores = c, b, nc
+
+    def chip_cores(self):
+        """The chip's core count: its ID's once use_id() has run, else the driver's."""
+        return self.ncores if self.chip_ncores is None else self.chip_ncores
+
+    def ctrl_mask(self):
+        """CTRL's enable bits for every core the chip has (chip_cores()); a
+        write-back of CTRL keeps these, whichever cores the driver uses."""
+        return (1 << self.chip_cores()) - 1
+
+    def read_id(self):
+        """Read the ID register, check it and take the geometry from it (use_id); returns the ID."""
+        v = self.read(A_ID)
+        self.use_id(v)
+        return v
 
     # -- low level
     def _set_ui(self):

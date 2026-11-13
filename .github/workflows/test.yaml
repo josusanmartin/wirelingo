@@ -56,6 +56,15 @@ jobs:
           make COCOTB_TEST_MODULES=test_post_freeze SIM_BUILD=sim_build/post_freeze COCOTB_RESULTS_FILE=post_freeze.xml
           python3 check_results.py post_freeze.xml $(grep -c '^@cocotb.test()' test_post_freeze.py)
 
+      - name: Blind protocols, RMII and Ethernet firmware through the SPI port
+        run: |
+          cd test
+          for module in test_blind test_rmii_rtl test_eth_stack_rtl test_eth_reply_rtl; do
+            make PE_NCORES=3 PE_NBANKS=3 PE_FIFO_LOG2=3 COCOTB_TEST_MODULES="$module" \
+              SIM_BUILD="sim_build/$module" COCOTB_RESULTS_FILE="$module.xml"
+            python3 check_results.py "$module.xml" "$(grep -c '^@cocotb.test()' "$module.py")"
+          done
+
       - name: Bench firmware (MDIO, QSFP-style stand-in, PMBus) through the SPI port
         run: |
           cd test
@@ -131,6 +140,10 @@ jobs:
             test/pio.xml
             test/eth_service.xml
             test/post_freeze.xml
+            test/test_blind.xml
+            test/test_rmii_rtl.xml
+            test/test_eth_stack_rtl.xml
+            test/test_eth_reply_rtl.xml
             test/pps.xml
             test/spi_packed_host.xml
             test/spi_preloaded_host.xml
@@ -166,7 +179,7 @@ jobs:
         run: |
           make -C formal 2>&1 | tee formal.log
           ! grep -E "DONE \((FAIL|ERROR|UNKNOWN)" formal.log
-          test "$(grep -c 'DONE (PASS' formal.log)" -ge 9
+          test "$(grep -c 'DONE (PASS' formal.log)" -ge 14
 
   mutants:
     runs-on: ubuntu-24.04

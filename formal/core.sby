@@ -1,6 +1,10 @@
 [tasks]
 prove
 prove0
+prove2
+prove8_0
+prove8_1
+prove8_2
 
 [options]
 multiclock on
@@ -15,6 +19,10 @@ smtbmc yices
 [script]
 read_verilog -sv -formal pe_core.sv pe_fifos.sv pe_fifo.sv pe_cg.sv core_props.sv
 prove0: hierarchy -top core_props -chparam IDX 0
+prove2: hierarchy -top core_props -chparam IDX 2
+prove8_0: hierarchy -top core_props -chparam IDX 0 -chparam FIFO_LOG2 3
+prove8_1: hierarchy -top core_props -chparam IDX 1 -chparam FIFO_LOG2 3
+prove8_2: hierarchy -top core_props -chparam IDX 2 -chparam FIFO_LOG2 3
 prep -top core_props
 
 [files]
