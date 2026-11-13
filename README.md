@@ -237,7 +237,10 @@ for:
 - **A host link that keeps up:** quad SPI at SCK = clk, 193 Mbit/s of payload
   in RTL simulation and 193.6 Mbit/s on the FPGA, against its fabric SPI
   master on the same clock; not yet measured through the pads or from the
-  demo board.
+  demo board. STA at the tile's pins (not silicon) closes 50 MHz SCK only
+  while the pads and board add at most about 6.8 ns for SCK in plus data
+  back, 3.4 ns each way if equal (3-core layout, GRT-estimated;
+  [isa.md §6.1](docs/isa.md)).
 
 **Reviewers:** [docs/guide.md](docs/guide.md) maps each claim to its evidence
 and the command that reproduces it.

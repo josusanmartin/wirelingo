@@ -151,8 +151,10 @@ hardened and timed at one `CLOCK_PERIOD` (20 ns), so its own STA cannot show
 it re-runs the run's own LibreLane `OpenROAD.STAPostPNR` step (its step
 config and input state: final netlist, extracted SPEF, signoff SDC and corner
 Tcl) in the run's LibreLane image, with the run mounted read-only, no
-network, and only `CLOCK_PERIOD` changed (`src/protoemu.sdc` scales the I/O
-delays and the host port's SCK with it). The image must be local and report
+network, and only `CLOCK_PERIOD` changed (`src/protoemu.sdc` scales the
+clk-referenced I/O delays and the host port's SCK with it; the host lines'
+external delays are fixed nanoseconds, and their CS_n terms follow the
+periods: docs/isa.md §6.1, "Pad timing"). The image must be local and report
 the run's own LibreLane version (`meta.librelane_version`; an `--image` with
 another version is refused), and the STA runs it by the ID `docker image
 inspect` gives. Its receipt (kind `sta`) binds the candidate files, that image

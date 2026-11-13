@@ -88,7 +88,11 @@ The host talks to the chip over SPI mode 0:
   183.6 Mbit/s from a separate 45.93 MHz clock (`fpga/kv260/README.md`).
   Through the Tiny Tapeout pads and the demo board they are unmeasured; at
   SCK = clk the host has half a clock period, less pad and board delays, to
-  sample MISO. The default demo-board
+  sample MISO. STA at the tile's pins (not silicon) closes at 50 MHz SCK
+  only while the delay between the host's pins and the tile's (pads, pin mux
+  and board), SCK in plus MISO back, stays within about 6.8 ns, 3.4 ns each
+  way if equal, on the 3-core layout (GRT-estimated). A slower path needs a slower SCK, about 21 MHz for 10 ns
+  (docs/isa.md §6.1, "Pad timing"). The default demo-board
   driver (`tools/micropython/protoemu.py`) bit-bangs the port from MicroPython
   and is far slower than either figure (an estimate: it has not been
   measured). The optional PIO/DMA transport it points to (`quad_spi.py`,
