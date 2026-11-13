@@ -132,6 +132,10 @@ class SramClockAdvanceTcl(OpenROADStep):
                  "clock gates'), placed on the line from the clock root toward the branch's loads "
                  "(flow/sram_clock_advance.tcl, protoemu_reg_clk); 0 = off.",
                  default=0),
+        Variable("PROTOEMU_SRAM_ADVANCE_TOWARD", float,
+                 "Where each SRAM's advance buffer goes: this fraction of the way from the clock root "
+                 "driver toward the macro's A_CLK pin (0 = at the root driver).",
+                 default=0.0),
         Variable("PROTOEMU_REG_CLOCK_DELAY_GATES", int,
                  "With PROTOEMU_REG_CLOCK_DELAY: the clock-gate branches' buffer count instead (-1 = the same).",
                  default=-1),

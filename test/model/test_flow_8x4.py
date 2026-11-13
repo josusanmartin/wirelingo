@@ -294,9 +294,26 @@ def test_two_core_8x4_submission_is_the_tuned_fallback(tmp_path):
     assert co["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.15
 
 
+def test_sram_advance_toward_option(tmp_path):
+    r, d = generate(tmp_path, "--preset", "experiment", "--sram-advance-toward", "0.5", name="toward.json")
+    c = json.loads(d.read_text())
+    assert r.returncode == 0 and c["PROTOEMU_SRAM_ADVANCE_TOWARD"] == 0.5 and c["//generator"]["sram_advance_toward"] == 0.5
+    r0, d0 = generate(tmp_path, "--preset", "experiment", name="plain.json")
+    c0 = json.loads(d0.read_text())
+    assert "PROTOEMU_SRAM_ADVANCE_TOWARD" not in c0 and "sram_advance_toward" not in c0["//generator"]
+    for bad in (["--sram-advance-toward", "1.5"], ["--sram-advance-toward", "-0.5"],
+                ["--sram-advance-toward", "0.5", "--no-sram-clock-advance", "--late-clock", "0"]):
+        r, d = generate(tmp_path, "--preset", "experiment", *bad, name="bad.json")
+        assert r.returncode != 0 and not d.exists()
+    tcl = (ROOT / "flow/sram_clock_advance.tcl").read_text()
+    assert "if {[info exists ::env(PROTOEMU_SRAM_ADVANCE_TOWARD)]} { set f $::env(PROTOEMU_SRAM_ADVANCE_TOWARD) }" in tcl
+    assert "set f 0.0" in tcl
+
+
 def test_reg_clock_delay_is_off_unless_asked():
     # a default harden must run the SRAM clock step exactly as before the option existed
     plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    assert re.search(r'Variable\("PROTOEMU_SRAM_ADVANCE_TOWARD", float,[^)]*\)?[\s\S]*?default=0\.0\)', plugin)
     for var, default in (("PROTOEMU_REG_CLOCK_DELAY", "0"), ("PROTOEMU_REG_CLOCK_DELAY_GATES", "-1")):
         block = plugin[plugin.index(f'Variable("{var}", int,'):]
         assert re.search(r"default=(-?[0-9]+)\)", block).group(1) == default

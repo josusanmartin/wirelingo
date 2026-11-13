@@ -67,13 +67,25 @@ namespace eval protoemu_sram_clk {
             set ndr [$old getNonDefaultRule]
             set tap_drv [[out_driver $tap] getInst]
             lassign [$tap_drv getLocation] px py
+            # PROTOEMU_SRAM_ADVANCE_TOWARD (0..1, default 0: at the root driver):
+            # the buffer goes that fraction of the way toward the macro's A_CLK
+            # pin. At the root, the buffers of all banks shared one spot beside the
+            # clock root buffers (aqp-rt3: detailed routing kept Metal2 violations
+            # between those nets there).
+            set f 0.0
+            if {[info exists ::env(PROTOEMU_SRAM_ADVANCE_TOWARD)]} { set f $::env(PROTOEMU_SRAM_ADVANCE_TOWARD) }
+            set r [$clk getBBox]
+            set qx [expr {([$r xMin] + [$r xMax]) / 2.0}]
+            set qy [expr {([$r yMin] + [$r yMax]) / 2.0}]
+            set bx [expr {$px + $f * ($qx - $px)}]
+            set by [expr {$py + $f * ($qy - $py)}]
             $clk disconnect
             $clk connect $tap
             set pin [get_pins "[$inst getName]/A_CLK"]
             if {[llength $pin] != 1} { error "cannot find [$inst getName]/A_CLK" }
             insert_buffer -buffer_cell $buffer_cell -load_pins $pin \
                 -buffer_name clkbuf_sram_adv_ -net_name clknet_sram_adv_ \
-                -location [list [ord::dbu_to_microns $px] [ord::dbu_to_microns $py]]
+                -location [list [ord::dbu_to_microns [expr {round($bx)}]] [ord::dbu_to_microns [expr {round($by)}]]]
             set new [$clk getNet]
             if {$new eq $tap} { error "buffer not inserted for [$inst getName]" }
             $new setSigType CLOCK
