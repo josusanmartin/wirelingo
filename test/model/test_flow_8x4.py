@@ -2,7 +2,8 @@
 
 The tile comes from info.yaml. A 6x4 info.yaml with a 2-core project.v must
 still give the signed-off run fo6's configuration byte for byte; on 8x4, with
-a 2-core project.v, only the right-hand bank moves."""
+a 2-core project.v and the same options, only the right-hand bank moves (the
+2-core 8x4 submission preset itself is the tuned fallback set)."""
 import hashlib
 import importlib.util
 import json
@@ -69,8 +70,9 @@ def test_6x4_info_gives_fo6_config_byte_for_byte(tmp_path):
 
 
 def test_8x4_moves_only_the_right_bank(tmp_path):
-    r6, c6 = generate(tmp_path, "--info", str(info_with(tmp_path, "6x4")), name="c6.json", cores=2)
-    r8, c8 = generate(tmp_path, "--info", str(info_with(tmp_path, "8x4")), name="c8.json", cores=2)
+    # the same options on both tiles (the 2-core 8x4 submission preset is tuned: below)
+    r6, c6 = generate(tmp_path, "--preset", "experiment", "--info", str(info_with(tmp_path, "6x4")), name="c6.json", cores=2)
+    r8, c8 = generate(tmp_path, "--preset", "experiment", "--info", str(info_with(tmp_path, "8x4")), name="c8.json", cores=2)
     assert r6.returncode == r8.returncode == 0
     a, b = json.loads(c6.read_text()), json.loads(c8.read_text())
     assert {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)} == {"//", "MACROS"}
@@ -265,3 +267,22 @@ def test_late_clock_core_register_list(tmp_path):
                 [*base, "--late-clock-core-regs", "r0,r0"], [*base, "--late-clock-core-regs", "R0"]):
         r, d = generate(tmp_path, *bad, name="bad.json")
         assert r.returncode != 0 and not d.exists()
+
+
+def test_two_core_8x4_submission_is_the_tuned_fallback(tmp_path):
+    # a fallback shipping commit (PE_NCORES 2) regenerates src/config.json with the
+    # plain submission preset, which CI's --check and the release gate reproduce
+    r, sub = generate(tmp_path, name="sub.json", cores=2)
+    r2, tuned = generate(tmp_path, "--preset", "submission", "--tuned", "fallback-8x4", name="tuned.json", cores=2)
+    assert r.returncode == r2.returncode == 0, r.stderr + r2.stderr
+    assert sub.read_bytes() == tuned.read_bytes()
+    c = json.loads(sub.read_text())
+    assert c["//generator"]["preset"] == "submission" and c["PL_TARGET_DENSITY_PCT"] == 44
+    assert c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.15 and c["PROTOEMU_LATE_CLOCK_STAGES"] == 8
+    # with the searched run's options it is that run's config apart from the preset label
+    run = json.loads((FALLBACK_RUN / "config.json").read_text())
+    assert run["//generator"].pop("preset") == "experiment" and c["//generator"].pop("preset") == "submission"
+    assert run == c
+    # 6x4 and the experiment preset keep the plain defaults
+    _, e = generate(tmp_path, "--preset", "experiment", name="exp.json", cores=2)
+    assert json.loads(e.read_text())["PL_TARGET_DENSITY_PCT"] == 34

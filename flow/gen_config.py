@@ -37,6 +37,12 @@ TUNED = {
                      "--set", "GRT_RESIZER_HOLD_SLACK_MARGIN=0.15"],
 }
 
+# The submission preset's option set by (tile, src/project.v's PE_NCORES), for
+# builds a search tuned: the 2-core 8x4 fallback hardens with fallback-8x4
+# (a shipping commit sets PE_NCORES 2 and regenerates src/config.json). 6x4
+# and the 3-core 8x4 build keep the plain defaults.
+SUBMISSION_TUNED = {("8x4", 2): "fallback-8x4"}
+
 
 def expand_tuned(argv):
     """Replace --tuned NAME (or --tuned=NAME) by TUNED[NAME], placed first."""
@@ -224,7 +230,12 @@ def main():
                     help="clock each SRAM from the clock root (useful skew: reads launch earlier, flow/sram_clock_advance.tcl)")
     ap.add_argument("--tuned", choices=sorted(TUNED),
                     help="a tuned option set from the 8x4 searches (TUNED), given before the other options")
-    a = ap.parse_args(expand_tuned(sys.argv[1:]))
+    argv = sys.argv[1:]
+    a = ap.parse_args(expand_tuned(argv))
+    key = (tile_of(a.info), project_cores())
+    if a.preset == "submission" and key in SUBMISSION_TUNED and not any(x.startswith("--tuned") for x in argv):
+        # the submission preset of a build the searches tuned: its option set first
+        a = ap.parse_args(expand_tuned(["--tuned", SUBMISSION_TUNED[key]] + argv))
     if a.tuned is not None:
         # expand_tuned took every full spelling; argparse matched an abbreviation
         # (--tune, --tu), which would otherwise be ignored silently
