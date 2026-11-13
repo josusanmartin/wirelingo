@@ -171,14 +171,30 @@ namespace eval protoemu_late_clk {
 namespace eval protoemu_reg_clk {
     variable buffer_cell sg13cmos5l_buf_8
 
+    # The stages go on the straight line from the root driver (loc) to the
+    # loads' centroid, evenly spaced (each new buffer is inserted right before
+    # the loads, so stage s sits (s+1)/(stages+1) of the way). Placed all at
+    # the root (run aqp-rt1), the chains, the SRAM advance buffers and the
+    # root buffers shared ~13 um, and their 2x-spacing clock nets left Metal2
+    # violations there that detailed routing did not clear.
     proc chain {pins stages loc ndr} {
         variable buffer_cell
         set block [ord::get_db_block]
+        set cx 0.0; set cy 0.0
+        foreach p $pins {
+            lassign [[[$block findITerm $p] getInst] getLocation] x y
+            set cx [expr {$cx + $x}]; set cy [expr {$cy + $y}]
+        }
+        set cx [expr {[ord::dbu_to_microns [expr {round($cx / [llength $pins])}]]}]
+        set cy [expr {[ord::dbu_to_microns [expr {round($cy / [llength $pins])}]]}]
+        lassign $loc lx ly
         for {set s 0} {$s < $stages} {incr s} {
+            set f [expr {($s + 1.0) / ($stages + 1.0)}]
+            set at [list [expr {$lx + $f * ($cx - $lx)}] [expr {$ly + $f * ($cy - $ly)}]]
             set ps [get_pins $pins]
             if {[llength $ps] != [llength $pins]} { error "pin lookup failed: $pins" }
             insert_buffer -buffer_cell $buffer_cell -load_pins $ps \
-                -buffer_name clkbuf_regdly_ -net_name clknet_regdly_ -location $loc
+                -buffer_name clkbuf_regdly_ -net_name clknet_regdly_ -location $at
             set new [[$block findITerm [lindex $pins 0]] getNet]
             $new setSigType CLOCK
             if {$ndr ne "NULL"} { $new setNonDefaultRule $ndr }
