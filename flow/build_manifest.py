@@ -232,7 +232,7 @@ def generator_check(root):
     """(returncode, output) of the checkout's own `flow/gen_config.py --preset
     submission --check`, as CI runs it: its committed config.json must be the
     generator's submission preset."""
-    root = Path(root)
+    root = Path(root).resolve()        # it runs with cwd=root
     if not (root / GENERATOR).is_file():
         return 2, f"{root}: no {GENERATOR}"
     r = subprocess.run([sys.executable, str(root / GENERATOR), "--preset", "submission", "--check"],

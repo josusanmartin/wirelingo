@@ -506,6 +506,16 @@ def test_a_missing_shipping_checkout_is_refused_not_listed(tmp_path, capsys):
     assert rc == 1 and "not a checkout (no src/)" in text and "only in the run" not in text
 
 
+def test_a_relative_shipping_root_works(tmp_path, capsys, monkeypatch):
+    # found on runner1 (092b): the generator check ran the relative path from inside the checkout
+    wt = candidate(tmp_path)
+    args = complete_receipts(wt)
+    shipping(wt, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    rc, text = release(with_shipping(args, "ship"), capsys)
+    assert rc == 0 and "gen_config.py --preset submission --check:  (rc 0)" in text
+
+
 def gds(stamp, payload=b"\x00\x0c\x08\x00BOUNDARY"):
     """A minimal GDSII stream: BGNLIB and BGNSTR with dates, and one record."""
     dates = bytes([0, stamp] * 12)
