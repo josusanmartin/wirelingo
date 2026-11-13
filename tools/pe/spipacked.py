@@ -98,7 +98,8 @@ def preload_plan(payload, *, core=0, mode=0, enabled_before=0, fifo_depth=8,
     drain exactly that count, verify empty STATUS and returned idle POUT.
     Repeat the whole plan to rearm, without reloading/resetting the chip.
     Other core enables are retained from caller-supplied enabled_before, the
-    CTRL enable mask, checked against the geometry (profile.resolve).
+    CTRL enable mask, checked by profile.enable_mask (the chip ID's core
+    count when chip_id is given, else the profile's).
     This plan does not infer clock timing, completion or simulator state.
     """
     if type(core) is not int or core != 0:

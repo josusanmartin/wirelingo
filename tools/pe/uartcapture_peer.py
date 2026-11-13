@@ -15,8 +15,8 @@ def capture_plan(length, *, core=1, enabled_before=0, profile=None, chip_id=None
 
     Caller first observes stopped/disabled target and empty target FIFOs.
     enabled_before must be the current CTRL enable mask, not a guessed mask,
-    checked against the geometry (profile.resolve); every other core's
-    enable is preserved.
+    checked by profile.enable_mask (the chip ID's core count when chip_id
+    is given, else the profile's); every other core's enable is preserved.
     No other-core register, configuration or FIFO writes are returned.
     """
     if type(length) is not int or not 1 <= length <= 32:
