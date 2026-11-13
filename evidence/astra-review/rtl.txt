@@ -1,0 +1,23 @@
+lockstep cores=3 rc=0
+                                                        ** TESTS=8 PASS=8 FAIL=0 SKIP=0                  1382380.01          89.30      15480.66  **
+astra-lock3.xml: 8 tests, 0 not passing
+top cores=3 rc=0
+                                                        ** TESTS=30 PASS=30 FAIL=0 SKIP=0                             92121662.72         388.12     237354.04  **
+astra-top3.xml: 30 tests, 0 not passing
+lockstep cores=2 rc=0
+                                                        ** TESTS=8 PASS=8 FAIL=0 SKIP=0                  1378760.01          68.71      20067.18  **
+astra-lock2.xml: 8 tests, 0 not passing
+top cores=2 rc=0
+                                                        ** TESTS=30 PASS=30 FAIL=0 SKIP=0                             92045102.72         333.72     275819.47  **
+astra-top2.xml: 30 tests, 0 not passing
+                                                        ** TESTS=17 PASS=17 FAIL=0 SKIP=0                       180142880.02         261.29     689438.34  **
+astra-test_blind.xml: 17 tests, 0 not passing
+                                                        ** TESTS=6 PASS=6 FAIL=0 SKIP=0                                 786930.01           5.82     135198.02  **
+astra-test_rmii_rtl.xml: 6 tests, 0 not passing
+                                                        ** TESTS=7 PASS=7 FAIL=0 SKIP=0                              10982660.01          84.63     129778.30  **
+astra-test_eth_stack_rtl.xml: 7 tests, 0 not passing
+                                                        ** TESTS=2 PASS=2 FAIL=0 SKIP=0                              1267640.20           4.75     266626.79  **
+astra-test_eth_reply_rtl.xml: 2 tests, 0 not passing
+...........                                                              [100%]
+11 passed in 3.05s
+firmware bundle matches validated sources

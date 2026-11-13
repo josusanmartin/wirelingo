@@ -53,7 +53,7 @@ that stands between an agent's claim and the GDS.
 
 | Role | Who | What it did here |
 |---|---|---|
-| Direction and judgment | the author | goals and scope (protocols, tile size, two cores), what to cut, when to stop exploring, every spec change, hardware and accounts (FPGA board, licenses, build machines) |
+| Direction and judgment | the author | goals and scope (protocols, tile size, initially two cores; three for the 8x4 target), what to cut, when to stop exploring, every spec change, hardware and accounts (FPGA board, licenses, build machines) |
 | Engineering | Claude (Claude Code) | ISA spec, golden model, assembler, RTL, firmware, cocotb/formal/mutation tests, LibreLane flow, physical experiments, FPGA bring-up |
 | Independent review | Codex | read the repo cold, reproduced bugs with tests and proposed fixes ([review.md](review.md)) |
 | Parallel work | Claude sub-agents | self-contained tasks in their own git worktrees (FPGA bring-up, the reverse-engineering demo), reporting measured results back |
@@ -81,7 +81,7 @@ assumptions:
   line unit's phase tracking.
 * **Mutation testing** checks the checks. Injected bugs in the model, RTL,
   firmware and assembler must each make a named test fail
-  (`test/mutants.py`, 34 of 34 killed). Tests that pass whatever the code
+  (`test/mutants.py`, 34 of 34 killed in the 2026-10-05 record). Tests that pass whatever the code
   does are worthless, and agents write those too.
 * **Third-party oracles.** sigrok's protocol decoders, written by other
   people for logic analyzers, decode the waveforms of the UART, SPI, I2C,
@@ -129,8 +129,8 @@ flow) and [review.md](review.md) (the independent review).
 ## What the human had to do
 
 * **Set direction and cut scope.** Agents will happily keep optimizing.
-  Deciding that two cores, not three, is the tapeout configuration, that a
-  clean repository and signoff come before new features, and when an
+  Choosing two cores for the earlier 6x4 design, then three for the 8x4
+  target, requiring a clean repository and signoff, and deciding when an
   exploration had run long enough were the author's calls.
 * **Own the spec changes.** Dropping cross-bank instruction fetch made the
   chip routable but changed what programs can do; that was the author's

@@ -1,0 +1,27 @@
+model rc=1
+            self.tail.append(dict(cycle=cycle, pc=before_pc, flags=old_flags,
+                                  enable=old_enable, rx=[len(c.rxf) for c in chip.cores[:2]],
+                                  r=[list(c.r) for c in chip.cores[:2]],
+                                  lr=[c.lr for c in chip.cores[:2]], bus=bus))
+            return result
+
+        self.chip.step = observed
+        assert (self.chip.ncores, self.chip.nbanks, self.chip.bank_words, self.chip.fifo_depth) == (2, 2, 256, 8)
+        self.apply(usbenum.load_writes(self.usb, "low", start=False))
+        self.apply(host.load_program(1, self.uart, 256, in_pins=RX, clkdiv=DIV, profile=TAPEOUT))
+>       assert self.chip.enable == 0 and len(self.usb.words) == 253 and len(self.uart.words) == 19
+E       AssertionError: assert (0 == 0 and 254 == 253)
+E        +  where 0 = <pe.sim.Chip object at 0x7498969ea510>.enable
+E        +    where <pe.sim.Chip object at 0x7498969ea510> = <test_usb_uart_coexist._Host object at 0x7498e22206b0>.chip
+E        +  and   254 = len([37, 1073807634, 1744830567, 1073807632, 1744830567, 1073807360, ...])
+E        +    where [37, 1073807634, 1744830567, 1073807632, 1744830567, 1073807360, ...] = Program(name='usb_enum', words=[37, 1073807634, 1744830567, 1073807632, 1744830567, 1073807360, 1744830567, 1073809408...G'), (251, 'ldi r2, dev                    ; status stage: zero-length DATA1'), (252, 'call prep'), (253, 'jmp echo')]).words
+E        +      where Program(name='usb_enum', words=[37, 1073807634, 1744830567, 1073807632, 1744830567, 1073807360, 1744830567, 1073809408...G'), (251, 'ldi r2, dev                    ; status stage: zero-length DATA1'), (252, 'call prep'), (253, 'jmp echo')]) = <test_usb_uart_coexist._Host object at 0x7498e22206b0>.usb
+
+test/model/test_usb_uart_coexist.py:213: AssertionError
+SIGROK CHECKS SKIPPED: 28 tests: a pass here says nothing about them (set SIGROK_CLI, flow/install_sigrok.sh)
+=========================== short test summary info ============================
+FAILED test/model/test_faults.py::test_finding_usb_enum_sees_a_reset_that_starts_in_an_eop
+FAILED test/model/test_usb_uart_coexist.py::test_concurrent_enumeration_and_32byte_capture
+FAILED test/model/test_usb_uart_coexist.py::test_stall_bad_stop_clear_and_rearm_isolation
+3 failed, 3252 passed, 29 skipped in 889.78s (0:14:49)
+runner1 checkout: ~/protoemu-flow/astra-review/agent-runs/astra-review-fdf67c8-2813108 (HEAD fdf67c8)

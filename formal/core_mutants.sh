@@ -10,7 +10,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$here")
 out=$(mktemp -d)
 bad=0
-while IFS='|' read -r name old new; do
+while IFS='|' read -r name old new task; do
   [ -z "$name" ] && continue
   d="$out/$name"; mkdir -p "$d/src" "$d/formal"
   cp "$root"/src/*.sv "$d/src/"
@@ -23,7 +23,7 @@ if s.count(old) != 1:
     sys.exit(1)
 p.write_text(s.replace(old, new))
 EOF
-  (cd "$d/formal" && sby -f core.sby prove > sby.log 2>&1 < /dev/null)
+  (cd "$d/formal" && sby -f core.sby "${task:-prove}" > sby.log 2>&1 < /dev/null)
   r=$(grep -o 'DONE ([A-Z]*' "$d/formal/sby.log" | tail -1)
   echo "$name: $r"
   [ "$r" = "DONE (FAIL" ] || bad=1
@@ -42,6 +42,8 @@ crc-feed-reads-register|  wire        crc_fb = crc_eff[crc_w] ^ crc_bit;|  wire 
 crc-mov-reads-register|      L_CRC:    src_val = crc_eff;|      L_CRC:    src_val = crc;
 crc-host-reads-register|      5'h07: bus_rdata = crc_eff;|      5'h07: bus_rdata = crc;
 crc-pend-without-exec|      crc_pend <= exec && crc_feed|      crc_pend <= crc_feed
+line-push-without-exec|  assign line_push      = exec && line_push_d;|  assign line_push      = line_push_d;|prove8_0
+line-take-without-exec|  assign line_take      = exec && line_take_d;|  assign line_take      = line_take_d;|prove8_0
 LIST
 echo "scratch: $out"
 exit $bad

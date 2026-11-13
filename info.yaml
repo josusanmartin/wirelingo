@@ -3,7 +3,7 @@ project:
   title:        "Wirelingo: programmable protocol emulator"
   author:       "Josu San Martin"
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "PIO-style bit-banging cores with timeouts, edge waits, ALU, CRC tap and SRAM IMEM: UART/SPI/I2C, USB-LS, 10BASE-T TX, CAN"
+  description:  "Three PIO-style cores, 3x256-word SRAM, timeouts, edge waits, ALU and CRC32: UART/SPI/I2C, USB-LS/FS, 10BASE-T, CAN"
   language:     "SystemVerilog"
   clock_hz:     50000000
 

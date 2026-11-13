@@ -210,8 +210,8 @@ let assemble_block name lines defs =
              prog.side_count <- ev (nth args 0) lineno;
              prog.side_opt <- (if List.mem "opt" (tail args) then 1 else 0);
              prog.side_pindir <- (if List.mem "pindirs" (tail args) then 1 else 0);
-             if Z.gt prog.side_count (Z.of_int 4)
-             then err "line %d: side_set too wide" lineno
+             if not (in_range prog.side_count 0 5)
+             then err "line %d: side_set count must be 0..4" lineno
            | ".wrap_target" -> prog.wrap_bottom <- !pc
            | ".wrap" -> prog.wrap_top <- Some (!pc - 1)
            | ".word" | ".data" ->
@@ -231,15 +231,21 @@ let assemble_block name lines defs =
            | ".out_pins" | ".set_pins" ->
              let a = ev (nth args 0) lineno in
              let b = ev (nth args 1) lineno in
+             let limit = if d = ".out_pins" then 32 else 5 in
+             if not (in_range a 0 32) then err "line %d: %s base must be 0..31" lineno d;
+             if not (in_range b 0 (limit + 1))
+             then err "line %d: %s count must be 0..%d" lineno d limit;
              Hashtbl.replace
                prog.config
                (String.sub d 1 (String.length d - 1))
                (Pair (a, b))
            | ".side_pins" | ".in_pins" ->
+             let a = ev (nth args 0) lineno in
+             if not (in_range a 0 32) then err "line %d: %s base must be 0..31" lineno d;
              Hashtbl.replace
                prog.config
                (String.sub d 1 (String.length d - 1))
-               (Num (ev (nth args 0) lineno))
+               (Num a)
            | ".fifo" ->
              if args <> [ "join_tx" ] then err "line %d: .fifo takes join_tx" lineno;
              Hashtbl.replace prog.config "fjoin" Yes

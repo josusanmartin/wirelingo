@@ -59,7 +59,7 @@ def set_inputs(mh, ui, vpins):
 def test_fits_and_table():
     for speed in SPEEDS:
         prog = program(speed)
-        assert len(prog.words) == 255                  # of the bank's 256
+        assert len(prog.words) == 256                  # of the bank's 256
         assert usbenum.table(prog, "dev") == DEV and usbenum.table(prog, "cfg", len(CFG)) == CFG
     print(f"usb_enum_ep1: {len(prog.words)} of 256 words")
 

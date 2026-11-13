@@ -1,0 +1,8 @@
+note: uncommitted changes are NOT tested (HEAD 40ab698 only)
+model rc=0
+bringing up nodes...
+bringing up nodes...
+
+....                                                                     [100%]
+4 passed in 4.41s
+runner1 checkout: ~/protoemu-flow/astra-review/agent-runs/astra-review-40ab698-2843934 (HEAD 40ab698)

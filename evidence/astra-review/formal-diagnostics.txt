@@ -1,0 +1,23 @@
+default formal gate: 14
+SBY  0:44:11 [fifos_cover8] DONE (PASS, rc=0)
+SBY  0:44:36 [fifos_prove4] DONE (PASS, rc=0)
+SBY  0:45:27 [fifos_prove8] DONE (PASS, rc=0)
+SBY  0:45:28 [hostport_prove] DONE (PASS, rc=0)
+SBY  0:46:42 [hostport_cover] DONE (PASS, rc=0)
+SBY  0:48:29 [hostport_ref_prove] DONE (PASS, rc=0)
+SBY  0:51:24 [hostport_ref_cover] DONE (PASS, rc=0)
+SBY  0:51:42 [core_prove] DONE (PASS, rc=0)
+SBY  0:51:59 [core_prove0] DONE (PASS, rc=0)
+SBY  0:52:17 [core_prove2] DONE (PASS, rc=0)
+SBY  0:52:34 [core_prove8_0] DONE (PASS, rc=0)
+SBY  0:52:52 [core_prove8_1] DONE (PASS, rc=0)
+SBY  0:53:08 [core_prove8_2] DONE (PASS, rc=0)
+SBY  0:53:09 [line_prove] DONE (PASS, rc=0)
+old harness line-push: SBY  0:53:27 [core_prove0] DONE (PASS, rc=0)
+new harness line-push: rc=2 SBY  0:53:27 [core_prove0] DONE (FAIL, rc=2)
+old harness line-take: SBY  0:53:45 [core_prove0] DONE (PASS, rc=0)
+new harness line-take: rc=2 SBY  0:53:46 [core_prove0] DONE (FAIL, rc=2)
+EP1 low: no ACK; DATA c305a53d64 -> c3065a7dd4; same PID=True, same packet=False
+EP1 full: no ACK; DATA c305a53d64 -> c3065a7dd4; same PID=True, same packet=False
+INT=0 FRAC=128 tick clocks: [0, 65536, 65537, 131073, 131074]
+lockstep cores=3 rc=2

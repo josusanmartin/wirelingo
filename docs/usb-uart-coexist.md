@@ -48,8 +48,8 @@ FIFO-based USB, which uses all eight flags.
 At 48 MHz USB uses the low-speed line unit on logical pads 0/1; UART
 receives 115200 baud, 8N1, on logical RX 16 (ui0), with the unchanged
 eight-tick divider. The peer image uses 19 words / 76 B; the selected USB
-image uses 253 words / 1012 B (246 / 984 B before `fault-fixes`). Together the 1088 B occupy both engines and
-banks (3 and 237 words spare), one line unit, flags 0..6 and three physical
+image uses 254 words / 1016 B (246 / 984 B before `fault-fixes`). Together the 1092 B occupy both engines and
+banks in the tested two-core profile (2 and 237 words spare), one line unit, flags 0..6 and three physical
 inputs (pads 0/1/16). UART uses no virtual pins, mailbox, shared data
 registers or line unit. F7 is unallocated here; no spare engine is
 demonstrated. RX 16 remains input only.

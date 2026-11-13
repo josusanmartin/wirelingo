@@ -3,8 +3,11 @@
 Backlog item AN, branch `study-8x4` (from the public `main`), 2026-11-09.
 On 2026-11-09 the organizers confirmed 8x4 tiles for the March 2027 IHP
 SG13CMOS5L shuttle, and the author chose to spend the area on new hardware.
-This is the study that comes before any RTL: it recommends what to add, and
-the author picks. **No file in `src/`, `flow/` or `firmware/` changes here.**
+This is the historical proposal written before the v0.3 implementation.
+The author subsequently selected the 3-core package; `next-8x4` implements
+it. The dates and measurements below describe the study, not current
+release qualification; see [physical.md](physical.md#8x4-2026-11-10).
+The study itself changed no production RTL, flow or firmware.
 Prototypes live in [`syn/8x4-study/`](../syn/8x4-study/).
 
 Every number below names its evidence level:
@@ -52,9 +55,9 @@ proposed as written.
   on paper),
   512-word banks (+1.25 ns on the critical path's first cell), data RAM,
   the multi-bit CRC tap.
-* Any 8x4 tapeout needs `flow/` edits (the generator hardcodes the 6x4
-  core) that RULES.md does not allow today, and a fresh timing-closure
-  search; the plan below has both.
+* At the time of the proposal, the generator hardcoded the 6x4 core and
+  needed authorized flow edits. The current branch has those geometry
+  changes; timing closure and fresh release receipts remain required.
 
 ## What changed: the tile
 
@@ -639,8 +642,12 @@ corner (the slow corner by +0.19 ns); the package does not yet (−0.738 ns at t
 `pkg3`). At 48 MHz the USB demos are unchanged and 10BASE-T runs at 40 MHz
 (4 clocks per bit), where it tolerates ±12 ns of edge jitter against
 802.3's ±13.5 ns (a one-off model sweep, [guide.md](guide.md#known-limits)).
-So what would be lost is the 50 MHz claim and, with it, full 802.3 jitter
-tolerance. The orchestrator decides which clock the release claims.
+That comparison predates the FCS firmware. `eth10_rx_fcs` requires 50 MHz
+for its instruction budget, and RMII requires a 50 MHz reference clock;
+48 MHz therefore also removes those demonstrated operating points unless
+their implementations change. Full-speed USB needs 48 MHz. The author
+must choose and document the supported clock modes and protocols before
+a release clock is claimed.
 
 **The go / fallback gate (Dec 6).** If the 3-core netlist has not passed
 `release_check.py` at 48 MHz or better by then, take the fallback: two

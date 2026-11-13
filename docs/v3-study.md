@@ -15,7 +15,15 @@ Hardware cost comes from a yosys prototype of `pe_core` (in
 > race fix it recommends ("Act now", below) is on `main` separately, with
 > `test_bus_reset_at_any_phase`.
 
-## Bottom line
+## Historical decision
+
+The recommendation below predates the 8x4 allocation. The author later chose
+the third core and v0.3 additions described in [8x4-study.md](8x4-study.md),
+now implemented on `next-8x4`. This page records the earlier tradeoff, not a
+recommendation to remove those additions; see [physical.md](physical.md#8x4-2026-11-10)
+for the current closure work.
+
+## Original recommendation
 
 **No respin for these additions.** The measured gain is small: 37 of the
 library's 1269 words (2.9 %), one or two clocks on full-speed USB turnarounds

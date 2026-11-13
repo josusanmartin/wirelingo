@@ -5,9 +5,17 @@
 name until the next re-harden.)*
 
 An entry for the [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/),
-on IHP SG13CMOS5L through Tiny Tapeout (6x4 tiles). It has not been
+on IHP SG13CMOS5L through Tiny Tapeout (8x4 tiles). It has not been
 fabricated. Every result here names its evidence level: model, RTL
 simulation, formal, gate level, or RTL in FPGA fabric. FPGA is not silicon.
+
+**Current development target:** 8x4 tiles, three cores, three 256-word
+instruction SRAM banks and 8-word FIFOs, implementing ISA v0.3. The target
+clock is 50 MHz; 48 MHz is a possible release decision, with protocol limits
+that must be stated separately. The reviewed base `fb4228d` has no passing
+3-core routed signoff/precheck/release receipt. The 2-core 8x4 build is a
+fallback. The 6x4, 2-core run fo6 below is historical v0.2 evidence; its
+physical results do not certify this target. See [physical.md](docs/physical.md).
 
 **Short on time:** read the [two-page summary](docs/summary.md). Reviewers:
 [docs/guide.md](docs/guide.md) maps each claim to its evidence and the
@@ -17,14 +25,14 @@ command that reproduces it. New to hardware:
 
 ![The fo6 layout](docs/fo6-layout.png)
 
-*The signed-off layout, run fo6, rendered from its GDS (sha256 `e67697034da6cd34…`,
+*The historical 6x4, 2-core layout, run fo6, rendered from its GDS (sha256 `e67697034da6cd34…`,
 [docs/physical.md](docs/physical.md)) with KLayout and the IHP layer colours.
 The two instruction SRAMs are the blocks at the bottom corners; standard-cell
 logic fills the rest.*
 
 ## What it is
 
-Protocols are programs, not peripherals. The chip has **two small cores built
+Protocols are programs, not peripherals. The 8x4 target has **three small cores built
 for bit-banging**, each with its own SRAM bank of 256 32-bit instructions,
 8-word FIFOs to the host, a fractional clock divider, registers with an ALU
 and a CRC tap. Beside core 0 sits a **line unit**, a configurable line coder.
@@ -44,7 +52,7 @@ No protocol is fixed in the silicon. The cores run firmware, and the line
 unit's settings are chosen by the host when it loads a program.
 
 * **Protocols are firmware.** UART, SPI, I2C, CAN, USB at low and full speed,
-  10BASE-T, JTAG, 1-Wire, PS/2, WS2812 and the rest are the 68 firmware files
+  10BASE-T, JTAG, 1-Wire, PS/2, WS2812 and the rest are firmware files
   in [`firmware/`](firmware/), assembled on a PC ([docs/asm.md](docs/asm.md))
   and loaded over SPI. A new protocol is a new program.
 * **The line unit is a fixed menu that software picks from.** It offers
@@ -65,8 +73,8 @@ unit's settings are chosen by the host when it loads a program.
   mechanism, not a measured comparison, since no 10BASE-T receiver in
   firmware alone has been written. Low-speed USB runs either way (two cores without
   it, one with it).
-* **Rehearsed with the chip frozen.** With the chip's Verilog frozen at tag
-  `rc-01ce16d-t48ba` (unchanged since), three rounds of protocols it was not
+* **Rehearsed on the earlier v0.2 chip.** With that Verilog frozen at tag
+  `rc-01ce16d-t48ba` for the rehearsal (v0.3 changes the RTL), three rounds of protocols it was not
   designed for were added in firmware only: DMX512, LIN, NEC and RC-5
   infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU,
   MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with
@@ -155,7 +163,7 @@ What is proven at each level, and what is still open:
 (`wirelingo-release-evidence-7685aba-fo6.tar.gz`, sha256 `868c5d3a…`) is not
 in git; it is to be attached as a release asset.
 
-## Physical status (run fo6)
+## Historical physical status (6x4 run fo6)
 
 * **Signoff passes with no waiver** (`flow/signoff.py`, and the stricter
   `flow/release_check.py`): 0 routing violations, 0 KLayout DRC, LVS clean,
@@ -264,7 +272,7 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit; KV260: enumeration against a replayed host, every pad edge equal to the model's (the 129-word firmware before the got_in guard; not re-measured on the board with the 130-word one yet) |
 | `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter tolerance about 31 ns edge to edge, 12 ns past the spec's 18.5 (g4: about 21 ns) | RTL and gate-level (signed-off netlist): SETUP/DATA0, ACK at 10.5 clocks (spec 8–26; g4 11.5), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model; KV260 at 48 MHz against a replayed host, every pad edge equal to the model's. The gate-level and KV260 runs used the 141-word firmware before the got_in guard and have not been re-run with the 142-word one; with it the RTL's staged DATA1 comes one clock later (15.9 clocks, [docs/usb-full-speed.md](docs/usb-full-speed.md)). Since branch `usb-config-prestage` (159 words) the firmware answers SET_CONFIGURATION's status stage itself; model and RTL simulation only |
-| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 253 of 256 words; full speed at exactly 48 MHz | model (both speeds: offsets, jitter, faults, resets, STALLs) and RTL with the host port idle; sigrok decodes every packet. The 253-word program from `fault-fixes`, which sees a bus reset starting at any clock of a control read, is verified on the model (that sweep) and in RTL simulation only. The gate-level receipts (SDF, both speeds) and the KV260 runs at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator and against Linux, used the 246-word firmware from before it: the 253-word one needs a rerun at gate level and on the KV260 before those results apply to it |
+| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 254 of 256 words; full speed at exactly 48 MHz | The current configuration-rejection fix is model-tested at both speeds and both core counts. Earlier versions have model/RTL and sigrok coverage with the host port idle. The 253-word program from `fault-fixes`, which sees a bus reset starting at any clock of a control read, is verified on the model (that sweep) and in RTL simulation only. The gate-level receipts (SDF, both speeds) and the KV260 runs at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator and against Linux, used the 246-word firmware from before it: the current 254-word one needs a rerun at gate level and on the KV260 before those results apply to it |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender; KV260: generator frames (sync and 45.93 MHz clock) and from eth10_tx |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model; KV260 at 50 MHz (CLKDIV 1.25), sampled every clock |
 | `eth10_tx_cs` | `eth10_tx` plus **carrier sense**: holds a frame until RXP has been quiet for 96 bit times, decided on the core, so the chip doesn't transmit into an arriving frame ([docs/eth10-network.md](docs/eth10-network.md)) | half duplex, no collision handling | model; RTL; gate level (fo6, functional) |
@@ -356,12 +364,13 @@ the bugs this found: [docs/verification.md](docs/verification.md).
 python3 -m venv .venv && .venv/bin/pip install -r test/requirements.txt
 export PATH=$HOME/tools/oss-cad-suite/bin:$PWD/.venv/bin:$PATH   # iverilog, yosys, sby
 cd test && make                                                  # top level through the SPI port
-LOCKSTEP_SEEDS=200 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 make TB=chip   # lockstep, tapeout config
-cd .. && PYTHONPATH=tools .venv/bin/python -m pytest test/model  # firmware on the model
+LOCKSTEP_SEEDS=200 PE_NCORES=3 PE_NBANKS=3 PE_FIFO_LOG2=3 make TB=chip   # current target
+LOCKSTEP_SEEDS=200 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 make TB=chip SIM_BUILD=sim_build/lockstep2   # fallback
+cd .. && PYTHONPATH=tools .venv/bin/python -m pytest test/model --ignore=test/model/test_swd.py  # firmware on the model
 make -C formal                                                   # proofs
 ```
 
-## Physical design (IHP SG13CMOS5L, 6x4 tiles)
+## Historical physical design (IHP SG13CMOS5L, 6x4 run fo6)
 
 * 2 cores, 2 × 256x32 SRAM macros (bottom corners, pins facing the logic),
   8-deep FIFOs, the line unit and the quad host port.
@@ -386,8 +395,8 @@ make -C formal                                                   # proofs
   typ, slow and fast at the claimed clocks, with an overclocked control that
   must fail; autonomous full-speed USB enumeration runs on it with real
   delays. (These receipts ran software `5457d8e`, with the firmware of that
-  time; `uart_rx`, `i2c_master`, `can_rx` and the 253-word `usb_enum` changed
-  by `fault-fixes` need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
+  time; `uart_rx`, `i2c_master`, `can_rx` and the current 254-word `usb_enum`,
+  with subsequent fault/configuration fixes, need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,
   hash-bound receipt). With SDF at the typical corner all 16 pass
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)), and at the
@@ -408,10 +417,11 @@ make -C formal                                                   # proofs
   are adapted from it, as each file's header says.
 * Routing is the constraint: one horizontal layer (Metal3) at ≈ 64 %. Global
   routing's reserve for detailed routing (`GRT_ADJUSTMENT` 0.10) was what made
-  the current RTL routable ([docs/physical.md](docs/physical.md)).
+  the historical v0.2 RTL routable ([docs/physical.md](docs/physical.md)).
 * [External review](docs/review.md): the bugs an independent review found and
   how they were fixed and tested. `flow/gen_config.py --check` verifies that
-  `src/config.json` is the generator's (fo6's settings).
+  `src/config.json` matches the generator's current submission settings;
+  that consistency check does not establish physical closure.
 * [Optional board transport](docs/board-transport.md): RP2350 PIO/DMA quad
   SPI; board throughput and sampling margin remain unmeasured.
 * [Ethernet receive bench](docs/eth10-receiver.md): a bounded capture service

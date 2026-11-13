@@ -69,8 +69,8 @@ The RTL `pe_chip` and the model run side by side in cocotb:
 The first mismatch stops the run with a register diff, recent bus traffic and
 the disassembly of every core's current instruction. Coverage counters (per
 opcode: attempted, completed, stalled) are printed. The regression runs on the
-tapeout configuration (2 cores, 2 SRAM banks, 8-deep FIFOs) and on the full
-4-core flop build.
+8x4 target (3 cores, 3 SRAM banks, 8-deep FIFOs), its 2-core SRAM fallback,
+and the full 4-core flop build.
 
 **CALL / RET**: random programs contain CALLs (conditions and targets as
 JMP), RETs, and MOVs to and from LR, with coverage goals for a taken CALL, a
@@ -125,9 +125,13 @@ lost when pushed 210 clocks into the read).
   margins. Covers reach each case; planted RTL bugs are caught
   (`make -C formal hostport_mutants`).
 * **`pe_core`**, with a completely unconstrained instruction stream, pins,
-  flags and host:
+  flags and host, at core indices 0, 1 and 2 and FIFO depths 4 and 8
+  (`make -C formal` includes all six configurations):
   * no side effects (pins, flags, FIFOs) unless executing on a tick;
   * none while disabled or restarting;
+  * the line-unit handshake uses room/valid, and disabled, restarting or
+    nonzero-index cores never push or consume line data (the harness
+    discharges these assumptions of the separate line-unit proof);
   * halted/fault are sticky until restart;
   * the PC changes only on a completed instruction, a restart or a host write;
   * a disabled core's state is frozen;
@@ -143,6 +147,10 @@ lost when pushed 210 clocks into the read).
   induction. For any legal RX period (P ≥ 4) the NRZ/NRZI sample counter's
   load after a transition (P/2 − 1, or P/2 − 2 with the half-cycle sample
   point) doesn't wrap.
+
+The two line-handshake mutants in `formal/core_mutants.sh` remove the
+execution gate from a push or a take; the core-0 depth-8 task must reject
+each with a formal counterexample.
 
 These are safety properties of the pieces. Functional equivalence of the
 whole core is covered by lockstep, not by formal.
@@ -361,7 +369,7 @@ fo6 passes all of it (test_usb_fs_device with `usb_fs_dev` before the got_in
 guard of 2026-11-04; not re-run at gate level with it), and the release adds the autonomous USB enumeration
 tests (low and full speed) with SDF at all three corners (receipts for
 software `5457d8e`, with the 246-word `usb_enum` before `fault-fixes`; the
-253-word one needs a gate-level rerun). Historically v2c
+current 254-word one needs a gate-level rerun). Historically v2c
 passed the older version of this set (typ 20 ns, slow 23 ns, and full-speed
 USB at slow/48 MHz, which its STA didn't meet). `v2long` runs the full-length
 test_la_capture_rate and test_reverse_engineering (v2c: pass at typ and slow, ~50 minutes each). Under SDF the
@@ -415,3 +423,11 @@ candidate, run fo6, passes 29/29 and meets 50 MHz at every corner (§5).
 | WS2812 firmware | a 0 bit was 2 ticks high, not the header's 3: 240-260 ns at 50 MHz, outside WS2812B's T0H window | the KV260 run script's model pass at 50 MHz, before the board; `test_ws2812_bit_timing_is_the_documented_one` |
 | CAN RX firmware | a stuff bit after a CRC ending in five equal bits was not skipped, so the ACK came a bit early (about one random frame in 31; the model tests' frames avoided it) | the KV260 run script's model pass on a generator frame, before the board; three tests in `test_can.py` |
 | assembler | `/` truncated each half of a split delay, so bidirectional DShot ran a clock short per level at 50 MHz | the KV260 board (pins captured by `la_capture`), then the cycle model; `/` is now integer division |
+
+### Additional firmware in the RTL regression
+
+The test workflow runs `test_blind`, `test_rmii_rtl`, `test_eth_stack_rtl`
+and `test_eth_reply_rtl` on the 3-core SRAM build. Each module gets a separate
+results file and `check_results.py` requires every declared case to pass.
+These were previously manual suites. This is functional simulation through
+the host port and pins; sigrok checks still require a separate installation.

@@ -379,11 +379,12 @@ clamp:                             ; bytes left = min(length, wLength)
 set_addr:                          ; r2 = the address, bit-reversed (its filter
     flag set F_ADDR                ; is computed while the status stage's
     jmp done                       ; zero-length packet goes out)
-set_cfg:                           ; wValue 0 or 1
+set_cfg:                           ; validate wValue before changing configuration or toggles
+    mov r0, r2                     ; r2 = rev16(wValue); 0 and 0x8000 are valid
+    shl r0, 1
+    jmp !z, stall                  ; a rejected request leaves the active configuration intact
     flag clr F_CFG
     jmp !r2, cfg_ok
-    shl r2, 1                      ; rev16(1) = 0x8000: 0 after the shift
-    jmp !z, stall
     flag set F_CFG
 cfg_ok:
     ldi r2, dev                    ; status stage: zero-length DATA1
