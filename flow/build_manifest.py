@@ -9,9 +9,10 @@ A manifest binds what a Tiny Tapeout build of the design reads, by SHA-256:
 the settings and sources under src/ (the generated config.json and the
 project.v defines as the run used them, the SDCs, the PDN and corner Tcl, the
 RTL and the macro models), info.yaml's build keys (tiles, top module, source
-files, language, clock; not the datasheet text), the generator (flow/gen_config.py), the
-LibreLane plugin and the flow scripts it executes (each script the plugin
-names, and the Tcl those source), and the tools: the tt-support-tools tree (tt/, as flow/harden.sh copies it in;
+files, language, clock; not the datasheet text), the generator
+(flow/gen_config.py: recorded, but a difference is only noted, since no build
+runs it), the LibreLane plugin and the flow scripts it executes (each script
+the plugin joins to HERE or names, and the Tcl those source), and the tools: the tt-support-tools tree (tt/, as flow/harden.sh copies it in;
 its git commit when tt/.git is there), the LibreLane version (a run's
 resolved.json) and the PDK's SOURCES line. A run's manifest also binds its
 final netlist and its GDS with the BGNLIB/BGNSTR timestamps zeroed, the
@@ -30,6 +31,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 SCHEMA = 1
@@ -39,6 +41,8 @@ BUILD_INPUT_GLOBS = (PLUGIN, "flow/gen_config.py", "src/**/*")
 INFO = "info.yaml"
 INFO_BUILD_KEYS = ("language", "clock_hz", "tiles", "top_module", "source_files", "analog_pins", "uses_3v3")
 PLUGIN_SCRIPT_RE = r'os\.path\.join\(HERE, "([^"]+)"\)'
+PLUGIN_NAMED_RE = r"\b([A-Za-z0-9_]+\.(?:tcl|py))\b"
+GENERATOR = "flow/gen_config.py"
 TCL_SOURCE_RE = r"^\s*source \[file join \[file dirname \[info script\]\] (\S+)\]"
 # written by tt_tool.py --create-user-config from config.json and info.yaml at build time
 GENERATED = {"src/user_config.json", "src/config_merged.json"}
@@ -62,7 +66,10 @@ def executed_scripts(root):
     so that the comparison reports it."""
     root = Path(root)
     plugin = root / PLUGIN
-    todo = re.findall(PLUGIN_SCRIPT_RE, plugin.read_text()) if plugin.is_file() else []
+    text = plugin.read_text() if plugin.is_file() else ""
+    todo = re.findall(PLUGIN_SCRIPT_RE, text)
+    # a script the plugin names any other way: any flow/ file named in it
+    todo += [name for name in re.findall(PLUGIN_NAMED_RE, text) if (root / "flow" / name).is_file()]
     seen = set()
     while todo:
         name = todo.pop()
@@ -221,6 +228,18 @@ def load(path):
     raise ValueError(f"{path}: no run, checkout or manifest")
 
 
+def generator_check(root):
+    """(returncode, output) of the checkout's own `flow/gen_config.py --preset
+    submission --check`, as CI runs it: its committed config.json must be the
+    generator's submission preset."""
+    root = Path(root)
+    if not (root / GENERATOR).is_file():
+        return 2, f"{root}: no {GENERATOR}"
+    r = subprocess.run([sys.executable, str(root / GENERATOR), "--preset", "submission", "--check"],
+                       cwd=root, capture_output=True, text=True)
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
 def compare(a, b, *, require_tools=False, names=("run", "shipping")):
     """(failures, notes) between two manifests. Build inputs must be equal. The
     tools and outputs are compared where both sides record them; a missing side
@@ -231,6 +250,9 @@ def compare(a, b, *, require_tools=False, names=("run", "shipping")):
         if fa.get(path) != fb.get(path):
             what = (f"only in the {names[0]}" if path not in fb else f"only in the {names[1]}" if path not in fa
                     else "differs")
+            if path == GENERATOR:      # recorded; the build reads config.json, which is bound
+                notes.append(f"{path} {what} (the generator, not read by the build)")
+                continue
             kind = "signoff STA only" if path in SIGNOFF_ONLY else "layout input"
             failures.append(f"build input {path} {what} ({kind})")
     for section in ("tools", "outputs"):

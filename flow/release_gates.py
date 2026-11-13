@@ -10,8 +10,10 @@ listed here, each with its reason, and none of them excuses a violation.
 * Clock and reset checks: the run's own gating_pulse_reset.rpt (src/timing_checks.tcl,
   violators only; read from each corner's sta.log, a candidate file) must be
   present and clean, and a checks receipt (flow/check_rerun.py) must show, at
-  every corner, a met worst check of minimum pulse width (every SRAM clock pin
-  included), recovery and removal, and no violator of any kind.
+  every corner, a met worst check of minimum pulse width, a pulse width check
+  on every register clock pin of every clock and on every SRAM clock pin, met
+  recovery and removal checks, and no violator of any kind; each report's
+  corner header must be its directory's.
 * ExtendPowerStripes: its log (flow/odb_stripes.py) must have finished both
   nets, give every SRAM power stripes in each of its three regions, and print
   no warning or error beyond the listed exceptions.
@@ -115,6 +117,21 @@ def pin_blocks(text):
     return {k: "\n".join(v) for k, v in blocks.items()}
 
 
+PULSE_ROW_RE = re.compile(r"^(\S+) \((?:high|low)\)\s+-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+ \((?:MET|VIOLATED)\)", re.M)
+
+
+def clock_register_pins(text):
+    """{clock: [register clock pins]} from pulse_checks.tcl's 'clock register pins'."""
+    out, clock = {}, None
+    for line in text.splitlines():
+        if line.startswith("clock "):
+            clock = line.split()[1]
+            out[clock] = []
+        elif line.strip() and clock is not None:
+            out[clock].append(line.strip())
+    return out
+
+
 def check_reports(checks_dir, corner):
     d = Path(checks_dir)
     return {name: (d / name / "sta" / corner / receipts.CHECK_REPORTS[name]).read_text(errors="replace")
@@ -144,6 +161,27 @@ def timing_check_failures(worktree, checks_dir):
     for corner in receipts.CORNERS:
         reports = check_reports(checks_dir, corner)
         signoff, pulse = sections(reports["signoff"]), sections(reports["pulse"])
+        for name, found in (("signoff", signoff), ("pulse", pulse)):
+            if f"corner {corner}" not in found:
+                failures.append(f"{corner}: the {name} pass's report is not this corner's")
+        # every register clock pin of every clock has a pulse width check: a
+        # partial loss of checks (an exception's -from clock) shows here
+        registers = clock_register_pins(pulse.get("clock register pins", ""))
+        table = pulse.get("all pulse width checks")
+        if not registers or table is None:
+            failures.append(f"{corner}: the pulse pass's report lists no clock register pins or no pulse width checks")
+        else:
+            checked = set(PULSE_ROW_RE.findall(table))
+            if violated(table):
+                failures.append(f"{corner}: pulse width violated: {violated(table)[:5]}")
+            for clock, clock_pins in sorted(registers.items()):
+                unchecked = [pin for pin in clock_pins if pin not in checked]
+                if unchecked:
+                    failures.append(f"{corner}: clock {clock}: {len(unchecked)} of {len(clock_pins)} register clock pins "
+                                    f"have no pulse width check (first: {unchecked[0]})")
+                else:
+                    notes.append(f"{corner}: clock {clock}: all {len(clock_pins)} register clock pins have a pulse "
+                                 "width check")
         for kind in CHECK_KINDS:
             source = pulse if kind == "min_pulse_width" else signoff
             pass_name = "pulse" if kind == "min_pulse_width" else "signoff"

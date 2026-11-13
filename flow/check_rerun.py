@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """Clock, reset and pulse-width check evidence for a finished run, with a receipt.
 
-    flow/check_rerun.py RUN_WORKTREE [--out-parent DIR] [--image IMAGE]
+    flow/check_rerun.py RUN_WORKTREE [--out-parent DIR] [--image IMAGE] [--cpus N]
 
 Re-runs the run's own LibreLane OpenROAD.STAPostPNR step (its step config and
 input state: final netlist, extracted SPEF, all three corners) twice, in the
 LibreLane image the run used, by the image's ID, with the run mounted
-read-only and no network. Only the report Tcl changes, plus one SDC edit in the
-second pass:
+read-only and no network (--cpus N limits each container on a shared runner).
+Only the report Tcl changes, plus one SDC change in the second pass:
 
 * signoff: the run's signoff SDC; flow/check_types.tcl reports the worst check
   and every violator of minimum pulse width, minimum period, recovery,
   removal and clock-gating setup/hold.
-* pulse: the signoff SDC without its exceptions between two different clocks
-  (set_max_delay / set_false_path ... -from [get_clocks A] -to [get_clocks B]);
-  flow/pulse_checks.tcl reports the worst minimum pulse width check, every
-  violator and each SRAM clock pin's checks. With exceptions both ways between
-  two clocks, OpenSTA 2.7.0 (LibreLane 3.1.0.dev3) reports no pulse width
-  check at all, violated or not (docs/release-evidence.md). Pulse widths
-  depend on the clock network alone, which those data-path exceptions do not
-  touch; this pass's other results are not used.
+* pulse: the signoff SDC after a preamble that makes every path-exception
+  command (set_max_delay, set_min_delay, set_false_path, set_multicycle_path)
+  a no-op; flow/pulse_checks.tcl reports the worst minimum pulse width check,
+  every violator, each SRAM clock pin's checks, each clock's register clock
+  pins and every pulse width check. OpenSTA 2.7.0 (LibreLane 3.1.0.dev3)
+  reports no pulse width check on the pins a min/max-type exception's -from
+  clock drives (with one each way between two clocks, none at all), violated
+  or not (docs/release-evidence.md). Pulse widths depend on the clock network
+  alone, which no path exception touches; this pass's other results are not
+  used.
 
 The image must be local and hold the run's LibreLane version (as for
 flow/sta_rerun.py). The output goes to a fresh test/sim_build/checks.XXXXXX
@@ -52,6 +54,7 @@ def main(argv=None):
     ap.add_argument("--out-parent", default=str(FLOW.parent / "test/sim_build"),
                     help="where the fresh checks.XXXXXX output directory is made")
     ap.add_argument("--image", help="LibreLane image (default: the one named by the step's LibreLane version)")
+    ap.add_argument("--cpus", type=float, help="docker --cpus limit for the STA containers (a shared runner)")
     a = ap.parse_args(argv)
     wt = Path(a.worktree).resolve()
     step = receipts.sta_step(wt)
@@ -80,7 +83,7 @@ def main(argv=None):
     out = Path(tempfile.mkdtemp(prefix="checks.", dir=a.out_parent)).resolve()
     print(f"checks outputs {out}", flush=True)
     for line in removed:
-        print(f"pulse pass drops: {line}")
+        print(f"pulse pass disables: {line}")
     plan = dict(step=step.name, image=image, image_id=image_id, librelane_version=image_version,
                 tcl={name: receipts.digest(FLOW / tcl) for name, tcl in receipts.CHECK_PASSES.items()},
                 sdc_removed=removed)
@@ -97,7 +100,8 @@ def main(argv=None):
         if name == "pulse":
             (d / "pulse.sdc").write_text(pulse_text)
         receipts.write_new(d / "config.json", expected[name])
-        cmd = ["docker", "run", "--rm", "--network", "none", "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
+        limit = ["--cpus", f"{a.cpus:g}"] if a.cpus else []
+        cmd = ["docker", "run", "--rm", "--network", "none", *limit, "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
                "-v", f"{base}:{base}:ro", "-v", f"{pdk}:{pdk}:ro", "-v", f"{out}:{out}", "-w", str(d), image_id,
                "python3", "-m", "librelane.steps", "run", "--id", STEP_ID, "-c", str(d / "config.json"),
                "-i", str(base / "runs/wokwi" / step.name / "state_in.json"),

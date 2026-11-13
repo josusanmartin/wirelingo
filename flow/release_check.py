@@ -168,8 +168,13 @@ def main(argv=None):
         if a.checks_receipt:
             data = receipts.verify(a.checks_receipt, wt, "checks")
             checks_dir = Path(a.checks_receipt).parent
-            print(f"checks receipt verified: {a.checks_receipt} (image {data['plan']['image_id']}; pulse pass "
-                  f"drops {len(data['plan']['sdc_removed'])} clock-to-clock SDC exceptions)")
+            print(f"checks receipt verified: {a.checks_receipt} (image {data['plan']['image_id']}; the pulse pass "
+                  f"disabled the path exceptions of {len(data['plan']['sdc_removed'])} SDC lines)")
+            # the report Tcl that ran must be this checkout's: an older receipt's reports may lack a section
+            stale = [name for name, tcl in receipts.CHECK_PASSES.items()
+                     if data["plan"]["tcl"].get(name) != receipts.digest(Path(__file__).resolve().parent / tcl)]
+            if stale:
+                failures.append(f"checks receipt ran other report Tcl than this checkout's flow/: {stale}")
             skipped += data["skipped"]
             for check in data["skipped"]:
                 print(f"checks receipt, SKIPPED: {check}")
@@ -219,6 +224,12 @@ def main(argv=None):
             failures += [f"shipping build: {p}" for p in problems]
             if not problems:
                 print(f"shipping build: the run's build inputs equal {a.shipping_root}'s")
+            # what CI checks: the commit's config.json is its generator's submission preset
+            rc, said = build_manifest.generator_check(a.shipping_root)
+            print(f"shipping build: gen_config.py --preset submission --check: {said} (rc {rc})")
+            if rc != 0:
+                failures.append(f"shipping build: the checkout's gen_config.py --preset submission --check fails "
+                                f"(rc {rc}), as CI's would: {said}")
         except (*EVIDENCE_ERRORS, AttributeError) as e:
             failures.append(f"invalid shipping build evidence: {e}")
     else:

@@ -38,15 +38,23 @@ SKIPPED_VERDICT = "STA RECEIPT CHECKS SKIPPED"
 # keeps neither the final DEF nor the step logs); refused the same way
 GATES_SKIPPED_VERDICT = "RELEASE GATES SKIPPED"
 # The clock/reset check STA (flow/check_rerun.py): two passes of the run's own
-# STA step, each with a report Tcl. "pulse" drops the signoff SDC's
-# clock-to-clock exceptions: with exceptions both ways between two clocks,
-# OpenSTA 2.7.0 (LibreLane 3.1.0.dev3) reports no minimum pulse width check at
-# all, while pulse widths depend on the clock network alone.
+# STA step, each with a report Tcl. In "pulse" no path exception exists:
+# OpenSTA 2.7.0 (LibreLane 3.1.0.dev3) reports no minimum pulse width check on
+# any pin a min/max-type exception's -from clock drives (one each way between
+# two clocks removes them all), while pulse widths depend on the clock network
+# alone, which no path exception touches.
 CHECK_PASSES = {"signoff": "check_types.tcl", "pulse": "pulse_checks.tcl"}
 CHECK_REPORTS = {"signoff": "check_types.rpt", "pulse": "pulse_checks.rpt"}
 CHECK_REPORT_END = "== end of checks"
-XCLK_EXCEPTION_RE = (r"set_(?:max_delay|min_delay|false_path|multicycle_path)\b.*"
-                     r"-from \[get_clocks \{?(\S+?)\}?\] -to \[get_clocks \{?(\S+?)\}?\]\s*")
+PATH_EXCEPTIONS = ("set_max_delay", "set_min_delay", "set_false_path", "set_multicycle_path")
+PATH_EXCEPTION_RE = r"\b(?:" + "|".join(PATH_EXCEPTIONS) + r")\b"
+PULSE_SDC_PREAMBLE = (
+    "# flow/check_rerun.py, pulse pass: every path-exception command is a no-op here\n"
+    "# (pulse widths depend on none; OpenSTA 2.7.0 drops the pulse width checks of\n"
+    "# the pins an exception's -from clock drives). The run's signoff SDC follows.\n"
+    f"foreach protoemu_pulse_cmd {{{' '.join(PATH_EXCEPTIONS)}}} {{\n"
+    "    proc $protoemu_pulse_cmd {args} {}\n"
+    "}\n")
 
 
 def runner_files(root):
@@ -169,16 +177,13 @@ def sta_recheck(worktree, data, out, *, allow_absent=False):
 
 
 def pulse_sdc(text):
-    """The signoff SDC without its exceptions between two different clocks, and
-    the lines removed (the pulse-width pass of flow/check_rerun.py)."""
-    kept, removed = [], []
-    for line in text.splitlines(True):
-        m = re.fullmatch(XCLK_EXCEPTION_RE, line.rstrip("\n"))
-        if m and m[1] != m[2]:
-            removed.append(line.rstrip("\n"))
-        else:
-            kept.append(line)
-    return "".join(kept), removed
+    """The pulse-width pass's SDC (flow/check_rerun.py): the run's signoff SDC
+    unchanged, after a preamble that makes every path-exception command a
+    no-op, so no exception exists in whatever form or Tcl construct it is
+    written; and, for the record, the SDC's lines that name one."""
+    named = [line.rstrip("\n") for line in text.splitlines()
+             if re.search(PATH_EXCEPTION_RE, line) and not line.lstrip().startswith("#")]
+    return PULSE_SDC_PREAMBLE + text, named
 
 
 def check_configs(worktree, out):
@@ -215,7 +220,7 @@ def checks_recheck(worktree, data, out, *, allow_absent=False):
         raise ValueError(f"the run's signoff SDC differs from the receipt's: {sdc[0]}")
     text, removed = pulse_sdc((wt / sdc[0]).read_text())
     if removed != plan["sdc_removed"] or (Path(out) / "pulse/pulse.sdc").read_text() != text:
-        raise ValueError("the pulse pass's SDC is not the run's signoff SDC without its clock-to-clock exceptions")
+        raise ValueError("the pulse pass's SDC is not the run's signoff SDC with its path exceptions disabled")
     archive = not any(os.path.lexists(step / n) for n in ("state_in.json", "config.json"))
     if allow_absent and archive:
         present = [n for n in recorded if os.path.lexists(wt / n)]
