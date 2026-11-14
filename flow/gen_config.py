@@ -10,7 +10,9 @@ Experimental overrides must be named and recorded separately from submission.
 """
 import argparse
 import collections
+import glob
 import json
+import os
 import pathlib
 import re
 import sys
@@ -42,6 +44,49 @@ TUNED = {
 # (a shipping commit sets PE_NCORES 2 and regenerates src/config.json). 6x4
 # and the 3-core 8x4 build keep the plain defaults.
 SUBMISSION_TUNED = {("8x4", 2): "fallback-8x4"}
+
+
+def paths_outside_repo(config, root=ROOT):
+    """The config's path-like strings that are absolute or resolve outside the
+    repository: dir:: / refg:: ($DESIGN_DIR) values relative to src/, and
+    prefix-less strings with a "/" that start with ./ or ../ or end in a file
+    extension. PDK paths (pdk_dir::) are allowed. The same rule as
+    flow/build_manifest.py's config_paths (097 finding 2)."""
+    src = os.path.join(str(root), "src")
+    real_root = os.path.realpath(root)
+    found = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if not str(k).startswith("//"):
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+        elif isinstance(v, str):
+            if v.startswith("pdk_dir::"):
+                return
+            if v.startswith("dir::"):
+                rel = v[len("dir::"):]
+            elif v.startswith("refg::"):
+                rel = v[len("refg::"):].replace("$DESIGN_DIR", src)
+            elif v.startswith("/") or ("/" in v and not re.search(r"\s", v)
+                                        and (v.startswith(("./", "../")) or re.search(r"\.[A-Za-z0-9]+$", v))):
+                rel = v
+            else:
+                return
+            if os.path.isabs(rel) and not (v.startswith("refg::") and "$DESIGN_DIR" in v):
+                found.append(v)
+                return
+            pattern = os.path.normpath(os.path.join(src, rel))
+            for m in (glob.glob(pattern) if glob.has_magic(rel) else []) or [pattern]:
+                real = os.path.realpath(m)
+                if os.path.commonpath([real_root, real]) != real_root:
+                    found.append(v)
+                    return
+    walk({k: v for k, v in config.items() if not k.startswith("//")})
+    return found
 
 
 def expand_tuned(argv):
@@ -485,6 +530,9 @@ def main():
     for item in a.set:
         key, value = item.split("=", 1)
         c[key] = json.loads(value)
+    outside = paths_outside_repo(c)
+    if outside:
+        ap.error(f"config paths absolute or outside the repository (the build manifest would not bind them): {outside}")
     rendered = json.dumps(c, indent=2) + "\n"
     if a.check:
         if not a.output.exists() or a.output.read_text() != rendered:

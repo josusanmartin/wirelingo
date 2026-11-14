@@ -28,8 +28,10 @@ firmware on a pinned netlist (--validation-root) stays a separate operation.
 reproduction build's) also compares the tools, the netlist and the GDS.
 """
 import argparse
+import glob
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -83,33 +85,71 @@ def executed_scripts(root):
     return sorted(f"flow/{name}" for name in seen)
 
 
-CONFIG_FLOW_RE = r"(?:^|::|/)(?:\.\./)?flow/([A-Za-z0-9_][A-Za-z0-9_./-]*)$"
+# PDK paths are tool inputs (the PDK's SOURCES line is recorded under tools)
+ALLOWED_OUTSIDE_PREFIXES = ("pdk_dir::",)
 
 
-def config_flow_files(root):
-    """flow/ files that src/config.json names (e.g. PNR_SDC_FILE
-    "dir::../flow/protoemu_pnr_transition.sdc"), which LibreLane reads although
-    the plugin does not name them (096 finding 4). A missing one is still named."""
-    path = Path(root) / "src/config.json"
-    try:
-        config = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return []
-    found = set()
+def config_path_strings(config):
+    """The path-like strings of a LibreLane config: dir:: and refg:: values,
+    absolute paths, and other strings with a "/" and no whitespace. Comment keys
+    ("//...") are skipped."""
+    out = []
 
     def walk(v):
         if isinstance(v, dict):
-            for x in v.values():
-                walk(x)
+            for k, x in v.items():
+                if not str(k).startswith("//"):
+                    walk(x)
         elif isinstance(v, list):
             for x in v:
                 walk(x)
-        elif isinstance(v, str):
-            m = re.search(CONFIG_FLOW_RE, v)
-            if m and ".." not in m.group(1).split("/"):
-                found.add(f"flow/{m.group(1)}")
+        elif isinstance(v, str) and (v.startswith(("dir::", "refg::", "/", "pdk_dir::"))
+                                     or ("/" in v and not re.search(r"\s", v)
+                                         and (v.startswith(("./", "../")) or re.search(r"\.[A-Za-z0-9]+$", v)))):
+            # a prefix-less string is a path when it starts with ./ or ../ or ends in a
+            # file extension; "cell/pin" values such as DIODE_CELL are not paths
+            out.append(v)
     walk(config)
-    return sorted(found)
+    return out
+
+
+def config_paths(root):
+    """(bound, refused) for src/config.json's path-like strings, resolved as
+    LibreLane does: dir:: and refg:: ($DESIGN_DIR) relative to src/, the path
+    normalized, globs expanded and symlinks followed. bound maps each file
+    inside the worktree to its digest ("missing" when nothing exists there);
+    refused lists the strings that are absolute or resolve outside the
+    worktree, except PDK paths (096 finding 4, 097 finding 2)."""
+    root = Path(root)
+    try:
+        config = json.loads((root / "src/config.json").read_text())
+    except (OSError, ValueError):
+        return {}, []
+    real_root = os.path.realpath(root)
+    src = os.path.join(str(root), "src")
+    bound, refused = {}, []
+    for s in config_path_strings(config):
+        if s.startswith(ALLOWED_OUTSIDE_PREFIXES):
+            continue
+        if s.startswith("dir::"):
+            rel = s[len("dir::"):]
+        elif s.startswith("refg::"):
+            rel = s[len("refg::"):].replace("$DESIGN_DIR", src)
+        else:
+            rel = s
+        if os.path.isabs(rel) and not (s.startswith("refg::") and "$DESIGN_DIR" in s):
+            refused.append(s)
+            continue
+        pattern = os.path.normpath(os.path.join(src, rel))
+        matches = sorted(glob.glob(pattern)) if glob.has_magic(rel) else [pattern]
+        for m in matches or [pattern]:
+            real = os.path.realpath(m)
+            if os.path.commonpath([real_root, real]) != real_root:
+                refused.append(s)
+                continue
+            key = os.path.relpath(real, real_root)
+            bound[key] = digest(real) if os.path.isfile(real) else ("directory" if os.path.isdir(real) else "missing")
+    return dict(sorted(bound.items())), sorted(set(refused))
 
 
 def build_inputs(root):
@@ -121,8 +161,10 @@ def build_inputs(root):
             if p.is_file() and str(rel) not in GENERATED and not SKIP_PARTS.intersection(rel.parts) \
                     and p.suffix != ".pyc":
                 files[str(rel)] = digest(p)
-    for name in executed_scripts(root) + config_flow_files(root):
+    for name in executed_scripts(root):
         files[name] = digest(root / name) if (root / name).is_file() else "missing"
+    for name, value in config_paths(root)[0].items():
+        files.setdefault(name, value)
     if (root / INFO).is_file():
         text = info_build_keys((root / INFO).read_text())
         files[f"{INFO} ({', '.join(INFO_BUILD_KEYS)})"] = hashlib.sha256(text.encode()).hexdigest()
@@ -220,11 +262,20 @@ def run_manifest(worktree):
     wt = Path(worktree)
     run = wt / "runs/wokwi"
     resolved = json.loads((run / "resolved.json").read_text())
-    return dict(schema=SCHEMA, kind="run", files=build_inputs(wt),
-                tools=tools_of(wt, resolved.get("meta", {}).get("librelane_version"), pdk_sources(resolved)),
-                outputs=dict(netlist=digest(one((run / "final/nl").glob("*.nl.v"), "final netlist")),
-                             gds_normalized=normalized_gds_digest(one((run / "final/gds").glob("*.gds"),
-                                                                      "final GDS"))))
+    return with_refused(wt, dict(
+        schema=SCHEMA, kind="run", files=build_inputs(wt),
+        tools=tools_of(wt, resolved.get("meta", {}).get("librelane_version"), pdk_sources(resolved)),
+        outputs=dict(netlist=digest(one((run / "final/nl").glob("*.nl.v"), "final netlist")),
+                     gds_normalized=normalized_gds_digest(one((run / "final/gds").glob("*.gds"), "final GDS")))))
+
+
+def with_refused(root, manifest):
+    """Adds "refused" (config paths outside the worktree) only when there are any,
+    so a manifest without them is unchanged."""
+    refused = config_paths(root)[1]
+    if refused:
+        manifest["refused"] = refused
+    return manifest
 
 
 def venv_librelane(root):
@@ -240,8 +291,8 @@ def checkout_manifest(root):
     .venv-flow LibreLane when present (flow/harden.sh builds with both)."""
     if not (Path(root) / "src").is_dir():
         raise ValueError(f"{root}: not a checkout (no src/)")
-    return dict(schema=SCHEMA, kind="checkout", files=build_inputs(root),
-                tools=tools_of(root, venv_librelane(root)), outputs={})
+    return with_refused(root, dict(schema=SCHEMA, kind="checkout", files=build_inputs(root),
+                                   tools=tools_of(root, venv_librelane(root)), outputs={}))
 
 
 def load(path):
@@ -275,6 +326,10 @@ def compare(a, b, *, require_tools=False, names=("run", "shipping")):
     tools and outputs are compared where both sides record them; a missing side
     is a failure only with require_tools."""
     failures, notes = [], []
+    for m, name in ((a, names[0]), (b, names[1])):
+        for s in m.get("refused", []):
+            failures.append(f"{name}: src/config.json names {s!r}, which is absolute or outside the worktree "
+                            "(refused: the build would read a file no manifest binds)")
     fa, fb = a["files"], b["files"]
     for path in sorted(set(fa) | set(fb)):
         if fa.get(path) != fb.get(path):

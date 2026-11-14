@@ -63,6 +63,35 @@ def banks(path):
     return {int(k.split("[")[1][0]): (v["location"], v["orientation"]) for k, v in inst.items()}
 
 
+def plugin_tree():
+    import ast
+    return ast.parse((ROOT / "librelane_plugin_protoemu.py").read_text())
+
+
+def plugin_defaults():
+    """{(class, variable): default} for every Variable(...) in a class's config_vars,
+    read from the plugin's syntax tree, not by matching text (097 finding 1)."""
+    import ast
+    from decimal import Decimal
+    out = {}
+    for cls in plugin_tree().body:
+        if not isinstance(cls, ast.ClassDef):
+            continue
+        for stmt in cls.body:
+            if not (isinstance(stmt, ast.Assign) and any(getattr(t, "id", "") == "config_vars" for t in stmt.targets)):
+                continue
+            for call in ast.walk(stmt.value):
+                if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "Variable":
+                    kw = {k.arg: k.value for k in call.keywords}
+                    d = kw.get("default")
+                    if isinstance(d, ast.Call) and getattr(d.func, "id", "") == "Decimal":
+                        value = Decimal(ast.literal_eval(d.args[0]))
+                    else:
+                        value = ast.literal_eval(d) if d is not None else "no default"
+                    out[(cls.name, ast.literal_eval(call.args[0]))] = value
+    return out
+
+
 def test_6x4_info_gives_fo6_config_byte_for_byte(tmp_path):
     r, dst = generate(tmp_path, "--info", str(info_with(tmp_path, "6x4")), cores=2)
     assert r.returncode == 0, r.stderr
@@ -313,10 +342,10 @@ def test_sram_advance_toward_option(tmp_path):
 def test_reg_clock_delay_is_off_unless_asked():
     # a default harden must run the SRAM clock step exactly as before the option existed
     plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
-    assert re.search(r'Variable\("PROTOEMU_SRAM_ADVANCE_TOWARD", float,[^)]*\)?[\s\S]*?default=0\.0\)', plugin)
-    for var, default in (("PROTOEMU_REG_CLOCK_DELAY", "0"), ("PROTOEMU_REG_CLOCK_DELAY_GATES", "-1")):
-        block = plugin[plugin.index(f'Variable("{var}", int,'):]
-        assert re.search(r"default=(-?[0-9]+)\)", block).group(1) == default
+    d = plugin_defaults()
+    assert d[("SramClockAdvanceTcl", "PROTOEMU_SRAM_ADVANCE_TOWARD")] == 0.0
+    assert d[("SramClockAdvanceTcl", "PROTOEMU_REG_CLOCK_DELAY")] == 0
+    assert d[("SramClockAdvanceTcl", "PROTOEMU_REG_CLOCK_DELAY_GATES")] == -1
     step = (ROOT / "flow/sram_clock_advance_step.tcl").read_text()
     assert "[info exists ::env(PROTOEMU_REG_CLOCK_DELAY)] && $::env(PROTOEMU_REG_CLOCK_DELAY) > 0" in step
 
@@ -406,7 +435,7 @@ def test_option_1_address_buffers_second_pass_transition_limit(tmp_path):
     blocks = {m.group(1): m.group(2) for m in re.finditer(r"^class (\w+)\(.*?\):\n((?:(?:    .*)?\n)+)", plugin, re.M)}
     assert re.findall(r"^\s+Steps = \[(.*)\]$", blocks["RepairDesignThenHold2"], re.M) == [
         "LastRepairDesignPostGRT, HoldRepairPostGRT, LastRepairDesignPostGRT, HoldRepairPostGRT"]
-    assert re.search(r'Variable\("PROTOEMU_SRAM_ADDR_BUF8", bool,[\s\S]*?default=False\)', blocks["SramPinBuffersTcl"])
+    assert plugin_defaults()[("SramPinBuffersTcl", "PROTOEMU_SRAM_ADDR_BUF8")] is False
     tcl = (ROOT / "flow/sram_pin_buffers.tcl").read_text()
     assert "[info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]" in tcl and "-buffer_cell sg13cmos5l_buf_8" in tcl
     sdc = [l for l in (ROOT / "flow/protoemu_pnr_transition.sdc").read_text().splitlines() if l and not l.startswith("#")]
@@ -425,21 +454,62 @@ def test_096_option_1_mutants_and_refusals(tmp_path):
     c = json.loads(d.read_text())
     assert c["SIGNOFF_SDC_FILE"] == "dir::protoemu.sdc" and c["STA_EXTRA_CORNER_TCL_FILE"] == "dir::timing_checks.tcl"
     assert [k for k, v in c.items() if isinstance(v, str) and "protoemu_pnr_transition" in v] == ["PNR_SDC_FILE"]
-    # finding 5: LastRepairDesignPostGRT is LibreLane's design repair unless its margins are set
-    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
-    blocks = {m.group(1): m.group(2) for m in re.finditer(r"^class (\w+)\(.*?\):\n((?:(?:    .*)?\n)+)", plugin, re.M)}
-    last = blocks["LastRepairDesignPostGRT"]
-    for var in ("PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT", "PROTOEMU_LAST_REPAIR_MAX_CAP_PCT"):
-        assert re.search(r'Variable\("' + var + r'", Optional\[Decimal\],[\s\S]*?default=None, units="%"\)', last), var
-    assert "if self.config[own] is not None:" in last
-    # finding 5: with the option on, the address net takes the buf_8 branch, which
-    # ends in continue before the old _1 -> _2 exemption
+    # finding 5 (097 finding 1): LastRepairDesignPostGRT is LibreLane's design repair
+    # unless its margins are set: both default to None, and prepare_env overrides
+    # exactly those two of LibreLane's variables, nothing else
+    import ast
+    d = plugin_defaults()
+    assert d[("LastRepairDesignPostGRT", "PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT")] is None
+    assert d[("LastRepairDesignPostGRT", "PROTOEMU_LAST_REPAIR_MAX_CAP_PCT")] is None
+    cls = next(n for n in plugin_tree().body if isinstance(n, ast.ClassDef) and n.name == "LastRepairDesignPostGRT")
+    env = next(f for f in cls.body if isinstance(f, ast.FunctionDef) and f.name == "prepare_env")
+    loop = next(n for n in ast.walk(env) if isinstance(n, ast.For))
+    assert ast.literal_eval(loop.iter) == (("PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT", "GRT_DESIGN_REPAIR_MAX_SLEW_PCT"),
+                                           ("PROTOEMU_LAST_REPAIR_MAX_CAP_PCT", "GRT_DESIGN_REPAIR_MAX_CAP_PCT"))
+    writes = [n for n in ast.walk(env) if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Subscript)]
+    assert [ast.unparse(n) for n in writes] == ["env[base] = str(self.config[own])"]
+    guard = next(n for n in ast.walk(loop) if isinstance(n, ast.If))
+    assert ast.unparse(guard.test) == "self.config[own] is not None"
+    # finding 5 (097 finding 1): the opt-in address branch, line for line (comments
+    # aside): its condition, the buffer-driver sizing, the buf_8 at the driver with
+    # the pin and its diode as loads, and continue before the old _1 -> _2 swap
     tcl = (ROOT / "flow/sram_pin_buffers.tcl").read_text()
-    start = tcl.index("if {[string match A_ADDR* $m] && [info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]")
-    old = tcl.index("if {[string match A_ADDR* $m]} {", start)
-    branch = tcl[start:old]
-    assert "$::env(PROTOEMU_SRAM_ADDR_BUF8) in {1 true True}" in branch
-    assert "replace_cell $cell [lindex [get_lib_cells */sg13cmos5l_buf_8] 0]" in branch
-    assert "insert_buffer -buffer_cell sg13cmos5l_buf_8 -load_pins $pins" in branch
-    assert branch.rstrip().endswith("continue\n                    }")
-    assert branch.count("continue") == 2
+    lines = [l.strip() for l in tcl.splitlines()]
+    i = lines.index("if {[string match A_ADDR* $m] && [info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]")
+    j = lines.index("if {[string match A_ADDR* $m]} {", i)
+    code = [l for l in lines[i:j] if l and not l.startswith("#")]
+    assert code == ADDR_BUF8_BRANCH
+
+
+ADDR_BUF8_BRANCH = [
+    "if {[string match A_ADDR* $m] && [info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]",
+    "&& $::env(PROTOEMU_SRAM_ADDR_BUF8) in {1 true True}} {",
+    "if {[string match sg13cmos5l_buf_* $dm]} {",
+    "if {$dm ni {sg13cmos5l_buf_8 sg13cmos5l_buf_16}} {",
+    'set cell [get_cells [string map [list "\\\\\\[" ? "\\\\\\]" ? "\\[" ? "\\]" ?] [[$drv getInst] getName]]]',
+    'if {[llength $cell] != 1} { error "cell lookup failed: [[$drv getInst] getName]" }',
+    "replace_cell $cell [lindex [get_lib_cells */sg13cmos5l_buf_8] 0]",
+    'puts "SRAM_PIN_BUFFERS [$inst getName]/$m: address driver $dm -> sg13cmos5l_buf_8"',
+    "incr nup",
+    "}",
+    "continue",
+    "}",
+    "set loads [list [pname $it]]",
+    "foreach o [$net getITerms] {",
+    "set on [[$o getInst] getName]",
+    'if {[$o getIoType] eq "INPUT" && [[[$o getInst] getMaster] getName] eq "sg13cmos5l_antennanp"',
+    '&& [string first "ANTENNA_" $on] == 0 && [string first "sram" $on] >= 0} {',
+    "lappend loads [pname $o]",
+    "}",
+    "}",
+    "set pins [get_pins $loads]",
+    'if {[llength $pins] != [llength $loads]} { error "pin lookup failed: $loads" }',
+    "lassign [[$drv getInst] getLocation] dx dy",
+    "insert_buffer -buffer_cell sg13cmos5l_buf_8 -load_pins $pins \\",
+    "-buffer_name sram_addrbuf_ -net_name sram_addrnet_ \\",
+    "-location [list [ord::dbu_to_microns $dx] [ord::dbu_to_microns $dy]]",
+    'puts "SRAM_PIN_BUFFERS [$inst getName]/$m: buf_8 at its $dm driver"',
+    "incr nin",
+    "continue",
+    "}",
+]
