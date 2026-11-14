@@ -891,7 +891,8 @@ def test_every_other_way_to_set_a_path_is_refused(tmp_path, config, refused):
 
 
 # LibreLane 3.1.0.dev3's Path-typed variables and their deprecated names, recorded
-# from the flow image (097d's census: 59 names, plus 26 deprecated ones)
+# from the flow image (097d's census, 59 names plus 26 deprecated ones, and 098's:
+# 8 more in steps outside the Classic flow)
 PATH_KEYS_CENSUS = set("""
 CELL_BB_VERILOG_MODELS CELL_CDLS CELL_GDS CELL_LEFS CELL_LIBS CELL_MAGLEFS CELL_MAGS CELL_SPICE_MODELS
 CELL_VERILOG_MODELS DESIGN_DIR EQY_SCRIPT EXTRA_CDLS EXTRA_GDS EXTRA_LEFS EXTRA_LIBS EXTRA_SPEFS
@@ -902,6 +903,8 @@ PAD_SPICE_MODELS PAD_VERILOG_MODELS PDK_ROOT PDN_CFG PNR_EXCLUDED_CELL_FILE PNR_
 RCX_SDC_FILE SIGNOFF_SDC_FILE STA_EXTRA_CORNER_TCL_FILE SYNTH_ABC_STRATEGY_SCRIPT SYNTH_CSA_MAP
 SYNTH_EXCLUDED_CELL_FILE SYNTH_EXTRA_MAPPING_FILE SYNTH_FA_MAP SYNTH_LATCH_MAP SYNTH_RCA_MAP
 SYNTH_TRISTATE_MAP TECH_LEFS VERILOG_FILES VERILOG_INCLUDE_DIRS VSRC_LOC_FILES
+KLAYOUT_ANTENNA_RUNSET KLAYOUT_DENSITY_RUNSET KLAYOUT_FILLER_SCRIPT KLAYOUT_LVS_SCRIPT
+KLAYOUT_SEALRING_SCRIPT MAGIC_FILLER_SCRIPT PAD_CFG VHDL_FILES
 """.split())
 DEPRECATED_CENSUS = set("""
 STD_CELL_LIBRARY_CDL GDS_FILES CELLS_GDS CELLS_LEF LIB EXTRA_GDS_FILES VERILOG_FILES_BLACKBOX
@@ -916,7 +919,7 @@ def test_both_files_name_every_path_variable_and_refuse_a_bare_name_under_each(t
     # pins the census (097d: two of 53 keys were pinned), the same in both files,
     # and that each name alone makes a nonexistent bare name a refused path
     bm, gen = module("build_manifest"), module("gen_config")
-    assert len(PATH_KEYS_CENSUS) == 59 and len(DEPRECATED_CENSUS) == 26
+    assert len(PATH_KEYS_CENSUS) == 67 and len(DEPRECATED_CENSUS) == 26
     assert bm.PATH_KEYS == gen.PATH_KEYS == PATH_KEYS_CENSUS | DEPRECATED_CENSUS
     assert bm.MACRO_PATH_FIELDS == gen.MACRO_PATH_FIELDS == set("gds lef vh nl pnl spef lib spice sdf json_h".split())
     assert bm.PATH_PREFIXES == gen.PATH_PREFIXES and bm.BLOCK_PREFIXES == gen.BLOCK_PREFIXES == ("pdk::", "scl::")
@@ -944,6 +947,81 @@ def test_a_name_that_does_not_exist_under_an_unknown_key_is_not_a_path(tmp_path)
     assert gen.paths_outside_repo(c, root=wt) == []
     shipped = json.loads((ROOT / "src/config.json").read_text())
     assert gen.paths_outside_repo(shipped) == []
+
+
+# 098 finding 1: what LibreLane rewrites before it resolves a path. With meta.version
+# 3 it runs str.format on every string after rewriting dir::/pdk_dir::, so
+# "{DESIGN_DIR:.>2.0}" is ".." with no ".." in the text; a number under a Path name
+# becomes Path("123"), a root file
+CLIMB = "pdk_dir::" + "{DESIGN_DIR:.>2.0}/" * 12 + "{DESIGN_DIR}/{DESIGN_DIR:.>2.0}/xt"
+DECOY = "dir::{DESIGN_DIR:.>2.0}/xt"
+ESCAPES_098 = [
+    ({"meta": {"version": 3, "flow": "Classic"}, "PNR_SDC_FILE": CLIMB}, ["meta.version", CLIMB]),
+    ({"PNR_SDC_FILE": CLIMB}, [CLIMB]),                         # braces alone are refused
+    ({"PNR_SDC_FILE": DECOY}, [DECOY]),                         # with a decoy src/{...}/xt present
+    ({"X": ["{DESIGN_DIR}"]}, ["{DESIGN_DIR}"]),                # whatever the key
+    ({"meta": {"version": 1}}, ["meta.version"]),               # the generator writes none
+    ({"PNR_SDC_FILE": 123}, ["123"]), ({"VERILOG_INCLUDE_DIRS": [123]}, ["123"]),
+    ({"PNR_SDC_FILE": 1.5}, ["1.5"]), ({"MACROS": {"m": {"gds": [7]}}}, ["7"]),
+    ({"MAGIC_FILLER_SCRIPT": 9}, ["9"]),                        # a Path name of a non-Classic step
+    ({"X": 123}, ["123"]),                                      # an unknown key: str(123) exists
+]
+
+
+@pytest.mark.parametrize("config,refused", ESCAPES_098)
+def test_rewritten_spellings_and_numbers_are_refused(tmp_path, config, refused):
+    bm, gen = module("build_manifest"), module("gen_config")
+    wt = candidate(tmp_path)
+    for f in ("xt", "123", "src/{DESIGN_DIR:.>2.0}/xt"):
+        (wt / f).parent.mkdir(parents=True, exist_ok=True)
+        (wt / f).write_text("# a file\n")
+    (wt / "src/config.json").write_text(json.dumps(dict(config, CLOCK_PERIOD=20)))
+    ship = shipping(wt, tmp_path)
+    shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
+    assert bm.config_paths(wt) == ({}, sorted(refused))
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any("outside the worktree" in f for f in failures)
+    assert sorted(set(gen.paths_outside_repo(config, root=wt))) == sorted(refused)
+    if config.get("X") != 123:         # (no root file "123" in this repository)
+        args = []
+        for k, v in config.items():
+            args += ["--set", f"{k}={json.dumps(v)}"]
+        r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment", *args,
+                            "--output", str(tmp_path / "c.json")], capture_output=True, text=True)
+        assert r.returncode != 0 and "outside the allowlist" in r.stderr and not (tmp_path / "c.json").exists()
+
+
+def test_numbers_booleans_and_null_elsewhere_stay_plain(tmp_path):
+    # a number is a path under a Path name or when str(number) exists; bools and null never
+    bm, gen = module("build_manifest"), module("gen_config")
+    wt = candidate(tmp_path)
+    c = {"CLOCK_PERIOD": 20, "X": [5, 0.13], "PNR_SDC_FILE": None, "VERILOG_INCLUDE_DIRS": [True], "Y": False}
+    (wt / "src/config.json").write_text(json.dumps(c))
+    assert bm.config_paths(wt) == ({}, [])
+    assert gen.paths_outside_repo(c, root=wt) == []
+
+
+def test_the_shipping_generator_check_refuses_hand_made_spellings(tmp_path):
+    # the release path's own gate (release_check --shipping-root runs it): the
+    # shipping checkout's src/config.json must be gen_config's submission output,
+    # which never has these spellings, whatever the manifest makes of them
+    bm = module("build_manifest")
+    root = tmp_path / "checkout"
+    (root / "flow").mkdir(parents=True)
+    (root / "src").mkdir()
+    shutil.copyfile(ROOT / "flow/gen_config.py", root / "flow/gen_config.py")
+    shutil.copyfile(ROOT / "info.yaml", root / "info.yaml")
+    shutil.copyfile(ROOT / "src/project.v", root / "src/project.v")
+    r = subprocess.run([sys.executable, str(root / "flow/gen_config.py"), "--preset", "submission"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    good = json.loads((root / "src/config.json").read_text())
+    assert bm.generator_check(root)[0] == 0
+    for change in ({"meta": dict(good["meta"], version=3)}, {"PNR_SDC_FILE": DECOY}, {"PNR_SDC_FILE": 123},
+                   {"FP_PDN_CFG": "xt"}):
+        (root / "src/config.json").write_text(json.dumps(dict(good, **change), indent=2) + "\n")
+        rc, said = bm.generator_check(root)
+        assert rc != 0, (change, said)
 
 
 def test_manifests_without_config_paths_outside_are_unchanged(tmp_path):

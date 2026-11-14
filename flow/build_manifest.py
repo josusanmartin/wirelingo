@@ -91,11 +91,11 @@ def executed_scripts(root):
 PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".gds", ".def", ".odb", ".json",
                  ".py", ".cdl", ".spice", ".spef", ".mag", ".yaml", ".yml", ".txt", ".cfg", ".lyp", ".lydrc")
 GLOB_CHARS = set("*?[]")
-# LibreLane 3.1.0.dev3's Path-typed variables (the verifier's census in 097d:
-# Classic's flow and step variables, LibreLane's PDK, SCL and option lists, the
-# plugin's; 59 names), and every deprecated name of one, which LibreLane reads
-# before the canonical name: every value of one of these is a path, whatever
-# its shape.
+# LibreLane 3.1.0.dev3's Path-typed variables (the verifier's censuses in 097d
+# and 098: every step's and flow's variables, LibreLane's PDK, SCL and option
+# lists, the plugin's; 67 names), and every deprecated name of one, which
+# LibreLane reads before the canonical name: every value of one of these is a
+# path, whatever its shape.
 PATH_KEYS = frozenset("""
 CELL_BB_VERILOG_MODELS CELL_CDLS CELL_GDS CELL_LEFS CELL_LIBS CELL_MAGLEFS CELL_MAGS CELL_SPICE_MODELS
 CELL_VERILOG_MODELS DESIGN_DIR EQY_SCRIPT EXTRA_CDLS EXTRA_GDS EXTRA_LEFS EXTRA_LIBS EXTRA_SPEFS
@@ -111,6 +111,8 @@ FALLBACK_SDC_FILE BASE_SDC_FILE SDC_FILE TRACKS_INFO_FILE FP_PIN_ORDER_CFG KLAYO
 LINTER_VLT MAGIC_MAGICRC MAGIC_TECH_FILE NETGEN_SETUP_FILE FP_PDN_CFG DRC_EXCLUDE_CELL_LIST
 PNR_EXCLUSION_CELL_LIST CARRY_SELECT_ADDER_MAP NO_SYNTH_CELL_LIST SYNTH_EXCLUSION_CELL_LIST
 FULL_ADDER_MAP RIPPLE_CARRY_ADDER_MAP TRISTATE_BUFFER_MAP
+KLAYOUT_ANTENNA_RUNSET KLAYOUT_DENSITY_RUNSET KLAYOUT_FILLER_SCRIPT KLAYOUT_LVS_SCRIPT
+KLAYOUT_SEALRING_SCRIPT MAGIC_FILLER_SCRIPT PAD_CFG VHDL_FILES
 """.split())
 # MACROS' Path fields (LibreLane's Macro: each macro's fields, at any depth below)
 MACRO_PATH_FIELDS = frozenset("gds lef vh nl pnl spef lib spice sdf json_h".split())
@@ -123,12 +125,8 @@ CELL_PIN_RE = r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$"
 
 def names_existing(v, roots):
     """Whether v names an existing path relative to one of roots (the worktree
-    root, the harden's working directory, and src/); a string that cannot be
-    checked counts as existing."""
-    try:
-        return any(os.path.lexists(os.path.join(r, v)) for r in roots)
-    except (ValueError, OSError):
-        return True
+    root, the harden's working directory, and src/)."""
+    return any(os.path.lexists(os.path.join(r, v)) for r in roots)
 
 
 def is_path_string(key, field, v, roots):
@@ -150,10 +148,15 @@ def is_path_string(key, field, v, roots):
     return False
 
 
-def walk_config(config, roots, path, block):
+def walk_config(config, roots, path, refuse):
     """Call path(top_key, string) for each path string of a LibreLane config at
-    any depth (is_path_string) and block(key) for each pdk::/scl:: key.
-    Comment keys ("//...") are skipped."""
+    any depth (is_path_string), and refuse(string) for what is refused before
+    any allowlist: a pdk::/scl:: key; meta.version (with version 3 LibreLane
+    runs str.format on every string after rewriting dir::/pdk_dir::, and the
+    generator writes no version); any string with "{" or "}" (no generated or
+    recorded config has one). A number is a path as str(number) under a Path
+    name, or when that names an existing path (LibreLane makes a Path of it);
+    booleans and null are not. Comment keys ("//...") are skipped."""
     def walk(v, top, field, depth):
         if isinstance(v, dict):
             for k, x in v.items():
@@ -161,23 +164,33 @@ def walk_config(config, roots, path, block):
                 if k.startswith("//"):
                     continue
                 if k.startswith(BLOCK_PREFIXES):
-                    block(k)
+                    refuse(k)
+                    continue
+                if depth == 1 and top == "meta" and k == "version":
+                    refuse("meta.version")
                     continue
                 walk(x, k if depth == 0 else top, k if (depth == 2 and top == "MACROS") else field, depth + 1)
         elif isinstance(v, list):
             for x in v:
                 walk(x, top, field, depth)
-        elif isinstance(v, str) and is_path_string(top, field, v, roots):
-            path(top, v)
+        elif isinstance(v, str):
+            if "{" in v or "}" in v:
+                refuse(v)
+            elif is_path_string(top, field, v, roots):
+                path(top, v)
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            if top in PATH_KEYS or (top == "MACROS" and field in MACRO_PATH_FIELDS) or names_existing(str(v), roots):
+                path(top, str(v))
     walk(config, None, None, 0)
 
 
 def config_path_strings(config, roots=()):
     """(key, string) for the path strings of a LibreLane config (walk_config),
-    keyed by the top-level key; a pdk::/scl:: key is its own string, so it is
-    refused. roots: where a bare name may exist (the worktree root and src/)."""
+    keyed by the top-level key; what walk_config refuses outright comes as
+    (None, string). roots: where a bare name may exist (the worktree root and
+    src/)."""
     out = []
-    walk_config(config, roots, lambda k, v: out.append((k, v)), lambda k: out.append((k, k)))
+    walk_config(config, roots, lambda k, v: out.append((k, v)), lambda s: out.append((None, s)))
     return out
 
 
@@ -212,7 +225,10 @@ def config_paths(root):
     inside = lambda p: os.path.commonpath([real_root, p]) == real_root
     src = os.path.join(real_root, "src")
     bound, refused = {}, []
-    for _, s in config_path_strings(config, (real_root, src)):
+    for key, s in config_path_strings(config, (real_root, src)):
+        if key is None:            # refused outright (walk_config)
+            refused.append(s)
+            continue
         if s.startswith("pdk_dir::"):
             rest = s[len("pdk_dir::"):]
             if os.path.isabs(rest) or ".." in Path(rest).parts:
