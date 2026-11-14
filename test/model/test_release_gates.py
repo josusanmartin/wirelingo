@@ -645,3 +645,29 @@ def test_archive_refuses_skipped_gates_and_a_missing_checks_receipt(tmp_path):
     without = dict(verdict, receipts=[r for r in verdict["receipts"] if r["kind"] != "checks"])
     with pytest.raises(ValueError, match="lacks one clock/reset checks receipt"):
         ar.collect(without, ar.Manifest("/"))
+
+
+def test_a_flow_file_the_config_names_is_a_build_input(tmp_path):
+    # 096 finding 4: --pnr-max-transition names flow/protoemu_pnr_transition.sdc only in
+    # src/config.json; an edit to it alone must make the builds differ
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    (wt / "src/config.json").write_text(
+        '{"CLOCK_PERIOD":20,"PNR_SDC_FILE":"dir::../flow/protoemu_pnr_transition.sdc","X":["flow/extra.tcl"]}')
+    ship = shipping(wt, tmp_path)
+    for root in (wt, ship):
+        shutil.copyfile(wt / "src/config.json", root / "src/config.json")
+        (root / "flow/protoemu_pnr_transition.sdc").write_text("set_max_transition 1.0 [current_design]\n")
+        (root / "flow/extra.tcl").write_text("# named by the config\n")
+    assert bm.config_flow_files(wt) == ["flow/extra.tcl", "flow/protoemu_pnr_transition.sdc"]
+    assert "flow/protoemu_pnr_transition.sdc" in bm.build_inputs(wt)
+    assert bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))[0] == []
+    (ship / "flow/protoemu_pnr_transition.sdc").write_text("set_max_transition 2.0 [current_design]\n")
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any("flow/protoemu_pnr_transition.sdc" in f for f in failures), failures
+    (ship / "flow/protoemu_pnr_transition.sdc").unlink()
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any("flow/protoemu_pnr_transition.sdc" in f for f in failures), failures
+    # a path that leaves flow/ is not taken as a flow file
+    (wt / "src/config.json").write_text('{"A":"dir::../flow/../src/x.sdc","B":"dir::protoemu.sdc"}')
+    assert bm.config_flow_files(wt) == []

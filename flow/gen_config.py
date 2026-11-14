@@ -286,13 +286,14 @@ def main():
         c["meta"]["substituting_steps"]["+OpenROAD.CTS"] = "Project.SramClockAdvance"
     elif a.clock_fanout_fix:
         c["meta"]["substituting_steps"]["+OpenROAD.CTS"] = "Project.FixClockFanout"
+    if a.post_repair_hold_passes == 2 and not a.post_repair_hold:
+        # checked before the SRAM pin buffers: without them there is no hold step to repeat (096 finding 3)
+        ap.error("--post-repair-hold-passes 2 needs --post-repair-hold")
     if a.sram_pin_buffers:
         c["meta"]["substituting_steps"]["+OpenROAD.ResizerTimingPostGRT"] = "Project.SramPinBuffers"
         c["meta"]["substituting_steps"]["+Project.SramPinBuffers"] = (
             ("Project.RepairDesignThenHold2" if a.post_repair_hold_passes == 2 else "Project.RepairDesignThenHold")
             if a.post_repair_hold else "OpenROAD.RepairDesignPostGRT")
-        if a.post_repair_hold_passes == 2 and not a.post_repair_hold:
-            ap.error("--post-repair-hold-passes 2 needs --post-repair-hold")
         if a.sram_addr_buf8:
             c["PROTOEMU_SRAM_ADDR_BUF8"] = True
     elif a.post_repair_hold or a.sram_addr_buf8:

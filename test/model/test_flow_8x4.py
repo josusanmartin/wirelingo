@@ -413,3 +413,33 @@ def test_option_1_address_buffers_second_pass_transition_limit(tmp_path):
     assert sdc[-1] == "set_max_transition 1.0 [current_design]"
     assert any("src protoemu_pnr_margin.sdc" in l for l in sdc) and "source $::env(PNR_SDC_FILE)" in sdc
     assert sdc.index("source $::env(PNR_SDC_FILE)") < sdc.index("set ::env(PNR_SDC_FILE) $_protoemu_pnr_sdc")
+
+
+def test_096_option_1_mutants_and_refusals(tmp_path):
+    # 096 finding 3: two passes without the SRAM pin buffers (no hold step) is refused
+    r, d = generate(tmp_path, "--preset", "experiment", "--no-sram-pin-buffers", "--post-repair-hold-passes", "2",
+                    name="bad.json")
+    assert r.returncode != 0 and not d.exists()
+    # finding 5: the transition SDC is PnR-only; signoff keeps the plain SDC
+    r, d = generate(tmp_path, "--preset", "experiment", "--pnr-max-transition", name="tr.json")
+    c = json.loads(d.read_text())
+    assert c["SIGNOFF_SDC_FILE"] == "dir::protoemu.sdc" and c["STA_EXTRA_CORNER_TCL_FILE"] == "dir::timing_checks.tcl"
+    assert [k for k, v in c.items() if isinstance(v, str) and "protoemu_pnr_transition" in v] == ["PNR_SDC_FILE"]
+    # finding 5: LastRepairDesignPostGRT is LibreLane's design repair unless its margins are set
+    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    blocks = {m.group(1): m.group(2) for m in re.finditer(r"^class (\w+)\(.*?\):\n((?:(?:    .*)?\n)+)", plugin, re.M)}
+    last = blocks["LastRepairDesignPostGRT"]
+    for var in ("PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT", "PROTOEMU_LAST_REPAIR_MAX_CAP_PCT"):
+        assert re.search(r'Variable\("' + var + r'", Optional\[Decimal\],[\s\S]*?default=None, units="%"\)', last), var
+    assert "if self.config[own] is not None:" in last
+    # finding 5: with the option on, the address net takes the buf_8 branch, which
+    # ends in continue before the old _1 -> _2 exemption
+    tcl = (ROOT / "flow/sram_pin_buffers.tcl").read_text()
+    start = tcl.index("if {[string match A_ADDR* $m] && [info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]")
+    old = tcl.index("if {[string match A_ADDR* $m]} {", start)
+    branch = tcl[start:old]
+    assert "$::env(PROTOEMU_SRAM_ADDR_BUF8) in {1 true True}" in branch
+    assert "replace_cell $cell [lindex [get_lib_cells */sg13cmos5l_buf_8] 0]" in branch
+    assert "insert_buffer -buffer_cell sg13cmos5l_buf_8 -load_pins $pins" in branch
+    assert branch.rstrip().endswith("continue\n                    }")
+    assert branch.count("continue") == 2

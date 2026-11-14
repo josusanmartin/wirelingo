@@ -12,7 +12,8 @@ RTL and the macro models), info.yaml's build keys (tiles, top module, source
 files, language, clock; not the datasheet text), the generator
 (flow/gen_config.py: recorded, but a difference is only noted, since no build
 runs it), the LibreLane plugin and the flow scripts it executes (each script
-the plugin joins to HERE or names, and the Tcl those source), and the tools: the tt-support-tools tree (tt/, as flow/harden.sh copies it in;
+the plugin joins to HERE or names, and the Tcl those source; and every flow/
+file that src/config.json names, such as a PnR SDC), and the tools: the tt-support-tools tree (tt/, as flow/harden.sh copies it in;
 its git commit when tt/.git is there), the LibreLane version (a run's
 resolved.json) and the PDK's SOURCES line. A run's manifest also binds its
 final netlist and its GDS with the BGNLIB/BGNSTR timestamps zeroed, the
@@ -82,6 +83,35 @@ def executed_scripts(root):
     return sorted(f"flow/{name}" for name in seen)
 
 
+CONFIG_FLOW_RE = r"(?:^|::|/)(?:\.\./)?flow/([A-Za-z0-9_][A-Za-z0-9_./-]*)$"
+
+
+def config_flow_files(root):
+    """flow/ files that src/config.json names (e.g. PNR_SDC_FILE
+    "dir::../flow/protoemu_pnr_transition.sdc"), which LibreLane reads although
+    the plugin does not name them (096 finding 4). A missing one is still named."""
+    path = Path(root) / "src/config.json"
+    try:
+        config = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+    found = set()
+
+    def walk(v):
+        if isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+        elif isinstance(v, str):
+            m = re.search(CONFIG_FLOW_RE, v)
+            if m and ".." not in m.group(1).split("/"):
+                found.add(f"flow/{m.group(1)}")
+    walk(config)
+    return sorted(found)
+
+
 def build_inputs(root):
     root = Path(root)
     files = {}
@@ -91,7 +121,7 @@ def build_inputs(root):
             if p.is_file() and str(rel) not in GENERATED and not SKIP_PARTS.intersection(rel.parts) \
                     and p.suffix != ".pyc":
                 files[str(rel)] = digest(p)
-    for name in executed_scripts(root):
+    for name in executed_scripts(root) + config_flow_files(root):
         files[name] = digest(root / name) if (root / name).is_file() else "missing"
     if (root / INFO).is_file():
         text = info_build_keys((root / INFO).read_text())
