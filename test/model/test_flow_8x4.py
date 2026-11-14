@@ -479,6 +479,14 @@ def test_096_option_1_mutants_and_refusals(tmp_path):
     j = lines.index("if {[string match A_ADDR* $m]} {", i)
     code = [l for l in lines[i:j] if l and not l.startswith("#")]
     assert code == ADDR_BUF8_BRANCH
+    # nothing outside the golden lines reads the variable (097b: an early continue before the branch)
+    assert [l for l in lines if "PROTOEMU_SRAM_ADDR_BUF8" in l] == ADDR_BUF8_BRANCH[:2]
+    # the variable is a bool, as its LibreLane type (097b: typed str would pass the Tcl's "True")
+    import ast
+    cls = next(n for n in plugin_tree().body if isinstance(n, ast.ClassDef) and n.name == "SramPinBuffersTcl")
+    var = next(c for c in ast.walk(cls) if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "Variable"
+               and ast.literal_eval(c.args[0]) == "PROTOEMU_SRAM_ADDR_BUF8")
+    assert ast.unparse(var.args[1]) == "bool"
 
 
 ADDR_BUF8_BRANCH = [

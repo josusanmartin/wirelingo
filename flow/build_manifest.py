@@ -28,7 +28,6 @@ firmware on a pinned netlist (--validation-root) stays a separate operation.
 reproduction build's) also compares the tools, the netlist and the GDS.
 """
 import argparse
-import glob
 import hashlib
 import json
 import os
@@ -85,70 +84,76 @@ def executed_scripts(root):
     return sorted(f"flow/{name}" for name in seen)
 
 
-# PDK paths are tool inputs (the PDK's SOURCES line is recorded under tools)
-ALLOWED_OUTSIDE_PREFIXES = ("pdk_dir::",)
+# Config path allowlist (097b): dir:: paths without glob characters that
+# resolve inside the worktree are build inputs; pdk_dir:: paths without ".."
+# are tool inputs (the PDK's SOURCES line is recorded under tools); every other
+# path-like string is refused. The generator writes only these two forms.
+PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".gds", ".def", ".odb", ".json",
+                 ".py", ".cdl", ".spice", ".spef", ".mag", ".yaml", ".yml", ".txt", ".cfg", ".lyp", ".lydrc")
+GLOB_CHARS = set("*?[]")
+CELL_PIN_RE = r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$"
 
 
 def config_path_strings(config):
-    """The path-like strings of a LibreLane config: dir:: and refg:: values,
-    absolute paths, and other strings with a "/" and no whitespace. Comment keys
-    ("//...") are skipped."""
+    """(key, string) for the path-like strings of a LibreLane config: any string
+    with a "/" or ending in a known file suffix, except "cell/pin" values of
+    *_CELL keys (DIODE_CELL). Comment keys ("//...") are skipped."""
     out = []
 
-    def walk(v):
+    def walk(key, v):
         if isinstance(v, dict):
             for k, x in v.items():
                 if not str(k).startswith("//"):
-                    walk(x)
+                    walk(key or k, x)
         elif isinstance(v, list):
             for x in v:
-                walk(x)
-        elif isinstance(v, str) and (v.startswith(("dir::", "refg::", "/", "pdk_dir::"))
-                                     or ("/" in v and not re.search(r"\s", v)
-                                         and (v.startswith(("./", "../")) or re.search(r"\.[A-Za-z0-9]+$", v)))):
-            # a prefix-less string is a path when it starts with ./ or ../ or ends in a
-            # file extension; "cell/pin" values such as DIODE_CELL are not paths
-            out.append(v)
-    walk(config)
+                walk(key, x)
+        elif isinstance(v, str) and ("/" in v or v.lower().endswith(PATH_SUFFIXES)):
+            if str(key).endswith(("_CELL", "_CELLS")) and re.match(CELL_PIN_RE, v):
+                return
+            out.append((key, v))
+    walk(None, config)
     return out
 
 
 def config_paths(root):
-    """(bound, refused) for src/config.json's path-like strings, resolved as
-    LibreLane does: dir:: and refg:: ($DESIGN_DIR) relative to src/, the path
-    normalized, globs expanded and symlinks followed. bound maps each file
-    inside the worktree to its digest ("missing" when nothing exists there);
-    refused lists the strings that are absolute or resolve outside the
-    worktree, except PDK paths (096 finding 4, 097 finding 2)."""
+    """(bound, refused) for src/config.json's path-like strings, by the allowlist
+    above: a dir:: path is resolved against src/ (normalized, symlinks
+    followed); a file inside the worktree is bound by its path relative to the
+    resolved worktree root, a directory binds every file under it (sorted, each
+    resolved and inside the worktree). Refused: a dir:: path with glob characters,
+    or missing, or resolving outside the worktree; pdk_dir:: with ".."; and any
+    other path-like string (unprefixed, refg::, absolute)."""
     root = Path(root)
     try:
         config = json.loads((root / "src/config.json").read_text())
     except (OSError, ValueError):
         return {}, []
     real_root = os.path.realpath(root)
-    src = os.path.join(str(root), "src")
+    inside = lambda p: os.path.commonpath([real_root, p]) == real_root
+    src = os.path.join(real_root, "src")
     bound, refused = {}, []
-    for s in config_path_strings(config):
-        if s.startswith(ALLOWED_OUTSIDE_PREFIXES):
+    for _, s in config_path_strings(config):
+        if s.startswith("pdk_dir::"):
+            rest = s[len("pdk_dir::"):]
+            if os.path.isabs(rest) or ".." in Path(rest).parts:
+                refused.append(s)
             continue
-        if s.startswith("dir::"):
-            rel = s[len("dir::"):]
-        elif s.startswith("refg::"):
-            rel = s[len("refg::"):].replace("$DESIGN_DIR", src)
-        else:
-            rel = s
-        if os.path.isabs(rel) and not (s.startswith("refg::") and "$DESIGN_DIR" in s):
+        if not s.startswith("dir::") or GLOB_CHARS & set(s):
             refused.append(s)
             continue
-        pattern = os.path.normpath(os.path.join(src, rel))
-        matches = sorted(glob.glob(pattern)) if glob.has_magic(rel) else [pattern]
-        for m in matches or [pattern]:
-            real = os.path.realpath(m)
-            if os.path.commonpath([real_root, real]) != real_root:
-                refused.append(s)
-                continue
-            key = os.path.relpath(real, real_root)
-            bound[key] = digest(real) if os.path.isfile(real) else ("directory" if os.path.isdir(real) else "missing")
+        rel = s[len("dir::"):]
+        real = os.path.realpath(os.path.join(src, rel))
+        if os.path.isabs(rel) or not inside(real) or not os.path.exists(real):
+            refused.append(s)
+            continue
+        files = [real] if os.path.isfile(real) else sorted(
+            os.path.realpath(os.path.join(d, f)) for d, _, names in os.walk(real, followlinks=True) for f in names)
+        if not all(inside(f) for f in files):
+            refused.append(s)
+            continue
+        for f in files:
+            bound[os.path.relpath(f, real_root)] = digest(f)
     return dict(sorted(bound.items())), sorted(set(refused))
 
 

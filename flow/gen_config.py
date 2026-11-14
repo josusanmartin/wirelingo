@@ -10,7 +10,6 @@ Experimental overrides must be named and recorded separately from submission.
 """
 import argparse
 import collections
-import glob
 import json
 import os
 import pathlib
@@ -46,46 +45,43 @@ TUNED = {
 SUBMISSION_TUNED = {("8x4", 2): "fallback-8x4"}
 
 
+PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".gds", ".def", ".odb", ".json",
+                 ".py", ".cdl", ".spice", ".spef", ".mag", ".yaml", ".yml", ".txt", ".cfg", ".lyp", ".lydrc")
+
+
 def paths_outside_repo(config, root=ROOT):
-    """The config's path-like strings that are absolute or resolve outside the
-    repository: dir:: / refg:: ($DESIGN_DIR) values relative to src/, and
-    prefix-less strings with a "/" that start with ./ or ../ or end in a file
-    extension. PDK paths (pdk_dir::) are allowed. The same rule as
-    flow/build_manifest.py's config_paths (097 finding 2)."""
-    src = os.path.join(str(root), "src")
+    """The config's path-like strings outside flow/build_manifest.py's allowlist
+    (097b): a dir:: path is allowed without glob characters when it normalizes
+    to a path inside the repository (the manifest also requires the file to
+    exist; this generator runs from bare test copies too), pdk_dir:: without
+    "..". Every other string with a "/" or a known file suffix is refused:
+    unprefixed (LibreLane reads it from the working directory), refg::,
+    absolute. "cell/pin" values of *_CELL keys (DIODE_CELL) are not paths."""
     real_root = os.path.realpath(root)
+    src = os.path.join(real_root, "src")
     found = []
 
-    def walk(v):
+    def walk(key, v):
         if isinstance(v, dict):
             for k, x in v.items():
                 if not str(k).startswith("//"):
-                    walk(x)
+                    walk(key or k, x)
         elif isinstance(v, list):
             for x in v:
-                walk(x)
-        elif isinstance(v, str):
+                walk(key, x)
+        elif isinstance(v, str) and ("/" in v or v.lower().endswith(PATH_SUFFIXES)):
+            if str(key).endswith(("_CELL", "_CELLS")) and re.match(r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$", v):
+                return
             if v.startswith("pdk_dir::"):
-                return
-            if v.startswith("dir::"):
-                rel = v[len("dir::"):]
-            elif v.startswith("refg::"):
-                rel = v[len("refg::"):].replace("$DESIGN_DIR", src)
-            elif v.startswith("/") or ("/" in v and not re.search(r"\s", v)
-                                        and (v.startswith(("./", "../")) or re.search(r"\.[A-Za-z0-9]+$", v))):
-                rel = v
-            else:
-                return
-            if os.path.isabs(rel) and not (v.startswith("refg::") and "$DESIGN_DIR" in v):
-                found.append(v)
-                return
-            pattern = os.path.normpath(os.path.join(src, rel))
-            for m in (glob.glob(pattern) if glob.has_magic(rel) else []) or [pattern]:
-                real = os.path.realpath(m)
-                if os.path.commonpath([real_root, real]) != real_root:
+                rest = v[len("pdk_dir::"):]
+                if os.path.isabs(rest) or ".." in pathlib.PurePath(rest).parts:
                     found.append(v)
-                    return
-    walk({k: v for k, v in config.items() if not k.startswith("//")})
+                return
+            rel = v[len("dir::"):] if v.startswith("dir::") else None
+            if rel is None or set("*?[]") & set(v) or os.path.isabs(rel) or \
+                    os.path.commonpath([real_root, os.path.normpath(os.path.join(src, rel))]) != real_root:
+                found.append(v)
+    walk(None, config)
     return found
 
 
@@ -532,7 +528,7 @@ def main():
         c[key] = json.loads(value)
     outside = paths_outside_repo(c)
     if outside:
-        ap.error(f"config paths absolute or outside the repository (the build manifest would not bind them): {outside}")
+        ap.error(f"config paths outside the allowlist (dir:: inside the repository without glob characters, pdk_dir:: without ..; the build manifest would refuse them): {outside}")
     rendered = json.dumps(c, indent=2) + "\n"
     if a.check:
         if not a.output.exists() or a.output.read_text() != rendered:

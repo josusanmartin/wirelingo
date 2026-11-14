@@ -654,7 +654,7 @@ def test_a_flow_file_the_config_names_is_a_build_input(tmp_path):
     bm = module("build_manifest")
     wt = candidate(tmp_path)
     (wt / "src/config.json").write_text(
-        '{"CLOCK_PERIOD":20,"PNR_SDC_FILE":"dir::../flow/protoemu_pnr_transition.sdc","X":["../flow/extra.tcl"]}')
+        '{"CLOCK_PERIOD":20,"PNR_SDC_FILE":"dir::../flow/protoemu_pnr_transition.sdc","X":["dir::../flow/extra.tcl"]}')
     ship = shipping(wt, tmp_path)
     shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
     for root in (wt, ship):
@@ -673,14 +673,12 @@ def test_a_flow_file_the_config_names_is_a_build_input(tmp_path):
 
 @pytest.mark.parametrize("spelling,target", [
     ("dir::../flow/./x.sdc", "flow/x.sdc"), ("dir::../flow//x.sdc", "flow/x.sdc"),
-    ("dir::../flow/sub/../x.sdc", "flow/x.sdc"), ("dir::../flow/*.sdc", "flow/x.sdc"),
-    ("dir::../flow/x.s?c", "flow/x.sdc"), ("dir::../flow/my+f.sdc", "flow/my+f.sdc"),
+    ("dir::../flow/sub/../x.sdc", "flow/x.sdc"), ("dir::../flow/my+f.sdc", "flow/my+f.sdc"),
     ("dir::../flow/a b.sdc", "flow/a b.sdc"), ("dir::fl/x.sdc", "flow/x.sdc"),
-    ("dir::../tools/x.sdc", "tools/x.sdc"), ("refg::$DESIGN_DIR/../flow/x.sdc", "flow/x.sdc"),
-    ("../flow/x.sdc", "flow/x.sdc")])
-def test_every_spelling_of_a_config_named_file_binds_it(tmp_path, spelling, target):
-    # 097 finding 2: resolved as LibreLane resolves it (dir:: relative to src/,
-    # normalized, globs expanded, symlinks followed), wherever it is in the repo
+    ("dir::../tools/x.sdc", "tools/x.sdc")])
+def test_every_allowed_spelling_of_a_config_named_file_binds_it(tmp_path, spelling, target):
+    # 097b allowlist: a dir:: path without glob characters, resolved against src/
+    # (normalized, symlinks followed), bound wherever it lies in the worktree
     bm = module("build_manifest")
     wt = candidate(tmp_path)
     (wt / "src/config.json").write_text(json.dumps({"CLOCK_PERIOD": 20, "PNR_SDC_FILE": spelling}))
@@ -690,29 +688,80 @@ def test_every_spelling_of_a_config_named_file_binds_it(tmp_path, spelling, targ
         (root / target).parent.mkdir(parents=True, exist_ok=True)
         (root / target).write_text("set_max_transition 1.0 [current_design]\n")
         (root / "src/fl").symlink_to("../flow")
-    assert target in bm.config_paths(wt)[0] and target in bm.build_inputs(wt)
+    assert bm.config_paths(wt) == ({target: bm.digest(wt / target)}, [])
     assert bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))[0] == []
     (ship / target).write_text("set_max_transition 2.0 [current_design]\n")
     failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
     assert any(target in f for f in failures), failures
 
 
-@pytest.mark.parametrize("spelling", ["dir::../../flow/x.sdc", "/elsewhere/flow/x.sdc", "dir::/elsewhere/x.sdc",
-                                      "refg::/elsewhere/x.sdc"])
-def test_a_config_path_outside_the_worktree_is_refused(tmp_path, spelling):
+# 097b: each escape the verifier measured as SAME BUILD, and the earlier outside forms
+REFUSED = ["tools/x.sdc",                    # unprefixed: LibreLane reads it from the working directory
+           "../x.sdc", "tools/xt",           # unprefixed, outside; extensionless
+           "pdk_dir::../../tools/x.sdc",     # pdk_dir:: climbing out of the PDK
+           "dir::../flow/x[1].sdc",          # glob characters (LibreLane reads an existing name literally)
+           "dir::../flow/*.sdc", "dir::../flow/x.s?c",
+           "refg::$PDK_ROOT/../../x.sdc", "refg::$DESIGN_DIR/../flow/x.sdc",   # refg:: in any form
+           "dir::../../flow/x.sdc", "/elsewhere/flow/x.sdc", "dir::/elsewhere/x.sdc", "refg::/elsewhere/x.sdc",
+           "dir::../flow/absent.sdc"]        # resolves to nothing
+
+
+@pytest.mark.parametrize("spelling", REFUSED)
+def test_a_config_path_outside_the_allowlist_is_refused(tmp_path, spelling):
     bm = module("build_manifest")
     wt = candidate(tmp_path)
     (wt / "src/config.json").write_text(json.dumps({"CLOCK_PERIOD": 20, "PNR_SDC_FILE": spelling}))
     ship = shipping(wt, tmp_path)
     shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
-    assert bm.config_paths(wt)[1] == [spelling] and bm.run_manifest(wt)["refused"] == [spelling]
+    for root in (wt, ship):            # the files these spellings could name exist in the worktree
+        for f in ("tools/x.sdc", "tools/xt", "flow/x[1].sdc", "flow/x.sdc", "flow/x1.sdc"):
+            (root / f).parent.mkdir(parents=True, exist_ok=True)
+            (root / f).write_text("# a file\n")
+    assert bm.config_paths(wt) == ({}, [spelling])
+    assert bm.run_manifest(wt)["refused"] == [spelling]
     failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
     assert any("outside the worktree" in f for f in failures)
-    # and the generator refuses to write such a config
+    # the generator refuses to write such a config ("absent" is the manifest's
+    # check alone: the generator does not require the file to exist)
     r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment",
                         "--set", f"PNR_SDC_FILE={json.dumps(spelling)}", "--output", str(tmp_path / "c.json")],
                        capture_output=True, text=True)
-    assert r.returncode != 0 and "outside the repository" in r.stderr and not (tmp_path / "c.json").exists()
+    if spelling == "dir::../flow/absent.sdc":
+        assert r.returncode == 0
+    else:
+        assert r.returncode != 0 and "outside the allowlist" in r.stderr and not (tmp_path / "c.json").exists()
+
+
+def test_a_config_named_directory_binds_every_file_under_it(tmp_path):
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    (wt / "src/config.json").write_text(json.dumps({"VERILOG_INCLUDE_DIRS": ["dir::../tools/inc"]}))
+    ship = shipping(wt, tmp_path)
+    shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
+    for root in (wt, ship):
+        (root / "tools/inc/sub").mkdir(parents=True)
+        (root / "tools/inc/h.vh").write_text("`define A 1\n")
+        (root / "tools/inc/sub/g.vh").write_text("`define B 1\n")
+    assert list(bm.config_paths(wt)[0]) == ["tools/inc/h.vh", "tools/inc/sub/g.vh"]
+    assert bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))[0] == []
+    (ship / "tools/inc/sub/g.vh").write_text("`define B 2\n")
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any("tools/inc/sub/g.vh" in f for f in failures), failures
+
+
+def test_relative_worktree_arguments_compare_identical_trees_equal(tmp_path, monkeypatch):
+    # 097b: keys are relative to the resolved worktree root, so the same tree
+    # named by a relative path compares SAME BUILD from any directory
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    (wt / "src/config.json").write_text(json.dumps({"PNR_SDC_FILE": "dir::../flow/x.sdc"}))
+    ship = shipping(wt, tmp_path)
+    shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
+    for root in (wt, ship):
+        (root / "flow/x.sdc").write_text("# sdc\n")
+    monkeypatch.chdir(tmp_path)
+    assert bm.compare(bm.run_manifest(wt.name), bm.checkout_manifest(ship.name))[0] == []
+    assert bm.run_manifest(wt.name)["files"] == bm.run_manifest(wt)["files"]
 
 
 def test_manifests_without_config_paths_outside_are_unchanged(tmp_path):

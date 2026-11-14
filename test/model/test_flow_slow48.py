@@ -178,6 +178,9 @@ def test_48mhz_slow_release_needs_the_fresh_sta(tmp_path, fake_docker):
     config = json.loads((out / "config.json").read_text())
     original = json.loads((wt / "runs/wokwi" / STEP / "config.json").read_text())
     assert config == dict(original, CLOCK_PERIOD=20.832)
+    # 097b: the re-run STA times the run's signoff SDC, never the PnR (transition) SDC
+    assert config["SIGNOFF_SDC_FILE"] == original["SIGNOFF_SDC_FILE"] and \
+        "PNR_SDC_FILE" not in (Path(__file__).resolve().parents[2] / "flow/sta_rerun.py").read_text()
 
 
 def test_fresh_sta_receipt_through_the_release_view(tmp_path, fake_docker):
