@@ -85,6 +85,35 @@ PATH_PREFIXES = ("dir::", "pdk_dir::", "refg::", "ref::")
 # level; no config here uses one, so such a key is refused outright
 BLOCK_PREFIXES = ("pdk::", "scl::")
 CELL_PIN_RE = r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$"
+# Keys LibreLane's preprocessor exposes as symbols (librelane/config/preprocessor.py
+# Keys and PROCESS_INFO_ALLOWLIST): a config's own PDKPATH redirects every later
+# pdk_dir::, PDK/STD_CELL_LIBRARY override the PDK and library; the generator
+# writes none of them, so each is refused as a key
+SYMBOL_KEYS = frozenset("PDK_ROOT PDK PDKPATH STD_CELL_LIBRARY STD_CELL_LIBRARY_OPT PAD_CELL_LIBRARY DESIGN_DIR".split())
+
+
+def path_value_strings(v):
+    """The strings of a value under a Path name (LibreLane makes a Path of any
+    value's str(): true, {} or [] name root files), or None when its shape is
+    not a path value: null, a string, a non-empty list of strings, or a
+    non-empty dict (corner -> path) of strings and non-empty lists of strings."""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v]
+    if isinstance(v, list) and v and all(isinstance(x, str) for x in v):
+        return list(v)
+    if isinstance(v, dict) and v:
+        out = []
+        for x in v.values():
+            if isinstance(x, str):
+                out.append(x)
+            elif isinstance(x, list) and x and all(isinstance(y, str) for y in x):
+                out += x
+            else:
+                return None
+        return out
+    return None
 
 
 def names_existing(v, roots):
@@ -114,8 +143,10 @@ def is_path_string(key, field, v, roots):
 
 def walk_config(config, roots, path, refuse):
     """Call path(top_key, string) for each path string of a LibreLane config at
-    any depth (is_path_string), and refuse(string) for what is refused before
-    any allowlist: a pdk::/scl:: key; meta.version (with version 3 LibreLane
+    any depth (is_path_string; every string under a Path name), and
+    refuse(string) for what is refused before any allowlist: a pdk::/scl:: key;
+    a symbol key (SYMBOL_KEYS); a value of a Path name that is not path-shaped
+    (path_value_strings); meta.version (with version 3 LibreLane
     runs str.format on every string after rewriting dir::/pdk_dir::, and the
     generator writes no version); any string with "{" or "}" (no generated or
     recorded config has one). A number is a path as str(number) under a Path
@@ -132,6 +163,21 @@ def walk_config(config, roots, path, refuse):
                     continue
                 if depth == 1 and top == "meta" and k == "version":
                     refuse("meta.version")
+                    continue
+                if depth == 0 and k in SYMBOL_KEYS:
+                    refuse(k)
+                    continue
+                if (depth == 0 and k in PATH_KEYS) or (depth == 2 and top == "MACROS" and k in MACRO_PATH_FIELDS):
+                    # a Path name: only path-shaped values, each string a path (097g)
+                    strings = path_value_strings(x)
+                    if strings is None:
+                        refuse(json.dumps(x, sort_keys=True))
+                        continue
+                    for s in strings:
+                        if "{" in s or "}" in s:
+                            refuse(s)
+                        else:
+                            path(k if depth == 0 else top, s)
                     continue
                 walk(x, k if depth == 0 else top, k if (depth == 2 and top == "MACROS") else field, depth + 1)
         elif isinstance(v, list):
@@ -169,10 +215,13 @@ def paths_outside_repo(config, root=ROOT):
             return
         rel = v[len("dir::"):] if v.startswith("dir::") else None
         target = os.path.normpath(os.path.join(src, rel)) if rel is not None else None
+        real = os.path.realpath(target) if target is not None and os.path.lexists(target) else target
         if rel is None or set("*?[]") & set(v) or os.path.isabs(rel) or \
                 os.path.commonpath([real_root, target]) != real_root or \
-                (os.path.isdir(target) and os.path.commonpath([src, os.path.realpath(target)]) != src):
-            found.append(v)    # a directory only inside src/, so never the root (097c)
+                os.path.commonpath([real_root, real]) != real_root or \
+                (os.path.isdir(target) and (os.path.commonpath([src, real]) != src or
+                                            os.path.commonpath([src, target]) != src)):
+            found.append(v)    # a directory only inside src/, so never the root (097c); links followed (097g)
     walk_config(config, (real_root, src), check, found.append)
     return found
 

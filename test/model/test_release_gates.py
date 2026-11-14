@@ -924,10 +924,12 @@ def test_both_files_name_every_path_variable_and_refuse_a_bare_name_under_each(t
     assert bm.MACRO_PATH_FIELDS == gen.MACRO_PATH_FIELDS == set("gds lef vh nl pnl spef lib spice sdf json_h".split())
     assert bm.PATH_PREFIXES == gen.PATH_PREFIXES and bm.BLOCK_PREFIXES == gen.BLOCK_PREFIXES == ("pdk::", "scl::")
     wt = candidate(tmp_path)
+    assert bm.SYMBOL_KEYS == gen.SYMBOL_KEYS
     for k in sorted(bm.PATH_KEYS):
+        want = [k] if k in bm.SYMBOL_KEYS else ["absent_name"]     # DESIGN_DIR, PDK_ROOT: the key itself
         (wt / "src/config.json").write_text(json.dumps({k: "absent_name"}))
-        assert bm.config_paths(wt) == ({}, ["absent_name"]), k
-        assert gen.paths_outside_repo({k: "absent_name"}, root=wt) == ["absent_name"], k
+        assert bm.config_paths(wt) == ({}, want), k
+        assert gen.paths_outside_repo({k: "absent_name"}, root=wt) == want, k
     # MACROS: only the Path fields by name; instances and orientation are not paths
     m = {"MACROS": {"m": {"instances": {"u": {"location": [1, 2], "orientation": "N"}}, "gds": ["dir::m.gds"]}}}
     (wt / "src/m.gds").write_text("gds")
@@ -961,8 +963,8 @@ ESCAPES_098 = [
     ({"PNR_SDC_FILE": DECOY}, [DECOY]),                         # with a decoy src/{...}/xt present
     ({"X": ["{DESIGN_DIR}"]}, ["{DESIGN_DIR}"]),                # whatever the key
     ({"meta": {"version": 1}}, ["meta.version"]),               # the generator writes none
-    ({"PNR_SDC_FILE": 123}, ["123"]), ({"VERILOG_INCLUDE_DIRS": [123]}, ["123"]),
-    ({"PNR_SDC_FILE": 1.5}, ["1.5"]), ({"MACROS": {"m": {"gds": [7]}}}, ["7"]),
+    ({"PNR_SDC_FILE": 123}, ["123"]), ({"VERILOG_INCLUDE_DIRS": [123]}, ["[123]"]),
+    ({"PNR_SDC_FILE": 1.5}, ["1.5"]), ({"MACROS": {"m": {"gds": [7]}}}, ["[7]"]),
     ({"MAGIC_FILLER_SCRIPT": 9}, ["9"]),                        # a Path name of a non-Classic step
     ({"X": 123}, ["123"]),                                      # an unknown key: str(123) exists
 ]
@@ -991,11 +993,113 @@ def test_rewritten_spellings_and_numbers_are_refused(tmp_path, config, refused):
         assert r.returncode != 0 and "outside the allowlist" in r.stderr and not (tmp_path / "c.json").exists()
 
 
+# 098b finding 1: LibreLane makes a Path of any value's str() (true, {}, [] name root
+# files), a config's PDKPATH redirects every later pdk_dir::, and dir:: is normalized
+# with abspath before links are followed
+ESCAPES_098B = [
+    ({"PNR_SDC_FILE": True}, ["true"]), ({"PNR_SDC_FILE": {}}, ["{}"]), ({"PNR_SDC_FILE": []}, ["[]"]),
+    ({"PNR_SDC_FILE": {"k": False}}, ['{"k": false}']), ({"EXTRA_LIBS": [True]}, ["[true]"]),
+    ({"MACROS": {"m": {"spice": [True]}}}, ["[true]"]),
+    ({"PDKPATH": "*", "PNR_SDC_FILE": "pdk_dir::xt"}, ["PDKPATH"]),
+    ({"PDK": "sky130A"}, ["PDK"]), ({"STD_CELL_LIBRARY": "x"}, ["STD_CELL_LIBRARY"]),
+    ({"PAD_CELL_LIBRARY": "x"}, ["PAD_CELL_LIBRARY"]), ({"STD_CELL_LIBRARY_OPT": "x"}, ["STD_CELL_LIBRARY_OPT"]),
+    ({"VERILOG_FILES": [["dir::project.v"]]}, ['[["dir::project.v"]]']),           # a list in a list
+]
+
+
+@pytest.mark.parametrize("config,refused", ESCAPES_098B)
+def test_values_that_are_not_paths_and_symbol_keys_are_refused(tmp_path, config, refused):
+    bm, gen = module("build_manifest"), module("gen_config")
+    wt = candidate(tmp_path)
+    for f in ("xt", "True", "{}", "[]", "docs/xt"):
+        (wt / f).parent.mkdir(parents=True, exist_ok=True)
+        (wt / f).write_text("# a file\n")
+    (wt / "src/config.json").write_text(json.dumps(dict(config, CLOCK_PERIOD=20)))
+    ship = shipping(wt, tmp_path)
+    shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
+    assert bm.config_paths(wt) == ({}, refused)
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any("outside the worktree" in f for f in failures)
+    assert sorted(set(gen.paths_outside_repo(config, root=wt))) == refused
+    args = []
+    for k, v in config.items():
+        args += ["--set", f"{k}={json.dumps(v)}"]
+    r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment", *args,
+                        "--output", str(tmp_path / "c.json")], capture_output=True, text=True)
+    assert r.returncode != 0 and "outside the allowlist" in r.stderr and not (tmp_path / "c.json").exists()
+
+
+def test_a_dir_path_through_a_link_binds_the_file_librelane_opens(tmp_path):
+    # 098b N7: "dir::lnk/../../xt" with src/lnk -> d/e is <root>/xt to LibreLane
+    # (abspath first), not src/xt (the link followed first); the manifest binds xt
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    spelling = "dir::lnk/../../xt"
+    (wt / "src/config.json").write_text(json.dumps({"CLOCK_PERIOD": 20, "PNR_SDC_FILE": spelling}))
+    ship = shipping(wt, tmp_path)
+    shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
+    for root in (wt, ship):
+        (root / "src/d/e").mkdir(parents=True)
+        (root / "src/lnk").symlink_to("d/e")
+        (root / "src/xt").write_text("# the decoy\n")
+        (root / "xt").write_text("set_max_transition 1.0 [current_design]\n")
+    assert bm.config_paths(wt) == ({"xt": bm.digest(wt / "xt")}, [])
+    assert bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))[0] == []
+    (ship / "xt").write_text("set_max_transition 2.0 [current_design]\n")
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any(f.startswith("build input xt") for f in failures), failures
+
+
+def test_a_dir_path_whose_link_leaves_the_worktree_is_refused_by_both(tmp_path):
+    # 097g: the lexical path is inside src/, the file opened (the link followed) is not
+    bm, gen = module("build_manifest"), module("gen_config")
+    wt = candidate(tmp_path)
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside/x.sdc").write_text("# outside\n")
+    (wt / "src/out").symlink_to(tmp_path / "outside")
+    spelling = "dir::out/x.sdc"
+    (wt / "src/config.json").write_text(json.dumps({"PNR_SDC_FILE": spelling}))
+    assert bm.config_paths(wt) == ({}, [spelling])
+    assert gen.paths_outside_repo({"PNR_SDC_FILE": spelling}, root=wt) == [spelling]
+
+
+def test_the_run_binds_what_librelane_resolved_whatever_the_config_says(tmp_path):
+    # 097g (b): resolved.json holds the absolute paths LibreLane read; a file read
+    # through a route the config check does not model (here resolved.json alone
+    # names it) is bound, so an edit to it makes the builds differ. Paths are taken
+    # relative to the worktree the run hardened in (DESIGN_DIR's parent).
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    ship = shipping(wt, tmp_path)
+    old = "/elsewhere/hardened/worktree"
+    for root in (wt, ship):
+        (root / "xt").write_text("# read by the run\n")
+        (root / "src/protoemu.sdc").write_text("# sdc\n")
+    resolved = {"DESIGN_DIR": f"{old}/src", "PDK_ROOT": "/pdk", "meta": {"librelane_version": "3.1.0.dev3"},
+                "PNR_SDC_FILE": f"{old}/xt", "SIGNOFF_SDC_FILE": f"{old}/src/protoemu.sdc",
+                "FP_DEF_TEMPLATE": f"{old}/tt/tech/x.def", "CELL_LIBS": {"nom_*": ["/pdk/x/a.lib"]},
+                "FALLBACK_SDC": "/nix/store/abc-env/lib/librelane/scripts/base.sdc",
+                "MACROS": {"m": {"gds": ["/pdk/m.gds"], "instances": {"u": {"orientation": "N"}}}}}
+    (wt / "runs/wokwi/resolved.json").write_text(json.dumps(resolved))
+    assert bm.resolved_paths(wt, resolved) == ({"src/protoemu.sdc": bm.digest(wt / "src/protoemu.sdc"),
+                                                "xt": bm.digest(wt / "xt")}, [])
+    assert bm.config_paths(wt) == ({}, [])            # the config names neither file
+    run = bm.run_manifest(wt)
+    assert run["files"]["xt"] == bm.digest(wt / "xt") and "refused" not in run
+    failures, _ = bm.compare(run, bm.checkout_manifest(ship))
+    assert any("xt" in f for f in failures), failures   # the checkout does not bind it
+    # anything else LibreLane resolved is refused: outside the worktree, the PDK and the image
+    bad = dict(resolved, MACROS={"m": {"lef": ["/opt/elsewhere/m.lef"]}})
+    (wt / "runs/wokwi/resolved.json").write_text(json.dumps(bad))
+    assert bm.run_manifest(wt)["refused"] == ["/opt/elsewhere/m.lef"]
+
+
 def test_numbers_booleans_and_null_elsewhere_stay_plain(tmp_path):
     # a number is a path under a Path name or when str(number) exists; bools and null never
     bm, gen = module("build_manifest"), module("gen_config")
     wt = candidate(tmp_path)
-    c = {"CLOCK_PERIOD": 20, "X": [5, 0.13], "PNR_SDC_FILE": None, "VERILOG_INCLUDE_DIRS": [True], "Y": False}
+    # (097g: under a Path name a bool is refused, as LibreLane makes Path("True") of it)
+    c = {"CLOCK_PERIOD": 20, "X": [5, 0.13, True], "PNR_SDC_FILE": None, "Y": False}
     (wt / "src/config.json").write_text(json.dumps(c))
     assert bm.config_paths(wt) == ({}, [])
     assert gen.paths_outside_repo(c, root=wt) == []

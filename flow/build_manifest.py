@@ -121,6 +121,35 @@ PATH_PREFIXES = ("dir::", "pdk_dir::", "refg::", "ref::")
 # level; no config here uses one, so such a key is refused outright
 BLOCK_PREFIXES = ("pdk::", "scl::")
 CELL_PIN_RE = r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$"
+# Keys LibreLane's preprocessor exposes as symbols (librelane/config/preprocessor.py
+# Keys and PROCESS_INFO_ALLOWLIST): a config's own PDKPATH redirects every later
+# pdk_dir::, PDK/STD_CELL_LIBRARY override the PDK and library; the generator
+# writes none of them, so each is refused as a key
+SYMBOL_KEYS = frozenset("PDK_ROOT PDK PDKPATH STD_CELL_LIBRARY STD_CELL_LIBRARY_OPT PAD_CELL_LIBRARY DESIGN_DIR".split())
+
+
+def path_value_strings(v):
+    """The strings of a value under a Path name (LibreLane makes a Path of any
+    value's str(): true, {} or [] name root files), or None when its shape is
+    not a path value: null, a string, a non-empty list of strings, or a
+    non-empty dict (corner -> path) of strings and non-empty lists of strings."""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v]
+    if isinstance(v, list) and v and all(isinstance(x, str) for x in v):
+        return list(v)
+    if isinstance(v, dict) and v:
+        out = []
+        for x in v.values():
+            if isinstance(x, str):
+                out.append(x)
+            elif isinstance(x, list) and x and all(isinstance(y, str) for y in x):
+                out += x
+            else:
+                return None
+        return out
+    return None
 
 
 def names_existing(v, roots):
@@ -150,8 +179,10 @@ def is_path_string(key, field, v, roots):
 
 def walk_config(config, roots, path, refuse):
     """Call path(top_key, string) for each path string of a LibreLane config at
-    any depth (is_path_string), and refuse(string) for what is refused before
-    any allowlist: a pdk::/scl:: key; meta.version (with version 3 LibreLane
+    any depth (is_path_string; every string under a Path name), and
+    refuse(string) for what is refused before any allowlist: a pdk::/scl:: key;
+    a symbol key (SYMBOL_KEYS); a value of a Path name that is not path-shaped
+    (path_value_strings); meta.version (with version 3 LibreLane
     runs str.format on every string after rewriting dir::/pdk_dir::, and the
     generator writes no version); any string with "{" or "}" (no generated or
     recorded config has one). A number is a path as str(number) under a Path
@@ -168,6 +199,21 @@ def walk_config(config, roots, path, refuse):
                     continue
                 if depth == 1 and top == "meta" and k == "version":
                     refuse("meta.version")
+                    continue
+                if depth == 0 and k in SYMBOL_KEYS:
+                    refuse(k)
+                    continue
+                if (depth == 0 and k in PATH_KEYS) or (depth == 2 and top == "MACROS" and k in MACRO_PATH_FIELDS):
+                    # a Path name: only path-shaped values, each string a path (097g)
+                    strings = path_value_strings(x)
+                    if strings is None:
+                        refuse(json.dumps(x, sort_keys=True))
+                        continue
+                    for s in strings:
+                        if "{" in s or "}" in s:
+                            refuse(s)
+                        else:
+                            path(k if depth == 0 else top, s)
                     continue
                 walk(x, k if depth == 0 else top, k if (depth == 2 and top == "MACROS") else field, depth + 1)
         elif isinstance(v, list):
@@ -238,11 +284,14 @@ def config_paths(root):
             refused.append(s)
             continue
         rel = s[len("dir::"):]
-        real = os.path.realpath(os.path.join(src, rel))
-        if os.path.isabs(rel) or not inside(real) or not os.path.exists(real):
+        # LibreLane: os.path.abspath (".." applied to the text), then the OS
+        # follows links; both the lexical path and the file opened must be inside
+        norm = os.path.normpath(os.path.join(src, rel))
+        real = os.path.realpath(norm)
+        if os.path.isabs(rel) or not inside(norm) or not inside(real) or not os.path.exists(real):
             refused.append(s)
             continue
-        if os.path.isdir(real) and os.path.commonpath([src, real]) != src:
+        if os.path.isdir(real) and (os.path.commonpath([src, real]) != src or os.path.commonpath([src, norm]) != src):
             refused.append(s)      # a directory only inside src/ (097c: dir::.. names the root)
             continue
         files = [real] if os.path.isfile(real) else dir_files(real)
@@ -359,22 +408,86 @@ def pdk_sources(resolved):
     return sources.read_text().strip() if sources.is_file() else None
 
 
+def resolved_paths(root, resolved):
+    """(bound, refused) for the paths LibreLane itself resolved for the run (its
+    resolved.json: absolute paths for every Path variable, MACROS included),
+    whatever spelling the config used. A path under the run's design directory's
+    parent (the worktree when it hardened) is taken relative to the worktree now,
+    must be inside it lexically and after links, and binds its file (a directory:
+    every file under it, inside src/ only), except under tt/ (tt-support-tools,
+    recorded by its tree digest); a path under the run's PDK_ROOT or in the flow
+    image (/nix/store/) is a tool input; anything else is refused. Nothing
+    without a DESIGN_DIR."""
+    design = resolved.get("DESIGN_DIR")
+    if not isinstance(design, str) or not os.path.isabs(design):
+        return {}, []
+    old_root = os.path.dirname(os.path.normpath(design))
+    pdk_root = resolved.get("PDK_ROOT")
+    real_root = os.path.realpath(root)
+    src = os.path.join(real_root, "src")
+    inside = lambda p, d=real_root: os.path.commonpath([d, p]) == d
+    strings = []
+    for k, v in resolved.items():
+        if k in PATH_KEYS and k not in SYMBOL_KEYS:
+            strings += path_value_strings(v) or []
+    for macro in (resolved.get("MACROS") or {}).values():
+        for k, v in (macro or {}).items():
+            if k in MACRO_PATH_FIELDS:
+                strings += path_value_strings(v) or []
+    bound, refused = {}, []
+    for s in strings:
+        norm = os.path.normpath(s) if os.path.isabs(s) else None
+        if norm is not None and os.path.commonpath([old_root, norm]) == old_root:
+            rel = os.path.relpath(norm, old_root)
+            if rel.split(os.sep)[0] == "tt":
+                continue           # tt-support-tools: a tool input (tools.tt_support_tools, its tree digest)
+            cur = os.path.normpath(os.path.join(real_root, rel))
+            real = os.path.realpath(cur)
+            if not inside(cur) or not inside(real) or not os.path.exists(real):
+                refused.append(s)
+                continue
+            if os.path.isdir(real):
+                files = dir_files(real) if inside(cur, src) and inside(real, src) else None
+            else:
+                files = [real]
+            if files is None or not all(inside(f) and os.path.isfile(f) for f in files):
+                refused.append(s)
+                continue
+            for f in files:
+                bound[os.path.relpath(f, real_root)] = digest(f)
+        elif norm is not None and isinstance(pdk_root, str) and os.path.isabs(pdk_root) and \
+                os.path.commonpath([os.path.normpath(pdk_root), norm]) == os.path.normpath(pdk_root):
+            continue
+        elif norm is not None and norm.startswith("/nix/store/"):
+            continue               # inside the flow image (LibreLane's own scripts: tools.image)
+        else:
+            refused.append(s)
+    return dict(sorted(bound.items())), sorted(set(refused))
+
+
 def run_manifest(worktree):
-    """The manifest of a hardened worktree (runs/wokwi/final): what it was built from and what it made."""
+    """The manifest of a hardened worktree (runs/wokwi/final): what it was built from and what it made.
+    Its files are the build inputs plus every file LibreLane resolved for the run
+    inside the worktree (resolved_paths); what that refuses is refused."""
     wt = Path(worktree)
     run = wt / "runs/wokwi"
     resolved = json.loads((run / "resolved.json").read_text())
+    files = build_inputs(wt)
+    rbound, rrefused = resolved_paths(wt, resolved)
+    for name, value in rbound.items():
+        files.setdefault(name, value)
     return with_refused(wt, dict(
-        schema=SCHEMA, kind="run", files=build_inputs(wt),
+        schema=SCHEMA, kind="run", files=dict(sorted(files.items())),
         tools=tools_of(wt, resolved.get("meta", {}).get("librelane_version"), pdk_sources(resolved)),
         outputs=dict(netlist=digest(one((run / "final/nl").glob("*.nl.v"), "final netlist")),
-                     gds_normalized=normalized_gds_digest(one((run / "final/gds").glob("*.gds"), "final GDS")))))
+                     gds_normalized=normalized_gds_digest(one((run / "final/gds").glob("*.gds"), "final GDS")))),
+        extra_refused=rrefused)
 
 
-def with_refused(root, manifest):
-    """Adds "refused" (config paths outside the worktree) only when there are any,
-    so a manifest without them is unchanged."""
-    refused = config_paths(root)[1]
+def with_refused(root, manifest, extra_refused=()):
+    """Adds "refused" (config paths outside the worktree, and resolved paths
+    refused) only when there are any, so a manifest without them is unchanged."""
+    refused = sorted(set(config_paths(root)[1]) | set(extra_refused))
     if refused:
         manifest["refused"] = refused
     return manifest
@@ -430,7 +543,7 @@ def compare(a, b, *, require_tools=False, names=("run", "shipping")):
     failures, notes = [], []
     for m, name in ((a, names[0]), (b, names[1])):
         for s in m.get("refused", []):
-            failures.append(f"{name}: src/config.json names {s!r}, which is absolute or outside the worktree "
+            failures.append(f"{name}: src/config.json (or the run's resolved.json) names {s!r}, which is absolute or outside the worktree "
                             "(refused: the build would read a file no manifest binds)")
     fa, fb = a["files"], b["files"]
     for path in sorted(set(fa) | set(fb)):
