@@ -29,7 +29,7 @@ import release_receipts as receipts  # noqa: E402
 
 RELEASE_SCRIPTS = ("flow/release_check.py", "flow/signoff.py", "flow/release_evidence.py",
                    "flow/archive_evidence.py", "flow/release_gates.py", "flow/build_manifest.py",
-                   "docs/release-evidence.md")
+                   "flow/sta_nonlatch.py", "flow/sta_nonlatch.tcl", "docs/release-evidence.md")
 
 
 class Manifest:

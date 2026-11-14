@@ -77,6 +77,7 @@ def main(argv=None):
                          "and a release gate without its inputs "
                          "(flow/release_evidence.py passes it; an archive check leaves it out)")
     ap.add_argument("--checks-receipt", help="clock/reset/pulse-width check STA of this run (flow/check_rerun.py)")
+    ap.add_argument("--nonlatch-receipt", help="worst setup slack without the latches (flow/sta_nonlatch.py); printed")
     ap.add_argument("--shipping-root",
                     help="checkout of the shipping commit: the run's build inputs must equal its "
                          "(flow/build_manifest.py); flow/release_evidence.py passes the validation root")
@@ -119,6 +120,17 @@ def main(argv=None):
         if not finite_number(period) or period <= 0:
             raise ValueError("invalid CLOCK_PERIOD in resolved.json")
         fresh = None
+        nonlatch = None
+        if a.nonlatch_receipt:
+            try:
+                import sta_nonlatch     # only with a receipt: archives made before it do not hold the tool
+                nonlatch = sta_nonlatch.verify(a.nonlatch_receipt, wt)
+                print(f"non-latch STA verified: {a.nonlatch_receipt} ({nonlatch['plan']['period_ns']:g} ns, "
+                      f"image {nonlatch['plan']['image_id']})")
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                failures.append(f"invalid non-latch STA evidence: {e}")
+        else:
+            print("worst non-latch setup slack: not measured (flow/sta_nonlatch.py, --nonlatch-receipt)")
         if a.slow_sta_receipt:
             fresh = receipts.verify(a.slow_sta_receipt, wt, "sta")
             print(f"slow-corner STA verified: {a.slow_sta_receipt} ({fresh['plan']['period_ns']:g} ns, "
@@ -155,8 +167,12 @@ def main(argv=None):
                 n = m.get(f"{key}__corner:{corner}")
                 if not nonnegative_count(n) or n > waive.get(kind, 0):
                     failures.append(f"{corner}: {n} max-{kind} violations (allowed {waive.get(kind, 0)})")
-            print(f"{corner}: {source} {timed:g} ns; setup {timing['timing__setup__ws']} ns; "
-                  f"hold {timing['timing__hold__ws']} ns")
+            print(f"{corner}: {source} {timed:g} ns; setup {timing['timing__setup__ws']} ns "
+                  f"(all endpoints, latches included); hold {timing['timing__hold__ws']} ns")
+            if nonlatch is not None and corner in nonlatch["results"]:
+                r = nonlatch["results"][corner]
+                print(f"{corner}: worst non-latch setup slack {r['nonlatch']:+.4f} ns at {r['nonlatch_endpoint']} "
+                      f"({nonlatch['plan']['period_ns']:g} ns, flow/sta_nonlatch.py)")
         receipts.candidate_files(wt)
     except EVIDENCE_ERRORS as e:
         failures.append(f"invalid final run evidence: {e}")

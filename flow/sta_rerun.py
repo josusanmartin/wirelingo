@@ -110,7 +110,7 @@ def main(argv=None):
     try:
         for corner in receipts.CORNERS:
             m = receipts.sta_metrics(out, corner)
-            print(f"{corner} at {a.period_ns:g} ns: setup WS {m['timing__setup__ws']}, "
+            print(f"{corner} at {a.period_ns:g} ns: setup WS {m['timing__setup__ws']} (all endpoints, latches included), "
                   f"{m['timing__setup_vio__count']} violators; hold WS {m['timing__hold__ws']}, "
                   f"{m['timing__hold_vio__count']} violators")
         print(f"receipt: {receipts.finish(out)}")

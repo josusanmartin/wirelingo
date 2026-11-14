@@ -53,7 +53,10 @@ def main(run):
             failures.append(f"{label}: {m.get(k)}")
     for c in CORNERS:
         g = lambda k: m.get(f"{k}__corner:{c}")
-        print(f"{c:28s} setup WS {g('timing__setup__ws')}, hold WS {g('timing__hold__ws')}, "
+        # setup WS is over every endpoint, latches included: a FIFO latch that borrows
+        # time reads 0 (flow/sta_nonlatch.py measures the worst non-latch endpoint)
+        print(f"{c:28s} setup WS {g('timing__setup__ws')} (all endpoints, latches included), "
+              f"hold WS {g('timing__hold__ws')}, "
               f"setup/hold violators {g('timing__setup_vio__count')}/{g('timing__hold_vio__count')}, "
               f"max slew/cap violations {g('design__max_slew_violation__count')}/"
               f"{g('design__max_cap_violation__count')}")
