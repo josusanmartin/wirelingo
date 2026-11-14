@@ -158,6 +158,13 @@ class SramPinBuffersTcl(OpenROADStep):
     id = "Project.SramPinBuffersTcl"
     name = "Buffer the SRAM Pins"
 
+    config_vars = OpenROADStep.config_vars + [
+        Variable("PROTOEMU_SRAM_ADDR_BUF8", bool,
+                 "Drive each SRAM A_ADDR net with a buf_8 at its driver (size a buffer driver to buf_8, or insert "
+                 "one at any other driver's output) instead of swapping a _1 driver for _2 (flow/sram_pin_buffers.tcl).",
+                 default=False),
+    ]
+
     def get_script_path(self):
         return os.path.join(HERE, "sram_pin_buffers_step.tcl")
 
@@ -180,12 +187,51 @@ class HoldRepairPostGRT(ResizerTimingPostGRT):
 
 
 @Step.factory.register()
+class LastRepairDesignPostGRT(RepairDesignPostGRT):
+    """LibreLane's post-GRT design repair, with its own slew and capacitance
+    margins when PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT / _CAP_PCT are set (unset:
+    exactly RepairDesignPostGRT). The flow's first post-GRT design repair keeps
+    GRT_DESIGN_REPAIR_MAX_SLEW_PCT, so the placement-and-timing repairs before
+    this one are unchanged (aqp-rt6: a larger global margin changed them)."""
+    id = "Project.LastRepairDesignPostGRT"
+    name = "Repair Design (Post-GRT, last, own margins)"
+
+    config_vars = RepairDesignPostGRT.config_vars + [
+        Variable("PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT", Optional[Decimal],
+                 "Slew margin of this last post-GRT design repair only (default: GRT_DESIGN_REPAIR_MAX_SLEW_PCT).",
+                 default=None, units="%"),
+        Variable("PROTOEMU_LAST_REPAIR_MAX_CAP_PCT", Optional[Decimal],
+                 "Capacitance margin of this last post-GRT design repair only (default: GRT_DESIGN_REPAIR_MAX_CAP_PCT).",
+                 default=None, units="%"),
+    ]
+
+    def prepare_env(self, env, state):
+        env = super().prepare_env(env, state)
+        for own, base in (("PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT", "GRT_DESIGN_REPAIR_MAX_SLEW_PCT"),
+                          ("PROTOEMU_LAST_REPAIR_MAX_CAP_PCT", "GRT_DESIGN_REPAIR_MAX_CAP_PCT")):
+            if self.config[own] is not None:
+                env[base] = str(self.config[own])
+        return env
+
+
+@Step.factory.register()
 class RepairDesignThenHold(CompositeStep):
     """Opt-in (gen_config.py --post-repair-hold): the last post-GRT design repair,
     then hold repair, so that the buffers it inserts are checked for hold."""
     id = "Project.RepairDesignThenHold"
     name = "Repair Design, Then Hold (Post-GRT)"
-    Steps = [RepairDesignPostGRT, HoldRepairPostGRT]
+    Steps = [LastRepairDesignPostGRT, HoldRepairPostGRT]
+
+
+@Step.factory.register()
+class RepairDesignThenHold2(CompositeStep):
+    """Opt-in (gen_config.py --post-repair-hold-passes 2): design repair and hold
+    repair twice, so slew that the hold pass's re-route creates is repaired, and
+    hold re-checked after that (window 5: rt7's hold pass turned bank 0's
+    A_ADDR[5] net from 0.081 into 0.251 pF, with no slew repair after it)."""
+    id = "Project.RepairDesignThenHold2"
+    name = "Repair Design, Then Hold, Twice (Post-GRT)"
+    Steps = [LastRepairDesignPostGRT, HoldRepairPostGRT, LastRepairDesignPostGRT, HoldRepairPostGRT]
 
 
 @Step.factory.register()

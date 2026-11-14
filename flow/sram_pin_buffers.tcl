@@ -60,6 +60,42 @@ namespace eval protoemu_sram_pins {
                     # A_ADDR is on the fetch loop (SRAM -> next PC -> SRAM): a
                     # stronger driver rather than one more stage where the
                     # library has one
+                    if {[string match A_ADDR* $m] && [info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]
+                        && $::env(PROTOEMU_SRAM_ADDR_BUF8) in {1 true True}} {
+                        # opt-in (gen_config.py --sram-addr-buf8): the address net
+                        # is driven by a buf_8 at its driver, so a detour that a
+                        # later re-route gives it is driven strongly (window 5:
+                        # rt4/rt7's loop was set by one buf_2/mux2_2 on 0.2 pF).
+                        # A buffer driver is sized to buf_8; any other driver gets
+                        # a buf_8 at its output, driving the pin and its diode.
+                        if {[string match sg13cmos5l_buf_* $dm]} {
+                            if {$dm ni {sg13cmos5l_buf_8 sg13cmos5l_buf_16}} {
+                                set cell [get_cells [string map [list "\\\[" ? "\\\]" ? "\[" ? "\]" ?] [[$drv getInst] getName]]]
+                                if {[llength $cell] != 1} { error "cell lookup failed: [[$drv getInst] getName]" }
+                                replace_cell $cell [lindex [get_lib_cells */sg13cmos5l_buf_8] 0]
+                                puts "SRAM_PIN_BUFFERS [$inst getName]/$m: address driver $dm -> sg13cmos5l_buf_8"
+                                incr nup
+                            }
+                            continue
+                        }
+                        set loads [list [pname $it]]
+                        foreach o [$net getITerms] {
+                            set on [[$o getInst] getName]
+                            if {[$o getIoType] eq "INPUT" && [[[$o getInst] getMaster] getName] eq "sg13cmos5l_antennanp"
+                                && [string first "ANTENNA_" $on] == 0 && [string first "sram" $on] >= 0} {
+                                lappend loads [pname $o]
+                            }
+                        }
+                        set pins [get_pins $loads]
+                        if {[llength $pins] != [llength $loads]} { error "pin lookup failed: $loads" }
+                        lassign [[$drv getInst] getLocation] dx dy
+                        insert_buffer -buffer_cell sg13cmos5l_buf_8 -load_pins $pins \
+                            -buffer_name sram_addrbuf_ -net_name sram_addrnet_ \
+                            -location [list [ord::dbu_to_microns $dx] [ord::dbu_to_microns $dy]]
+                        puts "SRAM_PIN_BUFFERS [$inst getName]/$m: buf_8 at its $dm driver"
+                        incr nin
+                        continue
+                    }
                     if {[string match A_ADDR* $m]} {
                         regsub {_1$} $dm {_2} up
                         if {$up ne $dm && [[ord::get_db] findMaster $up] ne "NULL"} {

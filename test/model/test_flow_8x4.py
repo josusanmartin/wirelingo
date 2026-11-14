@@ -333,9 +333,83 @@ def test_post_repair_hold_option(tmp_path):
     assert "post_repair_hold" not in c0["//generator"]
     r, d = generate(tmp_path, "--preset", "experiment", "--post-repair-hold", "--no-sram-pin-buffers", name="bad.json")
     assert r.returncode != 0 and not d.exists()
+    # the plugin: the hold step runs its own script, and the composite chains exactly
+    # the design repair and that step (not LibreLane's full setup+hold script)
     plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
-    assert 'id = "Project.RepairDesignThenHold"' in plugin and "Steps = [RepairDesignPostGRT, HoldRepairPostGRT]" in plugin
-    assert 'id = "Project.HoldRepairPostGRT"' in plugin
+    blocks = {m.group(1): m.group(2) for m in re.finditer(r"^class (\w+)\(.*?\):\n((?:(?:    .*)?\n)+)", plugin, re.M)}
+    hold = blocks["HoldRepairPostGRT"]
+    assert 'id = "Project.HoldRepairPostGRT"' in hold
+    assert re.search(r'def get_script_path\(self\):\n\s+return os\.path\.join\(HERE, "hold_repair_postgrt\.tcl"\)', hold)
+    both = blocks["RepairDesignThenHold"]
+    assert 'id = "Project.RepairDesignThenHold"' in both
+    assert re.findall(r"^\s+Steps = \[(.*)\]$", both, re.M) == ["LastRepairDesignPostGRT, HoldRepairPostGRT"]
+    last = blocks["LastRepairDesignPostGRT"]
+    assert last.startswith('    """') and "def get_script_path" not in last    # LibreLane's design repair script
+    assert re.search(r"^class LastRepairDesignPostGRT\(RepairDesignPostGRT\):", plugin, re.M)
+    # the script: one repair_timing call, on hold_args, which carry -hold and no setup pass
     tcl = (ROOT / "flow/hold_repair_postgrt.tcl").read_text()
-    assert "lappend hold_args -hold" in tcl and "-setup\n" not in tcl and "setup_args" not in tcl
-    assert "estimate_parasitics -global_routing" in tcl
+    code = [l.split("#", 1)[0].strip() for l in tcl.splitlines()]
+    assert [l for l in code if "repair_timing" in l] == ["log_cmd repair_timing {*}$hold_args"]
+    assert "lappend hold_args -hold" in code
+    assert not [l for l in code if re.search(r"(^|\s)-setup(\s|$)", l)]
+    assert "setup_args" not in tcl
+    assert "estimate_parasitics -global_routing" in code
+
+
+def test_last_repair_margins_apply_to_the_last_repair_only(tmp_path):
+    r, d = generate(tmp_path, "--preset", "experiment", "--post-repair-hold", "--last-repair-slew-pct", "50",
+                    "--last-repair-cap-pct", "40", name="last.json")
+    c = json.loads(d.read_text())
+    assert r.returncode == 0, r.stderr
+    assert c["PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT"] == 50 and c["PROTOEMU_LAST_REPAIR_MAX_CAP_PCT"] == 40
+    assert c["GRT_DESIGN_REPAIR_MAX_SLEW_PCT"] == 30 and c["GRT_DESIGN_REPAIR_MAX_CAP_PCT"] == 30   # the earlier repairs
+    r0, d0 = generate(tmp_path, "--preset", "experiment", "--post-repair-hold", name="plain.json")
+    c0 = json.loads(d0.read_text())
+    assert not [k for k in c0 if k.startswith("PROTOEMU_LAST_REPAIR")]
+    assert not [k for k in c0["//generator"] if k.startswith("last_repair")]
+    for bad in (["--last-repair-slew-pct", "50"], ["--post-repair-hold", "--last-repair-slew-pct", "150"],
+                ["--post-repair-hold", "--last-repair-cap-pct", "-1"]):
+        r, b = generate(tmp_path, "--preset", "experiment", *bad, name="bad.json")
+        assert r.returncode != 0 and not b.exists()
+    # the step overrides LibreLane's margin variables in its own environment only
+    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    for own, base in (("PROTOEMU_LAST_REPAIR_MAX_SLEW_PCT", "GRT_DESIGN_REPAIR_MAX_SLEW_PCT"),
+                      ("PROTOEMU_LAST_REPAIR_MAX_CAP_PCT", "GRT_DESIGN_REPAIR_MAX_CAP_PCT")):
+        assert f'("{own}", "{base}")' in plugin
+    assert "env[base] = str(self.config[own])" in plugin
+
+
+def test_option_1_address_buffers_second_pass_transition_limit(tmp_path):
+    # window 5's option 1, each opt-in: buf_8-driven SRAM address nets, a second
+    # design-repair + hold pass, a PnR-only 1.0 ns transition limit
+    on = ["--preset", "experiment", "--post-repair-hold", "--post-repair-hold-passes", "2", "--sram-addr-buf8",
+          "--pnr-max-transition"]
+    r, d = generate(tmp_path, *on, name="opt1.json")
+    c = json.loads(d.read_text())
+    assert r.returncode == 0, r.stderr
+    assert c["meta"]["substituting_steps"]["+Project.SramPinBuffers"] == "Project.RepairDesignThenHold2"
+    assert c["PROTOEMU_SRAM_ADDR_BUF8"] is True
+    assert c["PNR_SDC_FILE"] == "dir::../flow/protoemu_pnr_transition.sdc"
+    g = c["//generator"]
+    assert g["post_repair_hold_passes"] == 2 and g["sram_addr_buf8"] is True and g["pnr_max_transition"] is True
+    r0, d0 = generate(tmp_path, "--preset", "experiment", "--post-repair-hold", name="hold.json")
+    c0 = json.loads(d0.read_text())
+    assert c0["meta"]["substituting_steps"]["+Project.SramPinBuffers"] == "Project.RepairDesignThenHold"
+    assert "PROTOEMU_SRAM_ADDR_BUF8" not in c0 and c0["PNR_SDC_FILE"] == "dir::protoemu_pnr_margin.sdc"
+    assert not {"post_repair_hold_passes", "sram_addr_buf8", "pnr_max_transition"} & set(c0["//generator"])
+    for bad in (["--post-repair-hold-passes", "2"], ["--sram-addr-buf8", "--no-sram-pin-buffers"],
+                ["--pnr-max-transition", "--no-pnr-setup-margin"], ["--pnr-max-transition", "--pnr-electrical-margins"],
+                ["--post-repair-hold", "--post-repair-hold-passes", "3"]):
+        r, b = generate(tmp_path, "--preset", "experiment", *bad, name="bad.json")
+        assert r.returncode != 0 and not b.exists()
+    plugin = (ROOT / "librelane_plugin_protoemu.py").read_text()
+    blocks = {m.group(1): m.group(2) for m in re.finditer(r"^class (\w+)\(.*?\):\n((?:(?:    .*)?\n)+)", plugin, re.M)}
+    assert re.findall(r"^\s+Steps = \[(.*)\]$", blocks["RepairDesignThenHold2"], re.M) == [
+        "LastRepairDesignPostGRT, HoldRepairPostGRT, LastRepairDesignPostGRT, HoldRepairPostGRT"]
+    assert re.search(r'Variable\("PROTOEMU_SRAM_ADDR_BUF8", bool,[\s\S]*?default=False\)', blocks["SramPinBuffersTcl"])
+    tcl = (ROOT / "flow/sram_pin_buffers.tcl").read_text()
+    assert "[info exists ::env(PROTOEMU_SRAM_ADDR_BUF8)]" in tcl and "-buffer_cell sg13cmos5l_buf_8" in tcl
+    sdc = [l for l in (ROOT / "flow/protoemu_pnr_transition.sdc").read_text().splitlines() if l and not l.startswith("#")]
+    assert sdc[-1] == "set_max_transition 1.0 [current_design]"
+    assert any("src protoemu_pnr_margin.sdc" in l for l in sdc) and "source $::env(PNR_SDC_FILE)" in sdc
+    assert sdc.index("source $::env(PNR_SDC_FILE)") < sdc.index("set ::env(PNR_SDC_FILE) $_protoemu_pnr_sdc")
