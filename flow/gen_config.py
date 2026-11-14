@@ -49,14 +49,42 @@ PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".g
                  ".py", ".cdl", ".spice", ".spef", ".mag", ".yaml", ".yml", ".txt", ".cfg", ".lyp", ".lydrc")
 
 
+# LibreLane 3.1.0.dev3's Path-typed variables (Classic flow, its steps and the
+# plugin; the verifier's census in 097c): every value of one of these is a path,
+# whatever its shape. MACROS holds nested Path fields; they carry prefixes.
+PATH_KEYS = frozenset("""
+CELL_BB_VERILOG_MODELS CELL_CDLS CELL_GDS CELL_LEFS CELL_LIBS CELL_MAGLEFS CELL_MAGS CELL_SPICE_MODELS
+CELL_VERILOG_MODELS DESIGN_DIR EQY_SCRIPT EXTRA_CDLS EXTRA_GDS EXTRA_LEFS EXTRA_LIBS EXTRA_SPEFS
+EXTRA_SPICE_MODELS EXTRA_VERILOG_MODELS FALLBACK_SDC FP_DEF_TEMPLATE FP_TRACKS_INFO IO_PIN_ORDER_CFG
+KLAYOUT_DEF_LAYER_MAP KLAYOUT_DRC_RUNSET KLAYOUT_PROPERTIES KLAYOUT_TECH LINTER_VLTS MACRO_PLACEMENT_CFG
+MAGICRC MAGIC_DRC_MAGLEFS MAGIC_PDK_SETUP MAGIC_TECH NETGEN_SETUP PDK_ROOT PDN_CFG PNR_EXCLUDED_CELL_FILE
+PNR_SDC_FILE RCX_RULESETS RCX_SDC_FILE SIGNOFF_SDC_FILE STA_EXTRA_CORNER_TCL_FILE SYNTH_ABC_STRATEGY_SCRIPT
+SYNTH_CSA_MAP SYNTH_EXCLUDED_CELL_FILE SYNTH_EXTRA_MAPPING_FILE SYNTH_FA_MAP SYNTH_LATCH_MAP SYNTH_RCA_MAP
+SYNTH_TRISTATE_MAP TECH_LEFS VERILOG_FILES VERILOG_INCLUDE_DIRS VSRC_LOC_FILES
+""".split())
+PATH_PREFIXES = ("dir::", "pdk_dir::", "refg::", "ref::")
+
+
+def is_path_string(key, v):
+    """Whether a config string is a path: any value of a Path-typed key, any
+    string with a LibreLane path prefix, "." and "..", and as a backstop (unknown
+    keys, MACROS) any string with a "/" or a known file suffix, except "cell/pin"
+    values of *_CELL keys (no Path-typed key is named *_CELL)."""
+    if key in PATH_KEYS or v.startswith(PATH_PREFIXES) or v in (".", ".."):
+        return True
+    if "/" in v or v.lower().endswith(PATH_SUFFIXES):
+        return not (str(key).endswith(("_CELL", "_CELLS")) and re.match(r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$", v))
+    return False
+
+
 def paths_outside_repo(config, root=ROOT):
     """The config's path-like strings outside flow/build_manifest.py's allowlist
     (097b): a dir:: path is allowed without glob characters when it normalizes
     to a path inside the repository (the manifest also requires the file to
     exist; this generator runs from bare test copies too), pdk_dir:: without
-    "..". Every other string with a "/" or a known file suffix is refused:
-    unprefixed (LibreLane reads it from the working directory), refg::,
-    absolute. "cell/pin" values of *_CELL keys (DIODE_CELL) are not paths."""
+    "..", and a directory only inside src/ (never the root). Every other path
+    string (is_path_string, 097c) is refused: unprefixed (LibreLane reads it
+    from the working directory), refg::, absolute."""
     real_root = os.path.realpath(root)
     src = os.path.join(real_root, "src")
     found = []
@@ -69,18 +97,18 @@ def paths_outside_repo(config, root=ROOT):
         elif isinstance(v, list):
             for x in v:
                 walk(key, x)
-        elif isinstance(v, str) and ("/" in v or v.lower().endswith(PATH_SUFFIXES)):
-            if str(key).endswith(("_CELL", "_CELLS")) and re.match(r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$", v):
-                return
+        elif isinstance(v, str) and is_path_string(key, v):
             if v.startswith("pdk_dir::"):
                 rest = v[len("pdk_dir::"):]
                 if os.path.isabs(rest) or ".." in pathlib.PurePath(rest).parts:
                     found.append(v)
                 return
             rel = v[len("dir::"):] if v.startswith("dir::") else None
+            target = os.path.normpath(os.path.join(src, rel)) if rel is not None else None
             if rel is None or set("*?[]") & set(v) or os.path.isabs(rel) or \
-                    os.path.commonpath([real_root, os.path.normpath(os.path.join(src, rel))]) != real_root:
-                found.append(v)
+                    os.path.commonpath([real_root, target]) != real_root or \
+                    (os.path.isdir(target) and os.path.commonpath([src, os.path.realpath(target)]) != src):
+                found.append(v)    # a directory only inside src/, so never the root (097c)
     walk(None, config)
     return found
 
@@ -528,7 +556,7 @@ def main():
         c[key] = json.loads(value)
     outside = paths_outside_repo(c)
     if outside:
-        ap.error(f"config paths outside the allowlist (dir:: inside the repository without glob characters, pdk_dir:: without ..; the build manifest would refuse them): {outside}")
+        ap.error(f"config paths outside the allowlist (dir:: inside the repository without glob characters, a directory only inside src/; pdk_dir:: without ..; the build manifest would refuse them): {outside}")
     rendered = json.dumps(c, indent=2) + "\n"
     if a.check:
         if not a.output.exists() or a.output.read_text() != rendered:

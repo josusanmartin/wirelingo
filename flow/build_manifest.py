@@ -91,13 +91,37 @@ def executed_scripts(root):
 PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".gds", ".def", ".odb", ".json",
                  ".py", ".cdl", ".spice", ".spef", ".mag", ".yaml", ".yml", ".txt", ".cfg", ".lyp", ".lydrc")
 GLOB_CHARS = set("*?[]")
-CELL_PIN_RE = r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$"
+# LibreLane 3.1.0.dev3's Path-typed variables (Classic flow, its steps and the
+# plugin; the verifier's census in 097c): every value of one of these is a path,
+# whatever its shape. MACROS holds nested Path fields; they carry prefixes.
+PATH_KEYS = frozenset("""
+CELL_BB_VERILOG_MODELS CELL_CDLS CELL_GDS CELL_LEFS CELL_LIBS CELL_MAGLEFS CELL_MAGS CELL_SPICE_MODELS
+CELL_VERILOG_MODELS DESIGN_DIR EQY_SCRIPT EXTRA_CDLS EXTRA_GDS EXTRA_LEFS EXTRA_LIBS EXTRA_SPEFS
+EXTRA_SPICE_MODELS EXTRA_VERILOG_MODELS FALLBACK_SDC FP_DEF_TEMPLATE FP_TRACKS_INFO IO_PIN_ORDER_CFG
+KLAYOUT_DEF_LAYER_MAP KLAYOUT_DRC_RUNSET KLAYOUT_PROPERTIES KLAYOUT_TECH LINTER_VLTS MACRO_PLACEMENT_CFG
+MAGICRC MAGIC_DRC_MAGLEFS MAGIC_PDK_SETUP MAGIC_TECH NETGEN_SETUP PDK_ROOT PDN_CFG PNR_EXCLUDED_CELL_FILE
+PNR_SDC_FILE RCX_RULESETS RCX_SDC_FILE SIGNOFF_SDC_FILE STA_EXTRA_CORNER_TCL_FILE SYNTH_ABC_STRATEGY_SCRIPT
+SYNTH_CSA_MAP SYNTH_EXCLUDED_CELL_FILE SYNTH_EXTRA_MAPPING_FILE SYNTH_FA_MAP SYNTH_LATCH_MAP SYNTH_RCA_MAP
+SYNTH_TRISTATE_MAP TECH_LEFS VERILOG_FILES VERILOG_INCLUDE_DIRS VSRC_LOC_FILES
+""".split())
+PATH_PREFIXES = ("dir::", "pdk_dir::", "refg::", "ref::")
+
+
+def is_path_string(key, v):
+    """Whether a config string is a path: any value of a Path-typed key, any
+    string with a LibreLane path prefix, "." and "..", and as a backstop (unknown
+    keys, MACROS) any string with a "/" or a known file suffix, except "cell/pin"
+    values of *_CELL keys (no Path-typed key is named *_CELL)."""
+    if key in PATH_KEYS or v.startswith(PATH_PREFIXES) or v in (".", ".."):
+        return True
+    if "/" in v or v.lower().endswith(PATH_SUFFIXES):
+        return not (str(key).endswith(("_CELL", "_CELLS")) and re.match(r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$", v))
+    return False
 
 
 def config_path_strings(config):
-    """(key, string) for the path-like strings of a LibreLane config: any string
-    with a "/" or ending in a known file suffix, except "cell/pin" values of
-    *_CELL keys (DIODE_CELL). Comment keys ("//...") are skipped."""
+    """(key, string) for the path strings of a LibreLane config (is_path_string),
+    keyed by the top-level key. Comment keys ("//...") are skipped."""
     out = []
 
     def walk(key, v):
@@ -108,20 +132,31 @@ def config_path_strings(config):
         elif isinstance(v, list):
             for x in v:
                 walk(key, x)
-        elif isinstance(v, str) and ("/" in v or v.lower().endswith(PATH_SUFFIXES)):
-            if str(key).endswith(("_CELL", "_CELLS")) and re.match(CELL_PIN_RE, v):
-                return
+        elif isinstance(v, str) and is_path_string(key, v):
             out.append((key, v))
     walk(None, config)
     return out
+
+
+def dir_files(real):
+    """Every file under a directory, sorted, each resolved (symlinks followed);
+    None when the walk meets a directory twice (a symlink loop)."""
+    seen, files = set(), []
+    for d, dirs, names in os.walk(real, followlinks=True):
+        if os.path.realpath(d) in seen:
+            return None
+        seen.add(os.path.realpath(d))
+        files += [os.path.realpath(os.path.join(d, f)) for f in names]
+    return sorted(files)
 
 
 def config_paths(root):
     """(bound, refused) for src/config.json's path-like strings, by the allowlist
     above: a dir:: path is resolved against src/ (normalized, symlinks
     followed); a file inside the worktree is bound by its path relative to the
-    resolved worktree root, a directory binds every file under it (sorted, each
-    resolved and inside the worktree). Refused: a dir:: path with glob characters,
+    resolved worktree root, a directory inside src/ binds every file under it
+    (sorted, each resolved, existing and inside the worktree; a symlink loop is
+    refused); the root and any other directory are refused. Refused: a dir:: path with glob characters,
     or missing, or resolving outside the worktree; pdk_dir:: with ".."; and any
     other path-like string (unprefixed, refg::, absolute)."""
     root = Path(root)
@@ -147,9 +182,11 @@ def config_paths(root):
         if os.path.isabs(rel) or not inside(real) or not os.path.exists(real):
             refused.append(s)
             continue
-        files = [real] if os.path.isfile(real) else sorted(
-            os.path.realpath(os.path.join(d, f)) for d, _, names in os.walk(real, followlinks=True) for f in names)
-        if not all(inside(f) for f in files):
+        if os.path.isdir(real) and os.path.commonpath([src, real]) != src:
+            refused.append(s)      # a directory only inside src/ (097c: dir::.. names the root)
+            continue
+        files = [real] if os.path.isfile(real) else dir_files(real)
+        if files is None or not all(inside(f) and os.path.isfile(f) for f in files):
             refused.append(s)
             continue
         for f in files:

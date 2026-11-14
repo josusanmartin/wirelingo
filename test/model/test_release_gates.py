@@ -703,18 +703,29 @@ REFUSED = ["tools/x.sdc",                    # unprefixed: LibreLane reads it fr
            "dir::../flow/*.sdc", "dir::../flow/x.s?c",
            "refg::$PDK_ROOT/../../x.sdc", "refg::$DESIGN_DIR/../flow/x.sdc",   # refg:: in any form
            "dir::../../flow/x.sdc", "/elsewhere/flow/x.sdc", "dir::/elsewhere/x.sdc", "refg::/elsewhere/x.sdc",
-           "dir::../flow/absent.sdc"]        # resolves to nothing
+           "dir::../flow/absent.sdc",        # resolves to nothing
+           # 097c: paths without a "/" or a listed suffix, which LibreLane accepts for
+           # Path and List[Path] variables; a Path-typed key makes them paths
+           "..", ".",                        # unprefixed: the worktree's parent, the root
+           "dir::..", "dir::../tools",       # the root (dir:: adds the "/"); a directory outside src/
+           "pdk_dir::..",                    # the PDK root
+           "xt", "LICENSE", "README.md",     # root-level files: no extension, an unlisted suffix
+           "refg::$DESIGN_DIR"]
 
 
+@pytest.mark.parametrize("key", ["PNR_SDC_FILE", "VERILOG_INCLUDE_DIRS"])
 @pytest.mark.parametrize("spelling", REFUSED)
-def test_a_config_path_outside_the_allowlist_is_refused(tmp_path, spelling):
+def test_a_config_path_outside_the_allowlist_is_refused(tmp_path, spelling, key):
+    # through a Path variable and a List[Path] variable
     bm = module("build_manifest")
     wt = candidate(tmp_path)
-    (wt / "src/config.json").write_text(json.dumps({"CLOCK_PERIOD": 20, "PNR_SDC_FILE": spelling}))
+    value = spelling if key == "PNR_SDC_FILE" else [spelling]
+    (wt / "src/config.json").write_text(json.dumps({"CLOCK_PERIOD": 20, key: value}))
     ship = shipping(wt, tmp_path)
     shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
     for root in (wt, ship):            # the files these spellings could name exist in the worktree
-        for f in ("tools/x.sdc", "tools/xt", "flow/x[1].sdc", "flow/x.sdc", "flow/x1.sdc"):
+        for f in ("tools/x.sdc", "tools/xt", "flow/x[1].sdc", "flow/x.sdc", "flow/x1.sdc",
+                  "xt", "LICENSE", "README.md"):
             (root / f).parent.mkdir(parents=True, exist_ok=True)
             (root / f).write_text("# a file\n")
     assert bm.config_paths(wt) == ({}, [spelling])
@@ -724,7 +735,7 @@ def test_a_config_path_outside_the_allowlist_is_refused(tmp_path, spelling):
     # the generator refuses to write such a config ("absent" is the manifest's
     # check alone: the generator does not require the file to exist)
     r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment",
-                        "--set", f"PNR_SDC_FILE={json.dumps(spelling)}", "--output", str(tmp_path / "c.json")],
+                        "--set", f"{key}={json.dumps(value)}", "--output", str(tmp_path / "c.json")],
                        capture_output=True, text=True)
     if spelling == "dir::../flow/absent.sdc":
         assert r.returncode == 0
@@ -733,20 +744,71 @@ def test_a_config_path_outside_the_allowlist_is_refused(tmp_path, spelling):
 
 
 def test_a_config_named_directory_binds_every_file_under_it(tmp_path):
+    # a directory inside src/ (097c: the root and directories outside src/ are refused)
     bm = module("build_manifest")
     wt = candidate(tmp_path)
-    (wt / "src/config.json").write_text(json.dumps({"VERILOG_INCLUDE_DIRS": ["dir::../tools/inc"]}))
+    (wt / "src/config.json").write_text(json.dumps({"VERILOG_INCLUDE_DIRS": ["dir::inc"]}))
     ship = shipping(wt, tmp_path)
     shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
     for root in (wt, ship):
-        (root / "tools/inc/sub").mkdir(parents=True)
-        (root / "tools/inc/h.vh").write_text("`define A 1\n")
-        (root / "tools/inc/sub/g.vh").write_text("`define B 1\n")
-    assert list(bm.config_paths(wt)[0]) == ["tools/inc/h.vh", "tools/inc/sub/g.vh"]
+        (root / "src/inc/sub").mkdir(parents=True)
+        (root / "src/inc/h.vh").write_text("`define A 1\n")
+        (root / "src/inc/sub/g.vh").write_text("`define B 1\n")
+    assert bm.config_paths(wt) == ({"src/inc/h.vh": bm.digest(wt / "src/inc/h.vh"),
+                                    "src/inc/sub/g.vh": bm.digest(wt / "src/inc/sub/g.vh")}, [])
     assert bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))[0] == []
-    (ship / "tools/inc/sub/g.vh").write_text("`define B 2\n")
+    (ship / "src/inc/sub/g.vh").write_text("`define B 2\n")
     failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
-    assert any("tools/inc/sub/g.vh" in f for f in failures), failures
+    assert any("src/inc/sub/g.vh" in f for f in failures), failures
+    r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment",
+                        "--set", 'VERILOG_INCLUDE_DIRS=["dir::inc"]', "--output", str(tmp_path / "c.json")],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("case", ["outside-file", "outside-member", "dangling-member", "member-loop"])
+def test_an_existing_target_outside_the_worktree_or_a_broken_member_is_refused(tmp_path, case):
+    # 097c finding 2: the outside file exists, so only the inside checks refuse it;
+    # a dangling member or a symlink loop is a named refusal, not a crash
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    (tmp_path / "outside.vh").write_text("`define OUT 1\n")
+    (wt / "src/inc").mkdir()
+    (wt / "src/inc/h.vh").write_text("`define A 1\n")
+    spelling = "dir::out.vh" if case == "outside-file" else "dir::inc"
+    if case == "outside-file":
+        (wt / "src/out.vh").symlink_to(tmp_path / "outside.vh")
+    elif case == "outside-member":
+        (wt / "src/inc/o.vh").symlink_to(tmp_path / "outside.vh")
+    elif case == "dangling-member":
+        (wt / "src/inc/gone.vh").symlink_to(wt / "src/inc/absent.vh")
+    else:
+        (wt / "src/inc/sub").mkdir()
+        (wt / "src/inc/sub/loop").symlink_to("..")
+    (wt / "src/config.json").write_text(json.dumps({"VERILOG_INCLUDE_DIRS": [spelling]}))
+    assert bm.config_paths(wt) == ({}, [spelling])
+    assert bm.run_manifest(wt)["refused"] == [spelling]
+
+
+@pytest.mark.parametrize("config,refused", [
+    ({"X": "x.sdc"}, "x.sdc"),                                  # an unknown key: the suffix backstop
+    ({"X": ["tools/xt"]}, "tools/xt"),                          # an unknown key: the "/" backstop
+    ({"MACROS": {"m": {"gds": ["tools/m.gds"]}}}, "tools/m.gds"),   # nested Path fields
+    ({"FOO_CELL": "../x.sdc"}, "../x.sdc"),                     # the cell/pin carve-out is the shape only
+    ({"X": ".."}, ".."), ({"X": "pdk_dir::.."}, "pdk_dir::..")])   # "." and "..", prefixes: whatever the key
+def test_the_shape_rule_backstops_keys_that_are_not_path_typed(tmp_path, config, refused):
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    for f in ("x.sdc", "tools/xt", "tools/m.gds"):
+        (wt / f).parent.mkdir(parents=True, exist_ok=True)
+        (wt / f).write_text("# a file\n")
+    (wt / "src/config.json").write_text(json.dumps(config))
+    assert bm.config_paths(wt) == ({}, [refused])
+    (key, value), = config.items()
+    r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment",
+                        "--set", f"{key}={json.dumps(value)}", "--output", str(tmp_path / "c.json")],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "outside the allowlist" in r.stderr and not (tmp_path / "c.json").exists()
 
 
 def test_relative_worktree_arguments_compare_identical_trees_equal(tmp_path, monkeypatch):
