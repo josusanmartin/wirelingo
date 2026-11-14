@@ -105,3 +105,34 @@ def test_simulator_evaluates_fine_gates_bit_parallel(tmp_path):
     a, b, s = 0b1100, 0b1010, 0b0110
     y = m.run({"a": [a], "b": [b], "s": [s]}, 0b1111)["y"][0]
     assert y == ((((~a & 0xF) ^ b) & ~s) | s) & 0xF
+
+
+def _module(ports, cells):
+    return {"ports": {p: {"direction": d, "bits": b} for p, (d, b) in ports.items()}, "cells": cells, "netnames": {}}
+
+
+def test_pair_breaks_an_fsm_bit_tie_by_the_compared_outputs(tmp_path):
+    # Two FSM-encoded bits whose next states the patterns never tell apart (both
+    # 0, and the inverted gate flop's 1) are both hypotheses for it; only fsm#0 at polarity 1
+    # makes the compared output D:x agree, so that pair is proposed and logged,
+    # never the other (the equivalence run then proves or refutes it)
+    import subprocess
+    gold = _module({"S": ("input", [2]), "clk": ("input", [3]), "rst": ("input", [4]), "V:f": ("input", [5]),
+                    "UQ:fsm:r#0": ("output", [2]), "UD:fsm:r#0": ("output", ["0"]),
+                    "UC:fsm:r#0": ("output", [3]), "UR:fsm:r#0": ("output", [4]),
+                    "UQ:fsm:r#1": ("output", ["0"]), "UD:fsm:r#1": ("output", ["0"]),
+                    "UC:fsm:r#1": ("output", [3]), "UR:fsm:r#1": ("output", [4]),
+                    "D:x": ("output", [2])}, {})
+    gate = _module({"S": ("input", [2]), "clk": ("input", [3]), "rst": ("input", [4]), "V:f": ("input", [5]),
+                    "VD:f": ("output", ["1"]), "VC:f": ("output", [3]), "VR:f": ("output", [4]),
+                    "D:x": ("output", [6])}, {"n": {"type": "$_NOT_", "connections": {"A": [5], "Y": [6]}}})
+    (tmp_path / "gold.json").write_text(json.dumps({"modules": {"gold": gold}}))
+    (tmp_path / "gate.json").write_text(json.dumps({"modules": {"gate": gate}}))
+    r = subprocess.run([sys.executable, str(ROOT / "formal/equiv/pair.py"), "--gold", str(tmp_path / "gold.json"),
+                        "--gate", str(tmp_path / "gate.json"), "--out", str(tmp_path / "pairs.json")],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    res = json.loads((tmp_path / "pairs.json").read_text())
+    assert [(p["gate"], p["gold"], p["pol"]) for p in res["pairs"]] == [("f", "fsm:r#0", 1)]
+    assert "by compared outputs: 0 mismatching bits" in res["pairs"][0]["found"]
+    assert res["unpaired_gold"] == ["fsm:r#1"]

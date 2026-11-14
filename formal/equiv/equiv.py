@@ -370,7 +370,7 @@ def mutate_text(text, kind):
 
 
 @timed("mutants")
-def mutants(inp, out):
+def mutants(inp, out, m):
     res = []
     text = open(inp["final_netlist"]).read()
     for k in range(len(MUTANTS) + 3):
@@ -388,6 +388,64 @@ def mutants(inp, out):
         st = abc_check(d, "mut")
         res.append({"mutant": k, "description": desc, "abc": st, "caught": st == "not equivalent"})
         log(f"  mutant {k}: {desc}: {st}")
+    res += pairing_mutants(inp, out, m, len(MUTANTS) + 3, text)
+    return res
+
+
+def pairing_mutants(inp, out, m, k0, text):
+    """Three mutants of an FSM state bit's pairing: a simulation pair of an
+    FSM-encoded bit moved to another encoded bit, the same pair with its
+    polarity flipped, and the paired (or else a name-matched) FSM state flop's
+    reset removed in the netlist. Each must fail: ABC finds the cuts unequal, or
+    the cut reports a polarity against the encoded reset value."""
+    pairs = json.load(open(f"{out}/pairs.json"))
+    fsm_pairs = [p for p in pairs["pairs"] if p["gold"].startswith("fsm:")]
+    taken = {v["gold"] for v in m["flops"].values()}
+    res = []
+
+    def run(k, desc, pairs_obj=None, netlist=None):
+        d = os.path.join(out, "mutants", f"m{k}")
+        os.makedirs(d, exist_ok=True)
+        pj = f"{out}/pairs.json"
+        if pairs_obj is not None:
+            pj = os.path.join(d, "pairs.json")
+            json.dump(pairs_obj, open(pj, "w"), indent=1)
+        raw = f"{out}/gate_raw.json"
+        if netlist is not None:
+            nl = os.path.join(d, "netlist.v")
+            open(nl, "w").write(netlist)
+            _gate(inp, out, netlist=nl, tag=f"mutants/m{k}/gate")
+            raw = f"{d}/gate_raw.json"
+        mm = cut(inp, out, raw, d, pairs=pj)
+        st = abc_check(d, "mut")
+        caught = st == "not equivalent" or bool(mm["polarity_conflicts"])
+        res.append({"mutant": k, "description": desc, "abc": st, "polarity_conflicts": mm["polarity_conflicts"],
+                    "caught": caught})
+        log(f"  mutant {k}: {desc}: {st}{', polarity conflict' if mm['polarity_conflicts'] else ''}")
+
+    if fsm_pairs:
+        p0 = fsm_pairs[0]
+        reg = p0["gold"][len("fsm:"):].rsplit("#", 1)[0]
+        f = next(f for f in m["fsms"] if f["reg"] == reg)
+        others = [f"fsm:{reg}#{j}" for j in range(len(next(iter(f["table"].values()))))
+                  if f"fsm:{reg}#{j}" != p0["gold"] and f"fsm:{reg}#{j}" not in taken]
+        if others:
+            wrong = dict(pairs, pairs=[dict(p, gold=others[0]) if p is p0 else p for p in pairs["pairs"]])
+            run(k0, f"FSM bit pair {p0['gate']} moved from {p0['gold']} to {others[0]}", pairs_obj=wrong)
+        else:
+            res.append({"mutant": k0, "status": "not applicable"})
+        flipped = dict(pairs, pairs=[dict(p, pol=1 - p["pol"]) if p is p0 else p for p in pairs["pairs"]])
+        run(k0 + 1, f"FSM bit pair {p0['gate']} <- {p0['gold']} with polarity {1 - p0['pol']}", pairs_obj=flipped)
+    else:
+        res += [{"mutant": k0, "status": "not applicable"}, {"mutant": k0 + 1, "status": "not applicable"}]
+    fsm_flops = [v["gate"] for v in m["flops"].values() if v["gold"].startswith("fsm:")]
+    target = fsm_pairs[0]["gate"] if fsm_pairs else (sorted(fsm_flops)[0] if fsm_flops else None)
+    mt = re.search(r"(sg13cmos5l_dfrbpq_\d+ " + re.escape(target) + r" \([^;]*?\.RESET_B\()([^)]+)\)", text) \
+        if target else None
+    if mt:
+        run(k0 + 2, f"FSM state flop {target}: reset removed", netlist=text[:mt.start(2)] + "1'b1" + text[mt.end(2):])
+    else:
+        res.append({"mutant": k0 + 2, "status": "not applicable"})
     return res
 
 
@@ -419,7 +477,7 @@ def main():
     sres = None if a.skip_simple else simple(out, a.jobs)
     if sres:
         log(f"equiv_simple: {sres['proven']}/{sres['equiv_cells']} proven, {len(sres['unproven'])} unproven")
-    mres = mutants(inp, out) if a.mutants else None
+    mres = mutants(inp, out, m) if a.mutants else None
     pairs = json.load(open(f"{out}/pairs.json"))
     unobs = [e for e in m["unmatched_gold_ff"] if e["type"] != "fsm-encoded bit"]
     res = {
@@ -429,6 +487,7 @@ def main():
                   "sequential": cres["sequential"]},
         "match": m["summary"], "fsms": m["fsms"],
         "pairs_by_simulation": pairs["pairs"],
+        "fsm_bits_paired_by_simulation": [p for p in pairs["pairs"] if p["gold"].startswith("fsm:")],
         "gold_only_flops": unobs,
         "fsm_bits_removed_by_synthesis": [e["cell"] for e in m["unmatched_gold_ff"] if e["type"] == "fsm-encoded bit"],
         "unmatched_gate_flops": m["unmatched_gate_ff"], "unmatched_gold_instances": m["unmatched_gold_bb"],
@@ -454,6 +513,7 @@ rtl parameters      {', '.join(res['rtl_parameters'])}
 state elements      flops gold {s['gold_ff']} / gate {s['gate_ff']}: matched {s['matched_ff']} {s['match_by']} ({s['inverted_ff']} inverted)
                     instances (latches, clock gates, SRAMs) {s['matched_bb']}/{s['gold_bb']} by name; FSMs re-encoded: {s['fsm_registers']}
 gold-only flops     {len(unobs)} (proven unobservable): {', '.join(e['names'][0] for e in unobs)}
+fsm bits paired     {'none' if not res['fsm_bits_paired_by_simulation'] else '; '.join(f"{p['gate']} <- {p['gold']} pol {p['pol']} ({p['found']})" for p in res['fsm_bits_paired_by_simulation'])}
 compared points     {res['compared_points']}
 ABC &cec            {abc_res} (RTL x values free)
 equiv_simple        {'skipped' if not sres else f"{sres['proven']}/{sres['equiv_cells']} proven, unproven: {sres['unproven'][:20]}"}

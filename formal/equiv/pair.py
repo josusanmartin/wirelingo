@@ -11,7 +11,11 @@ flop's state input is then tied to G's state (XOR p) and the rest re-run,
 so pairs whose next state depends on other unmatched flops resolve in later
 rounds. When no unique pair is left, each remaining candidate (F, G, p) is
 tried as a hypothesis (F's state tied to G's) and kept if F's next state
-then agrees with G's and no other hypothesis for F or G does.
+then agrees with G's and no other hypothesis for F or G does. When several
+hypotheses for F agree (an FSM-encoded bit whose next state the patterns do
+not tell from another bit's), the one under which the compared outputs of the
+two cuts mismatch least is kept, if it is the only one with that count, and
+the counts are logged with the pair.
 
 This only proposes; the equivalence run (equiv_simple, ABC) proves or
 refutes every pair.
@@ -49,6 +53,8 @@ def main():
     sig_g = {g: (gout["UC:" + g][0], gout["UR:" + g][0], gout["UD:" + g][0], gout["UQ:" + g][0]) for g in G}
 
     pairs = {}              # gate flop -> (gold, pol, round)
+    # the outputs both cuts compare (not the pairing's own U*/V* ports)
+    compared = sorted(q for q in gout if q in gate.outputs and not q.startswith(("U", "V")))
 
     def cands(nout, f, pool):
         c, r, d = nout["VC:" + f][0], nout["VR:" + f][0], nout["VD:" + f][0]
@@ -118,6 +124,26 @@ def main():
                     tie(f, g, p, trial)
                     if gate.run(trial, mask)["VD:" + f][0] == sig_g[g][2] ^ (mask if p else 0):
                         hyp.setdefault(f, []).append((g, p))
+        # several hypotheses for one gate flop (an FSM bit whose next state the
+        # patterns do not tell from another's): keep the one under which the
+        # compared outputs (every D:/C:/R:/I:/port output both cuts have)
+        # mismatch least, when it is the only one with that count
+        why = {}
+        for f, hs in hyp.items():
+            if len(hs) > 1:
+                score = {}
+                for g, p in hs:
+                    trial = dict(ins)
+                    tie(f, g, p, trial)
+                    o = gate.run(trial, mask)
+                    score[(g, p)] = sum(bin(gout[q][i] ^ o[q][i]).count("1") for q in compared
+                                        for i in range(len(gout[q])))
+                best = min(score.values())
+                top = [h for h, v in score.items() if v == best]
+                if len(top) == 1:
+                    hyp[f] = top
+                    why[f] = (f", by compared outputs: {best} mismatching bits, against "
+                              + ", ".join(f"{g} pol {p}: {v}" for (g, p), v in sorted(score.items()) if (g, p) != top[0]))
         hg = {}
         for f, hs in hyp.items():
             for g, p in hs:
@@ -125,7 +151,7 @@ def main():
         for f, hs in hyp.items():
             if len(hs) == 1 and len(hg[hs[0][0]]) == 1:
                 g, p = hs[0]
-                pairs[f] = (g, p, f"hypothesis round {rnd}")
+                pairs[f] = (g, p, f"hypothesis round {rnd}" + why.get(f, ""))
                 tie(f, g, p, ins)
                 new += 1
         if not new:
