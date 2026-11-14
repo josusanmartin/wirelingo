@@ -84,10 +84,11 @@ def run(tmp_path, *extra):
              MACROS={"SRAM": {"lib": {"*_slow_*": [str(pdk / "sram_slow.lib")]}}}, IO_DELAY_CONSTRAINT=20)
     p.write_text(json.dumps(c))
     (wt / "src/protoemu.sdc").write_text("set period $::env(CLOCK_PERIOD)\nset io $::env(IO_DELAY_CONSTRAINT)\n")
+    args = complete_receipts(wt)      # the run as hardened (clean tree, receipts) before its re-timing
     nl = module("sta_nonlatch")
     rc = nl.main([str(wt), "--out-parent", str(tmp_path / "out"), *extra])
     outs = sorted((tmp_path / "out").glob("nonlatch.*"))
-    return wt, rc, (outs[-1] if outs else None)
+    return wt, rc, (outs[-1] if outs else None), args
 
 
 def test_the_report_is_parsed_per_family():
@@ -101,7 +102,7 @@ def test_the_report_is_parsed_per_family():
 
 
 def test_a_receipt_binds_the_run_and_release_check_prints_it(tmp_path, fake_sta, capsys):
-    wt, rc, out = run(tmp_path, "--period", "20.832")
+    wt, rc, out, args = run(tmp_path, "--period", "20.832")
     assert rc == 0 and (out / "receipt.json").is_file()
     calls = [json.loads(line) for line in fake_sta.read_text().splitlines()]
     sta = [c for c in calls if "sta" in c]
@@ -117,7 +118,6 @@ def test_a_receipt_binds_the_run_and_release_check_prints_it(tmp_path, fake_sta,
     assert data["plan"]["period_ns"] == 20.832 and data["results"]["nom_slow_1p08V_125C"]["nonlatch"] == 0.4304
     capsys.readouterr()
     rel = module("release_check")
-    args = complete_receipts(wt)
     rel.main(args + ["--nonlatch-receipt", str(out / "receipt.json")])
     text = capsys.readouterr().out
     assert "(all endpoints, latches included)" in text
@@ -128,7 +128,7 @@ def test_a_receipt_binds_the_run_and_release_check_prints_it(tmp_path, fake_sta,
 
 
 def test_a_changed_report_or_run_invalidates_the_receipt(tmp_path, fake_sta, capsys):
-    wt, rc, out = run(tmp_path)
+    wt, rc, out, args = run(tmp_path)
     nl = module("sta_nonlatch")
     assert rc == 0 and nl.verify(out / "receipt.json", wt)["plan"]["period_ns"] == 20
     rpt = out / "nom_slow_1p08V_125C.rpt"
@@ -144,7 +144,7 @@ def test_a_changed_report_or_run_invalidates_the_receipt(tmp_path, fake_sta, cap
         nl.verify(out / "receipt.json", wt)
     capsys.readouterr()
     rel = module("release_check")
-    assert rel.main(complete_receipts(wt) + ["--nonlatch-receipt", str(out / "receipt.json")]) == 1
+    assert rel.main(args + ["--nonlatch-receipt", str(out / "receipt.json")]) == 1
     assert "invalid non-latch STA evidence" in capsys.readouterr().out
 
 

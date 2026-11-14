@@ -48,6 +48,12 @@ fi
 git -C "$REPO" worktree add -q --detach "$W" HEAD
 cd "$W"
 cp -r "$REPO/tt" .
+# the release identity: the worktree's commit, tree and status, tt/, the image
+# ID and the PDK, before anything is generated (flow/clean_tree.py)
+export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp-sg13cmos5l
+LLV=$(python -c 'import librelane; print(librelane.__version__)')
+python3 flow/clean_tree.py start "$W" --image "ghcr.io/librelane/librelane:$LLV" --pdk-root "$PDK_ROOT" \
+  --argv "$NAME" "$NC" "$@" || exit 2
 PRESET=submission
 if [ "$NC" != "$NC0" ] || [ -n "${STOP:-}" ]; then PRESET=experiment; fi
 python3 flow/gen_config.py --preset "$PRESET" --banks "$NC" "$@"
@@ -58,8 +64,8 @@ if [ -n "${FIFO_LOG2:-}" ]; then                 # optional: FIFO depth 2**FIFO_
   grep -q "^\`define PE_FIFO_LOG2 $FIFO_LOG2\$" src/project.v || { echo "could not set PE_FIFO_LOG2"; exit 2; }
 fi
 
-export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp-sg13cmos5l
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null
+python3 flow/clean_tree.py generated "$W" || exit 2
 rc=0
 if [ -n "${STOP:-}" ]; then
   case $STOP in grt) TO=OpenROAD.GlobalRouting ;; cts) TO=OpenROAD.CTS ;; dpl) TO=OpenROAD.DetailedPlacement ;;
@@ -74,6 +80,7 @@ fi
   echo "flow exit status: $rc"
   git log --oneline -1
   echo "tiles $TILE, cores $NC, preset $PRESET, FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}"
+  python3 flow/clean_tree.py show "$W" || true
   python3 -c 'import json; d=json.load(open("src/config.json")); print("macros", {"bank" + k.split("[")[1][0]: v["location"] for k, v in d["MACROS"]["RM_IHPSG13_1P_256x32_c2_bm_bist"]["instances"].items()}, "period", d["CLOCK_PERIOD"], "density", d["PL_TARGET_DENSITY_PCT"])'
   grep -E "Flow complete|flow failed|ERROR" exp.log | grep -v PSM-0069 | tail -3 || true
   grep -E "GPL-0019|design__instance__utilization" exp.log | tail -2 || true

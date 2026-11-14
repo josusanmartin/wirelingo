@@ -19,10 +19,14 @@ resolved.json) and the PDK's SOURCES line. A run's manifest also binds its
 final netlist and its GDS with the BGNLIB/BGNSTR timestamps zeroed, the
 normalization under which a clean rebuild reproduces it (docs/physical.md).
 
-flow/release_check.py --shipping-root CHECKOUT requires the run's build
-inputs to equal the checkout's: a run hardened with other settings, scripts or
-RTL than the shipping commit's is not that commit's build, however good its
-receipts. Firmware, tools and tests are not build inputs, so validating new
+This manifest is a diagnostic and an additional check, not the release
+identity: a static file list cannot see every read (a Tcl `source` of a
+sibling, an imported plugin, a file an info.yaml entry names; 097g). The
+release rests on flow/clean_tree.py's receipt: the run hardened a clean
+checkout of exactly the shipping tree with the pinned tt-support-tools, image
+and PDK. flow/release_check.py --shipping-root CHECKOUT requires that, and
+also the run's build inputs here to equal the checkout's, which names what
+differs when they do not. Firmware, tools and tests are not build inputs, so validating new
 firmware on a pinned netlist (--validation-root) stays a separate operation.
 `compare` with two builds' manifests (the receipted run's and a CI or
 reproduction build's) also compares the tools, the netlist and the GDS.
@@ -38,7 +42,10 @@ import sys
 
 SCHEMA = 1
 PLUGIN = "librelane_plugin_protoemu.py"
-BUILD_INPUT_GLOBS = (PLUGIN, "flow/gen_config.py", "src/**/*")
+# LibreLane imports every root-level librelane_plugin_*/openlane_plugin_* module or
+# package (librelane/plugins.py, the worktree being sys.path[0]); all are bound
+BUILD_INPUT_GLOBS = (PLUGIN, "flow/gen_config.py", "src/**/*", "librelane_plugin_*.py", "openlane_plugin_*.py",
+                     "librelane_plugin_*/**/*", "openlane_plugin_*/**/*")
 # info.yaml's keys the build reads; the title, description and pinout are datasheet text
 INFO = "info.yaml"
 INFO_BUILD_KEYS = ("language", "clock_hz", "tiles", "top_module", "source_files", "analog_pins", "uses_3v3")
@@ -359,14 +366,23 @@ def git_commit(tree):
 
 
 def tree_digest(tree):
+    """Every file under tree but .git/ and __pycache__/<stem>.cpython-*.pyc of a
+    <stem>.py next to that __pycache__ (097g: a stray __pycache__/x.v counts)."""
     tree = Path(tree)
-    h, n = hashlib.sha256(), 0
-    for p in sorted(tree.rglob("*")):
-        rel = p.relative_to(tree)
-        if p.is_file() and not SKIP_PARTS.intersection(rel.parts) and p.suffix != ".pyc":
-            h.update(f"{rel}\0{digest(p)}\n".encode())
-            n += 1
-    return h.hexdigest(), n
+    entries = []
+    for d, dirs, names in os.walk(tree):
+        dirs[:] = [x for x in dirs if x != ".git"]
+        for name in names:
+            p = Path(d) / name
+            m = re.fullmatch(r"(.+)\.cpython-\d+\.pyc", name)
+            if p.parent.name == "__pycache__" and m and (p.parent.parent / f"{m.group(1)}.py").is_file():
+                continue
+            entries.append(p.relative_to(tree))
+    h = hashlib.sha256()
+    for rel in sorted(entries):            # the order the earlier rglob digest used
+        p = tree / rel
+        h.update(f"{rel}\0{digest(p) if p.is_file() else 'link:' + os.readlink(p)}\n".encode())
+    return h.hexdigest(), len(entries)
 
 
 def tools_of(root, librelane_version=None, pdk=None):
@@ -375,7 +391,16 @@ def tools_of(root, librelane_version=None, pdk=None):
     if tt.is_dir():
         tree, n = tree_digest(tt)
         tt_id = dict(commit=git_commit(tt), tree=tree, files=n)
-    return dict(tt_support_tools=tt_id, librelane_version=librelane_version, pdk=pdk)
+    tools = dict(tt_support_tools=tt_id, librelane_version=librelane_version, pdk=pdk)
+    receipt = Path(root) / "runs/clean-tree.json"     # the image ID, when the harden recorded it
+    if receipt.is_file():
+        try:
+            image = json.loads(receipt.read_text()).get("image", {}).get("id")
+        except ValueError:
+            image = None
+        if image:
+            tools["librelane_image"] = image
+    return tools
 
 
 def normalized_gds_digest(path):
@@ -414,33 +439,43 @@ def resolved_paths(root, resolved):
     whatever spelling the config used. A path under the run's design directory's
     parent (the worktree when it hardened) is taken relative to the worktree now,
     must be inside it lexically and after links, and binds its file (a directory:
-    every file under it, inside src/ only), except under tt/ (tt-support-tools,
-    recorded by its tree digest); a path under the run's PDK_ROOT or in the flow
-    image (/nix/store/) is a tool input; anything else is refused. Nothing
-    without a DESIGN_DIR."""
+    every file under it, inside src/ only); files under tt/ are returned apart,
+    as tool files. A path under the run's PDK_ROOT or in the flow image
+    (/nix/store/) is a tool input; anything else is refused, and so is a
+    resolved.json without an absolute DESIGN_DIR in this worktree's src/, or a
+    Path value that is not path-shaped. Returns (bound, tool_bound, refused)."""
+    real_root = os.path.realpath(root)
     design = resolved.get("DESIGN_DIR")
     if not isinstance(design, str) or not os.path.isabs(design):
-        return {}, []
+        return {}, {}, ["resolved.json: no absolute DESIGN_DIR"]
     old_root = os.path.dirname(os.path.normpath(design))
+    if old_root != real_root:          # 097g finding 2: a config can set DESIGN_DIR
+        return {}, {}, [f"resolved.json: DESIGN_DIR {design} is not this worktree's src/"]
     pdk_root = resolved.get("PDK_ROOT")
-    real_root = os.path.realpath(root)
     src = os.path.join(real_root, "src")
     inside = lambda p, d=real_root: os.path.commonpath([d, p]) == d
-    strings = []
+    strings, refused = [], []
+
+    def take(v):
+        if v in (None, [], {}):
+            return
+        got = path_value_strings(v)
+        if got is None:
+            refused.append(json.dumps(v, sort_keys=True))
+        else:
+            strings.extend(got)
     for k, v in resolved.items():
         if k in PATH_KEYS and k not in SYMBOL_KEYS:
-            strings += path_value_strings(v) or []
+            take(v)
     for macro in (resolved.get("MACROS") or {}).values():
         for k, v in (macro or {}).items():
             if k in MACRO_PATH_FIELDS:
-                strings += path_value_strings(v) or []
-    bound, refused = {}, []
+                take(v)
+    bound, tool_bound = {}, {}
     for s in strings:
         norm = os.path.normpath(s) if os.path.isabs(s) else None
         if norm is not None and os.path.commonpath([old_root, norm]) == old_root:
             rel = os.path.relpath(norm, old_root)
-            if rel.split(os.sep)[0] == "tt":
-                continue           # tt-support-tools: a tool input (tools.tt_support_tools, its tree digest)
             cur = os.path.normpath(os.path.join(real_root, rel))
             real = os.path.realpath(cur)
             if not inside(cur) or not inside(real) or not os.path.exists(real):
@@ -453,16 +488,17 @@ def resolved_paths(root, resolved):
             if files is None or not all(inside(f) and os.path.isfile(f) for f in files):
                 refused.append(s)
                 continue
-            for f in files:
-                bound[os.path.relpath(f, real_root)] = digest(f)
+            for f in files:      # tt-support-tools' files apart, as tool files (097g B3)
+                r = os.path.relpath(f, real_root)
+                (tool_bound if r.split(os.sep)[0] == "tt" else bound)[r] = digest(f)
         elif norm is not None and isinstance(pdk_root, str) and os.path.isabs(pdk_root) and \
                 os.path.commonpath([os.path.normpath(pdk_root), norm]) == os.path.normpath(pdk_root):
             continue
         elif norm is not None and norm.startswith("/nix/store/"):
-            continue               # inside the flow image (LibreLane's own scripts: tools.image)
+            continue               # inside the flow image (LibreLane's own scripts; its ID: tools.librelane_image)
         else:
             refused.append(s)
-    return dict(sorted(bound.items())), sorted(set(refused))
+    return dict(sorted(bound.items())), dict(sorted(tool_bound.items())), sorted(set(refused))
 
 
 def run_manifest(worktree):
@@ -473,11 +509,12 @@ def run_manifest(worktree):
     run = wt / "runs/wokwi"
     resolved = json.loads((run / "resolved.json").read_text())
     files = build_inputs(wt)
-    rbound, rrefused = resolved_paths(wt, resolved)
+    rbound, rtools, rrefused = resolved_paths(wt, resolved)
     for name, value in rbound.items():
         files.setdefault(name, value)
+    extra = dict(tool_files=rtools) if rtools else {}     # only when non-empty: older manifests unchanged
     return with_refused(wt, dict(
-        schema=SCHEMA, kind="run", files=dict(sorted(files.items())),
+        schema=SCHEMA, kind="run", files=dict(sorted(files.items())), **extra,
         tools=tools_of(wt, resolved.get("meta", {}).get("librelane_version"), pdk_sources(resolved)),
         outputs=dict(netlist=digest(one((run / "final/nl").glob("*.nl.v"), "final netlist")),
                      gds_normalized=normalized_gds_digest(one((run / "final/gds").glob("*.gds"), "final GDS")))),
@@ -555,6 +592,14 @@ def compare(a, b, *, require_tools=False, names=("run", "shipping")):
                 continue
             kind = "signoff STA only" if path in SIGNOFF_ONLY else "layout input"
             failures.append(f"build input {path} {what} ({kind})")
+    ta, tb = a.get("tool_files"), b.get("tool_files")
+    if ta is not None and tb is not None:
+        for path in sorted(set(ta) | set(tb)):
+            if ta.get(path) != tb.get(path):
+                failures.append(f"tool file {path} differs or is missing")
+    elif ta or tb:
+        message = f"tool files: not compared ({names[0]}: {len(ta or {})}, {names[1]}: {len(tb or {})})"
+        (failures if require_tools else notes).append(message)
     for section in ("tools", "outputs"):
         for key in sorted(set(a.get(section, {})) | set(b.get(section, {}))):
             va, vb = a.get(section, {}).get(key), b.get(section, {}).get(key)

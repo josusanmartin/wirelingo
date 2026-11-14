@@ -26,6 +26,7 @@ import signoff
 import release_receipts as receipts
 import release_gates as gates
 import build_manifest
+import clean_tree
 
 ELECTRICAL = {"slew": "design__max_slew_violation__count",
               "cap": "design__max_cap_violation__count",
@@ -77,6 +78,8 @@ def main(argv=None):
                          "and a release gate without its inputs "
                          "(flow/release_evidence.py passes it; an archive check leaves it out)")
     ap.add_argument("--checks-receipt", help="clock/reset/pulse-width check STA of this run (flow/check_rerun.py)")
+    ap.add_argument("--flow-python", default=str(Path.home() / "protoemu-flow/protoemu/.venv-flow/bin/python"),
+                    help="python with tt-support-tools' requirements, to regenerate the shipping tree's configs")
     ap.add_argument("--nonlatch-receipt", help="worst setup slack without the latches (flow/sta_nonlatch.py); printed")
     ap.add_argument("--shipping-root",
                     help="checkout of the shipping commit: the run's build inputs must equal its "
@@ -232,6 +235,18 @@ def main(argv=None):
         gate_skipped.append("shipping build: an evidence archive keeps neither flow/, the plugin nor tt/")
         print(f"release gate, SKIPPED: {gate_skipped[-1]}")
     elif a.shipping_root:
+        # the release identity (flow/clean_tree.py): the run hardened a clean
+        # checkout of exactly the shipping tree, with the pinned tt, image and PDK
+        try:
+            problems, notes = clean_tree.check_release(wt, a.shipping_root, a.flow_python)
+            for line in notes:
+                print(f"clean tree: {line}")
+            failures += [f"clean tree: {p}" for p in problems]
+            if not problems:
+                print(f"clean tree: the run hardened a clean checkout of {a.shipping_root}'s tree")
+        except (*EVIDENCE_ERRORS, AttributeError) as e:
+            failures.append(f"invalid clean-tree evidence: {e}")
+        # the file-set manifest: an additional check, and the diff that explains a mismatch
         try:
             problems, notes = build_manifest.compare(build_manifest.run_manifest(wt),
                                                      build_manifest.checkout_manifest(a.shipping_root))

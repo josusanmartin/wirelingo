@@ -412,9 +412,11 @@ def test_release_evidence_scheduler_respects_the_simulator_budget():
 
 def evidence_bundle(tmp_path):
     """Fixture receipts sharing one validation root, and the verdict for them."""
-    from test_release_evidence import candidate, sdf_output, precheck_output, xml, final_sta_state, checks_output
+    from test_release_evidence import (candidate, sdf_output, precheck_output, xml, final_sta_state, checks_output,
+                                       clean_tree)
     rec = flow_module("release_receipts")
     wt = final_sta_state(candidate(tmp_path))
+    extra = clean_tree(wt)
     validator = wt.parent / "validator"
     (validator / "test").mkdir(parents=True)
     for name in ("test_pio", "test_eth_service"):
@@ -440,7 +442,7 @@ def evidence_bundle(tmp_path):
                                               "--gl-receipt", str(paths["gl"]), "--sdf-receipt", str(paths["sdf"]),
                                               "--precheck-receipt", str(paths["precheck"]),
                                               "--checks-receipt", str(paths["checks"]), "--shipping-root", str(wt),
-                                              "--require-sta-inputs"]) == 0
+                                              "--require-sta-inputs", *extra]) == 0
     return wt, verdict, paths
 
 

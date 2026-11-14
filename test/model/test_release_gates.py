@@ -17,6 +17,7 @@ shipping build, and gates clock/reset checks and SRAM power.
 A fake `docker` (test_flow_slow48) stands in for the LibreLane image."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -447,9 +448,24 @@ def c(): return [HERE + "/" + "extra_step.tcl"]   # named another way: "extra_st
 '''
 
 
-def shipping(wt, tmp_path):
+def ship_clone(wt, tmp_path, name="ship"):
+    """A clean shipping checkout of the run's commit (097h: the release identity is
+    the tree; a clone has no tt/ and no run outputs, as a real one)."""
+    import subprocess
+    ship = tmp_path / name
+    subprocess.run(["git", "clone", "-q", str(wt), str(ship)], check=True)
+    return ship
+
+
+def commit_in(repo, message="change"):
+    from test_release_evidence import commit_all
+    commit_all(repo, message)
+
+
+def shipping(wt, tmp_path, copy=True):
     """The run's plugin and flow scripts, and a shipping checkout with the same build
-    inputs plus firmware and tests of its own."""
+    inputs plus firmware and tests of its own (copy=False: the run's files only, to
+    commit before the clean-tree receipt; then ship_clone)."""
     (wt / "librelane_plugin_protoemu.py").write_text(PLUGIN)
     (wt / "flow").mkdir(exist_ok=True)
     (wt / "flow/odb_stripes.py").write_text("# stripes\n")
@@ -457,6 +473,8 @@ def shipping(wt, tmp_path):
     (wt / "flow/helper.tcl").write_text("# helper\n")
     (wt / "flow/gen_config.py").write_text("# generator\n")
     (wt / "flow/extra_step.tcl").write_text("# extra step\n")
+    if not copy:
+        return None
     ship = tmp_path / "ship"
     for name in ("src", "flow"):
         shutil.copytree(wt / name, ship / name)
@@ -496,14 +514,18 @@ SHIP_FAULTS = {
 @pytest.mark.parametrize("fault", sorted(SHIP_FAULTS))
 def test_a_run_built_from_other_inputs_than_the_shipping_commit_cannot_release(tmp_path, capsys, fault):
     wt = candidate(tmp_path)
+    shipping(wt, tmp_path, copy=False)
     args = complete_receipts(wt)
-    ship = shipping(wt, tmp_path)
+    ship = ship_clone(wt, tmp_path)
     rc, text = release(with_shipping(args, ship), capsys)
     assert rc == 0, text
     name, content, expected = SHIP_FAULTS[fault]
+    (ship / name).parent.mkdir(parents=True, exist_ok=True)
     (ship / name).write_text(content)
+    commit_in(ship)
     rc, text = release(with_shipping(args, ship), capsys)
-    assert rc == 1 and f"shipping build: {expected}" in text
+    # the tree differs (the release identity), and the manifest names the input
+    assert rc == 1 and f"shipping build: {expected}" in text and "clean tree: the run's tree" in text
 
 
 def test_the_old_binding_compares_verilog_only(tmp_path):
@@ -520,22 +542,22 @@ def test_the_old_binding_compares_verilog_only(tmp_path):
     assert len(failures) == 2
 
 
-@pytest.mark.parametrize("change", ["firmware", "tests", "datasheet-text", "unexecuted-flow-tool", "generated-config",
-                                    "generator-text"])
-def test_what_is_not_a_build_input_may_differ(tmp_path, capsys, change):
-    # validating new firmware on a pinned netlist stays a separate, legitimate operation
+@pytest.mark.parametrize("change", ["firmware", "tests", "datasheet-text", "unexecuted-flow-tool", "generator-text"])
+def test_what_is_not_a_build_input_still_changes_the_shipping_tree(tmp_path, capsys, change):
+    # 097h: the release identity is the tree, so any committed change after the
+    # harden (firmware, tests, a flow tool) needs a harden of the new commit; the
+    # manifest still says the build inputs are equal, and validating new firmware
+    # on a pinned netlist stays a separate operation (--validation-root)
     wt = candidate(tmp_path)
-    if change == "generated-config":            # tt_tool's, made in the run at build time
-        (wt / "src/config_merged.json").write_text("{}\n")
-        (wt / "src/user_config.json").write_text("{}\n")
+    shipping(wt, tmp_path, copy=False)
+    (wt / "firmware").mkdir(exist_ok=True)
+    (wt / "firmware/usb.pasm").write_text("; old\n")
     args = complete_receipts(wt)
-    ship = shipping(wt, tmp_path)
-    for name in ("config_merged.json", "user_config.json"):
-        (ship / "src" / name).unlink(missing_ok=True)
+    ship = ship_clone(wt, tmp_path)
     if change == "firmware":
         (ship / "firmware/usb.pasm").write_text("; new\n")
     elif change == "tests":
-        (ship / "test").mkdir()
+        (ship / "test").mkdir(exist_ok=True)
         (ship / "test/test_new.py").write_text("# new\n")
     elif change == "datasheet-text":
         (ship / "info.yaml").write_text("project:\n  top_module: design\n  description: \"another\"\n"
@@ -544,8 +566,9 @@ def test_what_is_not_a_build_input_may_differ(tmp_path, capsys, change):
         (ship / "flow/rmii_sta.tcl").write_text("# a standalone STA script\n")
     elif change == "generator-text":        # 092 finding 5: a preset changed to the run's tuned settings
         (ship / "flow/gen_config.py").write_text("# generator whose submission preset is the run's config\n")
+    commit_in(ship)
     rc, text = release(with_shipping(args, ship), capsys)
-    assert rc == 0 and "shipping build: the run's build inputs equal" in text
+    assert rc == 1 and "clean tree: the run's tree" in text and "shipping build: the run's build inputs equal" in text
     if change == "generator-text":
         assert "flow/gen_config.py differs (the generator, not read by the build)" in text
 
@@ -571,8 +594,9 @@ def test_a_missing_shipping_checkout_is_refused_not_listed(tmp_path, capsys):
 def test_a_relative_shipping_root_works(tmp_path, capsys, monkeypatch):
     # found on runner1 (092b): the generator check ran the relative path from inside the checkout
     wt = candidate(tmp_path)
+    shipping(wt, tmp_path, copy=False)
     args = complete_receipts(wt)
-    shipping(wt, tmp_path)
+    ship_clone(wt, tmp_path)
     monkeypatch.chdir(tmp_path)
     rc, text = release(with_shipping(args, "ship"), capsys)
     assert rc == 0 and "gen_config.py --preset submission --check:  (rc 0)" in text
@@ -608,6 +632,9 @@ def test_two_builds_compare_tools_and_outputs(tmp_path):
     assert run["tools"]["tt_support_tools"]["commit"] == "ab" * 20 and run["tools"]["librelane_version"] is None
     other = tmp_path / "rebuild"
     shutil.copytree(wt, other)
+    r = json.loads((other / "runs/wokwi/resolved.json").read_text())   # a rebuild records its own worktree
+    r["DESIGN_DIR"] = os.path.realpath(other / "src")
+    (other / "runs/wokwi/resolved.json").write_text(json.dumps(r))
     (other / "runs/wokwi/final/gds/design.gds").write_bytes(gds(9))   # a rebuild: other dates
     assert bm.compare(run, bm.run_manifest(other))[0] == []
     (other / "tt/tt_tool.py").write_text("# another tool\n")
@@ -1063,35 +1090,97 @@ def test_a_dir_path_whose_link_leaves_the_worktree_is_refused_by_both(tmp_path):
     assert gen.paths_outside_repo({"PNR_SDC_FILE": spelling}, root=wt) == [spelling]
 
 
+def test_a_missing_file_under_a_link_out_of_the_worktree_is_refused_by_the_generator(tmp_path):
+    # 097g finding 5: links resolved even when the file does not exist yet
+    gen = module("gen_config")
+    wt = candidate(tmp_path)
+    (tmp_path / "outside").mkdir()
+    (wt / "src/out").symlink_to(tmp_path / "outside")
+    assert gen.paths_outside_repo({"PNR_SDC_FILE": "dir::out/absent.sdc"}, root=wt) == ["dir::out/absent.sdc"]
+
+
 def test_the_run_binds_what_librelane_resolved_whatever_the_config_says(tmp_path):
     # 097g (b): resolved.json holds the absolute paths LibreLane read; a file read
     # through a route the config check does not model (here resolved.json alone
-    # names it) is bound, so an edit to it makes the builds differ. Paths are taken
-    # relative to the worktree the run hardened in (DESIGN_DIR's parent).
+    # names it) is bound, so an edit to it makes the builds differ. 097h: anywhere
+    # in the worktree (docs/x too), tt/ files as tool files, and only for a run
+    # manifested where it hardened (DESIGN_DIR is this worktree's src/)
     bm = module("build_manifest")
     wt = candidate(tmp_path)
     ship = shipping(wt, tmp_path)
-    old = "/elsewhere/hardened/worktree"
-    for root in (wt, ship):
-        (root / "xt").write_text("# read by the run\n")
-        (root / "src/protoemu.sdc").write_text("# sdc\n")
-    resolved = {"DESIGN_DIR": f"{old}/src", "PDK_ROOT": "/pdk", "meta": {"librelane_version": "3.1.0.dev3"},
-                "PNR_SDC_FILE": f"{old}/xt", "SIGNOFF_SDC_FILE": f"{old}/src/protoemu.sdc",
-                "FP_DEF_TEMPLATE": f"{old}/tt/tech/x.def", "CELL_LIBS": {"nom_*": ["/pdk/x/a.lib"]},
-                "FALLBACK_SDC": "/nix/store/abc-env/lib/librelane/scripts/base.sdc",
-                "MACROS": {"m": {"gds": ["/pdk/m.gds"], "instances": {"u": {"orientation": "N"}}}}}
+    root = os.path.realpath(wt)
+    for r in (wt, ship):
+        (r / "xt").write_text("# read by the run\n")
+        (r / "docs").mkdir(exist_ok=True)
+        (r / "docs/x").write_text("# read by the run\n")
+        (r / "src/protoemu.sdc").write_text("# sdc\n")
+    (wt / "tt/tech").mkdir(parents=True)
+    (wt / "tt/tech/x.def").write_text("DESIGN x ;\n")
+    resolved = {"DESIGN_DIR": f"{root}/src", "PDK_ROOT": "/pdk", "meta": {"librelane_version": "3.1.0.dev3"},
+                "PNR_SDC_FILE": f"{root}/xt", "SIGNOFF_SDC_FILE": f"{root}/src/protoemu.sdc", "PDN_CFG": f"{root}/docs/x",
+                "FP_DEF_TEMPLATE": f"{root}/tt/tech/x.def", "CELL_LIBS": {"nom_*": ["/pdk/x/a.lib"]},
+                "FALLBACK_SDC": "/nix/store/abc-env/lib/librelane/scripts/base.sdc", "EXTRA_LEFS": [],
+                "MACROS": {"m": {"gds": ["/pdk/m.gds"], "instances": {"u": {"orientation": "N"}}, "spef": {}}}}
     (wt / "runs/wokwi/resolved.json").write_text(json.dumps(resolved))
-    assert bm.resolved_paths(wt, resolved) == ({"src/protoemu.sdc": bm.digest(wt / "src/protoemu.sdc"),
-                                                "xt": bm.digest(wt / "xt")}, [])
-    assert bm.config_paths(wt) == ({}, [])            # the config names neither file
+    assert bm.resolved_paths(wt, resolved) == ({"docs/x": bm.digest(wt / "docs/x"),
+                                                "src/protoemu.sdc": bm.digest(wt / "src/protoemu.sdc"),
+                                                "xt": bm.digest(wt / "xt")},
+                                               {"tt/tech/x.def": bm.digest(wt / "tt/tech/x.def")}, [])
+    assert bm.config_paths(wt) == ({}, [])            # the config names none of them
     run = bm.run_manifest(wt)
     assert run["files"]["xt"] == bm.digest(wt / "xt") and "refused" not in run
+    assert run["tool_files"] == {"tt/tech/x.def": bm.digest(wt / "tt/tech/x.def")}
     failures, _ = bm.compare(run, bm.checkout_manifest(ship))
     assert any("xt" in f for f in failures), failures   # the checkout does not bind it
     # anything else LibreLane resolved is refused: outside the worktree, the PDK and the image
     bad = dict(resolved, MACROS={"m": {"lef": ["/opt/elsewhere/m.lef"]}})
     (wt / "runs/wokwi/resolved.json").write_text(json.dumps(bad))
     assert bm.run_manifest(wt)["refused"] == ["/opt/elsewhere/m.lef"]
+
+
+@pytest.mark.parametrize("resolved,refused", [
+    ({}, ["resolved.json: no absolute DESIGN_DIR"]),                       # 097g finding 3
+    ({"DESIGN_DIR": "src"}, ["resolved.json: no absolute DESIGN_DIR"]),
+    ({"DESIGN_DIR": "/elsewhere/src"}, ["resolved.json: DESIGN_DIR /elsewhere/src is not this worktree's src/"]),
+    ({"PNR_SDC_FILE": True}, ["true"]), ({"EXTRA_LEFS": [True]}, ["[true]"]),     # not path-shaped
+])
+def test_a_resolved_json_that_does_not_name_this_run_is_refused(tmp_path, resolved, refused):
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    if resolved and "DESIGN_DIR" not in resolved:
+        resolved = dict(resolved, DESIGN_DIR=os.path.realpath(wt / "src"))
+    assert bm.resolved_paths(wt, resolved)[2] == refused
+    (wt / "runs/wokwi/resolved.json").write_text(json.dumps(resolved))
+    assert bm.run_manifest(wt)["refused"] == refused
+
+
+def test_every_root_level_plugin_is_a_build_input_and_tt_strays_count(tmp_path):
+    # 097g B2: LibreLane imports every root-level librelane_plugin_*/openlane_plugin_*;
+    # B3: tt/'s digest counts a stray __pycache__/x.v, never a tracked module's bytecode
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    (wt / "librelane_plugin_zz.py").write_text("# another plugin\n")
+    (wt / "openlane_plugin_zz").mkdir()
+    (wt / "openlane_plugin_zz/__init__.py").write_text("# a plugin package\n")
+    files = bm.build_inputs(wt)
+    assert "librelane_plugin_zz.py" in files and "openlane_plugin_zz/__init__.py" in files
+    tt = wt / "tt"
+    (tt / "__pycache__").mkdir(parents=True)
+    (tt / "tool.py").write_text("# a module\n")
+    before = bm.tree_digest(tt)
+    (tt / "__pycache__/tool.cpython-312.pyc").write_bytes(b"bytecode")
+    assert bm.tree_digest(tt) == before
+    (tt / "__pycache__/zz.v").write_text("module zz; endmodule\n")
+    assert bm.tree_digest(tt) != before
+
+
+def test_a_brace_in_a_dir_path_is_refused(tmp_path):
+    # 097g mutant list: "dir::a}" (a brace without a format field) is refused outright
+    bm, gen = module("build_manifest"), module("gen_config")
+    wt = candidate(tmp_path)
+    (wt / "src/config.json").write_text(json.dumps({"PNR_SDC_FILE": "dir::a}"}))
+    assert bm.config_paths(wt) == ({}, ["dir::a}"])
+    assert gen.paths_outside_repo({"PNR_SDC_FILE": "dir::a}"}, root=wt) == ["dir::a}"]
 
 
 def test_numbers_booleans_and_null_elsewhere_stay_plain(tmp_path):

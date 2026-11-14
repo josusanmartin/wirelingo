@@ -215,7 +215,7 @@ def paths_outside_repo(config, root=ROOT):
             return
         rel = v[len("dir::"):] if v.startswith("dir::") else None
         target = os.path.normpath(os.path.join(src, rel)) if rel is not None else None
-        real = os.path.realpath(target) if target is not None and os.path.lexists(target) else target
+        real = os.path.realpath(target) if target is not None else None
         if rel is None or set("*?[]") & set(v) or os.path.isabs(rel) or \
                 os.path.commonpath([real_root, target]) != real_root or \
                 os.path.commonpath([real_root, real]) != real_root or \

@@ -1,6 +1,9 @@
 """A release needs complete evidence for the actual candidate, not pass text."""
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 import shutil
 
@@ -26,7 +29,8 @@ def candidate(tmp_path):
     (wt / "src/project.v").write_text("`define PE_NCORES 2\n`define PE_NBANKS `PE_NCORES\n`define PE_FIFO_LOG2 3\n")
     (wt / "src/config.json").write_text('{"CLOCK_PERIOD":20}')
     (wt / "info.yaml").write_text("project:\n  top_module: design\n")
-    (run / "resolved.json").write_text('{"CLOCK_PERIOD":20}')
+    # LibreLane records the design directory (absolute, in the worktree it hardened)
+    (run / "resolved.json").write_text(json.dumps({"CLOCK_PERIOD": 20, "DESIGN_DIR": os.path.realpath(wt / "src")}))
     (run / "final/nl/design.nl.v").write_text("module design; endmodule\n")
     (run / "final/gds/design.gds").write_bytes(b"fixture GDS")
     (run / "final/lef/design.lef").write_text("fixture LEF")
@@ -119,7 +123,8 @@ def gate_inputs(wt):
     lef.parent.mkdir(exist_ok=True)
     lef.write_text(sram_lef())
     resolved = json.loads((run / "resolved.json").read_text())
-    resolved.update(MACROS={SRAM: {"lef": [str(lef)], "instances": {SRAM_INST: {"location": [100, 50],
+    resolved.update(PDK_ROOT=str(lef.parent),       # the macro LEF is a PDK file
+                    MACROS={SRAM: {"lef": [str(lef)], "instances": {SRAM_INST: {"location": [100, 50],
                                                                                   "orientation": "FS"}}}},
                     PDN_MACRO_CONNECTIONS=[r"u_mem\\?\[0\\?\]\.sram VPWR VGND VDD! VSS!",
                                            r"u_mem\\?\[0\\?\]\.sram VPWR VGND VDDARRAY! VSS!"])
@@ -324,14 +329,79 @@ def precheck_output(wt):
     return out
 
 
-def complete_receipts(wt):
+# A stand-in for tt-support-tools' tt_tool.py --create-user-config: the two generated configs
+FAKE_TT = """import json, sys
+assert sys.argv[1:] == ["--create-user-config", "--ihp"]
+user = {"DESIGN_NAME": "design", "VERILOG_FILES": ["dir::project.v"]}
+json.dump(user, open("src/user_config.json", "w"), indent=2)
+config = json.load(open("src/config.json"))
+config.update(user)
+json.dump(config, open("src/config_merged.json", "w"), indent=2)
+"""
+FAKE_IMAGE_ID = "sha256:" + "d1" * 32
+GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@example.com")
+
+
+def git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True,
+                          env=GIT_ENV).stdout.strip()
+
+
+def commit_all(repo, message="fixture"):
+    if not (Path(repo) / ".git").exists():
+        git(repo, "init", "-q")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "--allow-empty", "-m", message)
+    return git(repo, "rev-parse", "HEAD")
+
+
+def clean_tree(wt, *, pins=None, before_start=None, after_start=None):
+    """wt as flow/harden.sh leaves it: a commit (the run's files ignored as the
+    repository ignores them), tt/ a clean checkout of a stand-in tt-support-tools,
+    a PDK checkout, flow/release_pins.json pinning them, and runs/clean-tree.json
+    recorded at start and after generation. Returns release_check's extra args."""
+    ct = module("clean_tree")
+    tt = wt / "tt"
+    tt.mkdir(exist_ok=True)
+    (tt / "tt_tool.py").write_text(FAKE_TT)
+    (tt / ".gitignore").write_text("__pycache__/\n")     # as tt-support-tools ignores it
+    tt_head = commit_all(tt)
+    pdk = wt.parent / "pdk-checkout"
+    (pdk / "ihp-sg13cmos5l").mkdir(parents=True, exist_ok=True)
+    (pdk / "ihp-sg13cmos5l/README").write_text("fixture PDK\n")
+    pdk_head = commit_all(pdk)
+    (pdk / "ihp-sg13cmos5l/SOURCES").write_text(f"IHP-Open-PDK {pdk_head}\n")
+    (wt / ".gitignore").write_text("runs/\ntt/\ntest/sim_build/\nsrc/user_config.json\nsrc/config_merged.json\n"
+                                   "__pycache__/\n")
+    (wt / "flow").mkdir(exist_ok=True)
+    (wt / "flow/release_pins.json").write_text(json.dumps(dict(
+        {"tt_support_tools": tt_head, "librelane_image": FAKE_IMAGE_ID, "pdk": pdk_head}, **(pins or {}))))
+    commit_all(wt)
+    if before_start:                          # an uncommitted change in the worktree or tt/ (a dirty harden)
+        before_start(wt)
+    aside = wt.parent / "runs-aside"          # a harden starts before runs/ exists
+    shutil.move(str(wt / "runs"), str(aside))
+    ct.start(wt, "ghcr.io/librelane/librelane:3.1.0.dev3", pdk, ["fixture"], ident=FAKE_IMAGE_ID)
+    if after_start:                           # what happens between the receipt and generation
+        after_start(wt)
+    subprocess.run([sys.executable, "tt/tt_tool.py", "--create-user-config", "--ihp"], cwd=wt, check=True)
+    ct.generated(wt)
+    for p in aside.iterdir():                 # then the flow's outputs
+        shutil.move(str(p), str(wt / "runs" / p.name))
+    aside.rmdir()
+    return ["--flow-python", sys.executable]
+
+
+def complete_receipts(wt, **clean):
     rec = module("release_receipts")
     final_sta_state(wt)
+    extra = clean_tree(wt, **clean)
     paths = [rec.finish(out) for out in (gl_output(wt), sdf_output(wt), precheck_output(wt))]
     # the run is its own shipping checkout here: the same build inputs
     return [str(wt), "--gl-receipt", str(paths[0]), "--sdf-receipt", str(paths[1]),
             "--precheck-receipt", str(paths[2]), "--checks-receipt", str(checks_output(wt)),
-            "--shipping-root", str(wt)]
+            "--shipping-root", str(wt), *extra]
 
 
 def test_complete_release_and_relocation(tmp_path):
