@@ -654,7 +654,7 @@ def test_a_flow_file_the_config_names_is_a_build_input(tmp_path):
     bm = module("build_manifest")
     wt = candidate(tmp_path)
     (wt / "src/config.json").write_text(
-        '{"CLOCK_PERIOD":20,"PNR_SDC_FILE":"dir::../flow/protoemu_pnr_transition.sdc","X":["flow/extra.tcl"]}')
+        '{"CLOCK_PERIOD":20,"PNR_SDC_FILE":"dir::../flow/protoemu_pnr_transition.sdc","X":["../flow/extra.tcl"]}')
     ship = shipping(wt, tmp_path)
     shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
     for root in (wt, ship):
