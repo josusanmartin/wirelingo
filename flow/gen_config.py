@@ -36,13 +36,19 @@ TUNED = {
     # the 2-core fallback (flow/harden.sh NAME 2 -- --tuned fallback-8x4): run aqf-d44l8lcch15
     "fallback-8x4": ["--density", "44", "--late-clock", "8", "--late-clock-core", "4",
                      "--set", "GRT_RESIZER_HOLD_SLACK_MARGIN=0.15"],
+    # the 3-core build (flow/harden.sh NAME -- --tuned rt10-8x4): run aqp-rt10, its
+    # options in its order (evidence/8x4-search-20261114/3core/aqp-rt10/spec.txt)
+    "rt10-8x4": ["--reg-clock-delay", "6", "--reg-clock-delay-gates", "8", "--sram-advance-toward", "0.5",
+                 "--post-repair-hold", "--set", "GRT_RESIZER_HOLD_SLACK_MARGIN=0.30",
+                 "--set", "DRT_SAVE_DRC_REPORT_ITERS=8", "--set", 'CTS_APPLY_NDR="none"',
+                 "--sram-addr-buf8", "--post-repair-hold-passes", "2", "--pnr-max-transition"],
 }
 
 # The submission preset's option set by (tile, src/project.v's PE_NCORES), for
 # builds a search tuned: the 2-core 8x4 fallback hardens with fallback-8x4
-# (a shipping commit sets PE_NCORES 2 and regenerates src/config.json). 6x4
-# and the 3-core 8x4 build keep the plain defaults.
-SUBMISSION_TUNED = {("8x4", 2): "fallback-8x4"}
+# (a shipping commit sets PE_NCORES 2 and regenerates src/config.json), the
+# 3-core 8x4 build with rt10-8x4. 6x4 keeps the plain defaults.
+SUBMISSION_TUNED = {("8x4", 2): "fallback-8x4", ("8x4", 3): "rt10-8x4"}
 
 
 PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".gds", ".def", ".odb", ".json",

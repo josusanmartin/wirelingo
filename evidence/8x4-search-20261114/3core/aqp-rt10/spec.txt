@@ -1,0 +1,1 @@
+aqp-rt10 -- --reg-clock-delay 6 --reg-clock-delay-gates 8 --sram-advance-toward 0.5 --post-repair-hold --set GRT_RESIZER_HOLD_SLACK_MARGIN=0.30 --set DRT_SAVE_DRC_REPORT_ITERS=8 --set CTS_APPLY_NDR="none" --sram-addr-buf8 --post-repair-hold-passes 2 --pnr-max-transition

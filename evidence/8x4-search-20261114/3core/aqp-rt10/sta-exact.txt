@@ -1,0 +1,11 @@
+# aqp-rt10, exact setup slack per endpoint family (tools/sta832.sh: final netlist, nom SPEF,
+# signoff SDC with the run's variables; OpenSTA in the LibreLane 3.1.0.dev3 image). At 20 ns it
+# reproduces the run's own final STA (slow: -0.4016 pin_oe, -0.0205 A_ADDR).
+# 'all' is report_worst_slack over every endpoint: the FIFO latches' D pins borrow time and
+# show slack 0, so it reads 0 whenever every other endpoint has positive slack.
+20.832 ns typ_1p20V_25C: all 0.0000; latch D 0.0000 (borrows 0.6961); non-latch +3.3180 uo_out[4]; A_ADDR +8.1819 u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_ADDR[6]; pin_oe +7.9236 _53246_/D (pin_oe[26])
+20.832 ns slow_1p08V_125C: all 0.0000; latch D 0.0000 (borrows 0.9370); non-latch +0.4304 _53246_/D (pin_oe[26]); A_ADDR +0.8115 u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_ADDR[6]; pin_oe +0.4304 _53246_/D (pin_oe[26])
+20.832 ns fast_1p32V_m40C: all 0.0000; latch D 0.0000 (borrows 0.5522); non-latch +3.9191 uo_out[4]; A_ADDR +12.4604 u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_ADDR[6]; pin_oe +12.3014 _53246_/D (pin_oe[26])
+20 ns typ_1p20V_25C: all 0.0000; latch D 0.0000 (borrows 0.6961); non-latch +2.9020 uo_out[4]; A_ADDR +7.3499 u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_ADDR[6]; pin_oe +7.0916 _53246_/D (pin_oe[26])
+20 ns slow_1p08V_125C: all -0.4016; latch D 0.0000 (borrows 0.9370); non-latch -0.4016 _53246_/D (pin_oe[26]); A_ADDR -0.0205 u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_ADDR[6]; pin_oe -0.4016 _53246_/D (pin_oe[26])
+20 ns fast_1p32V_m40C: all 0.0000; latch D 0.0000 (borrows 0.5522); non-latch +3.5031 uo_out[4]; A_ADDR +11.6284 u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_ADDR[6]; pin_oe +11.4694 _53246_/D (pin_oe[26])

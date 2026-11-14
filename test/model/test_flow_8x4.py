@@ -323,6 +323,49 @@ def test_two_core_8x4_submission_is_the_tuned_fallback(tmp_path):
     assert co["GRT_RESIZER_HOLD_SLACK_MARGIN"] == 0.15
 
 
+# The 3-core candidate (evidence/8x4-search-20261114): run aqp-rt10's generated
+# src/config.json and the sha256 of the plugin it ran.
+RT10_RUN = ROOT / "evidence/8x4-search-20261114/3core/aqp-rt10"
+
+
+def test_three_core_8x4_submission_is_rt10_byte_for_byte(tmp_path):
+    # the shipping commit: the plain submission preset at 3 cores is rt10's config,
+    # and src/config.json is that file; rt10 hardened with the submission preset
+    # (flow/harden.sh aqp-rt10 -- <options>) at this plugin
+    r, sub = generate(tmp_path, name="sub.json", cores=3)
+    assert r.returncode == 0, r.stderr
+    assert sub.read_bytes() == (RT10_RUN / "config.json").read_bytes() == (ROOT / "src/config.json").read_bytes()
+    r, tuned = generate(tmp_path, "--preset", "submission", "--tuned", "rt10-8x4", name="tuned.json", cores=3)
+    assert r.returncode == 0 and tuned.read_bytes() == sub.read_bytes()
+    spec = (RT10_RUN / "spec.txt").read_text().split()
+    assert spec[:2] == ["aqp-rt10", "--"]
+    g = importlib.util.spec_from_file_location("gen_config_rt10", GEN)
+    gen = importlib.util.module_from_spec(g)
+    g.loader.exec_module(gen)
+    assert [x.replace('"', "") for x in gen.TUNED["rt10-8x4"]] == [x.replace('"', "") for x in spec[2:]]
+    assert gen.SUBMISSION_TUNED[("8x4", 3)] == "rt10-8x4"
+    # its options as rt10 gave them, through the experiment preset: the same config but the label
+    r, exp = generate(tmp_path, "--preset", "experiment", *gen.TUNED["rt10-8x4"], name="exp.json", cores=3)
+    c, run = json.loads(exp.read_text()), json.loads(sub.read_text())
+    assert r.returncode == 0 and c["//generator"].pop("preset") == "experiment" and run["//generator"].pop("preset") == "submission"
+    assert c == run
+    plugin = hashlib.sha256((ROOT / "librelane_plugin_protoemu.py").read_bytes()).hexdigest()
+    assert (RT10_RUN / "plugin.sha256").read_text().split() == [plugin, "librelane_plugin_protoemu.py"]
+
+
+def test_the_tuned_sets_leave_6x4_and_the_other_core_counts_alone(tmp_path):
+    # 6x4 stays the plain submission preset at every core count: the two tuned sets
+    # apply to their own (8x4, cores) only
+    for cores in (1, 2, 3, 4):
+        info = info_with(tmp_path, "6x4")
+        r, d = generate(tmp_path, "--info", str(info), name=f"6x4-{cores}.json", cores=cores)
+        r2, e = generate(tmp_path, "--info", str(info), "--preset", "experiment", name=f"6x4-{cores}-exp.json", cores=cores)
+        assert r.returncode == r2.returncode == 0, r.stderr + r2.stderr
+        a, b = json.loads(d.read_text()), json.loads(e.read_text())
+        assert a["//generator"].pop("preset") == "submission" and b["//generator"].pop("preset") == "experiment"
+        assert a == b
+
+
 def test_sram_advance_toward_option(tmp_path):
     r, d = generate(tmp_path, "--preset", "experiment", "--sram-advance-toward", "0.5", name="toward.json")
     c = json.loads(d.read_text())

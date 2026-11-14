@@ -13,13 +13,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def tuned_submission():
-    """Whether this commit's submission preset is a tuned option set (gen_config's
-    SUBMISSION_TUNED: the 2-core 8x4 fallback), so these defaults tests hold on a
-    3-core and on a 2-core commit alike."""
+    """The tuned option set this commit's submission preset stands for (gen_config's
+    SUBMISSION_TUNED: rt10-8x4 for the 3-core 8x4 build, fallback-8x4 for the
+    2-core fallback), or None, so these defaults tests hold on either commit."""
     spec = importlib.util.spec_from_file_location("gen_config_tools", ROOT / "flow/gen_config.py")
     g = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(g)
-    return (g.tile_of(ROOT / "info.yaml"), g.project_cores()) in g.SUBMISSION_TUNED
+    return g.SUBMISSION_TUNED.get((g.tile_of(ROOT / "info.yaml"), g.project_cores()))
 
 
 def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
@@ -37,7 +37,9 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     # t48ba uses extra setup margin during PnR. Signoff still selects the real
     # latch arcs, with neither that margin nor the PnR-only D->Q exception.
     assert c["SIGNOFF_SDC_FILE"] == "dir::protoemu.sdc"
-    assert c["PNR_SDC_FILE"] == "dir::protoemu_pnr_margin.sdc"
+    # rt10-8x4 (--pnr-max-transition) reads the margin SDC through flow/protoemu_pnr_transition.sdc
+    assert c["PNR_SDC_FILE"] == ("dir::../flow/protoemu_pnr_transition.sdc" if tuned_submission() == "rt10-8x4"
+                                 else "dir::protoemu_pnr_margin.sdc")
     margin = [l for l in (ROOT / "src/protoemu_pnr_margin.sdc").read_text().splitlines()
               if l.strip() and not l.lstrip().startswith("#")]
     assert margin == ["source [file join [file dirname $::env(PNR_SDC_FILE)] protoemu_pnr.sdc]",
@@ -47,10 +49,11 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
     assert pnr == ["source [file join [file dirname $::env(PNR_SDC_FILE)] protoemu.sdc]",
                    "set_disable_timing -from D -to Q [get_lib_cells */sg13cmos5l_dlhq_1]"]
     assert c["//generator"]["preset"] == "submission"
-    assert c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == (0.15 if tuned_submission() else 0.13)
+    assert c["GRT_RESIZER_HOLD_SLACK_MARGIN"] == {None: 0.13, "fallback-8x4": 0.15, "rt10-8x4": 0.30}[tuned_submission()]
     steps = c["meta"]["substituting_steps"]
     assert steps["+OpenROAD.ResizerTimingPostGRT"] == "Project.SramPinBuffers"
-    assert steps["+Project.SramPinBuffers"] == "OpenROAD.RepairDesignPostGRT"
+    assert steps["+Project.SramPinBuffers"] == ("Project.RepairDesignThenHold2" if tuned_submission() == "rt10-8x4"
+                                                else "OpenROAD.RepairDesignPostGRT")
     # antenna diodes count as loads: nets they take over the limit are split
     # after detailed routing (flow/antenna_fanout.tcl)
     assert steps["OpenROAD.DetailedRouting"] == "Project.DetailedRouting"
@@ -65,6 +68,12 @@ def test_configuration_check_is_read_only_and_detects_drift(tmp_path):
 ])
 def test_submission_clock_defaults_and_overrides_keep_geometry(tmp_path, options, step, fanout_fix):
     dst = tmp_path / "clock-fix.json"
+    if tuned_submission() == "rt10-8x4" and "--no-sram-clock-advance" in options:
+        # rt10-8x4's --sram-advance-toward and --reg-clock-delay run in the SRAM clock advance step
+        r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), *options, "--output", str(dst)],
+                           capture_output=True, text=True)
+        assert r.returncode != 0 and "--sram-clock-advance step" in r.stderr and not dst.exists()
+        return
     subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), *options,
                     "--output", str(dst)], check=True, capture_output=True)
     c = json.loads(dst.read_text())
@@ -77,10 +86,10 @@ def test_submission_clock_defaults_and_overrides_keep_geometry(tmp_path, options
         assert "CTS_SINK_CLUSTERING_SIZE" not in c
     if step == "Project.SramClockAdvance":
         assert c.get("PROTOEMU_CLOCK_FANOUT_FIX", False) is fanout_fix
-        pins = 8 if tuned_submission() else 6     # the fallback set: --late-clock 8 --late-clock-core 4
+        pins = 8 if tuned_submission() == "fallback-8x4" else 6     # the fallback set: --late-clock 8 --late-clock-core 4
         assert c["PROTOEMU_LATE_CLOCK_STAGES"] == pins
         assert c["PROTOEMU_LATE_CLOCK_REGS"][:2] == [f"u_chip.pin_oe*={pins}", "*.pin_out_cur*"]
-        assert len(c["PROTOEMU_LATE_CLOCK_REGS"]) == (7 if tuned_submission() else 2)
+        assert len(c["PROTOEMU_LATE_CLOCK_REGS"]) == (7 if tuned_submission() == "fallback-8x4" else 2)
     else:
         assert "PROTOEMU_CLOCK_FANOUT_FIX" not in c
         assert "PROTOEMU_LATE_CLOCK_STAGES" not in c
