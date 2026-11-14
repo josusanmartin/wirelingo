@@ -55,32 +55,85 @@ PATH_SUFFIXES = (".sdc", ".tcl", ".v", ".sv", ".vh", ".svh", ".lef", ".lib", ".g
                  ".py", ".cdl", ".spice", ".spef", ".mag", ".yaml", ".yml", ".txt", ".cfg", ".lyp", ".lydrc")
 
 
-# LibreLane 3.1.0.dev3's Path-typed variables (Classic flow, its steps and the
-# plugin; the verifier's census in 097c): every value of one of these is a path,
-# whatever its shape. MACROS holds nested Path fields; they carry prefixes.
+# LibreLane 3.1.0.dev3's Path-typed variables (the verifier's census in 097d:
+# Classic's flow and step variables, LibreLane's PDK, SCL and option lists, the
+# plugin's; 59 names), and every deprecated name of one, which LibreLane reads
+# before the canonical name: every value of one of these is a path, whatever
+# its shape.
 PATH_KEYS = frozenset("""
 CELL_BB_VERILOG_MODELS CELL_CDLS CELL_GDS CELL_LEFS CELL_LIBS CELL_MAGLEFS CELL_MAGS CELL_SPICE_MODELS
 CELL_VERILOG_MODELS DESIGN_DIR EQY_SCRIPT EXTRA_CDLS EXTRA_GDS EXTRA_LEFS EXTRA_LIBS EXTRA_SPEFS
 EXTRA_SPICE_MODELS EXTRA_VERILOG_MODELS FALLBACK_SDC FP_DEF_TEMPLATE FP_TRACKS_INFO IO_PIN_ORDER_CFG
 KLAYOUT_DEF_LAYER_MAP KLAYOUT_DRC_RUNSET KLAYOUT_PROPERTIES KLAYOUT_TECH LINTER_VLTS MACRO_PLACEMENT_CFG
-MAGICRC MAGIC_DRC_MAGLEFS MAGIC_PDK_SETUP MAGIC_TECH NETGEN_SETUP PDK_ROOT PDN_CFG PNR_EXCLUDED_CELL_FILE
+MAGICRC MAGIC_DRC_MAGLEFS MAGIC_PDK_SETUP MAGIC_TECH NETGEN_SETUP PAD_CDLS PAD_GDS PAD_LEFS PAD_LIBS
+PAD_SPICE_MODELS PAD_VERILOG_MODELS PDK_ROOT PDN_CFG PNR_EXCLUDED_CELL_FILE
 PNR_SDC_FILE RCX_RULESETS RCX_SDC_FILE SIGNOFF_SDC_FILE STA_EXTRA_CORNER_TCL_FILE SYNTH_ABC_STRATEGY_SCRIPT
 SYNTH_CSA_MAP SYNTH_EXCLUDED_CELL_FILE SYNTH_EXTRA_MAPPING_FILE SYNTH_FA_MAP SYNTH_LATCH_MAP SYNTH_RCA_MAP
 SYNTH_TRISTATE_MAP TECH_LEFS VERILOG_FILES VERILOG_INCLUDE_DIRS VSRC_LOC_FILES
+STD_CELL_LIBRARY_CDL GDS_FILES CELLS_GDS CELLS_LEF LIB EXTRA_GDS_FILES VERILOG_FILES_BLACKBOX
+FALLBACK_SDC_FILE BASE_SDC_FILE SDC_FILE TRACKS_INFO_FILE FP_PIN_ORDER_CFG KLAYOUT_DRC_TECH_SCRIPT
+LINTER_VLT MAGIC_MAGICRC MAGIC_TECH_FILE NETGEN_SETUP_FILE FP_PDN_CFG DRC_EXCLUDE_CELL_LIST
+PNR_EXCLUSION_CELL_LIST CARRY_SELECT_ADDER_MAP NO_SYNTH_CELL_LIST SYNTH_EXCLUSION_CELL_LIST
+FULL_ADDER_MAP RIPPLE_CARRY_ADDER_MAP TRISTATE_BUFFER_MAP
 """.split())
+# MACROS' Path fields (LibreLane's Macro: each macro's fields, at any depth below)
+MACRO_PATH_FIELDS = frozenset("gds lef vh nl pnl spef lib spice sdf json_h".split())
 PATH_PREFIXES = ("dir::", "pdk_dir::", "refg::", "ref::")
+# LibreLane flattens a matching pdk::<glob> or scl::<glob> block into the top
+# level; no config here uses one, so such a key is refused outright
+BLOCK_PREFIXES = ("pdk::", "scl::")
+CELL_PIN_RE = r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$"
 
 
-def is_path_string(key, v):
-    """Whether a config string is a path: any value of a Path-typed key, any
-    string with a LibreLane path prefix, "." and "..", and as a backstop (unknown
-    keys, MACROS) any string with a "/" or a known file suffix, except "cell/pin"
-    values of *_CELL keys (no Path-typed key is named *_CELL)."""
-    if key in PATH_KEYS or v.startswith(PATH_PREFIXES) or v in (".", ".."):
+def names_existing(v, roots):
+    """Whether v names an existing path relative to one of roots (the worktree
+    root, the harden's working directory, and src/); a string that cannot be
+    checked counts as existing."""
+    try:
+        return any(os.path.lexists(os.path.join(r, v)) for r in roots)
+    except (ValueError, OSError):
+        return True
+
+
+def is_path_string(key, field, v, roots):
+    """Whether a config string is a path. By name: any value of a Path-typed key
+    (top level) or of a MACROS Path field. Whatever the key (the backstop): "."
+    and "..", a LibreLane path prefix, a "/", a known file suffix, or a name that
+    exists relative to the worktree root or src/; a "cell/pin" value of a
+    *_CELL(S) key is not a path unless it exists (no Path-typed key is named
+    *_CELL)."""
+    if key in PATH_KEYS or (key == "MACROS" and field in MACRO_PATH_FIELDS):
+        return True
+    if v in (".", "..") or v.startswith(PATH_PREFIXES):
+        return True
+    exists = names_existing(v, roots)
+    if exists:
         return True
     if "/" in v or v.lower().endswith(PATH_SUFFIXES):
-        return not (str(key).endswith(("_CELL", "_CELLS")) and re.match(r"^[A-Za-z0-9_]+/[A-Za-z0-9_]+$", v))
+        return not (str(key).endswith(("_CELL", "_CELLS")) and re.match(CELL_PIN_RE, v))
     return False
+
+
+def walk_config(config, roots, path, block):
+    """Call path(top_key, string) for each path string of a LibreLane config at
+    any depth (is_path_string) and block(key) for each pdk::/scl:: key.
+    Comment keys ("//...") are skipped."""
+    def walk(v, top, field, depth):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                k = str(k)
+                if k.startswith("//"):
+                    continue
+                if k.startswith(BLOCK_PREFIXES):
+                    block(k)
+                    continue
+                walk(x, k if depth == 0 else top, k if (depth == 2 and top == "MACROS") else field, depth + 1)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, top, field, depth)
+        elif isinstance(v, str) and is_path_string(top, field, v, roots):
+            path(top, v)
+    walk(config, None, None, 0)
 
 
 def paths_outside_repo(config, root=ROOT):
@@ -89,33 +142,26 @@ def paths_outside_repo(config, root=ROOT):
     to a path inside the repository (the manifest also requires the file to
     exist; this generator runs from bare test copies too), pdk_dir:: without
     "..", and a directory only inside src/ (never the root). Every other path
-    string (is_path_string, 097c) is refused: unprefixed (LibreLane reads it
-    from the working directory), refg::, absolute."""
+    string (is_path_string, at any depth; 097e: names that exist under root or
+    src/ whatever the key) is refused: unprefixed (LibreLane reads it from the
+    working directory), refg::, absolute; and every pdk::/scl:: key."""
     real_root = os.path.realpath(root)
     src = os.path.join(real_root, "src")
     found = []
 
-    def walk(key, v):
-        if isinstance(v, dict):
-            for k, x in v.items():
-                if not str(k).startswith("//"):
-                    walk(key or k, x)
-        elif isinstance(v, list):
-            for x in v:
-                walk(key, x)
-        elif isinstance(v, str) and is_path_string(key, v):
-            if v.startswith("pdk_dir::"):
-                rest = v[len("pdk_dir::"):]
-                if os.path.isabs(rest) or ".." in pathlib.PurePath(rest).parts:
-                    found.append(v)
-                return
-            rel = v[len("dir::"):] if v.startswith("dir::") else None
-            target = os.path.normpath(os.path.join(src, rel)) if rel is not None else None
-            if rel is None or set("*?[]") & set(v) or os.path.isabs(rel) or \
-                    os.path.commonpath([real_root, target]) != real_root or \
-                    (os.path.isdir(target) and os.path.commonpath([src, os.path.realpath(target)]) != src):
-                found.append(v)    # a directory only inside src/, so never the root (097c)
-    walk(None, config)
+    def check(key, v):
+        if v.startswith("pdk_dir::"):
+            rest = v[len("pdk_dir::"):]
+            if os.path.isabs(rest) or ".." in pathlib.PurePath(rest).parts:
+                found.append(v)
+            return
+        rel = v[len("dir::"):] if v.startswith("dir::") else None
+        target = os.path.normpath(os.path.join(src, rel)) if rel is not None else None
+        if rel is None or set("*?[]") & set(v) or os.path.isabs(rel) or \
+                os.path.commonpath([real_root, target]) != real_root or \
+                (os.path.isdir(target) and os.path.commonpath([src, os.path.realpath(target)]) != src):
+            found.append(v)    # a directory only inside src/, so never the root (097c)
+    walk_config(config, (real_root, src), check, found.append)
     return found
 
 

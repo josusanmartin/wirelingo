@@ -766,7 +766,7 @@ def test_a_config_named_directory_binds_every_file_under_it(tmp_path):
     assert r.returncode == 0, r.stderr
 
 
-@pytest.mark.parametrize("case", ["outside-file", "outside-member", "dangling-member", "member-loop"])
+@pytest.mark.parametrize("case", ["outside-file", "outside-member", "dangling-member", "member-loop", "two-loops"])
 def test_an_existing_target_outside_the_worktree_or_a_broken_member_is_refused(tmp_path, case):
     # 097c finding 2: the outside file exists, so only the inside checks refuse it;
     # a dangling member or a symlink loop is a named refusal, not a crash
@@ -782,17 +782,30 @@ def test_an_existing_target_outside_the_worktree_or_a_broken_member_is_refused(t
         (wt / "src/inc/o.vh").symlink_to(tmp_path / "outside.vh")
     elif case == "dangling-member":
         (wt / "src/inc/gone.vh").symlink_to(wt / "src/inc/absent.vh")
-    else:
+    elif case == "member-loop":
         (wt / "src/inc/sub").mkdir()
         (wt / "src/inc/sub/loop").symlink_to("..")
+    else:
+        # 097d finding 2: two loop links make an unguarded walk grow as 2^40, so
+        # only the guard refuses this in time (a subprocess under a timeout)
+        (wt / "src/inc/sub").mkdir()
+        (wt / "src/inc/sub/l0").symlink_to("..")
+        (wt / "src/inc/sub/l1").symlink_to("..")
     (wt / "src/config.json").write_text(json.dumps({"VERILOG_INCLUDE_DIRS": [spelling]}))
+    if case == "two-loops":
+        code = ("import importlib.util, json, sys; s = importlib.util.spec_from_file_location('bm', sys.argv[1]); "
+                "m = importlib.util.module_from_spec(s); s.loader.exec_module(m); print(json.dumps(m.config_paths(sys.argv[2])))")
+        r = subprocess.run([sys.executable, "-c", code, str(ROOT / "flow/build_manifest.py"), str(wt)],
+                           capture_output=True, text=True, timeout=30)
+        assert r.returncode == 0 and json.loads(r.stdout) == [{}, [spelling]], r.stderr
+        return
     assert bm.config_paths(wt) == ({}, [spelling])
     assert bm.run_manifest(wt)["refused"] == [spelling]
 
 
 @pytest.mark.parametrize("config,refused", [
-    ({"X": "x.sdc"}, "x.sdc"),                                  # an unknown key: the suffix backstop
-    ({"X": ["tools/xt"]}, "tools/xt"),                          # an unknown key: the "/" backstop
+    ({"X": "y.sdc"}, "y.sdc"),                                  # an unknown key: the suffix backstop (absent)
+    ({"X": ["tools/absent"]}, "tools/absent"),                  # an unknown key: the "/" backstop (absent)
     ({"MACROS": {"m": {"gds": ["tools/m.gds"]}}}, "tools/m.gds"),   # nested Path fields
     ({"FOO_CELL": "../x.sdc"}, "../x.sdc"),                     # the cell/pin carve-out is the shape only
     ({"X": ".."}, ".."), ({"X": "pdk_dir::.."}, "pdk_dir::..")])   # "." and "..", prefixes: whatever the key
@@ -824,6 +837,113 @@ def test_relative_worktree_arguments_compare_identical_trees_equal(tmp_path, mon
     monkeypatch.chdir(tmp_path)
     assert bm.compare(bm.run_manifest(wt.name), bm.checkout_manifest(ship.name))[0] == []
     assert bm.run_manifest(wt.name)["files"] == bm.run_manifest(wt)["files"]
+
+
+# 097d: each way LibreLane sets a Path variable other than its canonical top-level
+# key, measured as SAME BUILD with a root-level xt, LICENSE or README.md; and the
+# key-independent backstop: a name that exists relative to the root or src/
+ESCAPES_097D = [
+    ({"pdk::*": {"PNR_SDC_FILE": "xt"}}, ["pdk::*"]),          # flattened into the top level: refused
+    ({"pdk::ihp*": {"VERILOG_INCLUDE_DIRS": ["LICENSE"]}}, ["pdk::ihp*"]),
+    ({"scl::*": {"PNR_SDC_FILE": "README.md"}}, ["scl::*"]),
+    ({"FP_PDN_CFG": "xt"}, ["xt"]),                             # deprecated names
+    ({"BASE_SDC_FILE": "xt", "SDC_FILE": "LICENSE"}, ["LICENSE", "xt"]),
+    ({"LINTER_VLT": "xt"}, ["xt"]),
+    ({"FP_PIN_ORDER_CFG": "xt"}, ["xt"]),
+    ({"VERILOG_FILES_BLACKBOX": ["xt"]}, ["xt"]),
+    ({"EXTRA_GDS_FILES": ["xt"]}, ["xt"]),
+    ({"MACROS": {"m": {"gds": ["xt"], "lef": ["LICENSE"]}}}, ["LICENSE", "xt"]),   # unprefixed Macro fields
+    ({"MACROS": {"m": {"lib": {"*_slow_*": ["absent"]}}}}, ["absent"]),            # a field by name, any depth
+    ({"PAD_LEFS": ["xt"]}, ["xt"]),                             # PAD_* (the 6 the 097c census missed)
+    ({"FP_PDN_CFG": "absent"}, ["absent"]),                     # by name alone: no file needed
+    ({"X": "xt"}, ["xt"]), ({"X": ["LICENSE"]}, ["LICENSE"]),   # an unknown key: the name exists
+    ({"X": {"y": "README.md"}}, ["README.md"]), ({"X": "docs"}, ["docs"]),
+    ({"X": "macros"}, ["macros"]),                              # relative to src/
+    ({"DIODE_CELL": "cellx/A"}, ["cellx/A"]),                   # a cell/pin that exists as a path
+]
+
+
+@pytest.mark.parametrize("config,refused", ESCAPES_097D)
+def test_every_other_way_to_set_a_path_is_refused(tmp_path, config, refused):
+    bm = module("build_manifest")
+    wt = candidate(tmp_path)
+    for f in ("xt", "LICENSE", "README.md", "docs/a.md", "src/macros/m.v", "cellx/A"):
+        (wt / f).parent.mkdir(parents=True, exist_ok=True)
+        (wt / f).write_text("# a file\n")
+    (wt / "src/config.json").write_text(json.dumps(dict(config, CLOCK_PERIOD=20)))
+    ship = shipping(wt, tmp_path)
+    shutil.copyfile(wt / "src/config.json", ship / "src/config.json")
+    assert bm.config_paths(wt) == ({}, refused)
+    failures, _ = bm.compare(bm.run_manifest(wt), bm.checkout_manifest(ship))
+    assert any("outside the worktree" in f for f in failures)
+    # the generator, on the same tree (it checks names against its own root)
+    gen = module("gen_config")
+    assert sorted(set(gen.paths_outside_repo(config, root=wt))) == refused
+    # and through the CLI on this repository, where LICENSE, README.md, docs and src/macros exist
+    if "MACROS" not in config and all(r in ("pdk::*", "pdk::ihp*", "scl::*", "LICENSE", "README.md", "docs", "macros",
+                                            "absent") for r in refused):
+        args = []
+        for k, v in config.items():
+            args += ["--set", f"{k}={json.dumps(v)}"]
+        r = subprocess.run([sys.executable, str(ROOT / "flow/gen_config.py"), "--preset", "experiment", *args,
+                            "--output", str(tmp_path / "c.json")], capture_output=True, text=True)
+        assert r.returncode != 0 and "outside the allowlist" in r.stderr and not (tmp_path / "c.json").exists()
+
+
+# LibreLane 3.1.0.dev3's Path-typed variables and their deprecated names, recorded
+# from the flow image (097d's census: 59 names, plus 26 deprecated ones)
+PATH_KEYS_CENSUS = set("""
+CELL_BB_VERILOG_MODELS CELL_CDLS CELL_GDS CELL_LEFS CELL_LIBS CELL_MAGLEFS CELL_MAGS CELL_SPICE_MODELS
+CELL_VERILOG_MODELS DESIGN_DIR EQY_SCRIPT EXTRA_CDLS EXTRA_GDS EXTRA_LEFS EXTRA_LIBS EXTRA_SPEFS
+EXTRA_SPICE_MODELS EXTRA_VERILOG_MODELS FALLBACK_SDC FP_DEF_TEMPLATE FP_TRACKS_INFO IO_PIN_ORDER_CFG
+KLAYOUT_DEF_LAYER_MAP KLAYOUT_DRC_RUNSET KLAYOUT_PROPERTIES KLAYOUT_TECH LINTER_VLTS MACRO_PLACEMENT_CFG
+MAGICRC MAGIC_DRC_MAGLEFS MAGIC_PDK_SETUP MAGIC_TECH NETGEN_SETUP PAD_CDLS PAD_GDS PAD_LEFS PAD_LIBS
+PAD_SPICE_MODELS PAD_VERILOG_MODELS PDK_ROOT PDN_CFG PNR_EXCLUDED_CELL_FILE PNR_SDC_FILE RCX_RULESETS
+RCX_SDC_FILE SIGNOFF_SDC_FILE STA_EXTRA_CORNER_TCL_FILE SYNTH_ABC_STRATEGY_SCRIPT SYNTH_CSA_MAP
+SYNTH_EXCLUDED_CELL_FILE SYNTH_EXTRA_MAPPING_FILE SYNTH_FA_MAP SYNTH_LATCH_MAP SYNTH_RCA_MAP
+SYNTH_TRISTATE_MAP TECH_LEFS VERILOG_FILES VERILOG_INCLUDE_DIRS VSRC_LOC_FILES
+""".split())
+DEPRECATED_CENSUS = set("""
+STD_CELL_LIBRARY_CDL GDS_FILES CELLS_GDS CELLS_LEF LIB EXTRA_GDS_FILES VERILOG_FILES_BLACKBOX
+FALLBACK_SDC_FILE BASE_SDC_FILE SDC_FILE TRACKS_INFO_FILE FP_PIN_ORDER_CFG KLAYOUT_DRC_TECH_SCRIPT
+LINTER_VLT MAGIC_MAGICRC MAGIC_TECH_FILE NETGEN_SETUP_FILE FP_PDN_CFG DRC_EXCLUDE_CELL_LIST
+PNR_EXCLUSION_CELL_LIST CARRY_SELECT_ADDER_MAP NO_SYNTH_CELL_LIST SYNTH_EXCLUSION_CELL_LIST
+FULL_ADDER_MAP RIPPLE_CARRY_ADDER_MAP TRISTATE_BUFFER_MAP
+""".split())
+
+
+def test_both_files_name_every_path_variable_and_refuse_a_bare_name_under_each(tmp_path):
+    # pins the census (097d: two of 53 keys were pinned), the same in both files,
+    # and that each name alone makes a nonexistent bare name a refused path
+    bm, gen = module("build_manifest"), module("gen_config")
+    assert len(PATH_KEYS_CENSUS) == 59 and len(DEPRECATED_CENSUS) == 26
+    assert bm.PATH_KEYS == gen.PATH_KEYS == PATH_KEYS_CENSUS | DEPRECATED_CENSUS
+    assert bm.MACRO_PATH_FIELDS == gen.MACRO_PATH_FIELDS == set("gds lef vh nl pnl spef lib spice sdf json_h".split())
+    assert bm.PATH_PREFIXES == gen.PATH_PREFIXES and bm.BLOCK_PREFIXES == gen.BLOCK_PREFIXES == ("pdk::", "scl::")
+    wt = candidate(tmp_path)
+    for k in sorted(bm.PATH_KEYS):
+        (wt / "src/config.json").write_text(json.dumps({k: "absent_name"}))
+        assert bm.config_paths(wt) == ({}, ["absent_name"]), k
+        assert gen.paths_outside_repo({k: "absent_name"}, root=wt) == ["absent_name"], k
+    # MACROS: only the Path fields by name; instances and orientation are not paths
+    m = {"MACROS": {"m": {"instances": {"u": {"location": [1, 2], "orientation": "N"}}, "gds": ["dir::m.gds"]}}}
+    (wt / "src/m.gds").write_text("gds")
+    (wt / "src/config.json").write_text(json.dumps(m))
+    assert bm.config_paths(wt) == ({"src/m.gds": bm.digest(wt / "src/m.gds")}, [])
+    assert gen.paths_outside_repo(m, root=wt) == []
+
+
+def test_a_name_that_does_not_exist_under_an_unknown_key_is_not_a_path(tmp_path):
+    # the existence backstop names nothing in a shipped config (097e scan: 19
+    # committed versions, 27 recorded experiment configs): plain values stay plain
+    bm, gen = module("build_manifest"), module("gen_config")
+    wt = candidate(tmp_path)
+    c = {"DESIGN_NAME": "tt_um_x", "X": ["N", "Classic"], "SYNTH_DRIVING_CELL": "sg13cmos5l_buf_4/X", "DIODE_CELL": "cell/A"}
+    (wt / "src/config.json").write_text(json.dumps(c))
+    assert bm.config_paths(wt) == ({}, [])
+    assert gen.paths_outside_repo(c, root=wt) == []
+    shipped = json.loads((ROOT / "src/config.json").read_text())
+    assert gen.paths_outside_repo(shipped) == []
 
 
 def test_manifests_without_config_paths_outside_are_unchanged(tmp_path):
