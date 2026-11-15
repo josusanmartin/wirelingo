@@ -382,7 +382,9 @@ requires. On the compute runner:
    link listed in `.git/info/exclude`, since an untracked link makes the tree
    dirty), the PDK at its pinned commit `2bbec755` (`PDK_ROOT`, default
    `~/ttpdk`) and the pinned LibreLane image (`flow/release_pins.json`),
-   with `PYTHONPATH` and `LIBRELANE_IMAGE_OVERRIDE` unset;
+   with `PYTHONPATH` and `LIBRELANE_IMAGE_OVERRIDE` unset, and `STOP` and
+   `FIFO_LOG2` unset too (`harden.sh` reads both: `STOP` switches to the
+   experiment preset, and `FIFO_LOG2` rewrites `src/project.v`);
 2. `S/flow/release_evidence.py RUN --validation-root S --slow-mhz 48`
    (`S` is then also the shipping root): the receipt jobs, the fresh slow
    STA, the clock and reset checks, `flow/release_check.py` and, on a pass,
