@@ -1,0 +1,4 @@
+aqp-rt10: [WARNING GPL-0302] Target density 0.3400 is too low for the available free area.  (runs/wokwi/29-openroad-globalplacement/openroad-globalplacement.log)
+aqp-rt10: [INFO GPL-0023] Placement target density: 0.4700  (runs/wokwi/29-openroad-globalplacement/openroad-globalplacement.log)
+aqp-rt10s5-pre: [WARNING GPL-0302] Target density 0.3400 is too low for the available free area.  (runs/wokwi/29-openroad-globalplacement/openroad-globalplacement.log)
+aqp-rt10s5-pre: [INFO GPL-0023] Placement target density: 0.4700  (runs/wokwi/29-openroad-globalplacement/openroad-globalplacement.log)

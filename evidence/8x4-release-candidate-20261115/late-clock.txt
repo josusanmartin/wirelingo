@@ -1,0 +1,3 @@
+aqp-rt10: LATE_CLOCK_COMPLETE 64 registers 23 branches  (runs/wokwi/37-project-sramclockadvance/1-project-sramclockadvancetcl/project-sramclockadvancetcl.log)
+aqp-rt10s: LATE_CLOCK_COMPLETE 64 registers 23 branches  (runs/wokwi/37-project-sramclockadvance/1-project-sramclockadvancetcl/project-sramclockadvancetcl.log)
+aqp-rt10s5-pre: LATE_CLOCK_COMPLETE 64 registers 23 branches  (runs/wokwi/37-project-sramclockadvance/1-project-sramclockadvancetcl/project-sramclockadvancetcl.log)

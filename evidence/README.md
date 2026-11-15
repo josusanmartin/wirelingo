@@ -20,6 +20,13 @@ source and the redactions made before it was committed.
 | [8x4-search-20261114/](8x4-search-20261114/README.md) | The 3-core 8x4 candidate aqp-rt10 that the submission preset reproduces (`rt10-8x4`): spec, generated config, plugin sha256, harden and STA summaries, exact setup slack per endpoint family at 20.832 and 20 ns, the STA script | Harden and static timing (not gate level or silicon) |
 | [8x4-release-candidate-20261115/](8x4-release-candidate-20261115/README.md) | The 3-core candidate's clean reproductions (rt10s, rt10s4 at 4 CPUs and 16 GB, rt10s5-pre through the clean-tree path), its normalized GDS, the density-48 perturbation, and the release rehearsal's receipts summary: GL and SDF case counts, non-latch STA, equivalence, the release check | Harden, STA, gate level with and without SDF, precheck, formal equivalence (not FPGA or silicon) |
 
+[8x4-release-expected.json](8x4-release-expected.json) is the identity the 3-core
+8x4 release build must reproduce: the final netlist's sha256, the GDS digest with
+its dates zeroed, the late-clock register count, the non-latch slack floor and the
+slow-corner rate, each with the record it comes from. `flow/release_expected.py`
+(GitHub's gds job, after the GDS build) and `flow/release_check.py --expect`
+compare a run with it ([docs/release-evidence.md](../docs/release-evidence.md#the-3-core-8x4-release-candidate)).
+
 [history-map.txt](history-map.txt) maps each commit hash of the history before its
 rewrite for publication, which the records here cite, to its hash in this repository.
 

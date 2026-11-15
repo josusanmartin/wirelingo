@@ -4,14 +4,19 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
+      # full history: test_clean_tree clones this repository, which a depth-1
+      # checkout would make a shallow clone
       - name: Checkout repo
         uses: actions/checkout@v6
         with:
           submodules: recursive
+          fetch-depth: 0
 
-      - name: Install iverilog
+      # libtcl8.6/libtk8.6 for Python's tkinter: the model tests run Tcl through it
+      # (the SDC and the STA scripts' Tcl) and would otherwise skip
+      - name: Install iverilog and Tcl/Tk
         shell: bash
-        run: sudo apt-get update && sudo apt-get install -y iverilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog libtcl8.6 libtk8.6
 
       # Set Python up and install cocotb
       - name: Setup python
@@ -25,14 +30,14 @@ jobs:
 
       # Each suite writes its own results file; check_results.py fails on a
       # missing file, a wrong test count, or any failure, error or skip.
-      - name: Top-level tests through the SPI port (8x4 tapeout config, 3 cores, SRAM model)
+      - name: Top-level tests through the SPI port (8x4 submission config, 3 cores, SRAM model)
         run: |
           cd test
           make clean
           make COCOTB_RESULTS_FILE=top.xml
           python3 check_results.py top.xml $(grep -c '^@cocotb.test()' test.py)
 
-      - name: Top-level tests through the SPI port (2-core fallback, SRAM model)
+      - name: Top-level tests through the SPI port (2-core build, SRAM model)
         run: |
           cd test
           make PE_NCORES=2 PE_NBANKS=2 COCOTB_RESULTS_FILE=top2.xml
@@ -107,18 +112,21 @@ jobs:
       - name: Firmware tests on the model, assembler and driver tests
         run: |
           pip install pytest
-          PYTHONPATH=tools python -m pytest -q test/model
+          # the Tcl-backed tests must run here, not skip
+          python -c "import tkinter; print('Tcl', tkinter.Tcl().eval('info patchlevel'))"
+          # -rs lists every skip with its reason (sigrok, tcpdump, scapy, micropython are not installed)
+          PYTHONPATH=tools python -m pytest -q -rs test/model
           PYTHONPATH=tools python -m pe.mpy_bundle --check
           python flow/gen_config.py --preset submission --check
 
-      - name: Lockstep RTL vs model, 8x4 tapeout config (3 cores, 3 SRAM banks, 8-deep FIFOs)
+      - name: Lockstep RTL vs model, 8x4 submission config (3 cores, 3 SRAM banks, 8-deep FIFOs)
         run: |
           cd test
           LOCKSTEP_SEEDS=40 LOCKSTEP_CYCLES=1000 PE_NCORES=3 PE_NBANKS=3 PE_FIFO_LOG2=3 \
             make TB=chip COCOTB_RESULTS_FILE=lockstep_tapeout.xml
           python3 check_results.py lockstep_tapeout.xml $(grep -c '^@cocotb.test()' test_lockstep.py)
 
-      - name: Lockstep RTL vs model, 2-core fallback (2 cores, 2 SRAM banks, 8-deep FIFOs)
+      - name: Lockstep RTL vs model, 2-core build (2 cores, 2 SRAM banks, 8-deep FIFOs)
         run: |
           cd test
           LOCKSTEP_SEEDS=40 LOCKSTEP_CYCLES=1000 PE_NCORES=2 PE_NBANKS=2 PE_FIFO_LOG2=3 \

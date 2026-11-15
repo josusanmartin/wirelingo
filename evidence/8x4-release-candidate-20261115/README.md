@@ -21,6 +21,8 @@ here is silicon, and nothing here ran on an FPGA.
 | `rt10s5-pre/` | aqp-rt10s5-pre: a clean harden of `77c3936` through `flow/harden.sh`'s clean-tree path, then the full release receipts (a rehearsal of the release path) | `spec.txt`, `time.txt`, `harden.out` (the clean-tree verdicts at the start and after config generation), `result.txt`; `sta48.out`; `sta-nonlatch.txt` (`flow/sta_nonlatch.py`); `equiv.txt` (`formal/equiv/equiv_check.sh --mutants`); `gl-sdf-counts.txt` (test cases per JUnit file of the GL and SDF receipts, from `tools/junit_counts.py`); `release-evidence.log` and `verdict.json` (`flow/release_evidence.py`'s run); `release-check.log` (the release check rerun, below) |
 | `rt10d48/` | aqp-rt10d48: the clean `1ea5cb7` with `--density 48`, a real placement change | `spec.txt`, `time.txt`, `result.txt`, `sta48.out`, `worktree.diff` (the generated config's two changed lines) |
 | `gds-normalized.txt` | rt10, rt10s, rt10s5-pre | each final GDS's sha256 with its BGNLIB/BGNSTR dates zeroed, and its raw sha256 prefix, from `tools/gds_normalized.py` (the normalization of `flow/build_manifest.py`), run read-only on the kept run directories on 2026-11-15 |
+| `late-clock.txt` | rt10, rt10s, rt10s5-pre | the `LATE_CLOCK_COMPLETE` line that `flow/sram_clock_advance.tcl` prints in each run's SRAM clock advance step log (64 registers on 23 branches each), taken read-only on 2026-11-15; the count `evidence/8x4-release-expected.json` holds |
+| `density.txt` | rt10, rt10s5-pre | global placement's `GPL-0302` and `GPL-0023` lines: the configured target density 0.34 is below the free-area minimum, so placement runs at 0.47 (taken read-only on 2026-11-15) |
 | `tools/` | | the two read-only scripts above |
 
 What the records show:
@@ -64,6 +66,9 @@ What the records show:
   passes `flow/signoff.py` with 0 DRC/LVS/antenna, but at 20.832 ns the slow
   corner's setup WS is −0.815 ns with 15 violators (`sta48.out`), and at 20 ns
   −1.647 ns with 71. The candidate's margin is specific to its placement.
+
+`late-clock.txt` and `density.txt` name each log by its path inside its run
+directory, so they hold no home directory.
 
 Redactions: the runner's home directory in paths was replaced by `~`,
 `<flow-root>` or `<aq-search>` (occurrences: 60 in `release-evidence.log`, 27 in

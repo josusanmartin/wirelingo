@@ -16,17 +16,31 @@ jobs:
       - name: Check frozen submission configuration
         run: python3 flow/gen_config.py --preset submission --check
 
+      # Pinned by commit: tt-gds-action at the head of its ihp-cmos5l branch on
+      # 2026-11-15, and tt-support-tools at d66cf17, the commit the receipted
+      # release runs used. At this action commit it installs IHP-Open-PDK
+      # 2bbec755 and LibreLane 3.1.0.dev3, the runs' versions (flow/release_pins.json).
       - name: Build GDS
-        uses: TinyTapeout/tt-gds-action@ihp-cmos5l
+        uses: TinyTapeout/tt-gds-action@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
         with:
           pdk: ihp-sg13cmos5l
+          tools-ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+          librelane-version: 3.1.0.dev3
+
+      # The GDS that ships must be the receipted build: the final netlist's sha256
+      # and the GDS's sha256 with its dates zeroed must equal the expected pair
+      # (flow/release_expected.py; docs/release-evidence.md). Prints both pairs.
+      - name: Compare the build with the release's expected hashes
+        run: python3 flow/release_expected.py . evidence/8x4-release-expected.json
 
   precheck:
     needs: gds
     runs-on: ubuntu-24.04
     steps:
       - name: Run Tiny Tapeout Precheck
-        uses: TinyTapeout/tt-gds-action/precheck@ihp-cmos5l
+        uses: TinyTapeout/tt-gds-action/precheck@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
+        with:
+          tools-ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
 
   gl_test:
     needs: gds
@@ -38,7 +52,7 @@ jobs:
           submodules: recursive
 
       - name: GL test
-        uses: TinyTapeout/tt-gds-action/gl_test@ihp-cmos5l
+        uses: TinyTapeout/tt-gds-action/gl_test@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
 
   viewer:
     needs: gds
@@ -47,4 +61,4 @@ jobs:
       pages: write # to deploy to Pages
       id-token: write # to verify the deployment originates from an appropriate source
     steps:
-      - uses: TinyTapeout/tt-gds-action/viewer@ihp-cmos5l
+      - uses: TinyTapeout/tt-gds-action/viewer@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l

@@ -1,0 +1,15 @@
+{
+ "schema": "protoemu-release-expected-1",
+ "build": "the 3-core 8x4 release candidate (runs aqp-rt10, aqp-rt10s, aqp-rt10s4 and aqp-rt10s5-pre)",
+ "netlist_sha256": "453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08",
+ "gds_normalized_sha256": "357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a",
+ "late_clock": {"registers": 64, "branches": 23},
+ "nonlatch_floor_ns": 0.3,
+ "slow_mhz": 48,
+ "records": {
+  "netlist_sha256": "evidence/8x4-release-candidate-20261115/rt10s5-pre/release-check.log (shipping build: netlist)",
+  "gds_normalized_sha256": "evidence/8x4-release-candidate-20261115/gds-normalized.txt",
+  "late_clock": "evidence/8x4-release-candidate-20261115/late-clock.txt",
+  "nonlatch_floor_ns": "the release floor; the candidate has +0.4304 ns (evidence/8x4-release-candidate-20261115/rt10s5-pre/sta-nonlatch.txt)"
+ }
+}
