@@ -471,6 +471,13 @@ is at `d66cf17`) and `python --version` in runner1's flow venv.
     `download-artifact`, `upload-pages-artifact`, `deploy-pages`) and
     `test-summary/action`, all referenced by tag. `TinyTapeout/ciel-action`
     is also by tag, but its step is skipped for this PDK;
+  - three more references by tag, none of them in `gds.yaml`'s jobs:
+    `typst-community/setup-typst@v5` (the action's `docs/action.yml`, used
+    by `docs.yaml`), `YosysHQ/setup-oss-cad-suite@v4` (its
+    `fpga/ice40up5k/action.yml`, used by `fpga.yaml`) and
+    `YosysHQ/setup-oss-cad-suite@v3` (the formal job of this repository's
+    `.github/workflows/test.yaml`). Read from those three files, the
+    action's two at `3412659`; not run;
   - Python: 3.11 as the runner's toolcache resolves it. runner1's flow venv
     (the default `--flow-python` above) reports 3.12.3, read on 2026-11-15;
     no tracked log holds it;
