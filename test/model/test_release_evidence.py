@@ -330,8 +330,10 @@ def precheck_output(wt):
 
 
 # A stand-in for tt-support-tools' tt_tool.py --create-user-config: the two generated configs
-FAKE_TT = """import json, sys
+FAKE_TT = """import json, os, sys
 assert sys.argv[1:] == ["--create-user-config", "--ihp"]
+if os.path.basename(os.getcwd()).startswith("clean-tree-regen."):    # the release's regeneration
+    assert not os.path.exists("tt/__pycache__"), "tt/ has bytecode"   # 100b: sources only
 user = {"DESIGN_NAME": "design", "VERILOG_FILES": ["dir::project.v"]}
 json.dump(user, open("src/user_config.json", "w"), indent=2)
 config = json.load(open("src/config.json"))
@@ -356,7 +358,7 @@ def commit_all(repo, message="fixture"):
     return git(repo, "rev-parse", "HEAD")
 
 
-def clean_tree(wt, *, pins=None, before_start=None, after_start=None):
+def clean_tree(wt, *, pins=None, before_start=None, after_start=None, compiled=None):
     """wt as flow/harden.sh leaves it: a commit (the run's files ignored as the
     repository ignores them), tt/ a clean checkout of a stand-in tt-support-tools,
     a PDK checkout, flow/release_pins.json pinning them, and runs/clean-tree.json
@@ -386,6 +388,8 @@ def clean_tree(wt, *, pins=None, before_start=None, after_start=None):
     if after_start:                           # what happens between the receipt and generation
         after_start(wt)
     subprocess.run([sys.executable, "tt/tt_tool.py", "--create-user-config", "--ihp"], cwd=wt, check=True)
+    if compiled:                              # bytecode the generation step compiles
+        compiled(wt)
     ct.generated(wt)
     for p in aside.iterdir():                 # then the flow's outputs
         shutil.move(str(p), str(wt / "runs" / p.name))

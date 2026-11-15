@@ -47,7 +47,8 @@ fi
 
 git -C "$REPO" worktree add -q --detach "$W" HEAD
 cd "$W"
-cp -r "$REPO/tt" .
+# tt-support-tools without bytecode: none may exist when the clean-tree receipt starts
+tar -C "$REPO" --exclude=__pycache__ --exclude='*.pyc' -cf - tt | tar -xf -
 # the release identity: the worktree's commit, tree and status, tt/, the image
 # ID and the PDK, before anything is generated (flow/clean_tree.py)
 export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp-sg13cmos5l

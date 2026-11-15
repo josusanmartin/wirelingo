@@ -14,11 +14,15 @@ and src/config_merged.json, before LibreLane starts. The receipt
 * the worktree's commit and tree (git rev-parse HEAD, HEAD^{tree}) and its
   `git status --porcelain --ignored --untracked-files=all`, which must be
   empty apart from what the harden owns at that point: tt/ at start; tt/,
-  the two generated configs and the receipt itself after generation; and
-  at either point a tracked module's bytecode (__pycache__/<stem>.cpython-*.pyc
-  of a tracked <stem>.py: LibreLane imports the plugin);
-* tt/'s commit and the same status, clean apart from
-  __pycache__/<stem>.cpython-*.pyc of a tracked <stem>.py;
+  the two generated configs and the receipt itself after generation. No
+  bytecode or __pycache__ entry is owned at start (a .pyc that copies its
+  source's mtime and size in its header is loaded instead of the source);
+  after generation, bytecode is owned only if it was not there at start and
+  belongs to a tracked .py (compiled from the clean sources), and it is
+  listed as "compiled";
+* tt/'s commit and the same status, clean (flow/harden.sh copies tt/ in
+  without bytecode), and after generation clean apart from bytecode compiled
+  since start for its tracked modules;
 * the LibreLane image's ID (docker image inspect, not only its version
   string) and the PDK checkout's commit and status (clean apart from the
   SOURCES file its install script writes);
@@ -87,20 +91,28 @@ def tracked(repo):
     return set(git(repo, "ls-files", "-z").split("\0")) - {""}
 
 
-def stray(lines, owned, repo=None, owned_re=None):
+def stray(lines, owned, repo=None, owned_re=None, before=None):
     """The status lines outside what is owned: an exact owned line, a line
-    owned_re matches, or __pycache__/<stem>.cpython-*.pyc whose <stem>.py is
-    tracked in repo."""
+    owned_re matches, and, only when repo is given, __pycache__/<stem>.cpython-*.pyc
+    whose <stem>.py is tracked in repo and (with before) that was not there
+    before. Without repo, any bytecode or __pycache__ entry is a stray: a .pyc
+    whose header copies its source's mtime and size is loaded instead of the
+    source, so bytecode present at start could carry other code (100b)."""
     files = tracked(repo) if repo is not None else set()
     out = []
     for line in lines:
         if line in owned or (owned_re and owned_re.match(line)):
             continue
         m = PYC_RE.match(line)
-        if m and f"{m.group(1)}{m.group(2)}.py" in files:
+        if m and f"{m.group(1)}{m.group(2)}.py" in files and (before is None or line not in before):
             continue
         out.append(line)
     return out
+
+
+def compiled_since(lines, before):
+    """The bytecode lines not in before (compiled after the start record)."""
+    return [line for line in lines if PYC_RE.match(line) and line not in before]
 
 
 def sha256(path):
@@ -127,6 +139,8 @@ def verdict(data, final=True):
     if data.get("generated_worktree") is not None and data["generated_worktree"]["stray"]:
         reasons.append(f"worktree after generation: {len(data['generated_worktree']['stray'])} paths differ from the "
                        f"commit: {data['generated_worktree']['stray'][:5]}")
+    if data.get("generated_tt") and data["generated_tt"]["stray"]:
+        reasons.append(f"tt/ after generation: {data['generated_tt']['stray'][:5]}")
     if final and data.get("generated") is None:
         reasons.append("generated configs not recorded")
     tt = data["tt"]
@@ -144,12 +158,12 @@ def start(wt, image, pdk_root, argv=(), ident=None):
     wt = Path(wt).resolve()
     data = {"schema": SCHEMA, "head": git(wt, "rev-parse", "HEAD").strip(),
             "tree": git(wt, "rev-parse", "HEAD^{tree}").strip(), "argv": list(argv)}
-    lines = status(wt)      # a tracked module's bytecode (the plugin, imported) is not a stray
-    data["worktree"] = {"status": lines, "stray": stray(lines, START_OWNED, repo=wt)}
+    lines = status(wt)      # at start no bytecode or __pycache__ anywhere is owned (100b)
+    data["worktree"] = {"status": lines, "stray": stray(lines, START_OWNED)}
     try:
         tl = status(wt / "tt")
         data["tt"] = {"head": git(wt / "tt", "rev-parse", "HEAD").strip(), "status": tl,
-                      "stray": stray(tl, set(), repo=wt / "tt")}
+                      "stray": stray(tl, set())}
     except (ValueError, OSError) as e:
         data["tt"] = {"head": None, "status": [], "stray": [], "error": str(e)}
     data["image"] = {"name": image, "id": ident or image_id(image)}   # ident: tests only (no docker)
@@ -171,8 +185,15 @@ def start(wt, image, pdk_root, argv=(), ident=None):
 def generated(wt):
     wt = Path(wt).resolve()
     data = json.loads((wt / RECEIPT).read_text())
-    lines = status(wt)
-    data["generated_worktree"] = {"status": lines, "stray": stray(lines, GENERATED_OWNED, repo=wt)}
+    lines = status(wt)      # bytecode compiled since start from tracked, clean sources is owned
+    start_lines = set(data["worktree"]["status"])
+    data["generated_worktree"] = {"status": lines, "compiled": compiled_since(lines, start_lines),
+                                  "stray": stray(lines, GENERATED_OWNED, repo=wt, before=start_lines)}
+    if data["tt"].get("head"):
+        tl = status(wt / "tt")
+        tt_start = set(data["tt"]["status"])
+        data["generated_tt"] = {"status": tl, "compiled": compiled_since(tl, tt_start),
+                                "stray": stray(tl, set(), repo=wt / "tt", before=tt_start)}
     data["generated"] = {p: sha256(wt / p) if (wt / p).is_file() else None for p in GENERATED}
     if None in data["generated"].values():
         data["generated"] = None
@@ -189,11 +210,12 @@ def regenerate(tree_root, tt_dir, python, pdk_root=None):
     try:
         archive = subprocess.run(["git", "-C", str(tree_root), "archive", "HEAD"], capture_output=True, check=True)
         subprocess.run(["tar", "-x", "-C", str(tmp)], input=archive.stdout, check=True)
-        shutil.copytree(tt_dir, tmp / "tt", symlinks=True)
-        env = dict(os.environ, PDK="ihp-sg13cmos5l")
+        # tt without its bytecode, and none written: the sources alone (100b)
+        shutil.copytree(tt_dir, tmp / "tt", symlinks=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        env = dict(os.environ, PDK="ihp-sg13cmos5l", PYTHONDONTWRITEBYTECODE="1")
         if pdk_root:
             env["PDK_ROOT"] = str(pdk_root)
-        r = subprocess.run([python, "tt/tt_tool.py", "--create-user-config", "--ihp"], cwd=tmp, env=env,
+        r = subprocess.run([python, "-B", "tt/tt_tool.py", "--create-user-config", "--ihp"], cwd=tmp, env=env,
                            capture_output=True, text=True)
         if r.returncode != 0:
             raise ValueError(f"tt_tool --create-user-config failed: {(r.stdout + r.stderr).strip()[-300:]}")

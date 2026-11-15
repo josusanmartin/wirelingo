@@ -61,17 +61,50 @@ def test_an_uncommitted_file_at_harden_start_makes_the_run_dirty(tmp_path, capsy
     assert rc == 1 and "clean tree: the run's tree was DIRTY" in text and reason in text
 
 
-@pytest.mark.parametrize("pyc,clean", [
-    ("__pycache__/librelane_plugin_protoemu.cpython-312.pyc", True),     # the tracked plugin, imported
-    ("__pycache__/librelane_plugin_zz.cpython-312.pyc", False),          # no such tracked module
+@pytest.mark.parametrize("pyc,reason", [
+    # 100b: a .pyc whose header copies its source's mtime and size is loaded instead
+    # of the source, so even a tracked module's bytecode at start is a stray
+    ("__pycache__/librelane_plugin_protoemu.cpython-312.pyc", "worktree at start"),
+    ("__pycache__/librelane_plugin_zz.cpython-312.pyc", "worktree at start"),
+    ("tt/__pycache__/tt_tool.cpython-312.pyc", "tt/: ['!! __pycache__/tt_tool.cpython-312.pyc']"),
 ])
-def test_bytecode_of_a_tracked_module_is_not_a_stray(tmp_path, capsys, pyc, clean):
-    # found on the first real harden under 097h (aqp-rt10s5-pre): importing
-    # LibreLane imports the plugin from the worktree, which writes its bytecode
-    wt, args = releases(tmp_path, capsys, before_start=stray(pyc, "bytecode"))
+def test_bytecode_at_start_is_a_stray(tmp_path, capsys, pyc, reason):
+    wt, args = releases(tmp_path, capsys, before_start=stray(pyc, "crafted bytecode"),
+                        after_start=lambda w: __import__("shutil").rmtree(w / "tt/__pycache__", ignore_errors=True))
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert data["status"] == "DIRTY" and any(reason in r for r in data["reasons"]), data["reasons"]
+    if not pyc.startswith("tt/"):      # bytecode there at start is not "compiled since start" either
+        assert f"!! {pyc}" in data["generated_worktree"]["stray"]
+        assert f"!! {pyc}" not in data["generated_worktree"]["compiled"]
+
+
+@pytest.mark.parametrize("pyc,clean", [
+    ("__pycache__/librelane_plugin_protoemu.cpython-312.pyc", True),     # the tracked plugin, imported later
+    ("tt/__pycache__/tt_tool.cpython-312.pyc", True),                    # a tracked tt module
+    ("__pycache__/librelane_plugin_zz.cpython-312.pyc", False),          # no such tracked module
+    ("tt/__pycache__/zz.cpython-312.pyc", False),                        # nor in tt/
+])
+def test_bytecode_compiled_after_start_from_a_tracked_module_is_owned(tmp_path, capsys, pyc, clean):
+    def compile_(w):
+        (w / pyc).parent.mkdir(parents=True, exist_ok=True)
+        (w / pyc).write_bytes(b"bytecode")
+    wt, args = releases(tmp_path, capsys, compiled=compile_)
     data = json.loads((wt / "runs/clean-tree.json").read_text())
     assert (data["status"] == "CLEAN") is clean, data["reasons"]
-    assert data["phase"] == "generated"
+    name = pyc.split("/", 1)[1] if pyc.startswith("tt/") else pyc
+    record = data["generated_tt"] if pyc.startswith("tt/") else data["generated_worktree"]
+    assert f"!! {name}" in record["compiled"]
+
+
+def test_regeneration_reads_no_bytecode(tmp_path, capsys):
+    # the run's tt/ holds bytecode compiled during the flow; the release
+    # regenerates the configs from its sources alone (the stand-in tool refuses
+    # to run beside a tt/__pycache__)
+    wt, args = releases(tmp_path, capsys)
+    (wt / "tt/__pycache__").mkdir()
+    (wt / "tt/__pycache__/tt_tool.cpython-312.pyc").write_bytes(b"crafted")
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 0 and "generated configs: regenerated from the shipping tree, equal" in text
 
 
 def test_the_start_verdict_does_not_expect_generated_configs(tmp_path):
@@ -176,7 +209,8 @@ def test_the_harden_records_the_receipt_before_generating():
     text = (Path(__file__).resolve().parents[2] / "flow/harden.sh").read_text()
     a, b, c = (text.index("clean_tree.py start"), text.index("gen_config.py --preset"),
                text.index("clean_tree.py generated"))
-    assert text.index('cp -r "$REPO/tt" .') < a < b < text.index("tt_tool.py --create-user-config") < c
+    copy = text.index("--exclude=__pycache__ --exclude='*.pyc' -cf - tt")      # tt/ in without bytecode (100b)
+    assert copy < a < b < text.index("tt_tool.py --create-user-config") < c
     assert c < text.index("tt_tool.py --harden")
     # the version probe imports LibreLane outside the worktree, writing no bytecode there
     assert "LLV=$(cd / && PYTHONDONTWRITEBYTECODE=1 python -c" in text
