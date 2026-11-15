@@ -14,13 +14,14 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 
 import pytest
 
 from test_release_evidence import candidate, complete_receipts, module
 from test_sta_nonlatch import fake_sta, run  # noqa: F401 (fake_sta is a fixture)
 from test_flow_slow48 import sta_step, STEP, SLOW
-from test_flow_tools import evidence_args, flow_module
+from test_flow_tools import evidence_args, flow_module, git_clone
 
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = ROOT / "evidence/8x4-release-expected.json"
@@ -138,6 +139,22 @@ def test_the_late_clock_count_must_be_the_expected_one(tmp_path, capsys, log, me
     capsys.readouterr()
     assert ex.main([str(wt), str(exp), "--late-clock"]) == 1
     assert message in capsys.readouterr().out
+
+
+def test_two_sram_clock_advance_step_logs_are_refused(tmp_path, capsys):
+    # a second run of the step in the same run directory: neither count is taken
+    ex = module("release_expected")
+    wt = fixture_run(tmp_path)
+    exp = expected_for(wt, tmp_path / "expected.json")
+    assert ex.main([str(wt), str(exp), "--late-clock"]) == 0
+    second = wt / LATE_LOG.replace("37-project-", "52-project-")
+    second.parent.mkdir(parents=True)
+    shutil.copy(wt / LATE_LOG, second)
+    capsys.readouterr()
+    assert ex.main([str(wt), str(exp), "--late-clock"]) == 1
+    text = capsys.readouterr().out
+    assert "late clock: expected one SRAM clock advance step log" in text and "found 2" in text
+    assert "actual unreadable" in text and "RELEASE IDENTITY MISMATCH" in text
 
 
 @pytest.mark.parametrize("change", [
@@ -323,6 +340,43 @@ def test_release_evidence_runs_the_nonlatch_job_and_passes_both_options(tmp_path
         ev.parse_args(evidence_args(tmp_path, "--validation-commit", "HEAD", "--require-nonlatch-floor", "inf"))
 
 
+def test_release_evidence_main_hands_both_options_to_the_release_check(tmp_path, monkeypatch):
+    """main() itself, with no receipt jobs and the release check's process stubbed:
+    the command it runs, and records in verdict.json, carries the floor and the
+    expected file. Without them the release check prints "release identity: not
+    compared", makes no floor check, and can still pass."""
+    ev = flow_module("release_evidence")
+    clone = git_clone(tmp_path)
+    exp = tmp_path / "expected.json"
+    exp.write_text("{}")
+    ran, real = [], subprocess.run
+
+    def fake_run(cmd, *args, **kw):
+        if str(ev.FLOW / "release_check.py") not in map(str, cmd):
+            return real(cmd, *args, **kw)                          # git
+        ran.append([str(c) for c in cmd])
+        return subprocess.CompletedProcess(cmd, 0, "RELEASE PASSED (SDF profile v2, slow target 48 MHz)\n", "")
+
+    monkeypatch.setattr(ev.subprocess, "run", fake_run)
+    monkeypatch.setattr(ev.signal, "signal", lambda *a: None)      # main() installs a SIGTERM handler
+    monkeypatch.setattr(ev, "plan_jobs", lambda *a, **k: [])       # no simulators (the planned jobs: above)
+    monkeypatch.setattr(ev, "make_view", lambda run, view: view)
+    monkeypatch.setattr(ev.receipts, "candidate_files", lambda run: {})
+    argv = evidence_args(tmp_path, "--validation-root", str(clone), "--no-archive", "--slow-mhz", "48")
+    assert ev.main(argv + ["--work", str(tmp_path / "w1"), "--require-nonlatch-floor", "0.3",
+                           "--expect", str(exp)]) == 0
+    assert len(ran) == 1
+    cmd = ran[0]
+    assert cmd[1] == str(ev.FLOW / "release_check.py") and cmd[cmd.index("--slow-mhz") + 1] == "48"
+    assert cmd[cmd.index("--require-nonlatch-floor") + 1] == "0.3"
+    assert cmd[cmd.index("--expect") + 1] == str(exp.resolve())
+    verdict = json.loads((tmp_path / "w1/verdict.json").read_text())
+    assert verdict["release_check"] == cmd and verdict["exit"] == 0
+    # a run without the options is checked as before
+    assert ev.main(argv + ["--work", str(tmp_path / "w2")]) == 0
+    assert len(ran) == 2 and "--require-nonlatch-floor" not in ran[1] and "--expect" not in ran[1]
+
+
 def test_release_evidence_preflight_needs_the_expected_file(tmp_path):
     ev = flow_module("release_evidence")
     a = ev.parse_args(evidence_args(tmp_path, "--validation-commit", "HEAD", "--require-nonlatch-floor", "0.3",
@@ -402,6 +456,36 @@ def test_the_gds_workflow_pins_the_action_and_the_tools_and_checks_the_hashes():
                          s, re.M) for s in gds_steps[i + 1:])
     pins = json.loads((ROOT / "flow/release_pins.json").read_text())
     assert pins["tt_support_tools"] == TOOLS_SHA
+
+
+def test_every_workflow_uses_the_action_by_the_pinned_commit():
+    # gds.yaml's four uses (above), docs.yaml's and fpga.yaml's: none by branch or tag
+    found = {}
+    for path in sorted((ROOT / ".github/workflows").glob("*.y*ml")):
+        text = "\n".join(l for l in path.read_text().splitlines() if not l.lstrip().startswith("#"))
+        found[path.name] = re.findall(r"TinyTapeout/tt-gds-action\S*", text)
+    assert {name: len(uses) for name, uses in found.items()} == {"docs.yaml": 1, "fpga.yaml": 1, "gds.yaml": 4,
+                                                                 "test.yaml": 0}
+    assert all(u.endswith("@" + ACTION_SHA) for uses in found.values() for u in uses)
+    docs = steps("docs.yaml", "docs")
+    build = next(s for s in docs if s.startswith("name: Build docs\n"))
+    assert f"uses: TinyTapeout/tt-gds-action/docs@{ACTION_SHA} # ihp-cmos5l\n" in build
+    assert f"        with:\n          tools-ref: {TOOLS_SHA}\n" in build
+
+
+def test_harden_result_names_the_generator_options_of_an_overridden_run():
+    """flow/harden.sh's result.txt label line, read as text and expanded by bash
+    alone (nothing else of the script runs): a run with generator options says
+    "with options ..."; a run without reads as before."""
+    lines = [l for l in (ROOT / "flow/harden.sh").read_text().splitlines() if "preset $PRESET" in l]
+    assert lines == ['  echo "tiles $TILE, cores $NC, preset $PRESET${*:+ with options $*}, '
+                     'FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}"']
+    env = {"PATH": "/usr/bin:/bin", "TILE": "8x4", "NC": "3", "PRESET": "submission"}
+    label = lambda *options: subprocess.run(["bash", "-uc", lines[0], "harden.sh", *options], env=env,
+                                            capture_output=True, text=True, check=True).stdout
+    assert label() == "tiles 8x4, cores 3, preset submission, FIFO_LOG2 3, STOP none\n"
+    assert label("--density", "47") == ("tiles 8x4, cores 3, preset submission with options --density 47, "
+                                        "FIFO_LOG2 3, STOP none\n")
 
 
 def test_the_test_workflow_runs_the_tcl_tests_and_lists_skips():

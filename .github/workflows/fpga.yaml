@@ -25,6 +25,6 @@ jobs:
           cp build/fpga-profile/src/pe_imem.sv src/pe_imem.sv
 
       - name: FPGA bitstream for TT ASIC Sim (ICE40UP5K, one core)
-        uses: TinyTapeout/tt-gds-action/fpga/ice40up5k@ihp-cmos5l
+        uses: TinyTapeout/tt-gds-action/fpga/ice40up5k@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
         env:
           TT_FPGA_FREQ: "48"

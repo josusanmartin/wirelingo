@@ -13,5 +13,9 @@ jobs:
         with:
           submodules: recursive
 
+      # Pinned as in gds.yaml: the action by commit, and tt-support-tools at the
+      # commit its default branch (ihp-sg13cmos5l) pointed to on 2026-11-15.
       - name: Build docs
-        uses: TinyTapeout/tt-gds-action/docs@ihp-cmos5l
+        uses: TinyTapeout/tt-gds-action/docs@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
+        with:
+          tools-ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665

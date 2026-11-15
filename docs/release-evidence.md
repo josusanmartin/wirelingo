@@ -430,10 +430,15 @@ must not change either: `git diff --stat S T -- evidence/8x4-release-expected.js
 must print nothing, since GitHub's build of `T` is compared with it.
 
 **What GitHub builds.** The repository's GDS action builds from the pushed
-commit, not from the release run. `.github/workflows/gds.yaml` pins
+commit, not from the release run. The workflows pin
 `TinyTapeout/tt-gds-action` to commit `3412659` (the head of its
-`ihp-cmos5l` branch on 2026-11-15) at every use, and tt-support-tools to
-`d66cf17` (`tools-ref`, for the build and the precheck). At that commit the
+`ihp-cmos5l` branch on 2026-11-15) at every use: the four in
+`.github/workflows/gds.yaml`, and the one each in `docs.yaml` and
+`fpga.yaml`. tt-support-tools is pinned to `d66cf17` (`tools-ref`) for the
+build, the precheck and the docs job. `gl_test` and the viewer check out no
+tt-support-tools. The FPGA workflow (started by hand; its push trigger is
+disabled) passes no `tools-ref`, so it takes its action's default, the
+tools' `main` branch. At that commit the
 action installs IHP-Open-PDK `2bbec755` (its `install_sg13cmos5l.sh`) and
 LibreLane 3.1.0.dev3 with pip, the versions `flow/release_pins.json` pins.
 LibreLane then runs in its docker image by the version tag; the action does
@@ -444,6 +449,43 @@ digest and fails the job on a difference, so a GitHub build of another
 placement cannot finish green. No GitHub-built GDS of the 3-core design
 has been compared yet: that needs a pushed branch, and the workflow at this
 commit has not run on GitHub.
+
+**What the pin fixes, and what it does not.** This list is read from the
+action's source at `3412659` and from tt-support-tools at `d66cf17`. None of
+it was run. The only commands run for it were the two branch-head lookups on
+2026-11-15 (`ihp-cmos5l` is at `3412659`; tt-support-tools' `ihp-sg13cmos5l`
+is at `d66cf17`) and `python --version` in runner1's flow venv.
+
+* **Fixed by commit or version:** the action; tt-support-tools at `d66cf17`,
+  with its Python packages pinned by its `requirements.txt` files;
+  IHP-Open-PDK `2bbec755`, which `install_sg13cmos5l.sh` fetches by commit for
+  the build, the precheck and `gl_test`; `librelane==3.1.0.dev3`; the
+  precheck's nixpkgs, by a tarball commit; and the two actions
+  `awalsh128/cache-apt-pkgs-action` and `rikhuijzer/cache-install`, by commit.
+* **Not fixed:**
+  - the LibreLane docker image, taken by its version tag (above). This is the
+    one that matters for the build;
+  - LibreLane's own pip dependencies: only LibreLane's version is given, and
+    pip resolves the rest at install time;
+  - the `actions/*` actions (`checkout`, `setup-python`, `upload-artifact`,
+    `download-artifact`, `upload-pages-artifact`, `deploy-pages`) and
+    `test-summary/action`, all referenced by tag. `TinyTapeout/ciel-action`
+    is also by tag, but its step is skipped for this PDK;
+  - Python: 3.11 as the runner's toolcache resolves it. runner1's flow venv
+    (the default `--flow-python` above) reports 3.12.3, read on 2026-11-15;
+    no tracked log holds it;
+  - `gl_test`'s iverilog, downloaded from a release URL (`v13.0`) with no
+    hash;
+  - apt packages, at whatever version the runner has.
+
+**What the hash step covers.** It is the backstop for the build only: it does
+not cover the tools of the precheck or of `gl_test`. It runs after the action
+has uploaded the `tt_submission` artifact, so on a mismatch the job is red but
+the artifact exists. tt-support-tools' `create_tt_submission` copies the
+hashed GDS into `tt_submission/` with `shutil.copyfile`, so the artifact's
+`.gds` is a byte copy of the hashed file. Next to it the same function writes
+an `.oas` conversion (KLayout), which nothing hashes. This too is read from
+the source, not run.
 
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 
