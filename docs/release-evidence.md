@@ -385,19 +385,33 @@ requires. On the compute runner:
    with `PYTHONPATH` and `LIBRELANE_IMAGE_OVERRIDE` unset, and `STOP` and
    `FIFO_LOG2` unset too (`harden.sh` reads both: `STOP` switches to the
    experiment preset, and `FIFO_LOG2` rewrites `src/project.v`);
-2. `S/flow/release_evidence.py RUN --validation-root S --slow-mhz 48`
+2. `S/flow/release_evidence.py RUN --validation-root S --slow-mhz 48
+   --require-nonlatch-floor 0.3 --expect S/evidence/8x4-release-expected.json`
    (`S` is then also the shipping root): the receipt jobs, the fresh slow
-   STA, the clock and reset checks, `flow/release_check.py` and, on a pass,
-   the evidence archive `wirelingo-release-evidence-<rev>-<run>.tar.gz`;
-3. `flow/sta_nonlatch.py RUN --period 20.832`, then the `release check: …`
-   command that `release_evidence.py` printed in step 2, rerun with
-   `--nonlatch-receipt` and the new receipt added, so the verdict prints the
-   non-latch slack;
-4. `formal/equiv/equiv_check.sh --mutants RUN`;
-5. the acceptance rule: the netlist sha256 and the dates-zeroed GDS digest
-   that `release_check.py` prints must equal the candidate's (`453d0af7…`,
-   `357ea15b…`), so that the numbers in physical.md are the released
-   netlist's. If they differ, the release stops for investigation.
+   STA, the clock and reset checks, the non-latch STA at 20.832 ns
+   (`flow/sta_nonlatch.py`), `flow/release_check.py` and, on a pass, the
+   evidence archive `wirelingo-release-evidence-<rev>-<run>.tar.gz`. The two
+   last options make the release check refuse the run unless:
+   * the worst non-latch setup slack at the slow corner, timed at 20.832 ns
+     or tighter, is at least +0.3 ns (`--require-nonlatch-floor`; the
+     candidate has +0.4304 ns). The all-endpoints figure cannot show this:
+     the FIFO latches' time borrowing makes it read 0;
+   * the run's final netlist sha256, its GDS digest with the BGNLIB/BGNSTR
+     dates zeroed and the late-clock step's count (the
+     `LATE_CLOCK_COMPLETE 64 registers 23 branches` line of the SRAM clock
+     advance step log) equal those in
+     [evidence/8x4-release-expected.json](../evidence/8x4-release-expected.json)
+     (`--expect`, `flow/release_expected.py`): `453d0af7…`, `357ea15b…`, 64
+     registers on 23 branches. So the numbers in physical.md are the
+     released netlist's, and a late clock that matched other registers
+     fails here even though the flow completes. The file also requires the
+     floor option and a 48 MHz slow target at least;
+3. `formal/equiv/equiv_check.sh --mutants RUN`.
+
+Without the two options the release check verifies other runs and older
+archives as before, and prints `release identity: not compared`. If the
+identity differs, the release stops for investigation: a moved placement can
+lose 48 MHz (aqp-rt10d48, physical.md).
 
 **Where its receipts go.** `flow/release_check.py` refuses a run whose tree
 differs from the shipping tree, so the release run's receipts cannot be in
@@ -411,17 +425,25 @@ does.
 **What may follow `S`.** Only commits that touch `evidence/` and `docs/`. For
 a later commit `T`, `git diff --stat S T -- . ':!evidence' ':!docs'` must
 print nothing, and `flow/build_manifest.py compare <S checkout> <T checkout>`
-must print `SAME BUILD`.
+must print `SAME BUILD`. The expected-identity file is under `evidence/` but
+must not change either: `git diff --stat S T -- evidence/8x4-release-expected.json`
+must print nothing, since GitHub's build of `T` is compared with it.
 
 **What GitHub builds.** The repository's GDS action builds from the pushed
-commit, not from the release run. The workflow references
-`TinyTapeout/tt-gds-action` by a branch, so its GDS is expected to match the
-release run's only while that action installs tt-support-tools `d66cf17`,
-LibreLane 3.1.0.dev3 (image `sha256:d109140b…`) and IHP-Open-PDK `2bbec755`,
-the versions the rehearsal's release check recorded and `flow/release_pins.json`
-pins. The check is the
-comparison of its dates-zeroed GDS digest with the release run's. No
-GitHub-built GDS of the 3-core design has been compared yet.
+commit, not from the release run. `.github/workflows/gds.yaml` pins
+`TinyTapeout/tt-gds-action` to commit `3412659` (the head of its
+`ihp-cmos5l` branch on 2026-11-15) at every use, and tt-support-tools to
+`d66cf17` (`tools-ref`, for the build and the precheck). At that commit the
+action installs IHP-Open-PDK `2bbec755` (its `install_sg13cmos5l.sh`) and
+LibreLane 3.1.0.dev3 with pip, the versions `flow/release_pins.json` pins.
+LibreLane then runs in its docker image by the version tag; the action does
+not pin the image digest (`sha256:d109140b…` in the release runs). After
+"Build GDS", the job runs `flow/release_expected.py . evidence/8x4-release-expected.json`:
+it prints the expected and the actual netlist sha256 and dates-zeroed GDS
+digest and fails the job on a difference, so a GitHub build of another
+placement cannot finish green. No GitHub-built GDS of the 3-core design
+has been compared yet: that needs a pushed branch, and the workflow at this
+commit has not run on GitHub.
 
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 

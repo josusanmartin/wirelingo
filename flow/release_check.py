@@ -13,6 +13,15 @@ a checks receipt of flow/check_rerun.py), the SRAM power hookup (the final DEF
 and the ExtendPowerStripes log; flow/release_gates.py), and, with
 --shipping-root, that the run was built from the shipping commit's build
 inputs (flow/build_manifest.py).
+
+Two options make a release of one known build (the 3-core 8x4 release passes
+both; flow/release_evidence.py passes them through): --require-nonlatch-floor
+NS requires the non-latch STA receipt (flow/sta_nonlatch.py, timed at the
+slow-corner period or tighter) and a worst non-latch setup slack of at least
+NS at the slow corner; --expect FILE (flow/release_expected.py) requires the
+run's netlist sha256, its dates-zeroed GDS digest and its late-clock register
+and branch counts to equal FILE's, and the floor and slow rate to be at least
+FILE's. Without them a run is checked as before.
 """
 import argparse
 import math
@@ -65,6 +74,29 @@ def sdf_coverage(records, slow_mhz, profile):
     return failures
 
 
+def nonlatch_floor_failures(nonlatch, receipt, floor, slow_mhz):
+    """Why a verified non-latch receipt (or its absence) does not show `floor`
+    ns of setup slack at the slow corner at the release's slow period."""
+    if not receipt:
+        return [f"--require-nonlatch-floor {floor:g}: no non-latch STA receipt (flow/sta_nonlatch.py, "
+                "--nonlatch-receipt)"]
+    if nonlatch is None:
+        return [f"--require-nonlatch-floor {floor:g}: the non-latch STA receipt did not verify"]
+    period = nonlatch["plan"]["period_ns"]
+    if not finite_number(period) or period > 1000 / slow_mhz + 1e-6:
+        return [f"--require-nonlatch-floor {floor:g}: the non-latch STA was timed at {period} ns, "
+                f"not at {1000 / slow_mhz:g} ns or tighter"]
+    slow = [c for c in nonlatch["results"] if c.startswith("nom_slow")]
+    if len(slow) != 1:
+        return [f"--require-nonlatch-floor {floor:g}: the non-latch STA receipt has no single slow corner"]
+    worst = nonlatch["results"][slow[0]]["nonlatch"]
+    if not finite_number(worst) or worst < floor:
+        return [f"{slow[0]}: worst non-latch setup slack {worst} ns is below the floor of {floor:g} ns "
+                f"(--require-nonlatch-floor)"]
+    print(f"{slow[0]}: worst non-latch setup slack {worst:+.4f} ns meets the floor of {floor:g} ns")
+    return []
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("worktree")
@@ -81,6 +113,12 @@ def main(argv=None):
     ap.add_argument("--flow-python", default=str(Path.home() / "protoemu-flow/protoemu/.venv-flow/bin/python"),
                     help="python with tt-support-tools' requirements, to regenerate the shipping tree's configs")
     ap.add_argument("--nonlatch-receipt", help="worst setup slack without the latches (flow/sta_nonlatch.py); printed")
+    ap.add_argument("--require-nonlatch-floor", type=float, metavar="NS",
+                    help="require --nonlatch-receipt, timed at <= 1000/slow-mhz ns, with a worst non-latch setup "
+                         "slack of at least NS at the slow corner")
+    ap.add_argument("--expect", metavar="FILE",
+                    help="expected-release file (flow/release_expected.py, e.g. evidence/8x4-release-expected.json): "
+                         "the run's netlist, dates-zeroed GDS and late-clock counts must equal it")
     ap.add_argument("--shipping-root",
                     help="checkout of the shipping commit: the run's build inputs must equal its "
                          "(flow/build_manifest.py); flow/release_evidence.py passes the validation root")
@@ -97,6 +135,8 @@ def main(argv=None):
     failures, skipped = [], []
     if not finite_number(a.slow_mhz) or not 0 < a.slow_mhz <= 50:
         ap.error("--slow-mhz must be finite, positive and no greater than 50")
+    if a.require_nonlatch_floor is not None and not finite_number(a.require_nonlatch_floor):
+        ap.error("--require-nonlatch-floor must be finite")
     waive = {}
     for item in a.waive:
         try:
@@ -136,6 +176,8 @@ def main(argv=None):
                 failures.append(f"invalid non-latch STA evidence: {e}")
         else:
             print("worst non-latch setup slack: not measured (flow/sta_nonlatch.py, --nonlatch-receipt)")
+        if a.require_nonlatch_floor is not None:
+            failures += nonlatch_floor_failures(nonlatch, a.nonlatch_receipt, a.require_nonlatch_floor, a.slow_mhz)
         if a.slow_sta_receipt:
             fresh = receipts.verify(a.slow_sta_receipt, wt, "sta")
             print(f"slow-corner STA verified: {a.slow_sta_receipt} ({fresh['plan']['period_ns']:g} ns, "
@@ -268,6 +310,30 @@ def main(argv=None):
     else:
         gate_skipped.append("shipping build: no --shipping-root, so the run is not bound to a shipping commit")
         print(f"release gate, SKIPPED: {gate_skipped[-1]}")
+    print("== release identity")
+    if a.expect:
+        try:
+            import release_expected     # only with --expect: archives made before it do not hold the tool
+            expected = release_expected.load(a.expect)
+            problems, notes = release_expected.compare(expected, wt, late_clock=not archive)
+            for line in notes:
+                print(f"release identity: {line}")
+            if archive:
+                gate_skipped.append("release identity: late clock: an evidence archive keeps no step logs")
+                print(f"release gate, SKIPPED: {gate_skipped[-1]}")
+            failures += [f"release identity: {p}" for p in problems]
+            floor = expected["nonlatch_floor_ns"]
+            if a.require_nonlatch_floor is None or a.require_nonlatch_floor < floor:
+                failures.append(f"release identity: {a.expect} requires --require-nonlatch-floor {floor:g} or more")
+            if a.slow_mhz < expected["slow_mhz"]:
+                failures.append(f"release identity: {a.expect} releases {expected['slow_mhz']:g} MHz at the slow "
+                                f"corner, not {a.slow_mhz:g}")
+            if not problems:
+                print(f"release identity: the run is the build {a.expect} names")
+        except (*EVIDENCE_ERRORS, AttributeError) as e:
+            failures.append(f"invalid release identity evidence: {e}")
+    else:
+        print("release identity: not compared (no --expect)")
     if a.require_sta_inputs and gate_skipped:
         failures.append(f"--require-sta-inputs: {len(gate_skipped)} release gates would be skipped")
 

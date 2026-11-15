@@ -16,7 +16,13 @@ SDF sets run their slow cases at slow_period(F) and an eighth job re-times the
 run there (flow/sta_rerun.py); typical and fast stay at 50 MHz. A further
 job re-runs the run's STA for its clock/reset checks (flow/check_rerun.py), and
 the validation root (or --shipping-root) is the shipping commit whose build
-inputs the run must have used (flow/build_manifest.py). It
+inputs the run must have used (flow/build_manifest.py). With
+--require-nonlatch-floor NS a further job re-times the run without its latches
+at the slow-corner period (flow/sta_nonlatch.py) and the release check
+requires NS of slack there; --expect FILE has the release check compare the
+run's netlist, dates-zeroed GDS and late-clock counts with FILE
+(flow/release_expected.py). The 3-core 8x4 release passes both
+(docs/release-evidence.md). It
 collects each receipt from that job's own output (never an older receipt),
 runs flow/release_check.py, writes verdict.json and release-check.log, and
 on a pass packs the evidence archive (flow/archive_evidence.py). Any failed
@@ -105,12 +111,22 @@ def parse_args(argv=None):
     ap.add_argument("--shipping-root",
                     help="checkout of the commit that ships, whose build inputs must equal the run's "
                          "(flow/build_manifest.py; default: the validation root)")
+    ap.add_argument("--require-nonlatch-floor", type=float, metavar="NS",
+                    help="also re-time the run without its latches at the slow-corner period (flow/sta_nonlatch.py) "
+                         "and require NS of setup slack at the slow corner (release_check.py's option)")
+    ap.add_argument("--expect", metavar="FILE",
+                    help="expected-release file: the run's netlist, dates-zeroed GDS and late-clock counts must "
+                         "equal it (release_check.py's option; the 8x4 release: evidence/8x4-release-expected.json)")
     a = ap.parse_args(argv)
     if a.jobs < 1:
         ap.error("--jobs must be at least 1")
     if not (math.isfinite(a.slow_mhz) and 0 < a.slow_mhz <= 50):
         ap.error("--slow-mhz must be finite, positive and no greater than 50")
+    if a.require_nonlatch_floor is not None and not math.isfinite(a.require_nonlatch_floor):
+        ap.error("--require-nonlatch-floor must be finite")
     a.run = Path(a.run).resolve()
+    if a.expect:
+        a.expect = Path(a.expect).resolve()
     if a.validation_root:
         a.validation_root = Path(a.validation_root).resolve()
     a.tt_root = Path(a.tt_root).resolve() if a.tt_root else a.run / "tt"
@@ -156,9 +172,14 @@ def preflight(a, validation, work, archive):
             problems.append(f"{what} not found: {path}")
     for name in ("gl_test.sh", "gl_sdf_test.sh", "precheck_test.py", "release_check.py", "archive_evidence.py",
                  "check_rerun.py", "release_gates.py", "build_manifest.py", *receipts.CHECK_PASSES.values(),
-                 *(("sta_rerun.py",) if a.slow_mhz < 50 else ())):
+                 *(("sta_rerun.py",) if a.slow_mhz < 50 else ()),
+                 *(("sta_nonlatch.py", "sta_nonlatch.tcl") if getattr(a, "require_nonlatch_floor", None) is not None
+                   else ()),
+                 *(("release_expected.py",) if getattr(a, "expect", None) else ())):
         if not (FLOW / name).is_file():
             problems.append(f"runner missing: {FLOW / name}")
+    if getattr(a, "expect", None) and not Path(a.expect).is_file():
+        problems.append(f"--expect file not found: {a.expect}")
     return problems
 
 
@@ -207,6 +228,11 @@ def plan_jobs(a, view, validation, work, base_env=None):
         jobs.append(Job("sta_slow", "sta", [sys.executable, str(FLOW / "sta_rerun.py"), str(view),
                                             f"{slow_period(slow):g}", "--out-parent", str(repo_sim)],
                         1, sim, out_parent=repo_sim))
+    if getattr(a, "require_nonlatch_floor", None) is not None:
+        # the worst setup slack without the latches, at the slow corner's release period
+        jobs.append(Job("nonlatch", "nonlatch", [sys.executable, str(FLOW / "sta_nonlatch.py"), str(view),
+                                                 "--period", f"{slow_period(slow):g}", "--out-parent", str(repo_sim)],
+                        1, sim, out_parent=repo_sim))
     # clock/reset/pulse-width checks: two STA passes of the run (flow/check_rerun.py)
     jobs.append(Job("checks", "checks", [sys.executable, str(FLOW / "check_rerun.py"), str(view),
                                          "--out-parent", str(repo_sim)], 1, sim, out_parent=repo_sim))
@@ -242,7 +268,8 @@ def collect_receipt(job, log_text, existing, started):
     data = receipts.read_json(receipt)
     if data.get("kind") != job.kind or data.get("status") != "complete":
         raise ValueError(f"{job.name}: {receipt} is not a completed {job.kind} receipt")
-    if Path(data["output_directory"]) != out:
+    # a non-latch receipt records no output directory; its receipt is out/receipt.json (above)
+    if job.kind != "nonlatch" and Path(data["output_directory"]) != out:
         raise ValueError(f"{job.name}: {receipt} records another output directory")
     if receipt.stat().st_mtime < started:
         raise ValueError(f"{job.name}: {receipt} predates this run")
@@ -295,7 +322,8 @@ def terminate(jobs):
                 pass
 
 
-def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50, shipping=None, flow_python=None):
+def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50, shipping=None, flow_python=None,
+                    nonlatch_floor=None, expect=None):
     # the run is live here: an STA receipt's run-side checks may not be skipped
     cmd = [sys.executable, str(FLOW / "release_check.py"), str(run), "--validation-root", str(validation),
            "--sdf-profile", sdf_profile, "--require-sta-inputs"]
@@ -305,9 +333,14 @@ def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=5
     cmd += ["--shipping-root", str(shipping or validation)]
     if flow_python:      # the clean-tree gate regenerates the configs with the flow venv's tt tool
         cmd += ["--flow-python", str(flow_python)]
+    if nonlatch_floor is not None:
+        cmd += ["--require-nonlatch-floor", str(nonlatch_floor)]
+    if expect:
+        cmd += ["--expect", str(expect)]
     for kind, path in receipt_paths:
         cmd += [{"gl": "--gl-receipt", "sdf": "--sdf-receipt", "precheck": "--precheck-receipt",
-                 "sta": "--slow-sta-receipt", "checks": "--checks-receipt"}[kind], str(path)]
+                 "sta": "--slow-sta-receipt", "checks": "--checks-receipt",
+                 "nonlatch": "--nonlatch-receipt"}[kind], str(path)]
     return cmd
 
 
@@ -398,7 +431,8 @@ def main(argv=None):
                    work=str(work), archive=None)
     if not failures:
         cmd = release_command(a.run, validation, [(r["kind"], r["path"]) for r in collected], slow_mhz=a.slow_mhz,
-                              shipping=getattr(a, "shipping_root", None), flow_python=a.flow_python)
+                              shipping=getattr(a, "shipping_root", None), flow_python=a.flow_python,
+                              nonlatch_floor=a.require_nonlatch_floor, expect=a.expect)
         say("release check: " + " ".join(cmd))
         check = subprocess.run(cmd, cwd=FLOW.parent, capture_output=True, text=True)
         (work / "release-check.log").write_text(check.stdout + check.stderr)

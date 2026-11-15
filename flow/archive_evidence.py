@@ -29,7 +29,8 @@ import release_receipts as receipts  # noqa: E402
 
 RELEASE_SCRIPTS = ("flow/release_check.py", "flow/signoff.py", "flow/release_evidence.py",
                    "flow/archive_evidence.py", "flow/release_gates.py", "flow/build_manifest.py",
-                   "flow/sta_nonlatch.py", "flow/sta_nonlatch.tcl", "docs/release-evidence.md")
+                   "flow/sta_nonlatch.py", "flow/sta_nonlatch.tcl", "flow/release_expected.py",
+                   "docs/release-evidence.md")
 
 
 class Manifest:
@@ -75,6 +76,17 @@ def collect(verdict, manifest, *, verify=receipts.verify, repro=(), extras=()):
         path = Path(entry["path"])
         if receipts.digest(path) != entry["sha256"]:
             raise ValueError(f"receipt changed after the verdict: {path}")
+        if entry["kind"] == "nonlatch":       # flow/sta_nonlatch.py's receipt: its own check and files
+            import sta_nonlatch
+            data = sta_nonlatch.verify(path, run)
+            for name, digest in data["reports"].items():
+                manifest.add(path.parent / name, digest)
+            for name, digest in data["candidate"].items():
+                manifest.add(run / name, digest)
+            verified.append(dict(job=entry["job"], kind=entry["kind"], receipt=manifest.add(path),
+                                 sha256=entry["sha256"], candidate_files=len(data["candidate"]),
+                                 validation_files=0, artifacts=len(data["reports"])))
+            continue
         data = verify(path, run, entry["kind"], validation if entry["kind"] in ("gl", "sdf") else None)
         if data.get("skipped"):
             raise ValueError(f"{path}: checks skipped on the run being archived: {'; '.join(data['skipped'])}")
