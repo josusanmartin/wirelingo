@@ -15,7 +15,14 @@ import pytest
 from test_release_evidence import candidate, complete_receipts, module
 from test_flow_slow48 import sta_step, STEP
 
-REPORT = """== ALL
+HEAD = """== CORNER nom_slow_1p08V_125C
+LIB /pdk/slow.lib
+LIB /pdk/sram_slow.lib
+== CLOCKS
+CLOCK clk 20.832000
+CLOCK sck 20.832000
+"""
+REPORT = HEAD + """== ALL
 worst slack max 0.0000
 == LATCH 1536
 Startpoint: _55328_ (rising edge-triggered flip-flop clocked by clk)
@@ -43,19 +50,26 @@ uo_out[4] (output)                     15.5820   13.2945    2.2875 (MET)
 """
 
 FAKE = r'''#!PYTHON
-import hashlib, json, os, sys
+"""Fake docker: an image ID (FAKE_IMAGE_ID), the LibreLane version, and for `sta`
+a report whose head states the corner, libraries and clock period it was given."""
+import json, os, sys
 args = sys.argv[1:]
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as f:
     f.write(json.dumps(args) + "\n")
 if args[:3] == ["image", "inspect", "--format"]:
-    print("sha256:" + hashlib.sha256(args[4].encode()).hexdigest())
+    print(os.environ["FAKE_IMAGE_ID"])
     sys.exit(0)
 assert args[:2] == ["run", "--rm"] and args[args.index("--network") + 1] == "none"
 if "python3" in args:
     print("3.1.0.dev3")
     sys.exit(0)
 assert args[-4:-1] == ["sta", "-no_splash", "-exit"]
-sys.stdout.write(open(os.environ["FAKE_REPORT"]).read())
+env = {args[i + 1].split("=", 1)[0]: args[i + 1].split("=", 1)[1] for i, a in enumerate(args) if a == "-e"}
+p = float(env["CLOCK_PERIOD"])
+head = f"== CORNER {env['STA_CORNER']}\n" + "".join(f"LIB {l}\n" for l in env["STA_LIBS"].split()) + \
+    f"== CLOCKS\nCLOCK clk {p:f}\nCLOCK sck {p:f}\n"
+body = open(os.environ["FAKE_REPORT"]).read()
+sys.stdout.write(head + body[body.index("== ALL"):])
 '''
 
 
@@ -70,6 +84,8 @@ def fake_sta(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{b}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("FAKE_DOCKER_LOG", str(tmp_path / "docker.log"))
     monkeypatch.setenv("FAKE_REPORT", str(tmp_path / "report.txt"))
+    from test_release_evidence import FAKE_IMAGE_ID
+    monkeypatch.setenv("FAKE_IMAGE_ID", FAKE_IMAGE_ID)     # the run's own image (its clean-tree receipt)
     return tmp_path / "docker.log"
 
 
@@ -93,7 +109,9 @@ def run(tmp_path, *extra):
 
 def test_the_report_is_parsed_per_family():
     nl = module("sta_nonlatch")
-    assert nl.parse(REPORT) == {"all": 0.0, "latch": 0.0, "latch_borrow": 0.937,
+    assert nl.parse(REPORT) == {"corner": "nom_slow_1p08V_125C", "libs": ["/pdk/slow.lib", "/pdk/sram_slow.lib"],
+                                "clocks": {"clk": 20.832, "sck": 20.832},
+                                "all": 0.0, "latch": 0.0, "latch_borrow": 0.937,
                                 "nonlatch": 0.4304, "nonlatch_endpoint": "_53246_/D"}
     with pytest.raises(ValueError):
         nl.parse(REPORT.replace("== END\n", ""))
@@ -153,3 +171,62 @@ def test_signoff_and_the_sta_rerun_say_the_slack_includes_latches():
     assert "(all endpoints, latches included)" in (root / "flow/signoff.py").read_text()
     assert "setup WS {m['timing__setup__ws']} (all endpoints, latches included)" in \
         (root / "flow/sta_rerun.py").read_text()
+
+
+def reseal(out, edit):
+    """A receipt edited and its report digests kept (what verify's own checks must catch)."""
+    p = out / "receipt.json"
+    data = json.loads(p.read_text())
+    edit(data)
+    p.chmod(0o644)
+    p.write_text(json.dumps(data))
+
+
+@pytest.mark.parametrize("tamper,message", [
+    ("period", "timed clock clk at 20.832 ns, not 20 ns"),            # 099: 20.832 relabelled 20
+    ("image", "made in image sha256:000"),                             # not the run's image
+    ("corner", "the run's STA corners"),                               # the fast corner dropped
+])
+def test_the_receipt_binds_its_period_image_and_corners(tmp_path, fake_sta, capsys, tamper, message):
+    wt, rc, out, args = run(tmp_path, "--period", "20.832")
+    nl = module("sta_nonlatch")
+    assert rc == 0 and nl.verify(out / "receipt.json", wt)["image_checked"]
+    fast = "nom_fast_1p32V_m40C"
+
+    def edit(d):
+        if tamper == "period":
+            d["plan"]["period_ns"] = 20
+        elif tamper == "image":
+            d["plan"]["image_id"] = "sha256:" + "0" * 64
+        else:
+            d["plan"]["corners"].remove(fast)
+            del d["results"][fast], d["reports"][f"{fast}.rpt"]
+    reseal(out, edit)
+    with pytest.raises(ValueError, match=message):
+        nl.verify(out / "receipt.json", wt)
+    capsys.readouterr()
+    module("release_check").main(args + ["--nonlatch-receipt", str(out / "receipt.json")])
+    text = capsys.readouterr().out
+    assert "invalid non-latch STA evidence" in text and "worst non-latch setup slack +0.4304" not in text
+
+
+def test_a_report_for_another_corner_or_library_is_refused(tmp_path, fake_sta):
+    wt, rc, out, args = run(tmp_path, "--period", "20.832")
+    nl = module("sta_nonlatch")
+    rpt = out / "nom_fast_1p32V_m40C.rpt"
+    text = rpt.read_text().replace("== CORNER nom_fast_1p32V_m40C", "== CORNER nom_slow_1p08V_125C")
+    rpt.chmod(0o644)
+    rpt.write_text(text)
+
+    def edit(d):
+        d["reports"]["nom_fast_1p32V_m40C.rpt"] = module("release_receipts").digest(rpt)
+        d["results"]["nom_fast_1p32V_m40C"] = nl.parse(text)
+    reseal(out, edit)
+    with pytest.raises(ValueError, match="was made for corner nom_slow_1p08V_125C"):
+        nl.verify(out / "receipt.json", wt)
+
+
+def test_clock_gate_enables_are_non_latch_endpoints():
+    tcl = (Path(__file__).resolve().parents[2] / "flow/sta_nonlatch.tcl").read_text()
+    assert "$icg_in $macro_in [all_outputs]" in tcl and "lgcp" in (Path(__file__).resolve().parents[2]
+                                                                     / "flow/sta_nonlatch.py").read_text()

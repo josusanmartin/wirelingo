@@ -12,8 +12,12 @@ says nothing about the margin. This re-times the run's final STA step inputs
 Liberty files, per corner) in the LibreLane image the run used, read-only and
 without network, at --period (default: the step's CLOCK_PERIOD), and reports
 per corner: the worst slack over all endpoints, the worst latch path (its
-slack and borrowed time) and the worst endpoint among flop data pins, macro
-input pins and outputs (flow/sta_nonlatch.tcl).
+slack and borrowed time) and the worst endpoint among flop data pins,
+clock-gate enables, macro input pins and outputs (flow/sta_nonlatch.tcl).
+Each report states its corner, the Liberty files read and the clock periods
+STA timed, and verify requires them to be the run's corners (its STA_CORNERS),
+the run's libraries and the receipt's period; the image is checked against the
+run's own (its clean-tree receipt) when it has one, and printed only then.
 
 The output goes to a fresh test/sim_build/nonlatch.XXXXXX (or --out-parent),
 with receipt.json binding the candidate files and the step's inputs
@@ -42,15 +46,23 @@ END_RE = re.compile(r"^(\S+) \(([^)]*)\)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+) 
 
 
 def parse(text):
-    """{"all", "latch", "latch_borrow", "nonlatch", "nonlatch_endpoint"} from one corner's report."""
-    sec = {m.group(1): m.start() for m in re.finditer(r"^== (ALL|LATCH|NONLATCH|END)\b", text, re.M)}
-    if set(sec) != {"ALL", "LATCH", "NONLATCH", "END"}:
+    """{"corner", "libs", "clocks", "all", "latch", "latch_borrow", "nonlatch",
+    "nonlatch_endpoint"} from one corner's report: the corner, the Liberty files
+    and the clock periods as STA read them, and the slacks."""
+    sec = {m.group(1): m.start() for m in re.finditer(r"^== (CORNER|CLOCKS|ALL|LATCH|NONLATCH|END)\b", text, re.M)}
+    if set(sec) != {"CORNER", "CLOCKS", "ALL", "LATCH", "NONLATCH", "END"}:
         raise ValueError("incomplete report")
     part = lambda a, b: text[sec[a]:sec[b]]
+    head = part("CORNER", "CLOCKS")
+    corner = re.match(r"== CORNER (\S+)", head)
+    clocks = {n: float(v) for n, v in re.findall(r"^CLOCK (\S+) (\S+)$", part("CLOCKS", "ALL"), re.M)}
+    if not corner or not clocks:
+        raise ValueError("no corner or no clock in the report")
     m = re.search(r"worst slack max (\S+)", part("ALL", "LATCH"))
     if not m:
         raise ValueError("no worst slack")
-    res = {"all": float(m.group(1)), "latch": None, "latch_borrow": None}
+    res = {"corner": corner.group(1), "libs": re.findall(r"^LIB (\S+)$", head, re.M), "clocks": clocks,
+           "all": float(m.group(1)), "latch": None, "latch_borrow": None}
     latch = part("LATCH", "NONLATCH")
     s = re.search(r"^\s*(-?[\d.]+)\s+slack \((?:MET|VIOLATED)\)", latch, re.M)
     if s:
@@ -89,7 +101,20 @@ def plan_of(wt, period):
     env["CLOCK_PERIOD"] = period if period is not None else config["CLOCK_PERIOD"]
     return dict(step=step.name, base=str(base), pdk=config["PDK_ROOT"], corners=corners, libs=libs, spef=spef,
                 netlist=state["nl"], sdc=sdc, env=env, top=config.get("DESIGN_NAME", "tt_um_josusanmartin_protoemu"),
-                macros=sorted(macros), version=config["meta"]["librelane_version"])
+                macros=sorted(macros), version=config["meta"]["librelane_version"],
+                clock_port=config.get("CLOCK_PORT"))
+
+
+ICG = "*lgcp*"          # the IHP SG13CMOS5L integrated clock-gating cells (lgcp_1, slgcp_1)
+
+
+def run_image(wt):
+    """The image ID the run itself was hardened with (its clean-tree receipt), or None."""
+    p = Path(wt) / "runs/clean-tree.json"
+    try:
+        return json.loads(p.read_text()).get("image", {}).get("id") if p.is_file() else None
+    except ValueError:
+        return None
 
 
 def tool_digests():
@@ -133,8 +158,9 @@ def main(argv=None):
     print(f"non-latch STA outputs {out}", flush=True)
     results, reports = {}, {}
     for c in plan["corners"]:
-        env = dict(plan["env"], STA_LIBS=" ".join(plan["libs"][c]), STA_NETLIST=plan["netlist"],
-                   STA_SPEF=plan["spef"][c], STA_SDC=plan["sdc"], STA_TOP=plan["top"], STA_MACROS=" ".join(plan["macros"]))
+        env = dict(plan["env"], STA_CORNER=c, STA_LIBS=" ".join(plan["libs"][c]), STA_NETLIST=plan["netlist"],
+                   STA_SPEF=plan["spef"][c], STA_SDC=plan["sdc"], STA_TOP=plan["top"],
+                   STA_MACROS=" ".join(plan["macros"]), STA_ICG=ICG)
         cmd = ["docker", "run", "--rm", "--network", "none", "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
                "-v", f"{plan['base']}:{plan['base']}:ro", "-v", f"{plan['pdk']}:{plan['pdk']}:ro",
                "-v", f"{out}:{out}:ro"]
@@ -176,6 +202,8 @@ def verify(path, worktree):
         raise ValueError(f"{path}: receipt belongs to different candidate inputs")
     if data["sta_inputs"] != receipts.sta_inputs(worktree):
         raise ValueError(f"{path}: the run's final STA inputs changed")
+    if not isinstance(data.get("plan", {}).get("period_ns"), (int, float)):
+        raise ValueError(f"{path}: no period")
     if data["tool"] != tool_digests():
         raise ValueError(f"{path}: made by another flow/sta_nonlatch.py or .tcl")
     for name, d in data["reports"].items():
@@ -183,8 +211,20 @@ def verify(path, worktree):
             raise ValueError(f"{path}: report {name} changed after the receipt was written")
         if parse((path.parent / name).read_text()) != data["results"][name[:-len(".rpt")]]:
             raise ValueError(f"{path}: report {name} does not say what the receipt records")
-    if sorted(data["results"]) != sorted(data["plan"]["corners"]):
-        raise ValueError(f"{path}: corners missing")
+    plan = plan_of(Path(worktree), data["plan"]["period_ns"])
+    if sorted(data["plan"]["corners"]) != sorted(plan["corners"]) or sorted(data["results"]) != sorted(plan["corners"]) \
+            or sorted(data["reports"]) != sorted(f"{c}.rpt" for c in plan["corners"]):
+        raise ValueError(f"{path}: corners {sorted(data['results'])}, the run's STA corners {sorted(plan['corners'])}")
+    for c, r in data["results"].items():
+        if r["corner"] != c or r["libs"] != plan["libs"][c]:
+            raise ValueError(f"{path}: report {c}.rpt was made for corner {r['corner']} with {r['libs']}")
+        if "clk" not in r["clocks"] or abs(r["clocks"]["clk"] - data["plan"]["period_ns"]) > 1e-4:   # STA prints floats
+            raise ValueError(f"{path}: report {c}.rpt timed clock clk at {r['clocks'].get('clk')} ns, "
+                             f"not {data['plan']['period_ns']:g} ns")
+    image = run_image(worktree)
+    if image is not None and data["plan"]["image_id"] != image:
+        raise ValueError(f"{path}: made in image {data['plan']['image_id']}, the run in {image}")
+    data = dict(data, image_checked=image is not None)
     return data
 
 

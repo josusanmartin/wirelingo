@@ -393,17 +393,19 @@ def mutants(inp, out, m):
 
 
 def pairing_mutants(inp, out, m, k0, text):
-    """Three mutants of an FSM state bit's pairing: a simulation pair of an
+    """Four mutants of an FSM state bit's pairing: a simulation pair of an
     FSM-encoded bit moved to another encoded bit, the same pair with its
-    polarity flipped, and the paired (or else a name-matched) FSM state flop's
-    reset removed in the netlist. Each must fail: ABC finds the cuts unequal, or
-    the cut reports a polarity against the encoded reset value."""
+    polarity flipped, the paired (or else a name-matched) FSM state flop's reset
+    removed in the netlist, and the pair moved to another bit at the polarity
+    that bit's reset value needs. Each must fail: ABC finds the cuts unequal,
+    or (the first two) the cut reports a polarity against the encoded reset
+    value; the last has no polarity conflict, so ABC alone must refuse it."""
     pairs = json.load(open(f"{out}/pairs.json"))
     fsm_pairs = [p for p in pairs["pairs"] if p["gold"].startswith("fsm:")]
     taken = {v["gold"] for v in m["flops"].values()}
     res = []
 
-    def run(k, desc, pairs_obj=None, netlist=None):
+    def run(k, desc, pairs_obj=None, netlist=None, proof_only=False):
         d = os.path.join(out, "mutants", f"m{k}")
         os.makedirs(d, exist_ok=True)
         pj = f"{out}/pairs.json"
@@ -418,7 +420,8 @@ def pairing_mutants(inp, out, m, k0, text):
             raw = f"{d}/gate_raw.json"
         mm = cut(inp, out, raw, d, pairs=pj)
         st = abc_check(d, "mut")
-        caught = st == "not equivalent" or bool(mm["polarity_conflicts"])
+        # proof_only: the cut's polarity rule cannot catch it, so ABC must
+        caught = st == "not equivalent" if proof_only else (st == "not equivalent" or bool(mm["polarity_conflicts"]))
         res.append({"mutant": k, "description": desc, "abc": st, "polarity_conflicts": mm["polarity_conflicts"],
                     "caught": caught})
         log(f"  mutant {k}: {desc}: {st}{', polarity conflict' if mm['polarity_conflicts'] else ''}")
@@ -446,6 +449,16 @@ def pairing_mutants(inp, out, m, k0, text):
         run(k0 + 2, f"FSM state flop {target}: reset removed", netlist=text[:mt.start(2)] + "1'b1" + text[mt.end(2):])
     else:
         res.append({"mutant": k0 + 2, "status": "not applicable"})
+    # m8 (099 finding 3): the wrong encoded bit at the polarity its reset value
+    # needs, so no polarity conflict: only the proof can refuse it
+    if fsm_pairs and others:
+        j = int(others[0].rsplit("#", 1)[1])
+        pol = int(any(new[-1 - j] == "1" for old, new in f["table"].items() if str(old) == str(f["reset"])))
+        quiet = dict(pairs, pairs=[dict(p, gold=others[0], pol=pol) if p is p0 else p for p in pairs["pairs"]])
+        run(k0 + 3, f"FSM bit pair {p0['gate']} moved to {others[0]} at polarity {pol} (its reset value)",
+            pairs_obj=quiet, proof_only=True)
+    else:
+        res.append({"mutant": k0 + 3, "status": "not applicable"})
     return res
 
 

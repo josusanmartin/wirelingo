@@ -128,8 +128,10 @@ def main(argv=None):
             try:
                 import sta_nonlatch     # only with a receipt: archives made before it do not hold the tool
                 nonlatch = sta_nonlatch.verify(a.nonlatch_receipt, wt)
+                image = (f", image {nonlatch['plan']['image_id']} (the run's)" if nonlatch["image_checked"]
+                         else "")            # printed only when checked against the run's own
                 print(f"non-latch STA verified: {a.nonlatch_receipt} ({nonlatch['plan']['period_ns']:g} ns, "
-                      f"image {nonlatch['plan']['image_id']})")
+                      f"corners {', '.join(sorted(nonlatch['results']))}{image})")
             except (OSError, ValueError, KeyError, TypeError) as e:
                 failures.append(f"invalid non-latch STA evidence: {e}")
         else:
