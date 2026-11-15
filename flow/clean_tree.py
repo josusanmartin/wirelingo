@@ -29,10 +29,14 @@ and src/config_merged.json, before LibreLane starts. The receipt
 * the sha256 of src/user_config.json and src/config_merged.json;
 * bytes, not only status (100c): every file of the commit's tree (git
   ls-tree, with GIT_NO_REPLACE_OBJECTS=1) hashed as git would store it
-  (no filters) against its blob, absent files included, in the worktree
-  and in tt/ against the pinned tt commit's tree: an assume-unchanged or
-  skip-worktree entry, a smudge filter, a sparse checkout or a git replace
-  that status does not show is DIRTY;
+  (no filters) against its blob, absent files included, and its executable
+  bit against its mode, in the worktree and in tt/ against the pinned tt
+  commit's tree: an assume-unchanged or skip-worktree entry, a smudge or
+  clean filter, a local attribute, an end-of-line conversion, a sparse
+  checkout or a git replace that status does not show is DIRTY. No
+  conversion is accepted (100e), so the tree's own .gitattributes (read
+  from its blobs) may set none: text, eol, filter, crlf, ident or
+  working-tree-encoding on any path is refused;
 * the outer process: PYTHONPATH and LIBRELANE_IMAGE_OVERRIDE (either set is
   DIRTY; flow/harden.sh refuses them), a digest of the flow venv's installed
   distributions (each dist-info RECORD), and any librelane_plugin_*/
@@ -66,7 +70,9 @@ files (its status is taken without --ignored; none exist today); bytecode
 written after the generated record, such as the plugin's when LibreLane
 imports it (compiled from the bound sources); the outer venv's contents
 beyond the recorded digest (recorded, not pinned); and the seconds between
-the generated record and LibreLane's start, inside one script.
+the generated record and LibreLane's start, inside one script. A tree that needs an end-of-line
+conversion or a filter cannot be released through this gate at all (it
+fails closed); today's tree sets only "evidence/** -text".
 """
 import argparse
 import hashlib
@@ -163,19 +169,32 @@ def bytes_differ(repo, treeish):
                 out.append(f"{path} (mode differs from {mode})")
                 continue
         h = hashlib.new(fmt, f"blob {len(data)}\0".encode() + data).hexdigest()
-        if h != blob and not (mode != "120000" and converted(repo, treeish, path, blob)):
-            out.append(f"{path} (bytes differ{'' if mode == '120000' else '; the gate needs a default clone, without core.autocrlf'})")
+        if h != blob:      # any difference: no filter, attribute or end-of-line conversion is accepted (100e)
+            out.append(f"{path} (bytes differ{'' if mode == '120000' else '; the gate needs a default clone, without core.autocrlf, local attributes or filters'})")
     return out
 
 
-def converted(repo, treeish, path, blob):
-    """Whether a file whose raw bytes differ is its blob after the end-of-line
-    conversion the committed tree's own attributes ask for (text or eol set on
-    the path in treeish): a clean checkout writes those converted."""
-    attrs = git(repo, "check-attr", f"--source={treeish}", "text", "eol", "--", path)
-    if not re.search(r": (text: (set|auto)|eol: (lf|crlf))$", attrs, re.M):
-        return False
-    return git(repo, "hash-object", f"--path={path}", "--", path).strip() == blob
+CONVERTING = re.compile(r"^(text|eol|filter|crlf|ident|working-tree-encoding)(=.*)?$")
+
+
+def converting_attributes(repo, treeish):
+    """The lines of treeish's own .gitattributes files (read from the tree's
+    blobs, never from local attributes or configuration) that set a line-ending
+    conversion, a filter or another checkout transform on any path: text, eol,
+    filter, crlf, ident or working-tree-encoding set (not -text, !text, binary).
+    The gate requires a tree with none (100e): its byte comparison accepts no
+    conversion, so such a tree cannot be released through it (fails closed)."""
+    out = []
+    for path in git(repo, "ls-tree", "-r", "-z", "--name-only", "--full-tree", treeish).split("\0"):
+        if path != ".gitattributes" and not path.endswith("/.gitattributes"):
+            continue
+        for line in git(repo, "show", f"{treeish}:{path}").splitlines():
+            words = line.split()
+            if not words or words[0].startswith("#"):
+                continue
+            if any(CONVERTING.match(w) for w in words[1:]):
+                out.append(f"{path}: {line.strip()}")
+    return out
 
 
 def pinned_tt(wt):
@@ -249,6 +268,8 @@ def verdict(data, final=True):
     for name, value in (data.get("env") or {}).items():
         if value:
             reasons.append(f"{name} was set ({value}): the outer process was not the flow's own")
+    if data.get("converting_attributes"):
+        reasons.append(f"the tree's .gitattributes set a checkout conversion: {data['converting_attributes'][:5]}")
     if data.get("outer_plugins"):
         reasons.append(f"LibreLane plugins outside the worktree on the outer sys.path: {data['outer_plugins']}")
     tt = data["tt"]
@@ -270,6 +291,7 @@ def start(wt, image, pdk_root, argv=(), ident=None, environ=None, syspath=None):
     data = {"schema": SCHEMA, "head": git(wt, "rev-parse", "HEAD").strip(),
             "tree": git(wt, "rev-parse", "HEAD^{tree}").strip(), "argv": list(argv)}
     data["worktree_path"] = str(wt)
+    data["converting_attributes"] = converting_attributes(wt, "HEAD^{tree}")
     lines = status(wt)      # at start no bytecode or __pycache__ anywhere is owned (100b)
     data["worktree"] = {"status": lines, "stray": stray(lines, START_OWNED),
                         "bytes_differ": bytes_differ(wt, "HEAD^{tree}")}
@@ -404,6 +426,10 @@ def check_release(run, shipping, python):
                         f"{ship_tree} (commit {ship_head[:12]})")
     else:
         notes.append(f"tree {ship_tree}: equal (run commit {data['head'][:12]}, shipping commit {ship_head[:12]})")
+    conv = converting_attributes(shipping, "HEAD^{tree}")
+    if conv:
+        failures.append(f"the shipping tree's .gitattributes set a checkout conversion, which this gate cannot verify "
+                        f"in bytes: {conv[:5]}")
     dirty = stray(lines, set(), repo=shipping, owned_re=CHECKOUT_OWNED_RE)
     if dirty:
         failures.append(f"the shipping checkout is not clean: {dirty[:5]}")

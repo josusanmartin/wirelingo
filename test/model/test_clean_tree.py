@@ -485,15 +485,86 @@ def test_a_retargeted_link_and_a_lost_exec_bit_differ(tmp_path):
     assert ct.bytes_differ(repo, "HEAD^{tree}") == ["link (bytes differ)", "run.sh (mode differs from 100755)"]
 
 
-def test_end_of_line_conversion_the_tree_asks_for_is_clean_and_autocrlf_is_not(tmp_path):
+def local_filter_and_text(wt):
+    (wt / ".git/info").mkdir(parents=True, exist_ok=True)
+    (wt / ".git/info/attributes").write_text("src/project.v filter=v100 text\n")
+    git_in(wt, "config", "filter.v100.smudge", "sed s/PE_NCORES/PE_NCORES_X/")
+    git_in(wt, "config", "filter.v100.clean", "sed s/PE_NCORES_X/PE_NCORES/")
+    (wt / "src/project.v").unlink()
+    git_in(wt, "checkout", "--", "src/project.v")
+
+
+def local_eol_crlf(wt):
+    (wt / ".git/info").mkdir(parents=True, exist_ok=True)
+    (wt / ".git/info/attributes").write_text("src/project.v eol=crlf\n")
+    (wt / "src/project.v").unlink()
+    git_in(wt, "checkout", "--", "src/project.v")
+
+
+@pytest.mark.parametrize("route", [local_filter_and_text, local_eol_crlf], ids=["local-filter-text", "local-eol-crlf"])
+def test_a_local_attribute_or_filter_is_dirty_in_bytes(tmp_path, capsys, route):
+    # item 102 finding 1: local attributes and filters are never consulted (100e)
+    wt, args = releases(tmp_path, capsys, before_start=route)
+    assert b"\r\n" in (wt / "src/project.v").read_bytes() or "PE_NCORES_X" in (wt / "src/project.v").read_text()
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert data["status"] == "DIRTY" and any("src/project.v (bytes differ" in r for r in data["reasons"])
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 1
+
+
+def test_a_committed_eol_attribute_with_a_local_clean_filter_still_differs(tmp_path):
     ct = module("clean_tree")
     repo = toy_repo(tmp_path, {"lf.txt": "a\nb\n"}, attributes="*.txt text eol=crlf\n")
     clone = tmp_path / "clone"
     subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True)
-    assert (clone / "lf.txt").read_bytes() == b"a\r\nb\r\n" and ct.bytes_differ(clone, "HEAD^{tree}") == []
-    plain = toy_repo(tmp_path / "p", {"lf.txt": "a\nb\n"})
+    (clone / ".git/info/attributes").write_text("lf.txt filter=x\n")
+    git_in(clone, "config", "filter.x.clean", "sed s/altered/a/")
+    (clone / "lf.txt").write_bytes(b"altered\r\nb\r\n")
+    assert ct.bytes_differ(clone, "HEAD^{tree}") == [
+        "lf.txt (bytes differ; the gate needs a default clone, without core.autocrlf, local attributes or filters)"]
+    assert ct.converting_attributes(clone, "HEAD^{tree}") == [".gitattributes: *.txt text eol=crlf"]
+
+
+def test_an_autocrlf_clone_differs_in_bytes(tmp_path):
+    ct = module("clean_tree")
+    plain = toy_repo(tmp_path, {"lf.txt": "a\nb\n"})
     crlf = tmp_path / "crlf"
     subprocess.run(["git", "-c", "core.autocrlf=true", "clone", "-q", str(plain), str(crlf)], check=True)
-    git_in(crlf, "config", "core.autocrlf", "true")
-    diff = ct.bytes_differ(crlf, "HEAD^{tree}")
-    assert diff == ["lf.txt (bytes differ; the gate needs a default clone, without core.autocrlf)"]
+    assert ct.bytes_differ(crlf, "HEAD^{tree}") == [
+        "lf.txt (bytes differ; the gate needs a default clone, without core.autocrlf, local attributes or filters)"]
+
+
+@pytest.mark.parametrize("line", ["*.v text", "*.txt eol=lf", "src/** filter=lfs diff=lfs", "* text=auto",
+                                  "docs/x ident", "*.v crlf", "*.txt working-tree-encoding=UTF-16"])
+def test_a_tree_whose_attributes_convert_on_checkout_cannot_release(tmp_path, capsys, line):
+    wt, args = releases(tmp_path, capsys, attributes=line + "\n")
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert data["status"] == "DIRTY" and data["converting_attributes"] == [f".gitattributes: {line}"]
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 1 and "the shipping tree's .gitattributes set a checkout conversion" in text
+
+
+@pytest.mark.parametrize("line", ["evidence/** -text", "*.bin binary", "*.v !text", "# a text comment", "*.v -crlf"])
+def test_attributes_that_disable_conversion_release(tmp_path, capsys, line):
+    wt, args = releases(tmp_path, capsys, attributes=line + "\n")
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 0, text
+
+
+def test_a_clean_default_clone_of_this_repository_passes_in_bytes(tmp_path):
+    ct = module("clean_tree")
+    root = Path(__file__).resolve().parents[2]
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", "--no-local", str(root), str(clone)], check=True,
+                   env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1"))
+    assert ct.converting_attributes(clone, "HEAD^{tree}") == []
+    assert ct.bytes_differ(clone, "HEAD^{tree}") == []
+
+
+def test_a_nested_attributes_file_counts(tmp_path):
+    ct = module("clean_tree")
+    repo = toy_repo(tmp_path, {"a.txt": "a\n"}, attributes="evidence/** -text\n")
+    (repo / "docs").mkdir()
+    (repo / "docs/.gitattributes").write_text("# nested\n*.md text eol=lf\n")
+    commit_all(repo)
+    assert ct.converting_attributes(repo, "HEAD^{tree}") == ["docs/.gitattributes: *.md text eol=lf"]

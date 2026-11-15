@@ -366,7 +366,7 @@ def harden_env():
     return {k: v for k, v in os.environ.items() if not (k == "PYTHONPATH" and v == "tools")}
 
 
-def clean_tree(wt, *, pins=None, before_start=None, after_start=None, compiled=None):
+def clean_tree(wt, *, pins=None, before_start=None, after_start=None, compiled=None, attributes=None):
     """wt as flow/harden.sh leaves it: a commit (the run's files ignored as the
     repository ignores them), tt/ a clean checkout of a stand-in tt-support-tools,
     a PDK checkout, flow/release_pins.json pinning them, and runs/clean-tree.json
@@ -384,6 +384,8 @@ def clean_tree(wt, *, pins=None, before_start=None, after_start=None, compiled=N
     (pdk / "ihp-sg13cmos5l/SOURCES").write_text(f"IHP-Open-PDK {pdk_head}\n")
     (wt / ".gitignore").write_text("runs/\ntt/\ntest/sim_build/\nsrc/user_config.json\nsrc/config_merged.json\n"
                                    "__pycache__/\n")
+    if attributes is not None:                # the tree's own .gitattributes
+        (wt / ".gitattributes").write_text(attributes)
     (wt / "flow").mkdir(exist_ok=True)
     (wt / "flow/release_pins.json").write_text(json.dumps(dict(
         {"tt_support_tools": tt_head, "librelane_image": FAKE_IMAGE_ID, "pdk": pdk_head}, **(pins or {}))))
