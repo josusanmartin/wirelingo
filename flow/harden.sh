@@ -87,7 +87,7 @@ fi
 {
   echo "flow exit status: $rc"
   git log --oneline -1
-  echo "tiles $TILE, cores $NC, preset $PRESET, FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}"
+  echo "tiles $TILE, cores $NC, preset $PRESET${*:+ with options $*}, FIFO_LOG2 ${FIFO_LOG2:-3}, STOP ${STOP:-none}"
   python3 flow/clean_tree.py show "$W" || true
   python3 -c 'import json; d=json.load(open("src/config.json")); print("macros", {"bank" + k.split("[")[1][0]: v["location"] for k, v in d["MACROS"]["RM_IHPSG13_1P_256x32_c2_bm_bist"]["instances"].items()}, "period", d["CLOCK_PERIOD"], "density", d["PL_TARGET_DENSITY_PCT"])'
   grep -E "Flow complete|flow failed|ERROR" exp.log | grep -v PSM-0069 | tail -3 || true
