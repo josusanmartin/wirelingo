@@ -159,10 +159,23 @@ def bytes_differ(repo, treeish):
             continue
         else:
             data = p.read_bytes()
+            if os.access(p, os.X_OK) != (mode == "100755"):     # 100d: the executable bit too
+                out.append(f"{path} (mode differs from {mode})")
+                continue
         h = hashlib.new(fmt, f"blob {len(data)}\0".encode() + data).hexdigest()
-        if h != blob:
-            out.append(f"{path} (bytes differ)")
+        if h != blob and not (mode != "120000" and converted(repo, treeish, path, blob)):
+            out.append(f"{path} (bytes differ{'' if mode == '120000' else '; the gate needs a default clone, without core.autocrlf'})")
     return out
+
+
+def converted(repo, treeish, path, blob):
+    """Whether a file whose raw bytes differ is its blob after the end-of-line
+    conversion the committed tree's own attributes ask for (text or eol set on
+    the path in treeish): a clean checkout writes those converted."""
+    attrs = git(repo, "check-attr", f"--source={treeish}", "text", "eol", "--", path)
+    if not re.search(r": (text: (set|auto)|eol: (lf|crlf))$", attrs, re.M):
+        return False
+    return git(repo, "hash-object", f"--path={path}", "--", path).strip() == blob
 
 
 def pinned_tt(wt):

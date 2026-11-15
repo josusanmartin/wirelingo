@@ -72,6 +72,9 @@ fi
 python ./tt/tt_tool.py --create-user-config --ihp > /dev/null
 python3 flow/clean_tree.py generated "$W" || exit 2
 rc=0
+# LibreLane prints its container command and then execs docker without a flush:
+# unbuffered, the command (and the image it names) reaches exp.log (clean_tree.py)
+export PYTHONUNBUFFERED=1
 if [ -n "${STOP:-}" ]; then
   case $STOP in grt) TO=OpenROAD.GlobalRouting ;; cts) TO=OpenROAD.CTS ;; dpl) TO=OpenROAD.DetailedPlacement ;;
     *) echo "STOP=grt|cts|dpl"; exit 2 ;; esac

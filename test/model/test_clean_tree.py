@@ -404,3 +404,96 @@ def test_the_shipping_checkouts_tt_must_be_the_pinned_clean_commit(tmp_path, cap
     (ship / "tt/tt_tool.py").write_text((ship / "tt/tt_tool.py").read_text() + "# changed\n")
     rc, text = release(with_shipping(args, ship), capsys)
     assert rc == 1 and "not a clean checkout of the pinned tt-support-tools" in text
+
+
+# ---- 100d: the container command reaches exp.log (item 100c finding 1)
+
+LAUNCHER = ("import os, shlex, sys\n"
+            "print('[INFO] Running containerized command:', file=sys.stderr)\n"
+            "print(shlex.join(['docker', 'run', '--rm', '-w', '/w', 'ghcr.io/librelane/librelane:3.1.0.dev3',\n"
+            "                  'python3', '-m', 'librelane']))\n"
+            "os.execlp('true', 'true')\n")
+
+
+@pytest.mark.parametrize("unbuffered", [False, True])
+def test_the_container_command_reaches_the_log_only_unbuffered(tmp_path, unbuffered):
+    # LibreLane's run_in_container prints the command and execs docker without a
+    # flush: into a file, the line is lost unless Python's output is unbuffered
+    ct = module("clean_tree")
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+    if unbuffered:
+        env["PYTHONUNBUFFERED"] = "1"
+    with (tmp_path / "exp.log").open("w") as log:
+        subprocess.run([sys.executable, "-c", LAUNCHER], stdout=log, stderr=subprocess.STDOUT, env=env, check=True)
+    assert ct.container_image(tmp_path) == ("ghcr.io/librelane/librelane:3.1.0.dev3" if unbuffered else None)
+
+
+def test_the_harden_runs_librelane_unbuffered():
+    text = (Path(__file__).resolve().parents[2] / "flow/harden.sh").read_text()
+    exported = text.index("export PYTHONUNBUFFERED=1")
+    assert exported < text.index("python -m librelane --pdk-root") and exported < text.index("tt_tool.py --harden")
+
+
+# ---- 100d: bytes at release, links, modes and end-of-line attributes (item 100c findings 3-5)
+
+def hide_edit(repo, path, text):
+    """An edit status does not show (assume-unchanged)."""
+    git_in(repo, "update-index", "--assume-unchanged", path)
+    (repo / path).write_text(text)
+
+
+def test_the_run_edited_after_its_harden_fails_in_bytes(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    hide_edit(wt, "src/project.v", "`define PE_NCORES 1\n")
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 1 and "the run worktree differs from its tree in bytes: ['src/project.v (bytes differ" in text
+
+
+def test_a_shipping_checkout_edited_out_of_sight_fails_in_bytes(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    hide_edit(ship, "info.yaml", "project:\n  top_module: other\n")
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 1 and "the shipping checkout differs from its tree in bytes: ['info.yaml (bytes differ" in text
+
+
+def toy_repo(tmp_path, files, attributes=None):
+    from test_release_evidence import commit_all
+    repo = tmp_path / "toy"
+    repo.mkdir(parents=True)
+    for name, text in files.items():
+        (repo / name).write_text(text)
+    if attributes:
+        (repo / ".gitattributes").write_text(attributes)
+    commit_all(repo)
+    return repo
+
+
+def test_a_retargeted_link_and_a_lost_exec_bit_differ(tmp_path):
+    ct = module("clean_tree")
+    repo = toy_repo(tmp_path, {"a.txt": "a\n", "b.txt": "b\n", "run.sh": "#!/bin/sh\n"})
+    (repo / "link").symlink_to("a.txt")
+    (repo / "run.sh").chmod(0o755)
+    commit_all(repo)
+    assert ct.bytes_differ(repo, "HEAD^{tree}") == []
+    (repo / "link").unlink()
+    (repo / "link").symlink_to("b.txt")
+    git_in(repo, "update-index", "--assume-unchanged", "link")
+    git_in(repo, "config", "core.fileMode", "false")
+    (repo / "run.sh").chmod(0o644)
+    assert git_in(repo, "status", "--porcelain") == ""
+    assert ct.bytes_differ(repo, "HEAD^{tree}") == ["link (bytes differ)", "run.sh (mode differs from 100755)"]
+
+
+def test_end_of_line_conversion_the_tree_asks_for_is_clean_and_autocrlf_is_not(tmp_path):
+    ct = module("clean_tree")
+    repo = toy_repo(tmp_path, {"lf.txt": "a\nb\n"}, attributes="*.txt text eol=crlf\n")
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True)
+    assert (clone / "lf.txt").read_bytes() == b"a\r\nb\r\n" and ct.bytes_differ(clone, "HEAD^{tree}") == []
+    plain = toy_repo(tmp_path / "p", {"lf.txt": "a\nb\n"})
+    crlf = tmp_path / "crlf"
+    subprocess.run(["git", "-c", "core.autocrlf=true", "clone", "-q", str(plain), str(crlf)], check=True)
+    git_in(crlf, "config", "core.autocrlf", "true")
+    diff = ct.bytes_differ(crlf, "HEAD^{tree}")
+    assert diff == ["lf.txt (bytes differ; the gate needs a default clone, without core.autocrlf)"]

@@ -256,3 +256,56 @@ def test_a_report_with_other_libraries_is_refused(tmp_path, fake_sta):
     reseal(out, edit)
     with pytest.raises(ValueError, match="was made for corner nom_slow_1p08V_125C with"):
         nl.verify(out / "receipt.json", wt)
+
+
+# A stand-in for OpenSTA's commands over a tiny netlist, to run sta_nonlatch.tcl's own
+# endpoint selection (Tcl via tkinter): two flops, a latch, a clock gate (GATE, CLK in;
+# GCLK out), an SRAM (two inputs, one output) and an output port
+STUB_STA = r"""
+array set stub_dir {f1/D input f2/D input l1/D input cg/GATE input cg/CLK input cg/GCLK output
+               m/A_ADDR[0] input m/A_CLK input m/A_DOUT[0] output}
+array set stub_ref {f1 sg13cmos5l_dfrbpq_1 f2 sg13cmos5l_dfrbpq_1 l1 sg13cmos5l_dlhq_1 cg sg13cmos5l_lgcp_1 m SRAM}
+array set stub_pins {cg {cg/GATE cg/CLK cg/GCLK} m {m/A_ADDR[0] m/A_CLK m/A_DOUT[0]}}
+foreach c {read_liberty read_verilog link_design read_spef read_sdc report_worst_slack} { proc $c args {} }
+proc puts args {}
+proc all_clocks {} { return {clk} }
+proc get_name {o} { return $o }
+proc get_full_name {o} { return $o }
+proc get_property {o p} {
+  global stub_dir
+  if {$p eq "period"} { return 20.0 }
+  return $stub_dir($o)
+}
+proc all_registers {kind what} { if {$kind eq "-level_sensitive"} { return {l1/D} } { return {f1/D f2/D} } }
+proc all_outputs {} { return {uo_out[0]} }
+proc get_cells {f expr all} {
+  global stub_ref
+  regexp {^ref_name (==|=~) (.*)$} $expr -> op pat
+  set out {}
+  foreach c [lsort [array names stub_ref]] {
+    if {($op eq "==" && $stub_ref($c) eq $pat) || ($op eq "=~" && [string match $pat $stub_ref($c)])} { lappend out $c }
+  }
+  return $out
+}
+proc get_pins {o c} { global stub_pins; return $stub_pins($c) }
+proc report_checks args {
+  global checked
+  set i [lsearch $args -to]
+  lappend checked [lindex $args [expr {$i + 1}]]
+}
+"""
+
+
+def test_the_non_latch_endpoints_are_flops_clock_gate_enables_macro_inputs_and_outputs():
+    # item 100c finding 2: run the selection itself, not its text
+    import tkinter
+    t = tkinter.Tcl()
+    for k, v in dict(STA_CORNER="c", STA_LIBS="a.lib", STA_NETLIST="n", STA_TOP="t", STA_SPEF="s", STA_SDC="d",
+                     STA_MACROS="SRAM", STA_ICG=module("sta_nonlatch").ICG).items():
+        t.setvar(f"env({k})", v)
+    t.eval(STUB_STA)
+    t.eval("set checked {}")
+    t.eval(f"source {{{Path(__file__).resolve().parents[2] / 'flow/sta_nonlatch.tcl'}}}")
+    latch, ends = (t.splitlist(x) for x in t.splitlist(t.getvar("checked")))
+    assert list(latch) == ["l1/D"]
+    assert sorted(ends) == sorted(["f1/D", "f2/D", "cg/GATE", "m/A_ADDR[0]", "m/A_CLK", "uo_out[0]"])
