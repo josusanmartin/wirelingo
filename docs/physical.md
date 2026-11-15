@@ -724,7 +724,7 @@ Metal3 is the only horizontal layer.
 | 2 cores, flop IMEM, **density 38 %** | 32 % | **58 %** | **0** | spreading fixes it |
 | 2 cores + 2 SRAMs, top-right pair, density 34 % | 30 % | 68 % | 794 | hotspot under the left macro's pin edge |
 | **2 cores + 2 SRAMs, bottom corners (FS), density 34 %** | 30 % | 66 % | **34** | |
-| reference: WilliamZhang20/protocol-emulator (passes) | 36 % | 51 % | — | |
+| reference: another entry's public design (passes) | 36 % | 51 % | — | |
 
 Lessons:
 

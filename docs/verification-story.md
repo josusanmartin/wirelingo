@@ -93,7 +93,8 @@ On 2026-11-02 an independent verifier agent failed the `eth10_match` work.
 * The match decisions themselves were right in every case at 50 MHz.
 
 Reports are numbered by inbox item. Every item and report, FAILs included, is
-in [evidence/verifier/](../evidence/verifier/README.md), verbatim.
+in [evidence/verifier/](../evidence/verifier/README.md), verbatim apart from
+the listed redactions.
 
 **Status of the fixes: passed at `86abad7`, on the third fix.** All of them are
 on the local branch `improve-2026-11`, not on `main`.

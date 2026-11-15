@@ -45,7 +45,10 @@ or key were searched for and would be replaced by a bracketed `[... redacted]`
 note. What was found and replaced is listed in each folder's README: six
 replacements in the USB kernel logs, and 17 in verifier files 030-038 (none
 in 039-041, 2 in 042-050, and 63 in 051-078b), which were also searched for the Kria's tailnet label, the local
-user's home directory, MAC addresses and Wi-Fi network names. The READMEs of
+user's home directory, MAC addresses and Wi-Fi network names. Apart from
+these, on 2026-11-15 the strings that identify other entries to the competition
+were replaced in verifier records 024 and 026: 51 replacements on 31 lines of
+4 files, listed in that folder's README, and not a privacy redaction. The READMEs of
 `kv260-usbfs-zlp-20261103/` and `model-usb-fs-enum-sweep-20261104/` have no
 redaction section: a search of both for all of these classes on 2026-11-04
 found only `/home/ubuntu` paths on the Kria, and nothing was replaced. Runner
