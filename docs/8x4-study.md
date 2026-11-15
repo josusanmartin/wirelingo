@@ -12,7 +12,8 @@ release qualification.
 release candidate: three cores at 8x4 with a 48 MHz project clock (the
 author's rule: aim for 50 MHz, accept 48). Its layout passes signoff, meets
 48 MHz at every corner in STA (worst non-latch setup slack +0.4304 ns at the
-slow corner) and misses 50 MHz at the slow corner by 0.40 ns; a release
+slow corner, a margin specific to its placement: a moved placement missed
+48 MHz) and misses 50 MHz at the slow corner by 0.40 ns; a release
 rehearsal passes every receipt, and its netlist is formally equivalent to the
 RTL under the checker's model. It is pending the final clean harden of the
 shipping commit. The 2-core fallback below has its own candidate and

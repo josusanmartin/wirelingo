@@ -2,7 +2,7 @@
 
 The competition asks for a chip "reprogrammable enough to support new
 protocols after fabrication". This is a rehearsal of that moment: with the
-RTL frozen at **tag `rc-01ce16d-t48ba`** (the release candidate, run t48ba),
+RTL frozen at **tag `rc-01ce16d-t48ba`** (the historical 6x4 release candidate of the time, run t48ba),
 implement protocols the chip was never designed for, in firmware only, and
 judge each one with oracles that do not share our assumptions.
 

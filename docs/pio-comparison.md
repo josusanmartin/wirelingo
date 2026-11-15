@@ -6,6 +6,12 @@ Sources and measurements are kept apart, and the page says where PIO is better.
 For the ISA-level differences see [isa.md §1](isa.md). For the program
 occupancy table see [guide.md](guide.md).
 
+**Scope: the 2-core 6x4 chip.** This comparison was made on the earlier 6x4
+design with two cores (runs g4 and fo6), and its clock, engine and area rows
+are that chip's. The current design is the 3-core 8x4 release candidate at a
+48 MHz release clock ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)),
+which this page does not compare with PIO.
+
 **Short version.** protoemu is not faster than PIO, and its programs are not
 smaller. Per state-machine cycle the two match on UART and SPI. PIO runs on a
 clock 2.7× faster, spends less I2C bus time per byte, and its instructions are
@@ -72,7 +78,7 @@ protoemu 8 ticks per bit at 800 kHz.
 
 | | RP2040 PIO (pico-examples) | protoemu (firmware/) | Better |
 |---|---|---|---|
-| **Clock, process** | 133 MHz max (200 MHz at 1.15 V), 40 nm (datasheet) | 48 MHz for the 3-core 8x4 release candidate, met in STA at all three corners (slow-corner worst non-latch setup slack +0.4304 ns; 50 MHz missed at the slow corner by 0.40 ns); historically 50 MHz at all three corners on the 6x4 run fo6 (slow-corner setup slack +0.010 ns; earlier runs reached about 44-46 MHz at the slow corner); IHP 130 nm ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)) | PIO |
+| **Clock, process** | 133 MHz max (200 MHz at 1.15 V), 40 nm (datasheet) | 50 MHz met at signoff at all three corners (run fo6, slow-corner setup slack +0.010 ns; the demos run at 48 MHz; earlier runs reached about 44-46 MHz at the slow corner); IHP 130 nm ([physical.md](physical.md)) | PIO |
 | **Engines** | 2 blocks × 4 SMs, 32 instruction slots per block, shared by its 4 SMs | 2 cores, 256-word private bank each | PIO on engine count; protoemu on per-engine program space |
 | **UART TX** program | 4 instr = 8 B | 4 instr = 16 B | PIO (bytes) |
 | UART TX timing | 8 SM clocks per bit; max 16.6 Mbaud at 133 MHz | 8 ticks per bit; max 6.25 Mbaud at 50 MHz | equal per cycle; PIO in absolute rate |

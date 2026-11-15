@@ -20,7 +20,8 @@ v0.3, at a **48 MHz** project clock. It is a release candidate, pending the
 final clean harden of the shipping commit; nothing has been fabricated. Its
 layout passes signoff (DRC, LVS and antenna clean) and, in static timing,
 meets 48 MHz at every corner: the worst non-latch setup slack at the slow
-corner is +0.4304 ns, hold at least +0.105 ns. 50 MHz is met at the typical
+corner is +0.4304 ns, a margin that belongs to this placement (a run with a
+moved placement missed 48 MHz), hold at least +0.105 ns. 50 MHz is met at the typical
 and fast corners and missed at the slow corner by 0.40 ns. The netlist is
 formally equivalent to the RTL under the checker's model, and passes the
 gate-level release tests, functional and with SDF delays
@@ -208,9 +209,9 @@ derived from the specifications, not yet validated on silicon):
   External RX tests use 50 MHz and the original TX mode uses 40 MHz. A digital
   internal TX→RX loopback now passes at 50 MHz with TX divider 1.25 and RX
   period 5. Its TX half cells are 40/60 ns; that mode has no established
-  electrical compliance or simultaneous board result. 50 MHz is above the
-  release's 48 MHz at the slow corner: STA meets it at the typical and fast
-  corners only.
+  electrical compliance or simultaneous board result. The release clock is
+  48 MHz; 50 MHz closes STA at the typical and fast corners, not the slow
+  one.
 * **UART over USB to a PC (overlap4, envelope3 and the one-byte mailbox):**
   48 MHz project clock. USB as for the low-speed device above: D+ on `uio[0]`,
   D- on `uio[1]`, 27 Ω in series with each, 1.5 kΩ from D- to 3.3 V. The UART

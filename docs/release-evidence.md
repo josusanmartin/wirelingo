@@ -370,17 +370,27 @@ shipping tree, and its clean-tree receipt predates the gate's current
 format. The release takes its own run.
 
 **The release run.** The release harden certifies one commit, the shipping
-commit `S`. On the compute runner:
+commit `S`. The procedure needs `flow/harden.sh` from `e8ac948` (item 100d)
+or later, which runs LibreLane unbuffered so that `exp.log` keeps the
+container command naming the image, as `release_check.py`'s clean-tree gate
+requires. On the compute runner:
 
 1. in a clean clone of `S`, `flow/harden.sh NAME` with no options (the
    committed core count, so the submission preset), which records the
-   clean-tree receipt at the start and after config generation;
+   clean-tree receipt at the start and after config generation. The clone
+   needs `tt/` at the pinned `d66cf17`, `.venv-flow` as a directory (or as a
+   link listed in `.git/info/exclude`, since an untracked link makes the tree
+   dirty), the PDK at its pinned commit `2bbec755` (`PDK_ROOT`, default
+   `~/ttpdk`) and the pinned LibreLane image (`flow/release_pins.json`),
+   with `PYTHONPATH` and `LIBRELANE_IMAGE_OVERRIDE` unset;
 2. `S/flow/release_evidence.py RUN --validation-root S --slow-mhz 48`
    (`S` is then also the shipping root): the receipt jobs, the fresh slow
    STA, the clock and reset checks, `flow/release_check.py` and, on a pass,
    the evidence archive `wirelingo-release-evidence-<rev>-<run>.tar.gz`;
-3. `flow/sta_nonlatch.py RUN --period 20.832`, and `release_check.py` again
-   with `--nonlatch-receipt`, so the verdict prints the non-latch slack;
+3. `flow/sta_nonlatch.py RUN --period 20.832`, then the `release check: …`
+   command that `release_evidence.py` printed in step 2, rerun with
+   `--nonlatch-receipt` and the new receipt added, so the verdict prints the
+   non-latch slack;
 4. `formal/equiv/equiv_check.sh --mutants RUN`;
 5. the acceptance rule: the netlist sha256 and the dates-zeroed GDS digest
    that `release_check.py` prints must equal the candidate's (`453d0af7…`,
@@ -396,17 +406,20 @@ netlist and dates-zeroed GDS hashes, and `S`'s commit id. This section
 describes the procedure and does not quote the run's results; that folder
 does.
 
-**What may follow `S`.** Only commits that touch `evidence/` and `docs/`.
-A later checkout is checked against `S` with `release_check --shipping-root
-<S checkout>`: `git diff --stat S..HEAD` must list only files under
-`evidence/` and `docs/`, and the build-input manifest comparison
-(`flow/build_manifest.py`) must show the inputs equal.
+**What may follow `S`.** Only commits that touch `evidence/` and `docs/`. For
+a later commit `T`, `git diff --stat S T -- . ':!evidence' ':!docs'` must
+print nothing, and `flow/build_manifest.py compare <S checkout> <T checkout>`
+must print `SAME BUILD`.
 
 **What GitHub builds.** The repository's GDS action builds from the pushed
-commit, not from the release run. The build is reproducible (four hardens of
-these inputs gave one netlist), so its GDS is expected to match the release
-run's; the check is the comparison of its dates-zeroed GDS digest with the
-release run's.
+commit, not from the release run. The workflow references
+`TinyTapeout/tt-gds-action` by a branch, so its GDS is expected to match the
+release run's only while that action installs tt-support-tools `d66cf17`,
+LibreLane 3.1.0.dev3 (image `sha256:d109140b…`) and IHP-Open-PDK `2bbec755`,
+the versions the rehearsal's release check recorded and `flow/release_pins.json`
+pins. The check is the
+comparison of its dates-zeroed GDS digest with the release run's. No
+GitHub-built GDS of the 3-core design has been compared yet.
 
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 

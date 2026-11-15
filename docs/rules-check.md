@@ -14,8 +14,7 @@ silicon.
 
 The tables below retain the 2026-11-03 snapshot; they are not a current
 submission checklist. **The tile budget is now 8x4:** the competition's
-November 9 update confirms 8x4 tiles for the March 2027 IHP shuttle, and the
-organizers confirmed the same to this entry by email in November 2026. Its
+November 9 update confirms 8x4 tiles for the March 2027 IHP shuttle. Its
 FAQ requires a public repository with RTL, tests and a
 passing Tiny Tapeout GDS/precheck, plus architecture/ISA documentation,
 tooling/examples and a verification write-up. AI use is allowed with a

@@ -497,7 +497,7 @@ traces (`docs/verification.md:67`). Whole-core equivalence is not proved
 | Firmware on the wire | Pins-only models on the model; key cases through the SPI port in RTL simulation; sigrok decoders where one exists | README, "What runs on it" |
 | The netlist equals the RTL | Formal, run fo6: 7429 points by two engines, every flop, latch, clock gate and SRAM matched; zero delay, cell insides not checked | `docs/equivalence.md` |
 | The netlist runs the tests | Gate level (29 top-level tests) and gate level with SDF (directed subsets at three corners) | `docs/release-evidence.md` |
-| 3-core 8x4 release candidate: 48 MHz met at all three corners (slow-corner worst non-latch setup slack +0.4304 ns), 50 MHz missed at the slow corner; DRC, LVS, antenna clean; netlist equal to the RTL | STA, gate level, precheck and formal equivalence on its layout (models, not silicon); pending the final clean harden of the shipping commit | `docs/physical.md`, `docs/release-evidence.md` |
+| 3-core 8x4 release candidate: 48 MHz met at all three corners (slow-corner worst non-latch setup slack +0.4304 ns, specific to this placement: a moved placement missed 48 MHz), 50 MHz missed at the slow corner; DRC, LVS, antenna clean; netlist equal to the RTL | STA, gate level, precheck and formal equivalence on its layout (models, not silicon); pending the final clean harden of the shipping commit | `docs/physical.md`, `docs/release-evidence.md` |
 | Historically, 50 MHz met at all three corners (slow-corner setup slack +0.010 ns; the demos run at 48 MHz, with margin); DRC, LVS, antenna clean | Signoff on fo6's layout (STA and checks are models, not silicon) | `docs/physical.md`, `docs/release-evidence.md` |
 | 14 protocols added with the RTL frozen | RTL simulation, gate level, SDF typical; FPGA fabric against our own models | `docs/post-freeze-protocols.md` |
 | Two protocols for an agent not prepared for them | Model and RTL simulation | `docs/blind-test.md` |
@@ -572,12 +572,16 @@ simulation; RP2040 silicon was not used.
 Clock, code density, I2C bus time, the host link, engine count, and it ships
 in silicon (`docs/pio-comparison.md`, "Where PIO wins").
 
-**Why two cores?**
-Three did not route on this tile: Metal3 reached 99.8 % with 24.1K overflow
-(`docs/physical.md`, "Three cores don't fit"). A tile is Tiny Tapeout's unit of chip area, and
-this design uses 6 by 4. Metal3 is the one horizontal routing layer here.
-Overflow counts where routing asks for more wires than exist. RTL builds of up
-to 4 cores exist, for simulation.
+**Why three cores?**
+A tile is Tiny Tapeout's unit of chip area. On the original 6 by 4 tiles,
+three cores did not route: Metal3 reached 99.8 % with 24.1K overflow
+(`docs/physical.md`, "Three cores don't fit"), so the 6x4 design, now
+history, had two. Metal3 is the one horizontal routing layer here; overflow
+counts where routing asks for more wires than exist. When the organizers
+confirmed 8 by 4 tiles, the design moved to 8x4 and spent the extra area on a
+third core with its own instruction bank (`docs/8x4-study.md`). A fourth core
+did not route at 8x4 either (global routing did not converge). RTL builds of
+up to 4 cores exist, for simulation.
 
 **If protocols are firmware, why is there a line unit?**
 With it, a USB low-speed device fits on one core, and 10BASE-T receive becomes
@@ -669,13 +673,14 @@ and the reports, FAILs included, are in `evidence/verifier/`.
 
 **Who decided what?**
 `docs/methodology.md` ("Who did what" and "What the human had to do") records
-the author's part: goals and scope, two cores rather than three, cutting
+the author's part: goals and scope, two cores on 6x4 and then three on 8x4, cutting
 cross-bank instruction fetch, when to stop exploring, and the hardware and
 accounts. It also records that the agents made the engineering decisions below
 that level.
 
 **Why is this not trading hardware?**
-It runs at 50 MHz on 130 nm, and the Ethernet here is 10 Mbit/s. The match
+The chip's release clock is 48 MHz (the Ethernet receive examples run at
+50 MHz) on 130 nm, and the Ethernet here is 10 Mbit/s. The match
 firmware decides before the FCS (the frame's CRC-32 checksum) and cannot check
 it, so a corrupted frame can raise the pin (`docs/eth10-cut-through.md`,
 "Limits"). The receive circuit is not built. The match reaction is 10 to 11
