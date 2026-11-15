@@ -7,7 +7,7 @@ Commit f3829df, parent 7e19431. Only `docs/rules-check.md` changed (`git diff --
 | 1. Actions disabled | PASS |
 | 2. Quotes | PASS |
 | 3. RULES.md | PASS for RULES.md. The item's "no superlative anywhere" is slightly overstated (note 1) |
-| 4. Notes 4-6 and the ranked-fix judgements | PASS; note 2 on the MarcosAsh bullet |
+| 4. Notes 4-6 and the ranked-fix judgements | PASS; note 2 on the [other entry redacted] bullet |
 | 5. Nothing new is wrong | PASS, apart from notes 2 and 3 |
 
 ## Checked
@@ -50,13 +50,13 @@ Commit f3829df, parent 7e19431. Only `docs/rules-check.md` changed (`git diff --
 - None of these claims we are first, only or fastest.
 
 **4. Notes 4-6 and the fix judgements.**
-- **MarcosAsh Pico host.** I downloaded and extracted their evidence tarball again in scratch, then deleted it.
-  - `run.txt:19` copies `usb_device_firmware.py` and `demo_usb.py` to a Pico with `mpremote`.
-  - `run.txt:35` then runs `demo_usb.py` there.
+- **[other entry redacted] Pico host.** I downloaded and extracted their evidence tarball again in scratch, then deleted it.
+  - `run.txt:19` copies `[other entry's file redacted]` and `[other entry's file redacted]` to a Pico with `mpremote`.
+  - `run.txt:35` then runs `[other entry's file redacted]` there.
   - So the chip's host is a Pico running MicroPython, as the doc says.
 - **The rival's decoded DSLogic records.**
-  - Their `model/gate_i2c_hw_witness.py` docstring reads "A RECORDED BENCH WITNESS, RE-CHECKED IN CI … It is NOT a hardware run in CI". It says the CSV captures stay out of git.
-  - `ci/shards.txt:69-70` lists both witness gates. The latest `dev` test run is `success` (2026-10-26).
+  - Their `[other entry's file redacted]` docstring reads "[other entry's text redacted]". It says the CSV captures stay out of git.
+  - `[other entry's file redacted]:69-70` lists both witness gates. The latest `dev` test run is `success` (2026-10-26).
   - So "records decoded from logic-analyser captures committed and re-checked in CI" is right.
 - **Claim 17 (`:160`).** It matches `info.md:46-48` verbatim. Fix 1 now includes item 17, and the FPGA row cites it.
 - **The post's lines.** "favorite designs" is in the selection bullet (`:24-28`). The SRAM pointer is in Fit and in the SRAM row (`:120`).
@@ -72,12 +72,12 @@ Commit f3829df, parent 7e19431. Only `docs/rules-check.md` changed (`git diff --
    - `:261`'s "almost every serious rival" is a hedged count, not a superlative.
    - "No superlative left anywhere" is therefore not literally true, but no forbidden claim remains.
 
-2. **The MarcosAsh bullet (`:248-254`) dropped a true difference.** "The difference is that our evidence is a transcript in a doc" implies it is the only one.
+2. **The [other entry redacted] bullet (`:248-254`) dropped a true difference.** "The difference is that our evidence is a transcript in a doc" implies it is the only one.
    - The old text also said "the host is the same board as the FPGA", and that still holds.
    - Theirs: `journalctl -k` (`run.txt:38`) is on the PC that drives the Picos, a separate machine from the Icepi Zero.
    - Ours: the USB host is the Kria's own Linux xHCI, on the board that holds the FPGA. The Wirelingo table row still says so.
    - Write "a difference", or keep both.
-   - A smaller point: the row's citation `pico_b.log` belongs to the second Pico, which listens on UART (`run.txt:33`). The host is the Pico that runs `demo_usb.py` (`run.txt:35`).
+   - A smaller point: the row's citation `pico_b.log` belongs to the second Pico, which listens on UART (`run.txt:33`). The host is the Pico that runs `[other entry's file redacted]` (`run.txt:35`).
 
 3. "Ours the Kria's CPU over the SPI port" (`:252`) is right in substance.
    - Linux drives the host port through AXI GPIO, or through the fabric SPI master `pe_spim`, which the USB runs used (`fpga/kv260/README.md:16-17`, `:193`).
@@ -92,7 +92,7 @@ All read-only. Nothing touched the Kria, SWD or runner1, nothing was pushed, and
 - `gh api`:
   - our repo's `actions/permissions`;
   - the CMOS5L template's last 3 commits on `cmos5l`;
-  - the mrnathanhumphrey-droid repo's workflows, `ci/shards.txt`, `model/gate_i2c_hw_witness.py`, a code search for "witness", and its last runs on `dev`.
-- `gh release download evidence-2026-10-15 -R MarcosAsh/protocol-emulator`, then read `run.txt`, `pico_b.log` and `ledger.txt`, then deleted it.
+  - the [other entry redacted] repo's workflows, `[other entry's file redacted]`, `[other entry's file redacted]`, a code search for "witness", and its last runs on `dev`.
+- `gh release download [other entry's release redacted] -R [other entry's repository redacted]`, then read `run.txt`, `pico_b.log` and `ledger.txt`, then deleted it.
 - Local reads of `flow/harden.sh`, `physical.md:494-505`, `isa.md:635-636`, `board-transport.md:75`, `explain-wirelingo.md:4-5`, `info.md:46-48`, `tools/micropython/protoemu.py:5` and `fpga/kv260/README.md`.
 - Test suite: not run. The commit changes one Markdown file. I found no test that reads `rules-check.md`; the tests that read docs read others, such as `hardware-day.md` and `fault-testing.md`. So no test result can change.

@@ -156,13 +156,13 @@ originals; [history-map.txt](../history-map.txt) says the same.
 
 ### 000-029
 
-The 60 files 000-029 are byte-for-byte copies of the verifier's inbox as of
+The 60 files 000-029 were committed as byte-for-byte copies of the verifier's inbox as of
 2026-11-03 20:30 UTC (the concatenation's sha256 was checked against the
 source after copying). The time can't be checked from the repository; the
 hash pins the content. The 60 files concatenated in name order
-(`cat evidence/verifier/0[0-2]?-*.md | sha256sum`, in the C locale) have
+(`cat evidence/verifier/0[0-2]?-*.md | sha256sum`, in the C locale) had
 sha256 `f8293aa094267dad4f46266223bc03f0350f269abb1966b655f68721a568c561`,
-in the inbox and as committed. Before committing they were searched for the
+in the inbox and as first committed; 4 of them were redacted on 2026-11-15 ([024 and 026](#024-and-026-on-2026-11-15), with the sha256 since then). Before committing they were searched for the
 following, to be redacted:
 
 | Searched for | Found | Redacted |
@@ -174,7 +174,7 @@ following, to be redacted:
 | the build machine's provider hostname | none | nothing |
 | anything that looks like a credential or key (passwords, tokens, API keys, private-key blocks) | none | nothing |
 
-So no file 000-029 differs from the verifier's own. Runner names (`runner1`)
+So no file 000-029 differed from the verifier's own as first committed; 56 of the 60 still do not, and the 4 files of 024 and 026 differ by the replacements listed [below](#024-and-026-on-2026-11-15). Runner names (`runner1`)
 and paths under `~/protoemu-flow` are kept, as are the home-directory paths
 there (`~/…`, and `/home/pi` and `/home/someone` in examples); none of them is
 the local user's home directory. A later search of 000-029 for the classes
@@ -577,5 +577,91 @@ unchanged file has the same digest in the inbox.
 
 To check: `sha256sum evidence/verifier/05[1-9]-*.md evidence/verifier/06*-*.md evidence/verifier/07[0-8]*-*.md`
 gives the middle column.
+
+### 024 and 026, on 2026-11-15
+
+Items 024 and 026 and their reports check a survey of other entries to the
+competition that `docs/rules-check.md` held at the time. The survey of other
+entries is not part of this repository's published record (the section is no
+longer in that document), so on 2026-11-15 the strings that identify those
+entries were replaced in these 4 files as well. The same content remains in
+the repository's earlier history. This is not a privacy redaction.
+
+**What was searched for.** The 4 files were read in full, and every tracked
+file was searched, in any case, for each entry, author and repository name of
+the removed survey. As committed, those names are in no tracked file, apart
+from the credit to PRISM (below). Replaced, in the 4 files:
+
+* the name of another entry or of its author, as `[other entry redacted]`;
+* its repository (`owner/name`), as `[other entry's repository redacted]`, a
+  branch of it, as `[other entry's branch redacted]`, and the name of a
+  release, as `[other entry's release redacted]`;
+* a file path of its repository or the file name of a release, as
+  `[other entry's file redacted]`;
+* text quoted from its repository or release that is its own wording, as
+  `[other entry's text redacted]`.
+
+Kept: the verifier's verdicts, findings and reasoning; what it says of an
+entry in its own words, with dates and numbers; quotes of this repository's
+own documents; file names that every Tiny Tapeout project has (`info.yaml`,
+`gds.yaml`) and bare file names inside a downloaded archive (`run.txt`,
+`pico_b.log`, `ledger.txt`, `keyboard.kernel`); Linux kernel log text; names of
+boards and instruments; and the names of Tiny Tapeout's repositories and of
+the competition's organisers. Also kept: the credit to PRISM
+(`kdp1965/ihp-um-janestreet-prism`), from which this repository copies files
+under Apache-2.0 (item 024 `:8`; report 024 `:7`, `:114` and `:123`).
+
+Each replacement changes exactly the redacted string (inside its backticks or
+quotation marks where it had them; a line number after a file path is kept)
+and nothing else on the line. One row per line:
+
+| File | Line | What | Replaced with |
+|---|---|---|---|
+| `024-rules-check.md` | 8 | the name of another entry or of its author, twice | `[other entry redacted]` (twice) |
+| `024-rules-check.report.md` | 45 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 47 | the name of another entry or of its author, twice | `[other entry redacted]` (twice) |
+| `024-rules-check.report.md` | 54 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 55 | its release's name; a file path of its repository or release | `[other entry's release redacted]`, `[other entry's file redacted]` |
+| `024-rules-check.report.md` | 56 | text quoted from it | `[other entry's text redacted]` |
+| `024-rules-check.report.md` | 57 | a file path of its repository or release, twice | `[other entry's file redacted]` (twice) |
+| `024-rules-check.report.md` | 58 | the name of another entry or of its author; a file path of its repository or release, twice; text quoted from it | `[other entry redacted]`, `[other entry's file redacted]` (twice), `[other entry's text redacted]` |
+| `024-rules-check.report.md` | 100 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 101 | the name of another entry or of its author, three times | `[other entry redacted]` (three times) |
+| `024-rules-check.report.md` | 102 | the name of another entry or of its author; its repository; a branch of its repository | `[other entry redacted]`, `[other entry's repository redacted]`, `[other entry's branch redacted]` |
+| `024-rules-check.report.md` | 106 | the name of another entry or of its author; text quoted from it | `[other entry redacted]`, `[other entry's text redacted]` |
+| `024-rules-check.report.md` | 107 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 108 | the name of another entry or of its author; text quoted from it; a file path of its repository or release | `[other entry redacted]`, `[other entry's text redacted]`, `[other entry's file redacted]` |
+| `024-rules-check.report.md` | 109 | the name of another entry or of its author; text quoted from it | `[other entry redacted]`, `[other entry's text redacted]` |
+| `024-rules-check.report.md` | 110 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 111 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 112 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 113 | the name of another entry or of its author | `[other entry redacted]` |
+| `024-rules-check.report.md` | 139 | the name of another entry or of its author | `[other entry redacted]` |
+| `026-rules-check-fix.md` | 7 | the name of another entry or of its author | `[other entry redacted]` |
+| `026-rules-check-fix.report.md` | 10 | the name of another entry or of its author | `[other entry redacted]` |
+| `026-rules-check-fix.report.md` | 53 | the name of another entry or of its author | `[other entry redacted]` |
+| `026-rules-check-fix.report.md` | 54 | a file path of its repository or release, twice | `[other entry's file redacted]` (twice) |
+| `026-rules-check-fix.report.md` | 55 | a file path of its repository or release | `[other entry's file redacted]` |
+| `026-rules-check-fix.report.md` | 58 | a file path of its repository or release; text quoted from it | `[other entry's file redacted]`, `[other entry's text redacted]` |
+| `026-rules-check-fix.report.md` | 59 | a file path of its repository or release | `[other entry's file redacted]` |
+| `026-rules-check-fix.report.md` | 75 | the name of another entry or of its author | `[other entry redacted]` |
+| `026-rules-check-fix.report.md` | 80 | a file path of its repository or release | `[other entry's file redacted]` |
+| `026-rules-check-fix.report.md` | 95 | the name of another entry or of its author; a file path of its repository or release, twice | `[other entry redacted]`, `[other entry's file redacted]` (twice) |
+| `026-rules-check-fix.report.md` | 96 | its release's name; its repository | `[other entry's release redacted]`, `[other entry's repository redacted]` |
+
+That is 51 replacements on 31 lines of 4 files (26 names, 2 repositories, 1
+branch, 2 release names, 14 file paths and 6 quoted texts); the other 56 files
+000-029 are unchanged. The sha256 of each of the 4 files as committed:
+
+| File | sha256 committed |
+|---|---|
+| `024-rules-check.md` | `44ec3d3b0499391d76770bfb1bb07e7f4cc516373e285bf496ee6f3bfdbe0abb` |
+| `024-rules-check.report.md` | `568266977b82150738b8a806c1df84544ea273e6aad95166671bdca8e2d86ff3` |
+| `026-rules-check-fix.md` | `d2b42bce56ca50939465fedf446d39a62f203d74bfbefae3881679bb03e0e6ac` |
+| `026-rules-check-fix.report.md` | `b423f30533eb49e0bc152013e38376372837f1de848b1975470c22d41c87905d` |
+
+To check: `sha256sum evidence/verifier/02[46]-*.md` gives the right-hand
+column, and the 60 files 000-029 concatenated as [above](#000-029) now have
+sha256 `03ef7d7b0fb877fc61e0a20bb61471ecbf51eebb8cc5136d1e9bdb86aa65a303`.
 
 Item 079 and later items and reports are not here.
