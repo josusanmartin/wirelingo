@@ -136,3 +136,24 @@ def test_pair_breaks_an_fsm_bit_tie_by_the_compared_outputs(tmp_path):
     assert [(p["gate"], p["gold"], p["pol"]) for p in res["pairs"]] == [("f", "fsm:r#0", 1)]
     assert "by compared outputs: 0 mismatching bits" in res["pairs"][0]["found"]
     assert res["unpaired_gold"] == ["fsm:r#1"]
+
+
+
+def test_a_proof_only_pairing_mutant_counts_only_the_proof(tmp_path, monkeypatch):
+    # 099 finding 3 / item 100 finding 6: m8 (the pair moved to another bit at the
+    # polarity its reset needs) has no polarity conflict by construction, so only
+    # ABC can catch it. Here the cut stub reports a polarity conflict for every
+    # mutant and ABC never finds a difference: m5 and m6 count as caught, m8 must not.
+    import equiv
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "pairs.json").write_text(json.dumps({"pairs": [{"gate": "_g_", "gold": "fsm:r#0", "pol": 1}]}))
+    m = {"flops": {"fsm:r#0": {"gold": "fsm:r#0", "gate": "_g_", "pol": 1, "how": "simulation-pair"}},
+         "fsms": [{"reg": "r", "width": 3, "reset": 0, "table": {"0": "---1", "1": "--1-", "2": "-1--", "3": "1---"}}]}
+    monkeypatch.setattr(equiv, "cut", lambda *a, **k: {"polarity_conflicts": [{"gold": "x"}]})
+    monkeypatch.setattr(equiv, "abc_check", lambda *a, **k: "equivalent")
+    monkeypatch.setattr(equiv, "_gate", lambda *a, **k: None)
+    monkeypatch.setattr(equiv, "log", lambda *a, **k: None)
+    res = {r["mutant"]: r for r in equiv.pairing_mutants({}, str(out), m, 5, "")}
+    assert res[5]["caught"] and res[6]["caught"]          # the polarity rule counts for these
+    assert res[8]["caught"] is False and "at polarity 0" in res[8]["description"]

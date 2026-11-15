@@ -334,6 +334,8 @@ FAKE_TT = """import json, os, sys
 assert sys.argv[1:] == ["--create-user-config", "--ihp"]
 if os.path.basename(os.getcwd()).startswith("clean-tree-regen."):    # the release's regeneration
     assert not os.path.exists("tt/__pycache__"), "tt/ has bytecode"   # 100b: sources only
+    if os.environ.get("FAKE_TT_LOG"):
+        open(os.environ["FAKE_TT_LOG"], "a").write(json.dumps([os.getcwd(), os.environ["PATH"]]) + "\\n")
 user = {"DESIGN_NAME": "design", "VERILOG_FILES": ["dir::project.v"]}
 json.dump(user, open("src/user_config.json", "w"), indent=2)
 config = json.load(open("src/config.json"))
@@ -356,6 +358,12 @@ def commit_all(repo, message="fixture"):
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "--allow-empty", "-m", message)
     return git(repo, "rev-parse", "HEAD")
+
+
+def harden_env():
+    """The outer environment as flow/harden.sh would see it here: pytest's own
+    PYTHONPATH=tools (the test runner's, not a harden's) left out."""
+    return {k: v for k, v in os.environ.items() if not (k == "PYTHONPATH" and v == "tools")}
 
 
 def clean_tree(wt, *, pins=None, before_start=None, after_start=None, compiled=None):
@@ -384,13 +392,18 @@ def clean_tree(wt, *, pins=None, before_start=None, after_start=None, compiled=N
         before_start(wt)
     aside = wt.parent / "runs-aside"          # a harden starts before runs/ exists
     shutil.move(str(wt / "runs"), str(aside))
-    ct.start(wt, "ghcr.io/librelane/librelane:3.1.0.dev3", pdk, ["fixture"], ident=FAKE_IMAGE_ID)
+    ct.start(wt, "ghcr.io/librelane/librelane:3.1.0.dev3", pdk, ["fixture"], ident=FAKE_IMAGE_ID,
+             environ=harden_env(), syspath=[])
     if after_start:                           # what happens between the receipt and generation
         after_start(wt)
     subprocess.run([sys.executable, "tt/tt_tool.py", "--create-user-config", "--ihp"], cwd=wt, check=True)
     if compiled:                              # bytecode the generation step compiles
         compiled(wt)
     ct.generated(wt)
+    # LibreLane's log names the image its container ran (as on a real harden)
+    (wt / "exp.log").write_text("Running containerized command:\ndocker run --rm --name x -i --user 1000:1000 "
+                                f"-v /h:/h -w {wt} ghcr.io/librelane/librelane:3.1.0.dev3 python3 -m librelane "
+                                "--run-tag wokwi src/config_merged.json\n")
     for p in aside.iterdir():                 # then the flow's outputs
         shutil.move(str(p), str(wt / "runs" / p.name))
     aside.rmdir()

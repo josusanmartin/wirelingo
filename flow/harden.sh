@@ -40,12 +40,16 @@ TILE=$(sed -n 's/^  tiles: "\([0-9]*x[0-9]*\)".*$/\1/p' "$REPO/info.yaml")
 grep -q "^$TILE: " "$REPO/tt/tech/ihp-sg13cmos5l/tile_sizes.yaml" 2>/dev/null \
   && [ -f "$REPO/tt/tech/ihp-sg13cmos5l/def/tt_block_${TILE}_pgvdd.def" ] \
   || { echo "$REPO/tt has no IHP tile '$TILE' (info.yaml)"; exit 2; }
+# an outer python path or image override would run other code than the tree's (clean_tree.py)
+for v in PYTHONPATH LIBRELANE_IMAGE_OVERRIDE; do
+  [ -z "${!v:-}" ] || { echo "$v is set: unset it to harden (the run would not be the tree's build)"; exit 2; }
+done
 if [ -n "$(git -C "$REPO" status --porcelain)" ]; then
   echo "source tree is dirty: commit what you want hardened (a run is a commit)"
   exit 2
 fi
 
-git -C "$REPO" worktree add -q --detach "$W" HEAD
+git -c core.hooksPath=/dev/null -C "$REPO" worktree add -q --detach "$W" HEAD     # no hooks run
 cd "$W"
 # tt-support-tools without bytecode: none may exist when the clean-tree receipt starts
 tar -C "$REPO" --exclude=__pycache__ --exclude='*.pyc' -cf - tt | tar -xf -

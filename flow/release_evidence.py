@@ -295,7 +295,7 @@ def terminate(jobs):
                 pass
 
 
-def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50, shipping=None):
+def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=50, shipping=None, flow_python=None):
     # the run is live here: an STA receipt's run-side checks may not be skipped
     cmd = [sys.executable, str(FLOW / "release_check.py"), str(run), "--validation-root", str(validation),
            "--sdf-profile", sdf_profile, "--require-sta-inputs"]
@@ -303,6 +303,8 @@ def release_command(run, validation, receipt_paths, sdf_profile="v2", slow_mhz=5
         cmd += ["--slow-mhz", f"{slow_mhz:g}"]
     # the shipping commit is the validation clone unless another is named
     cmd += ["--shipping-root", str(shipping or validation)]
+    if flow_python:      # the clean-tree gate regenerates the configs with the flow venv's tt tool
+        cmd += ["--flow-python", str(flow_python)]
     for kind, path in receipt_paths:
         cmd += [{"gl": "--gl-receipt", "sdf": "--sdf-receipt", "precheck": "--precheck-receipt",
                  "sta": "--slow-sta-receipt", "checks": "--checks-receipt"}[kind], str(path)]
@@ -396,7 +398,7 @@ def main(argv=None):
                    work=str(work), archive=None)
     if not failures:
         cmd = release_command(a.run, validation, [(r["kind"], r["path"]) for r in collected], slow_mhz=a.slow_mhz,
-                              shipping=getattr(a, "shipping_root", None))
+                              shipping=getattr(a, "shipping_root", None), flow_python=a.flow_python)
         say("release check: " + " ".join(cmd))
         check = subprocess.run(cmd, cwd=FLOW.parent, capture_output=True, text=True)
         (work / "release-check.log").write_text(check.stdout + check.stderr)

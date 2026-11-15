@@ -227,6 +227,32 @@ def test_a_report_for_another_corner_or_library_is_refused(tmp_path, fake_sta):
 
 
 def test_clock_gate_enables_are_non_latch_endpoints():
+    # the endpoint list (the concat the checks run to) holds the clock-gate inputs, which
+    # come from every cell the ICG patterns name, except its clock pin, and those patterns
+    # match the PDK's two integrated clock-gating cells
+    import fnmatch
+    import re
     tcl = (Path(__file__).resolve().parents[2] / "flow/sta_nonlatch.tcl").read_text()
-    assert "$icg_in $macro_in [all_outputs]" in tcl and "lgcp" in (Path(__file__).resolve().parents[2]
-                                                                     / "flow/sta_nonlatch.py").read_text()
+    ends = re.search(r"^set ends \[concat (.*)\]$", tcl, re.M).group(1).split()
+    assert "$icg_in" in ends and "$macro_in" in ends
+    loop = tcl[tcl.index("set icg_in {}"):tcl.index("set ends")]
+    assert "foreach pat $::env(STA_ICG)" in loop and "lappend icg_in $p" in loop and '"*/CLK"' in loop
+    nl = module("sta_nonlatch")
+    assert all(any(fnmatch.fnmatch(c, p) for p in nl.ICG.split()) for c in ("sg13cmos5l_lgcp_1", "sg13cmos5l_slgcp_1"))
+    assert not fnmatch.fnmatch("sg13cmos5l_dfrbpq_1", nl.ICG)
+
+
+def test_a_report_with_other_libraries_is_refused(tmp_path, fake_sta):
+    # item 100 finding 6 (nl-libs-unchecked): the right corner, other Liberty files
+    wt, rc, out, args = run(tmp_path, "--period", "20.832")
+    nl = module("sta_nonlatch")
+    rpt = out / "nom_slow_1p08V_125C.rpt"
+    text = rpt.read_text().replace("slow.lib", "typ.lib", 1)
+    rpt.write_text(text)
+
+    def edit(d):
+        d["reports"]["nom_slow_1p08V_125C.rpt"] = module("release_receipts").digest(rpt)
+        d["results"]["nom_slow_1p08V_125C"] = nl.parse(text)
+    reseal(out, edit)
+    with pytest.raises(ValueError, match="was made for corner nom_slow_1p08V_125C with"):
+        nl.verify(out / "receipt.json", wt)

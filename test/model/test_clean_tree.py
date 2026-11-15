@@ -6,6 +6,8 @@ file-set manifest (a sibling a Tcl file sources, an extra root-level plugin, an
 info.yaml source file under tt/) fail here, whatever reads the file: committed,
 the tree differs; uncommitted, the receipt is DIRTY."""
 import json
+from pathlib import Path
+import os
 import subprocess
 import sys
 
@@ -113,9 +115,11 @@ def test_the_start_verdict_does_not_expect_generated_configs(tmp_path):
     complete_receipts(wt)
     ct = module("clean_tree")
     subprocess.run(["mv", str(wt / "runs"), str(tmp_path / "aside")], check=True)
-    data = ct.start(wt, "img", tmp_path / "pdk-checkout", ident="sha256:" + "d1" * 32)
+    from test_release_evidence import harden_env
+    data = ct.start(wt, "img", tmp_path / "pdk-checkout", ident="sha256:" + "d1" * 32, environ=harden_env(),
+                    syspath=[])
     assert data["phase"] == "start" and "generated configs not recorded" not in data["reasons"]
-    assert ct.verdict(data)[1][-1] == "generated configs not recorded"
+    assert "generated configs not recorded" in ct.verdict(data)[1]
 
 
 def test_a_file_present_only_at_start_still_makes_the_run_dirty(tmp_path, capsys):
@@ -199,7 +203,8 @@ def test_a_config_that_differs_from_the_commit_makes_the_run_dirty(tmp_path):
     ct = module("clean_tree")
     (wt / "src/config.json").write_text('{"CLOCK_PERIOD":21}')
     subprocess.run(["mv", str(wt / "runs"), str(tmp_path / "aside")], check=True)
-    ct.start(wt, "img", tmp_path / "pdk-checkout", ident="sha256:" + "d1" * 32)
+    from test_release_evidence import harden_env
+    ct.start(wt, "img", tmp_path / "pdk-checkout", ident="sha256:" + "d1" * 32, environ=harden_env(), syspath=[])
     data = ct.generated(wt)
     assert data["status"] == "DIRTY" and any(" M src/config.json" in r for r in data["reasons"])
 
@@ -214,6 +219,8 @@ def test_the_harden_records_the_receipt_before_generating():
     assert c < text.index("tt_tool.py --harden")
     # the version probe imports LibreLane outside the worktree, writing no bytecode there
     assert "LLV=$(cd / && PYTHONDONTWRITEBYTECODE=1 python -c" in text
+    # 100c: the worktree is added with no hooks (a post-checkout hook could rewrite it)
+    assert 'git -c core.hooksPath=/dev/null -C "$REPO" worktree add -q --detach "$W" HEAD' in text
 
 
 def test_the_repository_pins_tt_the_image_and_the_pdk():
@@ -223,3 +230,177 @@ def test_the_repository_pins_tt_the_image_and_the_pdk():
     assert set(pins) == {"tt_support_tools", "librelane_image", "pdk"}
     assert re.fullmatch(r"[0-9a-f]{40}", pins["tt_support_tools"]) and re.fullmatch(r"[0-9a-f]{40}", pins["pdk"])
     assert re.fullmatch(r"sha256:[0-9a-f]{64}", pins["librelane_image"])
+
+
+# ---- 100c: bytes, not only status (item 100, finding 2): routes in the harden's
+# own git configuration that status does not show; each must be DIRTY
+
+def git_in(repo, *args):
+    from test_release_evidence import git
+    return git(repo, *args)
+
+
+def assume_unchanged(wt):
+    git_in(wt, "update-index", "--assume-unchanged", "src/project.v")
+    (wt / "src/project.v").write_text("`define PE_NCORES 1\n")
+
+
+def skip_worktree(wt):
+    git_in(wt, "update-index", "--skip-worktree", "info.yaml")
+    (wt / "info.yaml").write_text("project:\n  top_module: other\n")
+
+
+def smudge(wt):
+    (wt / ".git/info").mkdir(parents=True, exist_ok=True)
+    (wt / ".git/info/attributes").write_text("src/project.v filter=x\n")
+    git_in(wt, "config", "filter.x.smudge", "sed s/PE_NCORES/PE_NCORES_X/")
+    git_in(wt, "config", "filter.x.clean", "sed s/PE_NCORES_X/PE_NCORES/")
+    (wt / "src/project.v").unlink()
+    git_in(wt, "checkout", "--", "src/project.v")
+
+
+def sparse(wt):
+    git_in(wt, "sparse-checkout", "set", "--no-cone", "/*", "!/flow/helper.tcl")
+
+
+def tt_replace(wt):
+    tt = wt / "tt"
+    pin = git_in(tt, "rev-parse", "HEAD")
+    (tt / "tt_tool.py").write_text((tt / "tt_tool.py").read_text() + "# altered\n")
+    git_in(tt, "commit", "-qam", "altered")
+    alt = git_in(tt, "rev-parse", "HEAD")
+    git_in(tt, "replace", pin, alt)
+    git_in(tt, "checkout", "-q", pin)
+
+
+@pytest.mark.parametrize("route", [assume_unchanged, skip_worktree, smudge, sparse, tt_replace],
+                         ids=["assume-unchanged", "skip-worktree", "smudge-filter", "sparse-checkout", "tt-replace"])
+def test_a_change_status_does_not_show_is_dirty_in_bytes(tmp_path, capsys, route):
+    wt, args = releases(tmp_path, capsys, before_start=route)
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert data["status"] == "DIRTY" and any("differ from the tree in bytes" in r for r in data["reasons"]), \
+        data["reasons"]
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 1 and "from the tree in bytes" in text
+
+
+# ---- 100c: the receipt bound to its run (finding 3f), the image LibreLane ran (3b),
+# the outer process (3c), the config LibreLane read (3e)
+
+def test_a_copied_receipt_or_a_changed_run_fails(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    (wt / "docs").mkdir()
+    (wt / "docs/extra.sdc").write_text("# added to the run after its harden\n")
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 1 and "the run worktree holds more than its tree" in text
+    (wt / "docs/extra.sdc").unlink()
+    p = wt / "runs/clean-tree.json"
+    data = json.loads(p.read_text())
+    data["worktree_path"] = "/elsewhere/run"
+    p.write_text(json.dumps(data))
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 1 and "the receipt was recorded in /elsewhere/run, not in this run" in text
+
+
+def test_a_run_moved_to_another_commit_fails(tmp_path, capsys):
+    # an empty commit keeps the tree and the bytes: only HEAD tells
+    from test_release_evidence import git
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    git(wt, "commit", "-q", "--allow-empty", "-m", "after the harden")
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 1 and "the run worktree is at tree" in text
+
+
+def test_the_image_librelane_ran_must_be_the_receipts(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    log = wt / "exp.log"
+    log.write_text(log.read_text().replace("ghcr.io/librelane/librelane:3.1.0.dev3", "ghcr.io/someone/librelane:x"))
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 1 and "LibreLane ran image ghcr.io/someone/librelane:x" in text
+    log.write_text("no container line\n")
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path, "ship2")), capsys)
+    assert rc == 1 and "exp.log names no container image" in text
+
+
+@pytest.mark.parametrize("var", ["PYTHONPATH", "LIBRELANE_IMAGE_OVERRIDE"])
+def test_an_outer_python_path_or_image_override_is_dirty(tmp_path, capsys, monkeypatch, var):
+    monkeypatch.setenv(var, "/somewhere")
+    wt, args = releases(tmp_path, capsys)
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert data["status"] == "DIRTY" and any(f"{var} was set" in r for r in data["reasons"])
+    assert len(data["venv"]["sha256"]) == 64
+    text = (Path(__file__).resolve().parents[2] / "flow/harden.sh").read_text()
+    assert "for v in PYTHONPATH LIBRELANE_IMAGE_OVERRIDE; do" in text
+
+
+def test_a_plugin_on_the_outer_path_is_dirty(tmp_path):
+    ct = module("clean_tree")
+    extra = tmp_path / "sitepkgs"
+    (extra / "openlane_plugin_pkg").mkdir(parents=True)
+    (extra / "librelane_plugin_other.py").write_text("# imported by LibreLane's plugin discovery\n")
+    (extra / "openlane_plugin_pkg/__init__.py").write_text("# a plugin package\n")
+    (extra / "unrelated.py").write_text("# not a plugin\n")
+    assert ct.outer_plugins([str(extra)]) == ["librelane_plugin_other", "openlane_plugin_pkg"]
+    data = {"worktree": {"stray": []}, "tt": {"stray": []}, "image": {"id": "x", "name": "x"},
+            "pdk": {"stray": []}, "generated": {}, "outer_plugins": ["librelane_plugin_other"]}
+    st, reasons = ct.verdict(data)
+    assert st == "DIRTY" and any("librelane_plugin_other" in r for r in reasons)
+
+
+def test_the_config_librelane_read_must_equal_the_regeneration(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    (wt / "src/config_merged.json").write_text('{"rewritten": "after the generated record"}\n')
+    rc, text = release(with_shipping(args, ship_clone(wt, tmp_path)), capsys)
+    assert rc == 1 and "the configs LibreLane read differ from the regenerated ones" in text
+
+
+def test_the_regeneration_runs_beside_the_checkout_with_the_flow_python_first(tmp_path, capsys, monkeypatch):
+    # item 100 finding 1: under /tmp and without the venv on PATH, the real tt tool failed
+    log = tmp_path / "tt.log"
+    monkeypatch.setenv("FAKE_TT_LOG", str(log))
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 0, text
+    cwd, path = json.loads(log.read_text().splitlines()[-1])
+    assert Path(cwd).parent == ship.parent and path.split(os.pathsep)[0] == os.path.dirname(sys.executable)
+
+
+# ---- item 100 findings 4 and 6
+
+def test_a_venv_link_in_the_shipping_checkout_is_owned(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    (ship / ".venv-flow").symlink_to(tmp_path)        # a fresh clone without an exclude: "?? .venv-flow"
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 0, text
+
+
+def test_the_gate_reads_the_shipping_commits_pins_not_the_runs(tmp_path, capsys):
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    p = wt / "flow/release_pins.json"
+    pins = json.loads(p.read_text())
+    p.write_text(json.dumps(dict(pins, tt_support_tools="0" * 40)))
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert f"clean tree: tt_support_tools: {pins['tt_support_tools']} (pinned)" in text
+
+
+def test_a_pdk_stray_is_dirty(tmp_path, capsys):
+    def stray_pdk(wt):
+        (wt.parent / "pdk-checkout/ihp-sg13cmos5l/extra.lib").write_text("library (x) { }\n")
+    wt, args = releases(tmp_path, capsys, before_start=stray_pdk)
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert data["status"] == "DIRTY" and any("PDK:" in r and "extra.lib" in r for r in data["reasons"])
+
+
+def test_the_shipping_checkouts_tt_must_be_the_pinned_clean_commit(tmp_path, capsys):
+    import shutil
+    wt, args = releases(tmp_path, capsys)
+    ship = ship_clone(wt, tmp_path)
+    shutil.copytree(wt / "tt", ship / "tt", symlinks=True)
+    (ship / "tt/tt_tool.py").write_text((ship / "tt/tt_tool.py").read_text() + "# changed\n")
+    rc, text = release(with_shipping(args, ship), capsys)
+    assert rc == 1 and "not a clean checkout of the pinned tt-support-tools" in text
