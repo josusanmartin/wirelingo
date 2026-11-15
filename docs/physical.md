@@ -17,13 +17,15 @@ logs, partial suites and arithmetic estimates at another clock cannot pass.
 [Release evidence](release-evidence.md) gives the commands, coverage and limits.
 v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
 
-**Current development target:** 8x4 tiles, three cores, three 256-word
-instruction SRAM banks and 8-word FIFOs, implementing ISA v0.3. The target
-clock is 50 MHz; 48 MHz is a possible release decision, with protocol limits
-that must be stated separately. The reviewed base `fb4228d` has no passing
-3-core routed signoff/precheck/release receipt. The 2-core 8x4 build is a
-fallback. The 6x4, 2-core run fo6 below is historical v0.2 evidence; its
-physical results do not certify this target. See [physical.md](#8x4-2026-11-10).
+**Release candidate:** 8x4 tiles, three cores, three 256-word instruction
+SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
+clock: signoff clean, worst non-latch setup slack +0.4304 ns at the slow
+corner at 48 MHz (STA), 50 MHz missed at the slow corner by 0.40 ns, and a
+release rehearsal whose receipts pass. It is pending the final clean harden
+of the shipping commit; see
+[the 3-core release candidate](#the-3-core-release-candidate-2026-11-15).
+The 2-core 8x4 build is a fallback. The 6x4, 2-core run fo6 below is
+historical v0.2 evidence; its physical results do not certify the 8x4 design.
 
 **Historical 6x4 release:** run **fo6** (2026-10-13): run t48ba's
 v2 RTL and settings plus `Project.DetailedRouting`, which keeps antenna
@@ -338,6 +340,81 @@ Hardcaml port mirrors it and is proved equal to `src/` at 3 and 2 cores. A
 late clock on `crc` (`--late-clock-core`) now gains less, and its new D
 inputs come from flops on the normal clock, so it likely costs hold
 buffers (an estimate; `flow/` settings are not changed here).
+
+### The 3-core release candidate (2026-11-15)
+
+**Status: a release candidate, pending the final clean harden of the
+shipping commit** ([release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).
+It has not been taped out. Evidence levels below: harden and static timing
+(STA); gate-level simulation, functional and with SDF delays; Tiny Tapeout's
+precheck; formal equivalence of the RTL and the netlist under the checker's
+model. None of it is silicon, and no FPGA was involved.
+
+**What it is.** The v0.3 RTL of `next-8x4` at three cores (three 256-word
+banks along the bottom edge, the CRC step retimed as above), hardened at 8x4
+with the option set of run aqp-rt10. `flow/gen_config.py`'s submission preset
+for 8x4 at 3 cores is that set (`SUBMISSION_TUNED[("8x4", 3)]`, the tuned set
+`rt10-8x4`), and the committed `src/config.json` is rt10's byte for byte.
+The harden's `CLOCK_PERIOD` stays 20 ns. The project clock in `info.yaml` is
+48 MHz: the author's rule for the 8x4 build is to aim for 50 MHz and accept
+48 MHz, and this layout misses 50 MHz at the slow corner (below). Records:
+[evidence/8x4-search-20261114/](../evidence/8x4-search-20261114/README.md)
+(rt10) and
+[evidence/8x4-release-candidate-20261115/](../evidence/8x4-release-candidate-20261115/README.md)
+(everything else in this section).
+
+* **Signoff.** `flow/signoff.py` PASSED: 0 routing DRC, 0 KLayout DRC, 0 LVS
+  errors, 0 antenna violations, and no max slew or capacitance violation at
+  any corner. Standard-cell utilization 57.0 %, 62.3 % with the three macros.
+* **48 MHz (20.832 ns, a fresh STA of the final netlist and extracted
+  parasitics, `flow/sta_nonlatch.py`).** Worst non-latch setup slack at the
+  slow corner **+0.4304 ns**, at flop `_53246_/D` (the `pin_oe[26]`
+  register); +3.3180 ns typical, +3.9191 ns fast. The FIFO's latches report
+  slack 0 at every corner: that is OpenSTA's latch time borrowing (0.937 ns
+  for the worst latch at the slow corner), within its limits, which is why
+  the run's own setup WS, taken over all endpoints, reads 0. Hold:
+  +0.212 / +0.395 / +0.105 ns typical / slow / fast.
+* **50 MHz (20 ns) is missed at the slow corner:** setup WS −0.4016 ns, 13
+  violators, worst at the same flop. Typical and fast meet it (worst
+  non-latch +2.9020 and +3.5031 ns). The release gate times the slow corner
+  at 48 MHz and the typical and fast corners at 50 MHz
+  ([release-evidence.md](release-evidence.md#48-mhz-at-the-slow-corner-8x4)).
+* **Reproduction.** Four hardens of the same build inputs give the same
+  netlist (sha256 `453d0af7bea77dd5…`) and the same signoff summary: rt10,
+  the search run; rt10s, a clean checkout of `1ea5cb7` (142 min); rt10s4,
+  the same checkout with every container confined to 4 CPUs and 16 GB, the
+  size of a GitHub-hosted runner for a public repository (240 min); and
+  rt10s5-pre, a clean harden of `77c3936` through `flow/harden.sh`'s
+  clean-tree path, which recorded CLEAN at the start and after config
+  generation (160 min). rt10, rt10s and rt10s5-pre also give the same GDS
+  with its dates zeroed (sha256 `357ea15b4546ef28…`); rt10s4's GDS was pruned
+  before that digest was taken.
+* **The margin belongs to this placement.** aqp-rt10d48, the same checkout
+  with density 48 instead of 34, moves the placement and gives a new netlist.
+  It passes `flow/signoff.py` with 0 DRC, LVS and antenna, but misses 48 MHz
+  at the slow corner by 0.815 ns (15 violators; 1.647 ns at 20 ns). So
+  identical inputs reproduce +0.4304 ns bit for bit, and a moved placement
+  can lose 48 MHz: the release has to reproduce this netlist.
+* **Equivalence** (`formal/equiv/equiv_check.sh --mutants` on rt10s5-pre;
+  [equivalence.md](equivalence.md)): `EQUIVALENT`. equiv_simple proved
+  10754 of 10754 points and ABC's `&cec` agrees; 2346 flops matched, one of
+  them an FSM-encoded bit of the host port's phase register, paired by its
+  effect on the compared outputs; all 9 planted netlist mutants are caught. It is a
+  functional, zero-delay check under the checker's model; timing is STA's.
+  So the CRC retiming above is now checked in a netlist too.
+* **Release receipts on rt10s5-pre**, the rehearsal of the release path:
+  functional GL 30/30, plus `test_pio` 2/2 and `test_eth_service` 2/2; SDF
+  `standard` 5/5 at typ 20 ns, slow 20.832 ns and fast 20 ns, with the
+  overclocked control (slow, 10 ns) failing as required; SDF `v2` 3/3 at the
+  same three, and USB full speed 1/1 at 20.834 ns at each corner; autonomous
+  USB at low and full speed 2/2 at 20.834 ns at each corner; a fresh slow
+  STA at 20.832 ns; the clock and reset checks (all 3885 register clock pins
+  clocked and checked, pulse width, recovery and removal met at every
+  corner); precheck passed. With them `flow/release_check.py` printed
+  `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`. The rehearsal's tree
+  is not the shipping tree, so these receipts do not release the shipping
+  commit; its own clean harden does
+  ([release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).
 
 ## SRAM macros
 

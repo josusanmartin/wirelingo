@@ -13,17 +13,22 @@ silicon.
 ## Current scope of this historical audit
 
 The tables below retain the 2026-11-03 snapshot; they are not a current
-submission checklist. The competition's November 9 update confirms 8x4
-for March 2027. Its FAQ requires a public repository with RTL, tests and a
+submission checklist. **The tile budget is now 8x4:** the competition's
+November 9 update confirms 8x4 tiles for the March 2027 IHP shuttle, and the
+organizers confirmed the same to this entry by email in November 2026. Its
+FAQ requires a public repository with RTL, tests and a
 passing Tiny Tapeout GDS/precheck, plus architecture/ISA documentation,
 tooling/examples and a verification write-up. AI use is allowed with a
 write-up describing it. The deadline remains January 18, 2027.
 These are paraphrases of the [official rules and FAQ](https://blog.janestreet.com/protocol-emulator-asic-competition/),
 checked during the Astra review. The FAQ specifies no target clock or fixed
 protocol speed; the selected clock must close timing and support the claimed
-protocols. See [summary.md](summary.md) for the current 3-core target and
-[physical.md](physical.md#8x4-2026-11-10) for its physical limits.
-The older statements below about a missing FAQ and 6x4 limits are superseded.
+protocols. The entry's clock is 48 MHz: the 3-core 8x4 release candidate
+meets it in STA at every corner and misses 50 MHz at the slow corner. See
+[summary.md](summary.md) for the release candidate and
+[physical.md](physical.md#the-3-core-release-candidate-2026-11-15) for its
+physical results. The older statements below about a missing FAQ, an
+unannounced 8x4 tile and 6x4 limits are superseded.
 
 ## 1. What the competition said at the audit date
 
@@ -108,7 +113,8 @@ trivial."
 
 **Tools.** `TinyTapeout/tt-support-tools` branch `ihp-sg13cmos5l`, commit
 `d66cf179` (2026-09-21): "feat(ihp): 8x4 tile size for ihp-sg13cmos5l". The tools
-accept 8x4; Jane Street has not announced it. `tt-gds-action@ihp-cmos5l` installs
+accept 8x4; Jane Street had not announced it at the audit date (it has since:
+see the scope note above). `tt-gds-action@ihp-cmos5l` installs
 LibreLane `3.1.0.dev3` and IHP-Open-PDK `2bbec755`; runner1's `~/ttpdk` (fo6's
 PDK) is the same revision.
 
@@ -223,6 +229,8 @@ verification-story.md.
     limits until the author says otherwise.
 11. **8x4 contingency:** decide in advance whether a third core would be used
     if 8x4 is announced, given that every receipt would have to be redone.
+    (Since done: 8x4 was confirmed and the author chose three cores; see the
+    scope note above.)
 
 ## 5. Rivals
 
@@ -291,5 +299,6 @@ values. The TT staging shuttle
 [ttcodebot/tinytapeout-ihp-27a-staging](https://github.com/ttcodebot/tinytapeout-ihp-27a-staging)
 is `ttihp27a` on `ihp-sg13cmos5l` with a placeholder `end_date: '2026-12-31'`;
 no competition entries are listed. Nothing found says the 256x32 macro is, or
-is not, proven in silicon. The author could ask asic-competition@janestreet.com
-about 8x4 and macros; agents may not.
+is not, proven in silicon. The author could ask the organizers about 8x4 and
+macros; agents may not. (8x4 has since been confirmed: see the scope note
+above.)

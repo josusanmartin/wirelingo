@@ -15,14 +15,19 @@ logic. Each core executes one 32-bit instruction per tick and has:
 * a configurable CRC tap of 1–32 bits fed by the shift registers;
 * 8-word FIFOs to the host, which can be joined into one 16-word TX FIFO.
 
-The current target is **8x4 with three cores and three SRAM banks**, ISA
-v0.3. The 2-core 8x4 build is its fallback. At reviewed base `fb4228d`, the
-3-core target has no passing routed signoff/precheck/release receipt.
-50 MHz is the target clock; a 48 MHz release would need a documented set of
-supported protocols. Full-speed USB needs 48 MHz; the in-core 10BASE-T FCS
-receiver and RMII examples require 50 MHz. The +0.010 ns slow setup result
-belongs to the historical 6x4, 2-core fo6 build, not this target
-([physical.md](physical.md#8x4-2026-11-10)).
+This chip is the **8x4 build with three cores and three SRAM banks**, ISA
+v0.3, at a **48 MHz** project clock. It is a release candidate, pending the
+final clean harden of the shipping commit; nothing has been fabricated. Its
+layout passes signoff (DRC, LVS and antenna clean) and, in static timing,
+meets 48 MHz at every corner: the worst non-latch setup slack at the slow
+corner is +0.4304 ns, hold at least +0.105 ns. 50 MHz is met at the typical
+and fast corners and missed at the slow corner by 0.40 ns. The netlist is
+formally equivalent to the RTL under the checker's model, and passes the
+gate-level release tests, functional and with SDF delays
+([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)).
+Full-speed USB needs exactly 48 MHz. The in-core 10BASE-T FCS receiver and
+the RMII examples require 50 MHz, which the slow corner does not meet; 10BASE-T receive's jitter results are for 50 and 40 MHz. The 2-core
+8x4 build is the fallback, and the 6x4, 2-core fo6 results are historical.
 
 Programs live in on-chip SRAM: each core has its own bank of 256 instructions.
 
@@ -68,9 +73,11 @@ Four of those programs (UART RX, I2C master, CAN RX
 and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
 need an FPGA rerun before those results apply to them. None of it has run on
 silicon yet.
-The historical fo6 netlist is formally proved equivalent to its v0.2 RTL: functionally,
-for every input and state, under the assumptions listed in
-`docs/equivalence.md`. Timing is checked separately, by STA.
+The release candidate's netlist is formally proved equivalent to the v0.3
+RTL (10754 of 10754 points, 9 of 9 planted netlist bugs caught), as the
+historical fo6 netlist is to its v0.2 RTL: functionally, for every input and
+state, under the assumptions listed in `docs/equivalence.md`. Timing is
+checked separately, by STA.
 
 The full specification is in `docs/isa.md` in the repository.
 
@@ -79,10 +86,11 @@ The full specification is in `docs/isa.md` in the repository.
 The host talks to the chip over SPI mode 0:
 
 * `ui[7]` = CS_n, `ui[6]` = SCK, `ui[5]` = MOSI, `uo[7]` = MISO.
-* SCK up to the project clock: 1 bit per SCK (50 Mbit/s at 50 MHz), or in an
-  optional quad mode 4 bits per SCK (200 Mbit/s on the wire) on ui[5:2] /
-  uo[7:4] (docs/isa.md §6.1). These rates are shown in RTL simulation (a
-  quad burst moves 193 Mbit/s of payload) and in FPGA fabric, where
+* SCK up to the project clock: 1 bit per SCK (48 Mbit/s at 48 MHz), or in an
+  optional quad mode 4 bits per SCK (192 Mbit/s on the wire at 48 MHz) on
+  ui[5:2] / uo[7:4] (docs/isa.md §6.1). The rates were shown at a 50 MHz
+  clock in RTL simulation (a quad burst moves 193 Mbit/s of payload) and in
+  FPGA fabric, where
   the KV260's own fabric SPI master runs on the chip's 50 MHz clock: 199.9
   Mbit/s for 4096-word quad bursts, 193.6 Mbit/s for a 64-word write, and
   183.6 Mbit/s from a separate 45.93 MHz clock (`fpga/kv260/README.md`).
@@ -91,7 +99,9 @@ The host talks to the chip over SPI mode 0:
   sample MISO. STA at the tile's pins (not silicon) closes at 50 MHz SCK
   only while the delay between the host's pins and the tile's (pads, pin mux
   and board), SCK in plus MISO back, stays within about 6.8 ns, 3.4 ns each
-  way if equal, on the 3-core layout (GRT-estimated). A slower path needs a slower SCK, about 21 MHz for 10 ns
+  way if equal, on an earlier 3-core layout (GRT-estimated); at 48 MHz the
+  same slack gives about 3.6 ns each way (an estimate). A slower path needs a
+  slower SCK, about 21 MHz for 10 ns
   (docs/isa.md §6.1, "Pad timing"). The default demo-board
   driver (`tools/micropython/protoemu.py`) bit-bangs the port from MicroPython
   and is far slower than either figure (an estimate: it has not been
@@ -198,7 +208,9 @@ derived from the specifications, not yet validated on silicon):
   External RX tests use 50 MHz and the original TX mode uses 40 MHz. A digital
   internal TX→RX loopback now passes at 50 MHz with TX divider 1.25 and RX
   period 5. Its TX half cells are 40/60 ns; that mode has no established
-  electrical compliance or simultaneous board result.
+  electrical compliance or simultaneous board result. 50 MHz is above the
+  release's 48 MHz at the slow corner: STA meets it at the typical and fast
+  corners only.
 * **UART over USB to a PC (overlap4, envelope3 and the one-byte mailbox):**
   48 MHz project clock. USB as for the low-speed device above: D+ on `uio[0]`,
   D- on `uio[1]`, 27 Ω in series with each, 1.5 kΩ from D- to 3.3 V. The UART

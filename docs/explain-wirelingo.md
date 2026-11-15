@@ -39,8 +39,9 @@ other hardware. It says little about this chip's pads or memory.
 
 ## 0. The chip and its blocks
 
-A clock is a signal that ticks at a fixed rate. Here it is 50 MHz, so one clock
-period lasts 20 ns. A clock edge is the instant the clock rises. Nearly
+A clock is a signal that ticks at a fixed rate. The chip is designed around
+50 MHz, so one clock period lasts 20 ns; the release runs it at 48 MHz
+(20.83 ns), which its layout meets at every corner in static timing. A clock edge is the instant the clock rises. Nearly
 everything in the chip changes on a clock edge.
 
 A flip-flop, or flop, stores one bit and updates on a clock edge. A register is
@@ -496,7 +497,8 @@ traces (`docs/verification.md:67`). Whole-core equivalence is not proved
 | Firmware on the wire | Pins-only models on the model; key cases through the SPI port in RTL simulation; sigrok decoders where one exists | README, "What runs on it" |
 | The netlist equals the RTL | Formal, run fo6: 7429 points by two engines, every flop, latch, clock gate and SRAM matched; zero delay, cell insides not checked | `docs/equivalence.md` |
 | The netlist runs the tests | Gate level (29 top-level tests) and gate level with SDF (directed subsets at three corners) | `docs/release-evidence.md` |
-| 50 MHz met at all three corners (slow-corner setup slack +0.010 ns; the demos run at 48 MHz, with margin); DRC, LVS, antenna clean | Signoff on fo6's layout (STA and checks are models, not silicon) | `docs/physical.md`, `docs/release-evidence.md` |
+| 3-core 8x4 release candidate: 48 MHz met at all three corners (slow-corner worst non-latch setup slack +0.4304 ns), 50 MHz missed at the slow corner; DRC, LVS, antenna clean; netlist equal to the RTL | STA, gate level, precheck and formal equivalence on its layout (models, not silicon); pending the final clean harden of the shipping commit | `docs/physical.md`, `docs/release-evidence.md` |
+| Historically, 50 MHz met at all three corners (slow-corner setup slack +0.010 ns; the demos run at 48 MHz, with margin); DRC, LVS, antenna clean | Signoff on fo6's layout (STA and checks are models, not silicon) | `docs/physical.md`, `docs/release-evidence.md` |
 | 14 protocols added with the RTL frozen | RTL simulation, gate level, SDF typical; FPGA fabric against our own models | `docs/post-freeze-protocols.md` |
 | Two protocols for an agent not prepared for them | Model and RTL simulation | `docs/blind-test.md` |
 | Firmware under injected wire faults | Model; two fixes also in RTL simulation | `docs/fault-testing.md` |
@@ -593,10 +595,12 @@ holds fully for the cores; for the line unit it holds only as far as the
 menu reaches (`docs/line-unit-settings.md`).
 
 **What sets the speed limit?**
-The clock period of 20 ns, and routing on one horizontal layer. Run fo6, the
-release-candidate layout, meets 50 MHz at all three corners at signoff, with
-+0.010 ns of setup slack left at the slow corner; the demos run at 48 MHz,
-which leaves margin. At 50 MHz pin edges fall on
+The clock period, and routing on one horizontal layer. The 3-core 8x4
+release candidate meets 48 MHz at all three corners in static timing, with
++0.4304 ns of setup slack at the slow corner, and misses 50 MHz there by
+0.40 ns; that margin belongs to its placement (a moved placement missed
+48 MHz). The earlier 6x4, 2-core layout, run fo6, met 50 MHz at all three
+corners with +0.010 ns left at the slow corner. At 50 MHz pin edges fall on
 a 20 ns grid. The fetch-to-pin path is the one `test_fetch_to_pin` guards
 (section 1.6).
 

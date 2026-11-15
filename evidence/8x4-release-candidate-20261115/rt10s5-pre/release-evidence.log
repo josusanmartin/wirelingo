@@ -1,0 +1,132 @@
+2026-11-15T04:38:13Z candidate <aq-search>/runs/protoemu-exp-aqp-rt10s5-pre; validation root <aq-search>/val-pre at 77c3936376b653ca2d70cbaa9ac6a39fe4ccc896; runners <aq-search>/val-pre/flow; work <aq-search>/rcpt-aqp-rt10s5-pre-77c3936
+2026-11-15T04:38:14Z gl: bash <aq-search>/val-pre/flow/gl_test.sh <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate <aq-search>/val-pre
+2026-11-15T04:38:14Z started gl (weight 1, 1/4 in use)
+2026-11-15T04:38:14Z sdf_auto_slow: bash <aq-search>/val-pre/flow/gl_sdf_test.sh <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate slow 20.834
+2026-11-15T04:38:14Z started sdf_auto_slow (weight 1, 2/4 in use)
+2026-11-15T04:38:14Z sdf_auto_typ: bash <aq-search>/val-pre/flow/gl_sdf_test.sh <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate typ 20.834
+2026-11-15T04:38:14Z started sdf_auto_typ (weight 1, 3/4 in use)
+2026-11-15T04:38:14Z sdf_auto_fast: bash <aq-search>/val-pre/flow/gl_sdf_test.sh <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate fast 20.834
+2026-11-15T04:38:14Z started sdf_auto_fast (weight 1, 4/4 in use)
+2026-11-15T05:14:44Z finished sdf_auto_fast: exit 0 after 2190 s
+2026-11-15T05:14:49Z precheck: <flow-root>/protoemu/.venv-flow/bin/python <aq-search>/val-pre/flow/precheck_test.py <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate --tt-root <aq-search>/runs/protoemu-exp-aqp-rt10s5-pre/tt --out <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/precheck
+2026-11-15T05:14:49Z started precheck (weight 1, 4/4 in use)
+2026-11-15T05:17:24Z finished sdf_auto_slow: exit 0 after 2350 s
+2026-11-15T05:17:29Z sta_slow: /usr/bin/python3 <aq-search>/val-pre/flow/sta_rerun.py <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate 20.832 --out-parent <aq-search>/val-pre/test/sim_build
+2026-11-15T05:17:29Z started sta_slow (weight 1, 4/4 in use)
+2026-11-15T05:17:59Z finished sdf_auto_typ: exit 0 after 2385 s
+2026-11-15T05:18:04Z checks: /usr/bin/python3 <aq-search>/val-pre/flow/check_rerun.py <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate --out-parent <aq-search>/val-pre/test/sim_build
+2026-11-15T05:18:04Z started checks (weight 1, 4/4 in use)
+2026-11-15T05:19:49Z finished sta_slow: exit 0 after 140 s
+2026-11-15T05:22:29Z finished checks: exit 0 after 265 s
+2026-11-15T05:24:39Z finished precheck: exit 0 after 590 s
+2026-11-15T05:58:04Z finished gl: exit 0 after 4790 s
+2026-11-15T05:58:09Z sdf_standard: bash <aq-search>/val-pre/flow/gl_sdf_test.sh <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate standard
+2026-11-15T05:58:09Z started sdf_standard (weight 4, 4/4 in use)
+2026-11-15T06:06:24Z finished sdf_standard: exit 0 after 495 s
+2026-11-15T06:06:29Z sdf_v2: bash <aq-search>/val-pre/flow/gl_sdf_test.sh <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate v2
+2026-11-15T06:06:29Z started sdf_v2 (weight 4, 4/4 in use)
+2026-11-15T06:23:54Z finished sdf_v2: exit 0 after 1045 s
+2026-11-15T06:23:54Z gl: receipt <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate/test/sim_build/gl.z9EISu/receipt.json
+2026-11-15T06:23:54Z sdf_auto_slow: receipt <aq-search>/val-pre/test/sim_build/gl_sdf.ToOa09/receipt.json
+2026-11-15T06:23:54Z sdf_auto_typ: receipt <aq-search>/val-pre/test/sim_build/gl_sdf.Yplj3Y/receipt.json
+2026-11-15T06:23:54Z sdf_auto_fast: receipt <aq-search>/val-pre/test/sim_build/gl_sdf.wXlLav/receipt.json
+2026-11-15T06:23:54Z precheck: receipt <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/precheck/receipt.json
+2026-11-15T06:23:54Z sdf_standard: receipt <aq-search>/val-pre/test/sim_build/gl_sdf.uKItsy/receipt.json
+2026-11-15T06:23:54Z sdf_v2: receipt <aq-search>/val-pre/test/sim_build/gl_sdf.utHCEJ/receipt.json
+2026-11-15T06:23:54Z sta_slow: receipt <aq-search>/val-pre/test/sim_build/sta.iexup0un/receipt.json
+2026-11-15T06:23:54Z checks: receipt <aq-search>/val-pre/test/sim_build/checks.envm7ckj/receipt.json
+2026-11-15T06:23:54Z release check: /usr/bin/python3 <aq-search>/val-pre/flow/release_check.py <aq-search>/runs/protoemu-exp-aqp-rt10s5-pre --validation-root <aq-search>/val-pre --sdf-profile v2 --require-sta-inputs --slow-mhz 48 --shipping-root <aq-search>/ship-pre --gl-receipt <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate/test/sim_build/gl.z9EISu/receipt.json --sdf-receipt <aq-search>/val-pre/test/sim_build/gl_sdf.ToOa09/receipt.json --sdf-receipt <aq-search>/val-pre/test/sim_build/gl_sdf.Yplj3Y/receipt.json --sdf-receipt <aq-search>/val-pre/test/sim_build/gl_sdf.wXlLav/receipt.json --precheck-receipt <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/precheck/receipt.json --sdf-receipt <aq-search>/val-pre/test/sim_build/gl_sdf.uKItsy/receipt.json --sdf-receipt <aq-search>/val-pre/test/sim_build/gl_sdf.utHCEJ/receipt.json --slow-sta-receipt <aq-search>/val-pre/test/sim_build/sta.iexup0un/receipt.json --checks-receipt <aq-search>/val-pre/test/sim_build/checks.envm7ckj/receipt.json
+2026-11-15T06:24:00Z == minimum signoff
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.570045
+utilization incl. macros     0.62288
+nom_typ_1p20V_25C            setup WS 0 (all endpoints, latches included), hold WS 0.21215074741881465, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS -0.40156856754247355 (all endpoints, latches included), hold WS 0.39490056786799094, setup/hold violators 13/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0 (all endpoints, latches included), hold WS 0.10503820333046933, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl 453d0af7bea77dd5  gds 02c47e96078b414e
+SIGNOFF PASSED
+== release criteria
+worst non-latch setup slack: not measured (flow/sta_nonlatch.py, --nonlatch-receipt)
+slow-corner STA verified: <aq-search>/val-pre/test/sim_build/sta.iexup0un/receipt.json (20.832 ns, image sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, LibreLane 3.1.0.dev3)
+nom_typ_1p20V_25C: actual constraint 20 ns; setup 0 ns (all endpoints, latches included); hold 0.21215074741881465 ns
+nom_slow_1p08V_125C: fresh STA 20.832 ns; setup 0.0 ns (all endpoints, latches included); hold 0.39490056786799094 ns
+nom_fast_1p32V_m40C: actual constraint 20 ns; setup 0 ns (all endpoints, latches included); hold 0.10503820333046933 ns
+== clock and reset checks
+checks receipt verified: <aq-search>/val-pre/test/sim_build/checks.envm7ckj/receipt.json (image sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a; the pulse pass disabled the path exceptions of 4 SDC lines)
+nom_typ_1p20V_25C: clock clk: all 3748 register clock pins have a pulse width check
+nom_typ_1p20V_25C: clock sck: all 137 register clock pins have a pulse width check
+nom_typ_1p20V_25C: all 3885 register clock pins are clocked and checked
+nom_typ_1p20V_25C: min_pulse_width: worst slack 9.47267 ns (met)
+nom_typ_1p20V_25C: recovery: worst slack 7.09221 ns (met)
+nom_typ_1p20V_25C: removal: worst slack 0.946425 ns (met)
+nom_typ_1p20V_25C: SRAM clock pin u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.77468 ns (met)
+nom_typ_1p20V_25C: SRAM clock pin u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.77733 ns (met)
+nom_typ_1p20V_25C: SRAM clock pin u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.78005 ns (met)
+nom_slow_1p08V_125C: clock clk: all 3748 register clock pins have a pulse width check
+nom_slow_1p08V_125C: clock sck: all 137 register clock pins have a pulse width check
+nom_slow_1p08V_125C: all 3885 register clock pins are clocked and checked
+nom_slow_1p08V_125C: min_pulse_width: worst slack 9.39472 ns (met)
+nom_slow_1p08V_125C: recovery: worst slack 5.53785 ns (met)
+nom_slow_1p08V_125C: removal: worst slack 1.30139 ns (met)
+nom_slow_1p08V_125C: SRAM clock pin u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.57855 ns (met)
+nom_slow_1p08V_125C: SRAM clock pin u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.5838 ns (met)
+nom_slow_1p08V_125C: SRAM clock pin u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.58816 ns (met)
+nom_fast_1p32V_m40C: clock clk: all 3748 register clock pins have a pulse width check
+nom_fast_1p32V_m40C: clock sck: all 137 register clock pins have a pulse width check
+nom_fast_1p32V_m40C: all 3885 register clock pins are clocked and checked
+nom_fast_1p32V_m40C: min_pulse_width: worst slack 9.53467 ns (met)
+nom_fast_1p32V_m40C: recovery: worst slack 8.01888 ns (met)
+nom_fast_1p32V_m40C: removal: worst slack 0.598014 ns (met)
+nom_fast_1p32V_m40C: SRAM clock pin u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.8689 ns (met)
+nom_fast_1p32V_m40C: SRAM clock pin u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.87191 ns (met)
+nom_fast_1p32V_m40C: SRAM clock pin u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.8732 ns (met)
+min_period: no check at nom_typ_1p20V_25C, nom_slow_1p08V_125C, nom_fast_1p32V_m40C (exception: no library the chip uses (the IHP SG13CMOS5L standard cell, SRAM and I/O .lib files) defines a minimum_period arc or a min_period attribute, so OpenSTA has no minimum-period check; the clock period is bounded by setup/hold and pulse width, which are gated)
+clock_gating_setup: no check at nom_typ_1p20V_25C, nom_slow_1p08V_125C, nom_fast_1p32V_m40C (exception: the clock gates are the library's integrated clock-gating cells (sg13cmos5l_lgcp_1 and slgcp_1 are clock_gating_integrated_cell), whose enable is timed by their setup/hold arcs with every other register; OpenSTA infers clock-gating checks only for gating built from plain logic)
+clock_gating_hold: no check at nom_typ_1p20V_25C, nom_slow_1p08V_125C, nom_fast_1p32V_m40C (exception: the clock gates are the library's integrated clock-gating cells (sg13cmos5l_lgcp_1 and slgcp_1 are clock_gating_integrated_cell), whose enable is timed by their setup/hold arcs with every other register; OpenSTA infers clock-gating checks only for gating built from plain logic)
+== SRAM power stripes (ExtendPowerStripes log)
+ExtendPowerStripes: 1 x [WARNING ORD-0039] .openroad ignored with -python (exception: OpenROAD's notice that it skips the user's .openroad start-up file when it runs a Python script; it says nothing about the power grid)
+ExtendPowerStripes: u_chip.u_imem.g_bank[0].g_on.u_bank.sram: array L 9, band 2, array R 9 VPWR/VGND pairs
+ExtendPowerStripes: u_chip.u_imem.g_bank[1].g_on.u_bank.sram: array L 8, band 2, array R 9 VPWR/VGND pairs
+ExtendPowerStripes: u_chip.u_imem.g_bank[2].g_on.u_bank.sram: array L 8, band 2, array R 7 VPWR/VGND pairs
+== macro power pins (final DEF)
+u_chip.u_imem.g_bank\[0\].g_on.u_bank.sram VDD! -> VPWR: 10 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[0\].g_on.u_bank.sram VDDARRAY! -> VPWR: 9 stripes (left half), 9 stripes (right half)
+u_chip.u_imem.g_bank\[0\].g_on.u_bank.sram VSS! -> VGND: 10 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[1\].g_on.u_bank.sram VDD! -> VPWR: 9 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[1\].g_on.u_bank.sram VDDARRAY! -> VPWR: 8 stripes (left half), 9 stripes (right half)
+u_chip.u_imem.g_bank\[1\].g_on.u_bank.sram VSS! -> VGND: 9 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[2\].g_on.u_bank.sram VDD! -> VPWR: 9 stripes (left half), 8 stripes (right half)
+u_chip.u_imem.g_bank\[2\].g_on.u_bank.sram VDDARRAY! -> VPWR: 8 stripes (left half), 7 stripes (right half)
+u_chip.u_imem.g_bank\[2\].g_on.u_bank.sram VSS! -> VGND: 9 stripes (left half), 8 stripes (right half)
+== shipping build
+clean tree: tree 9c7354c57029a0835ebf3c96b6fbcaca9e8d1256: equal (run commit 77c3936376b6, shipping commit 77c3936376b6)
+clean tree: tt_support_tools: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665 (pinned)
+clean tree: librelane_image: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a (pinned)
+clean tree: pdk: 2bbec755dc67ca3db0261c3d6163e15735d66710 (pinned)
+shipping build: tool files: not compared (run: 1, shipping: 0)
+shipping build: librelane_image: not compared (run: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, shipping: None)
+shipping build: librelane_version: not compared (run: 3.1.0.dev3, shipping: None)
+shipping build: pdk: not compared (run: IHP-Open-PDK 2bbec755dc67ca3db0261c3d6163e15735d66710, shipping: None)
+shipping build: tt_support_tools: not compared (run: {'commit': 'd66cf179e7bc4d296362ab7e2e3b344dc3c4f665', 'tree': 'b17c17d420fcf87ff9737990106432191e015c7f577f08e8297e37b290d9a275', 'files': 173}, shipping: None)
+shipping build: gds_normalized: not compared (run: 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a, shipping: None)
+shipping build: netlist: not compared (run: 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08, shipping: None)
+shipping build: the run's build inputs equal <aq-search>/ship-pre's
+shipping build: gen_config.py --preset submission --check: configuration matches submission preset (rc 0)
+GL verified: <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate/test/sim_build/gl.z9EISu/receipt.json
+SDF verified: <aq-search>/val-pre/test/sim_build/gl_sdf.ToOa09/receipt.json
+SDF verified: <aq-search>/val-pre/test/sim_build/gl_sdf.Yplj3Y/receipt.json
+SDF verified: <aq-search>/val-pre/test/sim_build/gl_sdf.wXlLav/receipt.json
+SDF verified: <aq-search>/val-pre/test/sim_build/gl_sdf.uKItsy/receipt.json
+SDF verified: <aq-search>/val-pre/test/sim_build/gl_sdf.utHCEJ/receipt.json
+precheck verified: <aq-search>/rcpt-aqp-rt10s5-pre-77c3936/precheck/receipt.json
+RELEASE FAILED:
+- clean tree: generated configs: tt_tool --create-user-config failed: 2026-11-15 07:23:57,361 - project    - ERROR    - yosys port read failed for [000 : unknown]
+/bin/sh: 1: yowasp-yosys: not found
+2026-11-15T06:24:00Z RELEASE EVIDENCE FAILED:
+- RELEASE FAILED:

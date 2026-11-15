@@ -1,0 +1,57 @@
+flow exit status: 0
+1ea5cb7 098: the 3-core 8x4 submission preset is run aqp-rt10's option set
+tiles 8x4, cores 3, preset submission, FIFO_LOG2 3, STOP none
+macros {'bank0': [4.32, 3.78], 'bank1': [1302.72, 3.78], 'bank2': [653.28, 3.78]} period 20 density 48
+[16:37:40] INFO     Flow complete.                             sequential.py:413
+[INFO GPL-0019] Utilization:                    46.746 %                        
+Layer         Resource        Demand        Usage (%)    Max H / Max V / Total  
+Metal2          220574        140892           63.88%             1 /  1 / 11   
+Metal3          294473        205743           69.87%             4 /  0 / 113  
+Metal4          201211         35728           17.76%             1 /  1 /  4   
+[INFO DPL-0022] HPWL after           2182471.3 u
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.563614
+utilization incl. macros     0.617239
+nom_typ_1p20V_25C            setup WS 0, hold WS 0.3398070809804469, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS -1.6474431174441688, hold WS 0.6124014801937873, setup/hold violators 71/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0, hold WS 0.144794291765953, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl 327f439282ad7710  gds 05d271fd03268ab4
+SIGNOFF PASSED
+== extras (slow corner, final netlist and SPEF, signoff SDC)
+address pin slew: bank 0 A_ADDR[7] 0.140 ns
+address pin slew: bank 0 A_ADDR[6] 0.120 ns
+address pin slew: bank 0 A_ADDR[5] 0.120 ns
+address pin slew: bank 0 A_ADDR[4] 0.060 ns
+address pin slew: bank 0 A_ADDR[3] 0.090 ns
+address pin slew: bank 0 A_ADDR[2] 0.060 ns
+address pin slew: bank 0 A_ADDR[1] 0.100 ns
+address pin slew: bank 0 A_ADDR[0] 0.080 ns
+address pin slew: bank 1 A_ADDR[7] 0.050 ns
+address pin slew: bank 1 A_ADDR[6] 0.050 ns
+address pin slew: bank 1 A_ADDR[5] 0.090 ns
+address pin slew: bank 1 A_ADDR[4] 0.060 ns
+address pin slew: bank 1 A_ADDR[3] 0.090 ns
+address pin slew: bank 1 A_ADDR[2] 0.090 ns
+address pin slew: bank 1 A_ADDR[1] 0.080 ns
+address pin slew: bank 1 A_ADDR[0] 0.100 ns
+address pin slew: bank 2 A_ADDR[7] 0.050 ns
+address pin slew: bank 2 A_ADDR[6] 0.050 ns
+address pin slew: bank 2 A_ADDR[5] 0.060 ns
+address pin slew: bank 2 A_ADDR[4] 0.040 ns
+address pin slew: bank 2 A_ADDR[3] 0.050 ns
+address pin slew: bank 2 A_ADDR[2] 0.040 ns
+address pin slew: bank 2 A_ADDR[1] 0.050 ns
+address pin slew: bank 2 A_ADDR[0] 0.050 ns
+worst slow path: largest stage 0.621 ns at _28083_/Y (sg13cmos5l_o21ai_1) (cell plus the wire into it)
+release_check: == minimum signoff
+release_check: nom_typ_1p20V_25C: actual constraint 20 ns; setup 0 ns; hold 0.3398070809804469 ns
+release_check: nom_slow_1p08V_125C: fresh STA 20.832 ns; setup -0.8154437356163664 ns; hold 0.6124014801937873 ns
+release_check: nom_fast_1p32V_m40C: actual constraint 20 ns; setup 0 ns; hold 0.144794291765953 ns
+release_check: - nom_slow_1p08V_125C: setup slack -0.8154437356163664, violators 15 at 20.832 ns; fresh STA required, no slack extrapolation
+release_check: - no clock/reset check receipt: the run's own report lists violators only, and OpenSTA reports no pulse width check under the signoff SDC; run flow/check_rerun.py and pass --checks-receipt

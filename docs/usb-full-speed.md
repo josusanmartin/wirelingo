@@ -21,6 +21,13 @@ lists what the runs can't show.
 > are for software `5457d8e`: the autonomous enumeration ran with the
 > 246-word `usb_enum` from before `fault-fixes`, and the current 254-word one needs a
 > gate-level rerun before they apply to it.
+>
+> **3-core 8x4 release candidate (2026-11-15).** The release clock is 48 MHz,
+> which the candidate's layout meets at every corner in static timing. Its
+> release rehearsal, with the software of `77c3936` as the validation root,
+> passes `test_usb_fs_device` with SDF at 20.834 ns at typ, slow and fast, and
+> the autonomous enumeration at low and full speed with SDF at 20.834 ns at
+> each corner ([release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).
 
 > **got_in guard update (branch `usb-guard`, 2026-11-04).** `usb_fs_dev` now
 > NAKs an IN that finds F_STAGED set over an empty TX FIFO, where it used to

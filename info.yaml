@@ -5,7 +5,7 @@ project:
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
   description:  "Three PIO-style cores, 3x256-word SRAM, timeouts, edge waits, ALU and CRC32: UART/SPI/I2C, USB-LS/FS, 10BASE-T, CAN"
   language:     "SystemVerilog"
-  clock_hz:     50000000
+  clock_hz:     48000000
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
   tiles: "8x4"

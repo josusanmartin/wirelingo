@@ -9,13 +9,12 @@ on IHP SG13CMOS5L through Tiny Tapeout (8x4 tiles). It has not been
 fabricated. Every result here names its evidence level: model, RTL
 simulation, formal, gate level, or RTL in FPGA fabric. FPGA is not silicon.
 
-**Current development target:** 8x4 tiles, three cores, three 256-word
-instruction SRAM banks and 8-word FIFOs, implementing ISA v0.3. The target
-clock is 50 MHz; 48 MHz is a possible release decision, with protocol limits
-that must be stated separately. The reviewed base `fb4228d` has no passing
-3-core routed signoff/precheck/release receipt. The 2-core 8x4 build is a
-fallback. The 6x4, 2-core run fo6 below is historical v0.2 evidence; its
-physical results do not certify this target. See [physical.md](docs/physical.md).
+**Release candidate:** 8x4 tiles, three cores, three 256-word instruction
+SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
+clock. It is pending the final clean harden of the shipping commit
+([below](#physical-status-the-3-core-8x4-release-candidate)). The 2-core 8x4
+build is a fallback. The 6x4, 2-core run fo6 further down is historical v0.2
+evidence; its physical results do not certify the 8x4 design.
 
 **Short on time:** read the [two-page summary](docs/summary.md). Reviewers:
 [docs/guide.md](docs/guide.md) maps each claim to its evidence and the
@@ -148,8 +147,8 @@ network stack in
 | A third implementation | A Hardcaml and OCaml port whose generated Verilog is proved equal to the v0.3 RTL, at 3 cores (the 8x4 tapeout) and at 2 (its fallback) | Formal, simulation | [docs/hardcaml-port.md](docs/hardcaml-port.md) |
 | Formal proofs | FIFOs (with join), the host port against a pin-level reference, core invariants, line-unit bounds | Formal | [docs/verification.md](docs/verification.md), [docs/formal-hostport.md](docs/formal-hostport.md) |
 | Mutation testing | 34 of 34 mutants killed (recorded 2026-10-05) | Model, RTL | [docs/verification.md](docs/verification.md) |
-| Netlist equivalence | fo6's netlist equals the RTL: 7429 of 7429 points, two engines, 5 of 5 planted netlist bugs caught | Formal, on the netlist | [docs/equivalence.md](docs/equivalence.md) |
-| Gate-level simulation | All 29 top-level tests on fo6's netlist; SDF delays at typ, slow and fast, with an overclocked control that must fail | Gate level | [docs/release-evidence.md](docs/release-evidence.md) |
+| Netlist equivalence | The 3-core release candidate's netlist equals the v0.3 RTL: 10754 of 10754 points, 9 of 9 planted netlist bugs caught; historically fo6's equals the v0.2 RTL: 7429 of 7429 points, two engines, 5 of 5 caught | Formal, on the netlist | [docs/physical.md](docs/physical.md#the-3-core-release-candidate-2026-11-15), [docs/equivalence.md](docs/equivalence.md) |
+| Gate-level simulation | The release candidate's rehearsal: 30 of 30 top-level tests plus the compiled-PIO and Ethernet-capture modules; SDF delays at typ, slow and fast, with an overclocked control that must fail. Historically all 29 on fo6's netlist | Gate level | [docs/release-evidence.md](docs/release-evidence.md) |
 | Outside oracles | sigrok's protocol decoders; Linux's USB and network stacks on the FPGA build | RTL simulation, FPGA | [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), [fpga/kv260](fpga/kv260/README.md) |
 | Fault injection | Seeded wire faults: six real failures found, four fixed | Model, RTL | [docs/fault-testing.md](docs/fault-testing.md) |
 | Blind test | Two protocols drawn by a rule, chip and tools frozen | Model, RTL | [docs/blind-test.md](docs/blind-test.md) |
@@ -162,6 +161,37 @@ What is proven at each level, and what is still open:
 [evidence/](evidence/README.md). The release receipts' archive
 (`wirelingo-release-evidence-7685aba-fo6.tar.gz`, sha256 `868c5d3a…`) is not
 in git; it is to be attached as a release asset.
+
+## Physical status: the 3-core 8x4 release candidate
+
+Evidence levels: static timing (STA), gate-level simulation (functional and
+with SDF delays), Tiny Tapeout's precheck, and formal equivalence under the
+checker's model. None of it is silicon, and FPGA is not silicon. Details and
+records: [docs/physical.md](docs/physical.md#the-3-core-release-candidate-2026-11-15),
+[docs/release-evidence.md](docs/release-evidence.md#the-3-core-8x4-release-candidate).
+
+* **Signoff passes:** 0 routing DRC, 0 KLayout DRC, LVS clean, 0 antenna
+  violations, no slew or capacitance violation at any corner.
+* **Clock: 48 MHz.** At 20.832 ns the worst non-latch setup slack is
+  +0.4304 ns at the slow corner (flop `_53246_/D`), +3.3180 ns typical and
+  +3.9191 ns fast; hold is at least +0.105 ns. The FIFO latches show slack 0
+  because they borrow time, within limits. At 20 ns (50 MHz) the slow corner
+  misses by 0.4016 ns, so 50 MHz is not claimed. Full-speed USB needs
+  exactly 48 MHz.
+* **Reproducible, but placement-specific.** Four hardens of the same inputs,
+  among them a clean checkout confined to 4 CPUs and 16 GB (240 min), give
+  the same netlist (sha256 `453d0af7…`; the GDS with dates zeroed,
+  `357ea15b…`, recorded for three of them). A run with a moved placement
+  (density 48) misses 48 MHz at the slow corner by 0.815 ns, so the margin
+  belongs to this placement.
+* **A release rehearsal passes** on a clean harden of the same netlist:
+  functional GL 30/30 plus `test_pio` and `test_eth_service`; SDF sets at
+  each corner, full-speed USB included; a fresh slow STA; clock and reset
+  checks; precheck; and RTL-to-netlist equivalence, 10754 of 10754 points,
+  9 of 9 planted netlist bugs caught.
+* **Status:** a release candidate, pending the final clean harden of the
+  shipping commit. It has not been taped out. Nothing through the real pads
+  has been measured.
 
 ## Historical physical status (6x4 run fo6)
 
@@ -235,11 +265,12 @@ for:
   USB device, low or full speed, and 10BASE-T receive meets 802.3's ±13.5 ns
   edge jitter.
 - **A host link that keeps up:** quad SPI at SCK = clk, 193 Mbit/s of payload
-  in RTL simulation and 193.6 Mbit/s on the FPGA, against its fabric SPI
-  master on the same clock; not yet measured through the pads or from the
-  demo board. STA at the tile's pins (not silicon) closes 50 MHz SCK only
-  while the pads and board add at most about 6.8 ns for SCK in plus data
-  back, 3.4 ns each way if equal (3-core layout, GRT-estimated;
+  at a 50 MHz clock in RTL simulation and 193.6 Mbit/s on the FPGA, against
+  its fabric SPI master on the same clock; not yet measured through the pads
+  or from the demo board. STA at the tile's pins (not silicon) closes 50 MHz
+  SCK only while the pads and board add at most about 6.8 ns for SCK in plus
+  data back, 3.4 ns each way if equal (an earlier 3-core layout,
+  GRT-estimated; about 3.6 ns each way at 48 MHz, an estimate;
   [isa.md §6.1](docs/isa.md)).
 
 **Reviewers:** [docs/guide.md](docs/guide.md) maps each claim to its evidence

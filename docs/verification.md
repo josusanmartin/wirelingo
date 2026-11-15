@@ -397,8 +397,10 @@ On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
 * mutation runner: 34 of 34 mutants killed (17 of them new for the v2 features).
 
 Gate level and STA: run v2c's netlist passes all 24 top-level tests (functional
-GL) and signoff STA at every corner ([physical.md](physical.md)). The current
-candidate, run fo6, passes 29/29 and meets 50 MHz at every corner (§5).
+GL) and signoff STA at every corner ([physical.md](physical.md)). The historical
+6x4 candidate, run fo6, passes 29/29 and meets 50 MHz at every corner (§5);
+the 3-core 8x4 release candidate is in
+[physical.md](physical.md#the-3-core-release-candidate-2026-11-15).
 
 ## Bugs found by this flow (selection)
 

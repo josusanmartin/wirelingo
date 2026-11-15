@@ -1,0 +1,22 @@
+diff --git a/src/config.json b/src/config.json
+index f8ff87b..1f4569e 100644
+--- a/src/config.json
++++ b/src/config.json
+@@ -15,7 +15,7 @@
+   "//generator": {
+     "preset": "submission",
+     "banks": 3,
+-    "density": 34,
++    "density": 48,
+     "grt_adjust": 0.1,
+     "threads": 8,
+     "every_other": true,
+@@ -56,7 +56,7 @@
+   "PROTOEMU_SRAM_ADVANCE_TOWARD": 0.5,
+   "PROTOEMU_REG_CLOCK_DELAY": 6,
+   "PROTOEMU_REG_CLOCK_DELAY_GATES": 8,
+-  "PL_TARGET_DENSITY_PCT": 34,
++  "PL_TARGET_DENSITY_PCT": 48,
+   "CLOCK_PERIOD": 20,
+   "PL_RESIZER_SETUP_SLACK_MARGIN": 0,
+   "GRT_RESIZER_SETUP_SLACK_MARGIN": 0,

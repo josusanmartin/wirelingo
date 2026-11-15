@@ -1,0 +1,46 @@
+[equiv 05:41:02] inputs ...
+[equiv 05:41:02] inputs done in 0.0 s
+[equiv 05:41:02] cells ...
+[equiv 05:41:02] cells done in 0.3 s
+[equiv 05:41:02] gold ...
+[equiv 05:41:03] gold done in 0.7 s
+[equiv 05:41:03] gate ...
+[equiv 05:41:09] gate done in 6.9 s
+[equiv 05:41:09] synth-netlist ...
+[equiv 05:41:12] synth-netlist done in 2.4 s
+[equiv 05:41:12] match ...
+[equiv 05:41:43] match done in 31.2 s
+[equiv 05:41:43] abc ...
+[equiv 05:42:12] abc done in 28.6 s
+[equiv 05:42:12] ABC: equivalent
+[equiv 05:42:12] simple ...
+[equiv 05:52:03] simple done in 591.5 s
+[equiv 05:52:03] equiv_simple: 10754/10754 proven, 0 unproven
+[equiv 05:52:03] mutants ...
+[equiv 05:52:28]   mutant 0: hold-fix delay cell on a data path made an inverter: not equivalent
+[equiv 05:52:54]   mutant 1: clock-tree buffer made an inverter: not equivalent
+[equiv 05:53:20]   mutant 2: D nets of flops _53281_ and _54081_ swapped: not equivalent
+[equiv 05:53:47]   mutant 3: GATE nets of clock gates \u_chip.g_core[0].g_on.u_core.g_cfg_cg[3].u_cg.cg and \u_chip.g_core[1].g_on.u_core.u_fifos.rxf.u_wd_cg.cg swapped: not equivalent
+[equiv 05:54:16]   mutant 4: two address bits of an SRAM macro swapped: not equivalent
+[equiv 05:54:37]   mutant 5: FSM bit pair _54219_ moved from fsm:u_host.phase#0 to fsm:u_host.phase#1: not equivalent, polarity conflict
+[equiv 05:54:56]   mutant 6: FSM bit pair _54219_ <- fsm:u_host.phase#0 with polarity 0: not equivalent, polarity conflict
+[equiv 05:55:27]   mutant 7: FSM state flop _54219_: reset removed: not equivalent
+[equiv 05:55:46]   mutant 8: FSM bit pair _54219_ moved to fsm:u_host.phase#1 at polarity 0 (its reset value): not equivalent
+[equiv 05:55:46] mutants done in 223.2 s
+
+==== equivalence: tt_um_josusanmartin_protoemu (<aq-search>/runs/protoemu-exp-aqp-rt10s5-pre/runs/wokwi)
+netlist sha256      453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+checker             Yosys 0.69+158 (git sha1 a1a0ad7d4-dirty, Release, Clang /usr/bin/clang++ 21.1.8); LibreLane 3.1.0.dev3
+cells               60 types used; 50 combinational models = Liberty functions
+rtl parameters      AW=8, BANK_AW=8, FIFO_LOG2=3, IDX=2'00, IDX=2'01, IDX=2'10, LOG2=3, NBANKS=3, NCORES=3, W=32
+state elements      flops gold 2349 / gate 2346: matched 2346 {'final-net': 2289, 'simulation-pair': 54, 'fsm-name': 3} (41 inverted)
+                    instances (latches, clock gates, SRAMs) 1618/1618 by name; FSMs re-encoded: ['u_host.phase']
+gold-only flops     4 (proven unobservable): u_chip.ctrl_data[7], u_chip.ctrl_data[11], u_host.sh[31], u_host.cmd[7]
+fsm bits paired     _54219_ <- fsm:u_host.phase#0 pol 1 (hypothesis round 2, by compared outputs: 0 mismatching bits, against fsm:u_host.phase#1 pol 1: 210)
+compared points     {'port': 24, 'D': 2346, 'C': 2346, 'R': 2346, 'I:icg': 158, 'I:latch': 3072, 'I:sram': 462}
+ABC &cec            equivalent (RTL x values free)
+equiv_simple        10754/10754 proven, unproven: []
+mutants             m0:caught, m1:caught, m2:caught, m3:caught, m4:caught, m5:caught, m6:caught, m7:caught, m8:caught
+time                {'inputs': 0.0, 'cells': 0.3, 'gold': 0.7, 'gate': 6.9, 'synth-netlist': 2.4, 'match': 31.2, 'abc': 28.6, 'simple': 591.5, 'mutants': 223.2, 'total': 884.9}
+VERDICT             EQUIVALENT
+

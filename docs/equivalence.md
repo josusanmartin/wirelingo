@@ -6,8 +6,17 @@ fixing, antenna repair and routing) implements the RTL the run synthesised.
 It is a formal check, not a simulation: every compared point is proved for
 all inputs and all states.
 
-**Result (2026-10-14, tool commit 1ec8ec4).** Run fo6, the release candidate
-(netlist sha256 `a94a948b70591b22…`): **equivalent**. All 7429 compared points
+**3-core 8x4 release candidate (2026-11-15).** On run aqp-rt10s5-pre (netlist
+sha256 `453d0af7bea77dd5…`, the candidate's): **equivalent**. equiv_simple
+proves 10754 of 10754 points and ABC's `&cec` agrees; 2346 flops matched, one
+of them an FSM-encoded bit of the host port's phase register paired by its
+effect on the compared outputs; 4 RTL-only flops proved unobservable; all 9
+planted netlist mutants caught
+([physical.md](physical.md#the-3-core-release-candidate-2026-11-15),
+[record](../evidence/8x4-release-candidate-20261115/rt10s5-pre/equiv.txt)).
+
+**Result (2026-10-14, tool commit 1ec8ec4).** Run fo6, the historical 6x4
+release candidate (netlist sha256 `a94a948b70591b22…`): **equivalent**. All 7429 compared points
 are proved by both engines, nothing in the netlist is unmatched, and the five
 planted netlist bugs are all caught. Run t48ba (`e400fa30c291f653…`), which
 differs from fo6 by one buffer, is equivalent too.

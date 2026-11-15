@@ -6,13 +6,12 @@ a Tiny Tapeout design on IHP SG13CMOS5L, 8x4 tiles. It has not been
 fabricated. Every result below names its evidence level: model, RTL
 simulation, formal, gate level, RTL in FPGA fabric. FPGA is not silicon.
 
-**Current development target:** 8x4 tiles, three cores, three 256-word
-instruction SRAM banks and 8-word FIFOs, implementing ISA v0.3. The target
-clock is 50 MHz; 48 MHz is a possible release decision, with protocol limits
-that must be stated separately. The reviewed base `fb4228d` has no passing
-3-core routed signoff/precheck/release receipt. The 2-core 8x4 build is a
-fallback. The 6x4, 2-core run fo6 below is historical v0.2 evidence; its
-physical results do not certify this target. See [physical.md](physical.md).
+**Release candidate:** 8x4 tiles, three cores, three 256-word instruction
+SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
+clock; pending the final clean harden of the shipping commit
+([below](#physical-status-the-3-core-8x4-release-candidate)). The 2-core 8x4
+build is a fallback. The 6x4, 2-core run fo6 further down is historical v0.2
+evidence; its physical results do not certify the 8x4 design.
 
 ## What it is
 
@@ -72,7 +71,7 @@ simulation, [blind-test.md](blind-test.md)).
 |---|---|---|
 | A full-speed USB device on one core at 48 MHz, handshake 10.5 clocks after the host's packet (spec 8-26) | RTL simulation; gate level on the signed-off netlist (141-word firmware, before the got_in guard) | [usb-full-speed.md](usb-full-speed.md) |
 | USB enumeration with no host software after loading: Linux enumerated and configured it at low and full speed, 32 of 32 attaches, 66,000 of 66,000 descriptor reads, 188 of 188 bus resets | RTL in FPGA fabric, with the 246-word `usb_enum` from before `fault-fixes` (the current 254-word one has not run there) | [fpga/kv260](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30) |
-| 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz | RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
+| 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz (which the release candidate meets in STA at the typical and fast corners, not the slow one) | RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
 | 10BASE-T cut-through match: a pin rises 200-220 ns after a frame field's last mid-bit edge, before the frame ends | Model; RTL in FPGA fabric on generator frames | [eth10-cut-through.md](eth10-cut-through.md) |
 | Logic analyzer, then an I2C target that clones what it captured | RTL simulation; RTL in FPGA fabric | [reverse-engineering.md](reverse-engineering.md) |
 | Quad host port: 193 Mbit/s of payload | RTL simulation; 193.6 Mbit/s in FPGA fabric against its own SPI master | [fpga/kv260](../fpga/kv260/README.md) |
@@ -92,6 +91,10 @@ rest on an agent's word:
 * **Formal proofs** of the FIFOs, the host port against a pin-level
   reference, core invariants and line-unit bounds; **mutation testing**
   (34 of 34 mutants killed, recorded 2026-10-05).
+* **The release candidate's netlist is formally equivalent to the v0.3 RTL**
+  under the checker's model (10754 of 10754 points, 9 of 9 planted netlist
+  bugs caught), and passes the gate-level release tests, functional and with
+  SDF delays ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)).
 * **The historical fo6 netlist is formally equivalent to its v0.2 RTL** (7429 of 7429
   points, two engines, 5 of 5 planted bugs caught) and passes all 29
   top-level tests at gate level ([equivalence.md](equivalence.md),
@@ -102,6 +105,25 @@ rest on an agent's word:
 * **An independent verifier agent** that reruns and attacks the claims of each item sent to it: 83
   reports (000-078b), 52 PASS and 31 FAIL, kept verbatim apart from listed redactions
   ([evidence/verifier](../evidence/verifier/README.md)).
+
+## Physical status: the 3-core 8x4 release candidate
+
+Signoff passes: 0 routing DRC, KLayout DRC clean, LVS clean, no antenna
+violation, and no slew or capacitance violation at any corner. **Clock:
+48 MHz.** In static timing at 20.832 ns the worst non-latch setup slack is
++0.4304 ns at the slow corner, +3.3180 ns typical and +3.9191 ns fast; hold
+is at least +0.105 ns; the FIFO latches borrow time, within limits. At 50 MHz
+the slow corner misses by 0.4016 ns, so 50 MHz is not claimed. Four hardens
+of the same inputs give the same netlist bit for bit, one of them confined
+to 4 CPUs and 16 GB; a run with a moved placement misses 48 MHz at the slow
+corner by 0.815 ns, so the margin belongs to this placement. A release
+rehearsal on a clean harden of the same netlist passes every receipt:
+functional and SDF gate level, fresh slow STA, clock and reset checks,
+precheck and equivalence. It is a release candidate pending the final clean
+harden of the shipping commit, not a taped-out design. Evidence levels: STA,
+gate level, precheck, formal equivalence; not silicon, and FPGA is not
+silicon ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15),
+[release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).
 
 ## Historical physical status (6x4 run fo6)
 

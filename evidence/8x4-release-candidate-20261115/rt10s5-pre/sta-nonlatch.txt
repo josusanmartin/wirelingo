@@ -1,0 +1,5 @@
+non-latch STA outputs <aq-search>/rcpt-aqp-rt10s5-pre-77c3936-extra/nonlatch._wla8yco
+nom_fast_1p32V_m40C at 20.832 ns: worst non-latch setup slack +3.9191 ns at uo_out[4]; over all endpoints 0 ns; worst latch 0 ns (borrows 0.5522)
+nom_slow_1p08V_125C at 20.832 ns: worst non-latch setup slack +0.4304 ns at _53246_/D; over all endpoints 0 ns; worst latch 0 ns (borrows 0.937)
+nom_typ_1p20V_25C at 20.832 ns: worst non-latch setup slack +3.3180 ns at uo_out[4]; over all endpoints 0 ns; worst latch 0 ns (borrows 0.6961)
+receipt: <aq-search>/rcpt-aqp-rt10s5-pre-77c3936-extra/nonlatch._wla8yco/receipt.json

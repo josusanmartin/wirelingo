@@ -339,6 +339,59 @@ tool substitutes in the Python tests verify failure handling only; they are
 not chip validation. The runners' real artifact results must be recorded
 separately.
 
+## The 3-core 8x4 release candidate
+
+**Status: a release candidate, pending the final clean harden of the
+shipping commit.** Nothing here is silicon or FPGA; the levels are STA, gate
+level (functional and with SDF), precheck and formal equivalence under the
+checker's model. The design, its timing and its reproductions are in
+[physical.md](physical.md#the-3-core-release-candidate-2026-11-15).
+
+**The rehearsal (run aqp-rt10s5-pre, 2026-11-15).** A clean harden of
+`77c3936` through `flow/harden.sh`'s clean-tree path, then
+`flow/release_evidence.py --slow-mhz 48`. It reproduced the candidate's
+netlist (`453d0af7…`) and GDS with its dates zeroed (`357ea15b…`). Receipts:
+functional GL 30/30, `test_pio` 2/2 and `test_eth_service` 2/2; SDF
+`standard` 5/5 at typ 20 ns, slow 20.832 ns and fast 20 ns, the slow 10 ns
+control failing as required; SDF `v2` 3/3 at the same three and USB full
+speed 1/1 at 20.834 ns at each corner; autonomous USB 2/2 at 20.834 ns at
+each corner; the fresh slow STA at 20.832 ns; the clock and reset checks;
+precheck. Beside them, `flow/sta_nonlatch.py` at 20.832 ns (+0.4304 ns slow,
++3.3180 typ, +3.9191 fast) and `formal/equiv/equiv_check.sh --mutants`
+(`EQUIVALENT`, 10754/10754, 9 of 9 mutants caught). The release check
+printed `RELEASE PASSED (SDF profile v2, slow target 48 MHz)` once it ran in
+the prepared tool environment; its first run, from a plain shell, failed only
+on regenerating the configs, which needs that environment (verifier item
+100, finding 1). Records:
+[evidence/8x4-release-candidate-20261115/](../evidence/8x4-release-candidate-20261115/README.md).
+
+The rehearsal cannot release the shipping commit: its tree is not the
+shipping tree, and its clean-tree receipt predates the gate's current
+format. The release takes its own run.
+
+**The release run.** On the compute runner, from the shipping commit `S`:
+
+1. in a clean clone of `S`, `flow/harden.sh NAME` with no options (the
+   committed core count, so the submission preset), which records the
+   clean-tree receipt at the start and after config generation;
+2. `S/flow/release_evidence.py RUN --validation-root S --slow-mhz 48`
+   (`S` is then also the shipping root): the receipt jobs, the fresh slow
+   STA, the clock and reset checks, `flow/release_check.py` and, on a pass,
+   the evidence archive `wirelingo-release-evidence-<rev>-<run>.tar.gz`;
+3. `flow/sta_nonlatch.py RUN --period 20.832`, and `release_check.py` again
+   with `--nonlatch-receipt`, so the verdict prints the non-latch slack;
+4. `formal/equiv/equiv_check.sh --mutants RUN`;
+5. a comparison of the netlist sha256 and the dates-zeroed GDS digest that
+   `release_check.py` prints with the candidate's (`453d0af7…`, `357ea15b…`):
+   the numbers in physical.md are this netlist's.
+
+`flow/release_check.py` refuses a run whose tree differs from the shipping
+tree, so the release run's receipts cannot be committed in the tree they
+certify. They are kept outside it: the evidence archive and the non-latch
+and equivalence outputs are to be attached to the GitHub release of the
+shipping commit. This section describes the procedure and does not quote
+the run's results; those are in the attached receipts.
+
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 
 Candidate run fo6 (netlist `a94a948b…`, GDS `e6769703…`), validation root

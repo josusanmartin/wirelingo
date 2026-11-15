@@ -94,7 +94,8 @@ assumptions:
 * **Physical signoff by script.** `flow/signoff.py` applies Tiny Tapeout's
   criteria to the run's own reports, and Tiny Tapeout's precheck runs on the
   GDS. The gate-level netlist reruns the top-level tests.
-* **Hardware.** The RTL runs on a Kria KV260 FPGA at the chip's 50 MHz:
+* **Hardware.** The RTL runs on a Kria KV260 FPGA at 50 MHz (the release
+  clock is 48 MHz):
   firmware loads, UART crosses real pins, and the quad host port moves
   193.6 Mbit/s, the figure simulation predicted ([fpga/kv260](../fpga/kv260/README.md)).
   Most firmware, the post-freeze protocols among it, and USB enumeration

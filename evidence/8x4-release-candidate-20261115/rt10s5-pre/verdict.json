@@ -1,0 +1,178 @@
+{
+  "archive": null,
+  "candidate": {
+    "info.yaml": "03afea9b8584823ed746c15b824071558fa16bed8c7e0b9e59e7ea8a9b54dfd3",
+    "runs/wokwi/62-openroad-stapostpnr/nom_fast_1p32V_m40C/clock.rpt": "9fa7b4249d6e3aa2d7c314fa0f6fb62b2e8d03c004ee628f1af19c25158e3e21",
+    "runs/wokwi/62-openroad-stapostpnr/nom_fast_1p32V_m40C/sta.log": "8efacf9bd38c31678fcc6a745b38f72c76579b059b6511b634ae648325a7c117",
+    "runs/wokwi/62-openroad-stapostpnr/nom_slow_1p08V_125C/clock.rpt": "150d909962fde5546341ff173988826a48c26c1173b70c4a3e77140c9f7daa83",
+    "runs/wokwi/62-openroad-stapostpnr/nom_slow_1p08V_125C/sta.log": "f6abd755fa75ce6e44f81b682c4a6078b3b851b1a5cf2c9b0dff9b3571e2bb7d",
+    "runs/wokwi/62-openroad-stapostpnr/nom_typ_1p20V_25C/clock.rpt": "c13de685039345d9db38fc50027decfb668ffa0934f2ac849174ba06c516f0c6",
+    "runs/wokwi/62-openroad-stapostpnr/nom_typ_1p20V_25C/sta.log": "01d86b0058aa95868df13014f19ca67700cab8ae798ebb62429a00f5cefd161c",
+    "runs/wokwi/final/gds/tt_um_josusanmartin_protoemu.gds": "02c47e96078b414ec4fd8119555a65a244af7d74a406471f487401c0e0859f77",
+    "runs/wokwi/final/lef/tt_um_josusanmartin_protoemu.lef": "498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d",
+    "runs/wokwi/final/metrics.json": "cddeb1c8bdb73058d98f11f1e24461c1fe0872e4393f4b4b940d764bea8bda8a",
+    "runs/wokwi/final/nl/tt_um_josusanmartin_protoemu.nl.v": "453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08",
+    "runs/wokwi/final/sdf/nom_fast_1p32V_m40C/tt_um_josusanmartin_protoemu__nom_fast_1p32V_m40C.sdf": "a629ab950252c16f207059c22426c073594b9e1a282fc0e467fdd19415536f5d",
+    "runs/wokwi/final/sdf/nom_slow_1p08V_125C/tt_um_josusanmartin_protoemu__nom_slow_1p08V_125C.sdf": "fcdc3f8280c46f8f4c87d516a4ccd13dd1da024cbca7bc80cd162f759a647b2b",
+    "runs/wokwi/final/sdf/nom_typ_1p20V_25C/tt_um_josusanmartin_protoemu__nom_typ_1p20V_25C.sdf": "5e16f064055ff63a752fdc01f499d644cc7bd85c3d7609238127bdc9c5e9289d",
+    "runs/wokwi/resolved.json": "bd9cdc71c636fb6c5f07f9c4c90194709f4b2e6d8837114a125f0fd729cbad23",
+    "src/config.json": "1bd6347e6e9856e5c1a6464c18c31a15741c0a399161d6946686c8a5f867401c",
+    "src/config_merged.json": "069bd6a9b9a347131ec8a3199b4fefc6ca4a5d06021382d5fbc5424622654e20",
+    "src/macros/RM_IHPSG13_1P_256x32_c2_bm_bist.v": "022072bd76c6c9f27fb989d55bea5d1c8130314415c23535425efe2b5a44a27a",
+    "src/pdn_cfg.tcl": "8345cb599c713ebe3c0f4324772398bb639479fd92e5637214eb837f46255cea",
+    "src/pe_cg.sv": "ac0d1036c267935729c6caf318c6ea10fae069ff707c309fb668d5fd52a73758",
+    "src/pe_chip.sv": "dc2f12e0fa50c60b3cfcf32f25f7fea869558f266164384eb2f53bbe54e572ae",
+    "src/pe_core.sv": "a07e95a0920ab3030de13448e3eeda739f603af286abd38871c9ddf8f7223779",
+    "src/pe_fifo.sv": "1d81aca7909796656a2ec9dd2baa24e6e65f2326510be7fb961c8a8c10b1f182",
+    "src/pe_fifos.sv": "bffa966672cf9eb65bed771566b084581db6323c414a560b53f4c5b3ef2185cf",
+    "src/pe_hostport.sv": "05d2313596c411aecee3a733b63b0de02c9994a2aa947811edb1794868b28c38",
+    "src/pe_imem.sv": "92cf27885e7133c738d2f993cba9740e68163adabc91fad035b44bd0f96d0bb3",
+    "src/pe_line.sv": "a3a07d395435ebe79900336c5d83a8ec2125134c0ebed0a8000df0e4c1667b11",
+    "src/project.v": "62c13b6340200a1310b773f03963a03392968502247ae14b2ecae5bb409b9936",
+    "src/protoemu.sdc": "9c50f3668a1c9c83aec5b7eaa5bfe1bf54961bac947cbaf9582edc233cfb2836",
+    "src/protoemu_pnr.sdc": "6f5446b8ea71686be32132baf49318304c1e4a19a26dd6760a562f9c960a49bc",
+    "src/protoemu_pnr_elec.sdc": "c5ebccceed60b47971b0679a44a59b5e52b9077c4e8ff0f597ac54fa212621f7",
+    "src/protoemu_pnr_margin.sdc": "01a83357be5e5c3ac3eb5a0877c2e8319cb09ec06d94fe6e2e76f930f97e8b0a",
+    "src/timing_checks.tcl": "f0f72b59cc61ff6cd11b5f8ca9b1e9d9a183281e6882dde41a82b2d11bfd095c",
+    "src/user_config.json": "48030457555b13d58f5d3375c9283540d6fd8a7118c8e19ef8b71fe0e5d90733"
+  },
+  "created_utc": "2026-11-15T04:38:13.617726+00:00",
+  "exit": 1,
+  "finished_utc": "2026-11-15T06:24:00.830516+00:00",
+  "jobs": {
+    "checks": {
+      "returncode": 0,
+      "seconds": 265
+    },
+    "gl": {
+      "returncode": 0,
+      "seconds": 4790
+    },
+    "precheck": {
+      "returncode": 0,
+      "seconds": 590
+    },
+    "sdf_auto_fast": {
+      "returncode": 0,
+      "seconds": 2190
+    },
+    "sdf_auto_slow": {
+      "returncode": 0,
+      "seconds": 2350
+    },
+    "sdf_auto_typ": {
+      "returncode": 0,
+      "seconds": 2385
+    },
+    "sdf_standard": {
+      "returncode": 0,
+      "seconds": 495
+    },
+    "sdf_v2": {
+      "returncode": 0,
+      "seconds": 1045
+    },
+    "sta_slow": {
+      "returncode": 0,
+      "seconds": 140
+    }
+  },
+  "peak_simulators": 4,
+  "receipts": [
+    {
+      "job": "gl",
+      "kind": "gl",
+      "path": "<aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate/test/sim_build/gl.z9EISu/receipt.json",
+      "sha256": "dab415e23f3781acafac71ec856ab255cfc392e5c9dc3580717eb3b2257972a4"
+    },
+    {
+      "job": "sdf_auto_slow",
+      "kind": "sdf",
+      "path": "<aq-search>/val-pre/test/sim_build/gl_sdf.ToOa09/receipt.json",
+      "sha256": "f87644ef861cafb1c9683740af6171bc25ec366f882d2884020cd3b907653618"
+    },
+    {
+      "job": "sdf_auto_typ",
+      "kind": "sdf",
+      "path": "<aq-search>/val-pre/test/sim_build/gl_sdf.Yplj3Y/receipt.json",
+      "sha256": "f2e63d86c0bd32d4891698e8db0f3ba888909f04542e52f9ca0ac590c47cb0be"
+    },
+    {
+      "job": "sdf_auto_fast",
+      "kind": "sdf",
+      "path": "<aq-search>/val-pre/test/sim_build/gl_sdf.wXlLav/receipt.json",
+      "sha256": "4f0a4d5c1e9003ccf33fe6736e78e4f5c1550505798fdb0e008d26e2c923ff34"
+    },
+    {
+      "job": "precheck",
+      "kind": "precheck",
+      "path": "<aq-search>/rcpt-aqp-rt10s5-pre-77c3936/precheck/receipt.json",
+      "sha256": "24e70ddfbe59758d2837fab6829fe6e76cdb5a4f35da777da0773ddfba662569"
+    },
+    {
+      "job": "sdf_standard",
+      "kind": "sdf",
+      "path": "<aq-search>/val-pre/test/sim_build/gl_sdf.uKItsy/receipt.json",
+      "sha256": "13b0095340f27e8bdab793439b42a711a4fcd81e9ad39bf172fdf1259dbf6a03"
+    },
+    {
+      "job": "sdf_v2",
+      "kind": "sdf",
+      "path": "<aq-search>/val-pre/test/sim_build/gl_sdf.utHCEJ/receipt.json",
+      "sha256": "8bef1821c1b040a99b2899cb866a2e2d47b85f3ef8db77437f5cad08e425ce03"
+    },
+    {
+      "job": "sta_slow",
+      "kind": "sta",
+      "path": "<aq-search>/val-pre/test/sim_build/sta.iexup0un/receipt.json",
+      "sha256": "db27ec15a05e7a3245278607e2f4989b4017ad5ae985daef980192c445c733ca"
+    },
+    {
+      "job": "checks",
+      "kind": "checks",
+      "path": "<aq-search>/val-pre/test/sim_build/checks.envm7ckj/receipt.json",
+      "sha256": "ee02e87d5c377c01093a7349075e765cffb18cb5b88317a6cbe92708a16252b0"
+    }
+  ],
+  "release_check": [
+    "/usr/bin/python3",
+    "<aq-search>/val-pre/flow/release_check.py",
+    "<aq-search>/runs/protoemu-exp-aqp-rt10s5-pre",
+    "--validation-root",
+    "<aq-search>/val-pre",
+    "--sdf-profile",
+    "v2",
+    "--require-sta-inputs",
+    "--slow-mhz",
+    "48",
+    "--shipping-root",
+    "<aq-search>/ship-pre",
+    "--gl-receipt",
+    "<aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate/test/sim_build/gl.z9EISu/receipt.json",
+    "--sdf-receipt",
+    "<aq-search>/val-pre/test/sim_build/gl_sdf.ToOa09/receipt.json",
+    "--sdf-receipt",
+    "<aq-search>/val-pre/test/sim_build/gl_sdf.Yplj3Y/receipt.json",
+    "--sdf-receipt",
+    "<aq-search>/val-pre/test/sim_build/gl_sdf.wXlLav/receipt.json",
+    "--precheck-receipt",
+    "<aq-search>/rcpt-aqp-rt10s5-pre-77c3936/precheck/receipt.json",
+    "--sdf-receipt",
+    "<aq-search>/val-pre/test/sim_build/gl_sdf.uKItsy/receipt.json",
+    "--sdf-receipt",
+    "<aq-search>/val-pre/test/sim_build/gl_sdf.utHCEJ/receipt.json",
+    "--slow-sta-receipt",
+    "<aq-search>/val-pre/test/sim_build/sta.iexup0un/receipt.json",
+    "--checks-receipt",
+    "<aq-search>/val-pre/test/sim_build/checks.envm7ckj/receipt.json"
+  ],
+  "run": "<aq-search>/runs/protoemu-exp-aqp-rt10s5-pre",
+  "runner_head": "77c3936376b653ca2d70cbaa9ac6a39fe4ccc896",
+  "runner_root": "<aq-search>/val-pre/flow",
+  "schema": 1,
+  "validation_head": "77c3936376b653ca2d70cbaa9ac6a39fe4ccc896",
+  "validation_root": "<aq-search>/val-pre",
+  "verdict": "RELEASE FAILED:",
+  "view": "<aq-search>/rcpt-aqp-rt10s5-pre-77c3936/candidate",
+  "work": "<aq-search>/rcpt-aqp-rt10s5-pre-77c3936"
+}

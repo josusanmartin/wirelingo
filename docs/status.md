@@ -6,10 +6,10 @@ repository and the state of each line of work. The README now opens with a
 shorter version; [summary.md](summary.md) is the two-page one. Nothing here
 was removed from the repository, only moved.
 
-The current development target is 8x4 with three cores, ISA v0.3. At
-reviewed base `fb4228d`, it has no passing routed signoff/precheck/release
-receipt. The fo6 results below belong to the earlier 6x4, 2-core v0.2 chip;
-see [physical.md](physical.md#8x4-2026-11-10).
+The release candidate is the 8x4 build with three cores, ISA v0.3, at a
+48 MHz project clock, pending the final clean harden of the shipping commit
+([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)). The fo6
+results below belong to the earlier 6x4, 2-core v0.2 chip.
 
 ## What is proven, and at what level
 
@@ -18,6 +18,7 @@ see [physical.md](physical.md#8x4-2026-11-10).
 | **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
 | **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
 | **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study and the blind-test firmware; `eth10_tx_cs` in the 2026-11-03 fabric ping, verified by report 037 ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun |
+| **3-core 8x4 release candidate** | Signoff clean (DRC, LVS, antenna); 48 MHz at every corner in STA (worst non-latch setup slack +0.4304 ns at the slow corner), 50 MHz missed at the slow corner by 0.40 ns; the same netlist from four hardens; a release rehearsal on a clean harden passing functional GL 30/30 plus `test_pio` and `test_eth_service`, the SDF sets at each corner, a fresh slow STA, clock and reset checks, precheck, and RTL-to-netlist equivalence (10754 of 10754 points) | Pending the final clean harden of the shipping commit. A moved placement (density 48) misses 48 MHz at the slow corner by 0.815 ns, so the margin is this placement's. Timing-annotated gate level covers directed subsets |
 | **Historical signed-off layout (6x4 run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
 | **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
 

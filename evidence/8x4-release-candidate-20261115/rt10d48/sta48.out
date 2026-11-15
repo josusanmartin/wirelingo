@@ -1,0 +1,6 @@
+image ghcr.io/librelane/librelane:3.1.0.dev3: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, LibreLane 3.1.0.dev3
+sta outputs <aq-search>/results/aqp-rt10d48/sta48/sta._i4t7ff5
+nom_typ_1p20V_25C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.3398070809804469, 0 violators
+nom_slow_1p08V_125C at 20.832 ns: setup WS -0.8154437356163664, 15 violators; hold WS 0.6124014801937873, 0 violators
+nom_fast_1p32V_m40C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.144794291765953, 0 violators
+receipt: <aq-search>/results/aqp-rt10d48/sta48/sta._i4t7ff5/receipt.json

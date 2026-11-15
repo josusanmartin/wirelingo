@@ -82,7 +82,8 @@ board measurements still need their own evidence.
 | Host software works | the MicroPython driver and bring-up script, unmodified, against the model via an SPI port model, including the SPI master (modes 0-3, packed, preloaded) and UART capture helpers against pin-level devices; the PC reader of the UART-over-USB reports against the model's control transfers; the UART-over-USB pairs loaded by `bringup.usb_uart()` (RX on uio6) and read end to end by that reader with the host port idle. Not yet run on a demo board or a PC | `pytest test/model/test_micropython_driver.py test/model/test_micropython_spi_uart.py test/model/test_usb_uart_reports.py test/model/test_micropython_usb_uart.py` |
 | Optional RP2 PIO/DMA transport | Compiled PIO instruction traces drive the ASIC SPI port; API/error-path tests use fakes; board rate and pad margin remain unmeasured | [board-transport.md](board-transport.md); `make -C test COCOTB_TEST_MODULES=test_pio SIM_BUILD=sim_build/pio COCOTB_RESULTS_FILE=pio.xml` |
 | Finite Ethernet board capture | Actual capture driver over RTL/checkpoint GL SPI: 64/1518-byte frames, FCS failure and overflow cleanup; analog circuit remains unbuilt | [eth10-receiver.md](eth10-receiver.md); `make -C test COCOTB_TEST_MODULES=test_eth_service SIM_BUILD=sim_build/eth_service COCOTB_RESULTS_FILE=eth_service.xml` |
-| Physical signoff | Run fo6: DRC/LVS/antenna clean, setup met at 50 MHz (worst slow-corner flop or SRAM slack +0.010 ns; the demos run at 48 MHz) and hold met at all three corners, no slew, capacitance or fanout violation at any corner; `flow/release_check.py` passes with no waiver | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/release_check.py` ([release-evidence.md](release-evidence.md)) |
+| Physical signoff, 3-core 8x4 release candidate | DRC/LVS/antenna clean, no slew or capacitance violation; at 48 MHz worst non-latch setup slack +0.4304 / +3.3180 / +3.9191 ns slow / typ / fast, hold at least +0.105 ns; 50 MHz missed at the slow corner (−0.4016 ns); the same netlist from four hardens; a release rehearsal passing every receipt and RTL-to-netlist equivalence. Pending the final clean harden of the shipping commit | `flow/harden.sh NAME` in a clean clone, then `flow/release_evidence.py RUN --validation-root S --slow-mhz 48`, `flow/sta_nonlatch.py`, `formal/equiv/equiv_check.sh --mutants` ([release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)) |
+| Physical signoff (historical) | Run fo6: DRC/LVS/antenna clean, setup met at 50 MHz (worst slow-corner flop or SRAM slack +0.010 ns; the demos run at 48 MHz) and hold met at all three corners, no slew, capacitance or fanout violation at any corner; `flow/release_check.py` passes with no waiver | `flow/harden.sh NAME`, then `python3 flow/signoff.py <run>/runs/wokwi` and `flow/release_check.py` ([release-evidence.md](release-evidence.md)) |
 | The RTL runs on hardware | The RTL built for a Kria KV260 FPGA at 50 MHz (48 MHz for USB): firmware loading, UART across real pins, quad host port at 193.6 Mbit/s, most firmware including all post-freeze protocols against the other core or the FPGA's pattern generator, autonomous USB enumeration against a replayed host waveform. FPGA fabric, not the IHP netlist or its pads. `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there before `fault-fixes` changed them; they need a rerun | [fpga/kv260](../fpga/kv260/README.md) (needs the board) |
 | Protocols added with the RTL frozen | 14 protocols in firmware after the freeze tag: static timing checker, pins-only models, sigrok decoders, RTL through the SPI port; the same 16 tests on fo6's gate-level netlist (functional 16/16; with SDF at typ 16/16, two after a 1 ns tolerance for sub-ns pad skew), KV260 | [post-freeze-protocols.md](post-freeze-protocols.md); `make -C test COCOTB_TEST_MODULES=test_post_freeze`; `flow/gl_module_test.py run <run> --validation-root .` |
 
@@ -93,11 +94,13 @@ board measurements still need their own evidence.
 
 ## Known limits
 
-* Three cores on 8x4 are the target; two cores on 8x4 are the fallback.
-  Neither inherits the historical 6x4 fo6 release receipts. At reviewed
-  base `fb4228d`, the 3-core target has no passing routed signoff/precheck/
-  release receipt; see [physical.md](physical.md#8x4-2026-11-10).
-* 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter; at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (a one-off model sweep, not a regression test: 0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
+* Three cores on 8x4 at 48 MHz are the release candidate, pending the final
+  clean harden of the shipping commit; two cores on 8x4 are the fallback.
+  Neither inherits the historical 6x4 fo6 release receipts. The candidate
+  misses 50 MHz at the slow corner by 0.40 ns (STA), and its +0.4304 ns at
+  48 MHz belongs to its placement; see
+  [physical.md](physical.md#the-3-core-release-candidate-2026-11-15).
+* 10BASE-T RX needs the 50 MHz clock for 802.3's ±13.5 ns of jitter (the 3-core release candidate meets 50 MHz in STA at the typical and fast corners, not the slow one); at 40 MHz (12.5 ns half-cycles) it tolerates ±12 ns (a one-off model sweep, not a regression test: 0/100 frames failed at ±12, 27/100 at ±13.5 with every edge at the extreme).
 * USB has host-serviced examples and autonomous firmware. `usb_enum`
   handles endpoint 0 in core code; `usb_enum_ep1` adds interrupt IN endpoint
   1. Their tests and version-specific limits are in [usb-enumeration.md](usb-enumeration.md).
