@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from test_release_evidence import candidate, complete_receipts, module
+from test_release_evidence import candidate, checks_output, complete_receipts, module
 
 SLOW = "nom_slow_1p08V_125C"
 CORNERS = ("nom_typ_1p20V_25C", SLOW, "nom_fast_1p32V_m40C")
@@ -339,13 +339,28 @@ def tamper(wt, case):
             p.write_text("another " + p.read_text())
 
 
+# The checks receipt (092) binds the same STA inputs, and its refusal reads "checks
+# STA inputs differ from the receipt's": only the STA receipt's own wording counts here.
+STA_REFUSED = "the run's STA inputs: STA inputs differ from the receipt's"
+
+
 @pytest.mark.parametrize("case", sorted(TAMPER))
 def test_run_changed_after_the_sta_receipt_cannot_release(tmp_path, fake_docker, capsys, case):
     wt, out, args = sta_release(tmp_path)
-    assert module("release_receipts").verify(out / "receipt.json", wt, "sta")["skipped"] == []
+    rec = module("release_receipts")
+    assert rec.verify(out / "receipt.json", wt, "sta")["skipped"] == []
     tamper(wt, case)
     rc, text = release_output(args, capsys)
-    assert rc == 1 and "STA inputs differ from the receipt's" in text and "RELEASE FAILED" in text
+    assert rc == 1 and STA_REFUSED in text and "RELEASE FAILED" in text
+    # A checks receipt made after the change agrees with the changed run. Then only the
+    # STA receipt refuses: without its input comparison six of these seven cases would
+    # release (step-config would still be refused, by the config comparison).
+    checks = Path(args[args.index("--checks-receipt") + 1])
+    shutil.rmtree(checks.parent)
+    assert checks_output(wt) == checks and rec.verify(checks, wt, "checks")["skipped"] == []
+    rc, text = release_output(args, capsys)
+    assert rc == 1 and STA_REFUSED in text and "RELEASE FAILED" in text
+    assert "checks STA inputs differ" not in text and "checks receipt verified" in text
 
 
 def test_forged_receipt_config_is_compared_with_the_runs(tmp_path, fake_docker, capsys):
