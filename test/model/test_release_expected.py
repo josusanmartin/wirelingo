@@ -407,7 +407,7 @@ def test_the_gds_workflow_pins_the_action_and_the_tools_and_checks_the_hashes():
 def test_the_test_workflow_runs_the_tcl_tests_and_lists_skips():
     wf = steps("test.yaml", "test")
     assert "fetch-depth: 0\n" in wf[0]                 # test_clean_tree clones this repository
-    assert any("libtk8.6" in s for s in wf)
+    assert any(re.search(r"^        run: .*apt-get install -y .*\blibtcl8\.6 libtk8\.6\b", s, re.M) for s in wf)
     model = next(s for s in wf if "python -m pytest" in s)
     assert "tkinter.Tcl()" in model and "pytest -q -rs test/model" in model
     assert not any("tapeout" in s.splitlines()[0] for s in wf)
