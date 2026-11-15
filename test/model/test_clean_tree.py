@@ -61,6 +61,30 @@ def test_an_uncommitted_file_at_harden_start_makes_the_run_dirty(tmp_path, capsy
     assert rc == 1 and "clean tree: the run's tree was DIRTY" in text and reason in text
 
 
+@pytest.mark.parametrize("pyc,clean", [
+    ("__pycache__/librelane_plugin_protoemu.cpython-312.pyc", True),     # the tracked plugin, imported
+    ("__pycache__/librelane_plugin_zz.cpython-312.pyc", False),          # no such tracked module
+])
+def test_bytecode_of_a_tracked_module_is_not_a_stray(tmp_path, capsys, pyc, clean):
+    # found on the first real harden under 097h (aqp-rt10s5-pre): importing
+    # LibreLane imports the plugin from the worktree, which writes its bytecode
+    wt, args = releases(tmp_path, capsys, before_start=stray(pyc, "bytecode"))
+    data = json.loads((wt / "runs/clean-tree.json").read_text())
+    assert (data["status"] == "CLEAN") is clean, data["reasons"]
+    assert data["phase"] == "generated"
+
+
+def test_the_start_verdict_does_not_expect_generated_configs(tmp_path):
+    wt = candidate(tmp_path)
+    shipping(wt, tmp_path, copy=False)
+    complete_receipts(wt)
+    ct = module("clean_tree")
+    subprocess.run(["mv", str(wt / "runs"), str(tmp_path / "aside")], check=True)
+    data = ct.start(wt, "img", tmp_path / "pdk-checkout", ident="sha256:" + "d1" * 32)
+    assert data["phase"] == "start" and "generated configs not recorded" not in data["reasons"]
+    assert ct.verdict(data)[1][-1] == "generated configs not recorded"
+
+
 def test_a_file_present_only_at_start_still_makes_the_run_dirty(tmp_path, capsys):
     # the start status alone sees it (removed before generation)
     def gone(wt):
@@ -154,6 +178,8 @@ def test_the_harden_records_the_receipt_before_generating():
                text.index("clean_tree.py generated"))
     assert text.index('cp -r "$REPO/tt" .') < a < b < text.index("tt_tool.py --create-user-config") < c
     assert c < text.index("tt_tool.py --harden")
+    # the version probe imports LibreLane outside the worktree, writing no bytecode there
+    assert "LLV=$(cd / && PYTHONDONTWRITEBYTECODE=1 python -c" in text
 
 
 def test_the_repository_pins_tt_the_image_and_the_pdk():

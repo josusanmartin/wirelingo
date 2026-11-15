@@ -14,7 +14,9 @@ and src/config_merged.json, before LibreLane starts. The receipt
 * the worktree's commit and tree (git rev-parse HEAD, HEAD^{tree}) and its
   `git status --porcelain --ignored --untracked-files=all`, which must be
   empty apart from what the harden owns at that point: tt/ at start; tt/,
-  the two generated configs and the receipt itself after generation;
+  the two generated configs and the receipt itself after generation; and
+  at either point a tracked module's bytecode (__pycache__/<stem>.cpython-*.pyc
+  of a tracked <stem>.py: LibreLane imports the plugin);
 * tt/'s commit and the same status, clean apart from
   __pycache__/<stem>.cpython-*.pyc of a tracked <stem>.py;
 * the LibreLane image's ID (docker image inspect, not only its version
@@ -115,7 +117,9 @@ def image_id(image):
     return ident if r.returncode == 0 and re.fullmatch(r"sha256:[0-9a-f]{64}", ident) else None
 
 
-def verdict(data):
+def verdict(data, final=True):
+    """("CLEAN"|"DIRTY", reasons). At start (final=False) the generated configs
+    are not yet expected."""
     reasons = []
     if data["worktree"]["stray"]:
         reasons.append(f"worktree at start: {len(data['worktree']['stray'])} paths not committed: "
@@ -123,7 +127,7 @@ def verdict(data):
     if data.get("generated_worktree") is not None and data["generated_worktree"]["stray"]:
         reasons.append(f"worktree after generation: {len(data['generated_worktree']['stray'])} paths differ from the "
                        f"commit: {data['generated_worktree']['stray'][:5]}")
-    if data.get("generated") is None:
+    if final and data.get("generated") is None:
         reasons.append("generated configs not recorded")
     tt = data["tt"]
     if tt.get("error") or tt["stray"]:
@@ -140,8 +144,8 @@ def start(wt, image, pdk_root, argv=(), ident=None):
     wt = Path(wt).resolve()
     data = {"schema": SCHEMA, "head": git(wt, "rev-parse", "HEAD").strip(),
             "tree": git(wt, "rev-parse", "HEAD^{tree}").strip(), "argv": list(argv)}
-    lines = status(wt)
-    data["worktree"] = {"status": lines, "stray": stray(lines, START_OWNED)}
+    lines = status(wt)      # a tracked module's bytecode (the plugin, imported) is not a stray
+    data["worktree"] = {"status": lines, "stray": stray(lines, START_OWNED, repo=wt)}
     try:
         tl = status(wt / "tt")
         data["tt"] = {"head": git(wt / "tt", "rev-parse", "HEAD").strip(), "status": tl,
@@ -156,7 +160,8 @@ def start(wt, image, pdk_root, argv=(), ident=None):
     except (ValueError, OSError) as e:
         data["pdk"] = {"root": str(pdk_root), "head": None, "status": [], "stray": [], "error": str(e)}
     data["generated"] = data["generated_worktree"] = None
-    data["status"], data["reasons"] = verdict(data)
+    data["status"], data["reasons"] = verdict(data, final=False)
+    data["phase"] = "start"
     (wt / "runs").mkdir(exist_ok=True)
     with (wt / RECEIPT).open("x") as f:
         json.dump(data, f, indent=1, sort_keys=True)
@@ -167,11 +172,12 @@ def generated(wt):
     wt = Path(wt).resolve()
     data = json.loads((wt / RECEIPT).read_text())
     lines = status(wt)
-    data["generated_worktree"] = {"status": lines, "stray": stray(lines, GENERATED_OWNED)}
+    data["generated_worktree"] = {"status": lines, "stray": stray(lines, GENERATED_OWNED, repo=wt)}
     data["generated"] = {p: sha256(wt / p) if (wt / p).is_file() else None for p in GENERATED}
     if None in data["generated"].values():
         data["generated"] = None
     data["status"], data["reasons"] = verdict(data)
+    data["phase"] = "generated"
     (wt / RECEIPT).write_text(json.dumps(data, indent=1, sort_keys=True))
     return data
 
@@ -266,7 +272,8 @@ def main(argv=None):
         data = generated(a.worktree)
     else:
         data = json.loads((Path(a.worktree) / RECEIPT).read_text())
-    print(f"clean tree: {data['status']} (commit {data['head'][:12]}, tree {data['tree'][:12]})")
+    print(f"clean tree ({data.get('phase', a.phase)}): {data['status']} (commit {data['head'][:12]}, "
+          f"tree {data['tree'][:12]})")
     for r in data["reasons"]:
         print(f"clean tree: {r}")
     return 0

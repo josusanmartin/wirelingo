@@ -51,7 +51,7 @@ cp -r "$REPO/tt" .
 # the release identity: the worktree's commit, tree and status, tt/, the image
 # ID and the PDK, before anything is generated (flow/clean_tree.py)
 export PATH=$REPO/.venv-flow/bin:$PATH PDK_ROOT=${PDK_ROOT:-$HOME/ttpdk} PDK=ihp-sg13cmos5l
-LLV=$(python -c 'import librelane; print(librelane.__version__)')
+LLV=$(cd / && PYTHONDONTWRITEBYTECODE=1 python -c 'import librelane; print(librelane.__version__)')
 python3 flow/clean_tree.py start "$W" --image "ghcr.io/librelane/librelane:$LLV" --pdk-root "$PDK_ROOT" \
   --argv "$NAME" "$NC" "$@" || exit 2
 PRESET=submission
