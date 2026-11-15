@@ -25,9 +25,10 @@ core.
 
 Summary of the rest of that report, for context: the retime was found
 cycle-exact by its reading of the diff, the repository's unbounded core
-proof (rerun, PASS), 14 of 14 formal and 9 of 9 lockstep CRC mutants plus 7
-of 7 mutants of its own caught, and lockstep against the model at 3 and 2
-cores (8 of 8 each). The model suite passed (3151 passed, 29 skipped). Its
+proof (rerun, PASS), 14 of 14 formal and 9 of 9 lockstep CRC mutants caught,
+9 mutants of its own (7 caught; the other 2 were equivalent rewrites that
+must still pass, and did), and lockstep against the model at 3 and 2 cores
+(8 of 8 each). The model suite passed (3151 passed, 29 skipped). Its
 own old-against-new miter of `pe_core` did not finish, and it ran no
 placement, routing, harden or gate-level simulation.
 

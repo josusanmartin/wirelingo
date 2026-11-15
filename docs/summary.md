@@ -104,8 +104,9 @@ rest on an agent's word:
 * **Formal proofs** of the FIFOs, the host port against a pin-level
   reference, core invariants and line-unit bounds; **mutation testing**
   (34 of 34 mutants killed in the run recorded 2026-10-05, the v2 code at
-  2 cores; `test/mutants.py` now defines 367, 29 of them judged by 3-core
-  tests, run by CI with no full run of today's list recorded here).
+  2 cores; `test/mutants.py` now defines 367, run by CI with no full run of
+  today's list recorded here; 25 of them are judged by 3-core tests: the 22
+  3-core lockstep entries and the 3 top-level entries).
 * **The release candidate's netlist is formally equivalent to the v0.3 RTL**
   under the checker's model (10754 of 10754 points, 9 of 9 planted netlist
   bugs caught), and passes the gate-level release tests, functional and with

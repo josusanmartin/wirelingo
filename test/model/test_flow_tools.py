@@ -174,6 +174,30 @@ def test_mutation_infrastructure_is_not_a_kill(tmp_path):
         module.select(["eth-*", "eth-mistyped"])
 
 
+def test_the_docs_give_the_mutant_counts_of_the_list():
+    """README.md, docs/summary.md and docs/verification-story.md state how many
+    mutants test/mutants.py defines and how many a 3-core test judges. Counted by
+    each entry's test command: the lockstep runs at PE_NCORES=3, and the top-level
+    runs (`make` without TB=chip), which test/Makefile builds at its 3-core default."""
+    spec = importlib.util.spec_from_file_location("mutants", ROOT / "test/mutants.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    commands = [entry[3] for entry in module.MUTANTS.values()]
+    lockstep3 = [c for c in commands if "PE_NCORES=3 " in c and "make TB=chip " in c]
+    top = [c for c in commands if "make TESTCASE=" in c and "PE_NCORES" not in c]
+    assert "else\nexport PE_NCORES ?= 3\n" in (ROOT / "test/Makefile").read_text()   # the top level's default
+    rest = [c for c in commands if c not in lockstep3 and c not in top]
+    assert all(("PE_NCORES=2 " in c) != ("python -m pytest" in c) for c in rest)     # 2-core lockstep or pytest
+    total, three = len(commands), len(lockstep3) + len(top)
+    how = f"the {len(lockstep3)} 3-core lockstep entries and the {len(top)} top-level entries"
+    flat = lambda name: " ".join((ROOT / name).read_text().split())
+    assert (f"now defines {total} mutants ({three} of them judged by 3-core tests: {how}; the others by model, "
+            "flow or 2-core RTL tests)") in flat("README.md")
+    assert f"now defines {total}, run by CI" in flat("docs/summary.md")
+    assert f"; {three} of them are judged by 3-core tests: {how})" in flat("docs/summary.md")
+    assert f"now defines {total} mutants ({three} judged by 3-core tests: {how})" in flat("docs/verification-story.md")
+
+
 @pytest.mark.parametrize("fault", [None, "slow-setup", "typ-setup", "fast-hold", "drc", "lvs",
                                    "wrong-sram", "no-gds"])
 def test_signoff_verdict(tmp_path, fault):
