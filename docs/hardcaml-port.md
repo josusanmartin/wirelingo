@@ -7,9 +7,9 @@ assembler, cycle model and main host tools in OCaml. The chip stays the Verilog 
 **Version.** The port is of the v0.3 RTL and ISA (docs/isa.md §8) on the 8x4 branch:
 the 3-core package (the third core with its own bank, CRC widths to 32 bits with
 POLY_HI, the tick counter, the table read, CMPW, `jmp !t`, `flag tog`, the
-bank-relative PC), at 3 cores and 3 banks (the 8x4 tapeout, `project.v`'s default) and at
+bank-relative PC), at 3 cores and 3 banks (the 3-core 8x4 configuration, `project.v`'s default) and at
 2 and 2 (its Dec 6 fallback, the same RTL with `PE_NCORES=2 PE_NBANKS=2`). The v0.2
-port's numbers, at a167455 for the 6x4 tapeout, are in
+port's numbers, at a167455 for the 6x4 build, are in
 [evidence/ocaml-parity-20261104/](../evidence/ocaml-parity-20261104/README.md); they say
 nothing about v0.3, and this page replaces them. This page's own run is in
 [evidence/ocaml-parity-20261111/](../evidence/ocaml-parity-20261111/README.md).
@@ -55,7 +55,7 @@ Two gates of the run at 0f98335 did not pass. Both are resolved, as follows.
 
 | stage | gate | result |
 |---|---|---|
-| 1 | formal equivalence with `src/`, 3-core tapeout build | proved: 10,412 of 10,412 points by `equiv_simple`, ABC `&cec` equivalent, 10 of 10 planted bugs caught |
+| 1 | formal equivalence with `src/`, 3-core 8x4 build (`tapeout` config) | proved: 10,412 of 10,412 points by `equiv_simple`, ABC `&cec` equivalent, 10 of 10 planted bugs caught |
 | 1 | the same, 2-core fallback build | proved: 7,744 of 7,744 points, ABC equivalent, 10 of 10 planted bugs caught |
 | 1 | CI's cocotb suites on the generated Verilog | all pass (the two above at 567bff6): `test` 30/30 at 3 cores and 30/30 at 2, `test_post_freeze` 16/16, `test_bench_fw` 5/5, `test_pps` 4/4, `test_pio` 2/2, `test_eth_service` 2/2, `test_spi_preloaded_host` 1/1, `test_usb_uart_rtl` 3/3, `test_spi_packed_host` 1/1, `test_uart_capture_host` 1/1, lockstep 7/7 at 3, 2 and 4 cores |
 | 2 | assembler, every firmware but `swd_probe`, and the v0.3 syntax | 70 files byte-identical, no disagreement in 6643 cases |
@@ -76,7 +76,8 @@ and latches are the same source on both sides, and their cells are cut points.
 
 Build parameters are OCaml values (`Config`): `tapeout` (3 cores, 3 SRAM banks, 8-deep
 FIFOs), `fallback` (2 cores, 2 banks, 8-deep FIFOs) and `flop4` (CI's 4-core flop build).
-`gen_rtl tapeout|fallback|flop4 DIR` writes each. The `ifdef FORMAL` blocks are not ported.
+`gen_rtl tapeout|fallback|flop4 DIR` writes each. `tapeout` is only the name of the
+3-core 8x4 configuration, here and in the tables below: nothing has been taped out. The `ifdef FORMAL` blocks are not ported.
 
 The v0.3 changes are all in `pe_core` and `pe_chip`'s ID, as in `src/`: CMPW decoded from
 LDI's bit 18 into the ALU's compare, `!t` as condition 0 with selector 1, the table read on
@@ -182,7 +183,7 @@ No section fails to prove, so there is no counterexample to analyse.
 
 Limits of the claim:
 
-* It is about the generated Verilog, for the tapeout and fallback configurations. The OCaml
+* It is about the generated Verilog, for the 3-core 8x4 (`tapeout`) and fallback configurations. The OCaml
   source reaches it through Hardcaml's generator, which needs no trust for this claim, since
   the Verilog is what was compared. The `flop4` build and `PE_FIFO_NO_CG` are not proved:
   `flop4` has the lockstep result above, and `PE_FIFO_NO_CG` runs only in the waveform tests
@@ -358,12 +359,12 @@ failure into the source as an exception record, which alone would make the test 
 dune rule in `wave_test/` fails `dune test` on any such record. A waveform change that no
 assertion covers can still be promoted; the diff is the only guard there. There are 7 tests,
 2 in `test_fifo.ml` and 5 in `test_line.ml`. The FIFOs are built with `log2:2`, 4 deep, where
-the tapeout's are 8 deep.
+the 3-core 8x4 build's are 8 deep.
 
 | block | what is asserted |
 |---|---|
 | `pe_fifo` | full and empty judged on start-of-cycle state: push at full dropped even with a pop, pop at empty ignored, push kept at empty, clear beats push |
-| `pe_fifos`, join | TXF to RXF to core, 8 words in order, the ninth dropped (`log2:2`; 16 words at the tapeout's depth, not tested here) |
+| `pe_fifos`, join | TXF to RXF to core, 8 words in order, the ninth dropped (`log2:2`; 16 words at the 8x4 build's depth, not tested here) |
 | `pe_line` TX | NRZ bit by bit, then release; Manchester halves and the END symbol; equal-bit stuffing, where the stuff bit starts the next run |
 | `pe_line` RX | Manchester bits and the frame end; an edge's position in the clock moves the frame end by one clock, 13 against 14 |
 

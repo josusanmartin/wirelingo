@@ -369,7 +369,8 @@ The rehearsal cannot release the shipping commit: its tree is not the
 shipping tree, and its clean-tree receipt predates the gate's current
 format. The release takes its own run.
 
-**The release run.** On the compute runner, from the shipping commit `S`:
+**The release run.** The release harden certifies one commit, the shipping
+commit `S`. On the compute runner:
 
 1. in a clean clone of `S`, `flow/harden.sh NAME` with no options (the
    committed core count, so the submission preset), which records the
@@ -381,16 +382,31 @@ format. The release takes its own run.
 3. `flow/sta_nonlatch.py RUN --period 20.832`, and `release_check.py` again
    with `--nonlatch-receipt`, so the verdict prints the non-latch slack;
 4. `formal/equiv/equiv_check.sh --mutants RUN`;
-5. a comparison of the netlist sha256 and the dates-zeroed GDS digest that
-   `release_check.py` prints with the candidate's (`453d0af7…`, `357ea15b…`):
-   the numbers in physical.md are this netlist's.
+5. the acceptance rule: the netlist sha256 and the dates-zeroed GDS digest
+   that `release_check.py` prints must equal the candidate's (`453d0af7…`,
+   `357ea15b…`), so that the numbers in physical.md are the released
+   netlist's. If they differ, the release stops for investigation.
 
-`flow/release_check.py` refuses a run whose tree differs from the shipping
-tree, so the release run's receipts cannot be committed in the tree they
-certify. They are kept outside it: the evidence archive and the non-latch
-and equivalence outputs are to be attached to the GitHub release of the
-shipping commit. This section describes the procedure and does not quote
-the run's results; those are in the attached receipts.
+**Where its receipts go.** `flow/release_check.py` refuses a run whose tree
+differs from the shipping tree, so the release run's receipts cannot be in
+`S` itself. They go into `evidence/8x4-release-<date>/` in a follow-up
+commit: a summary of the `release_evidence.py` archive (verdict, receipt
+list, case counts), the non-latch receipt, the equivalence output, the
+netlist and dates-zeroed GDS hashes, and `S`'s commit id. This section
+describes the procedure and does not quote the run's results; that folder
+does.
+
+**What may follow `S`.** Only commits that touch `evidence/` and `docs/`.
+A later checkout is checked against `S` with `release_check --shipping-root
+<S checkout>`: `git diff --stat S..HEAD` must list only files under
+`evidence/` and `docs/`, and the build-input manifest comparison
+(`flow/build_manifest.py`) must show the inputs equal.
+
+**What GitHub builds.** The repository's GDS action builds from the pushed
+commit, not from the release run. The build is reproducible (four hardens of
+these inputs gave one netlist), so its GDS is expected to match the release
+run's; the check is the comparison of its dates-zeroed GDS digest with the
+release run's.
 
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 
