@@ -10,8 +10,12 @@ simulation, formal, gate level, RTL in FPGA fabric. FPGA is not silicon.
 SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
 clock; pending the final clean harden of the shipping commit
 ([below](#physical-status-the-3-core-8x4-release-candidate)). The 2-core 8x4
-build is a fallback. The 6x4, 2-core run fo6 further down is historical v0.2
-evidence; its physical results do not certify the 8x4 design.
+build is not a live option: its receipted build predates the CRC retime now
+in the RTL, a 2-core harden of the current RTL misses 48 MHz at the slow
+corner by 0.433 ns (STA), and that work stopped on 2026-11-13
+([records](../evidence/8x4-search-20261111/README.md)). The 6x4, 2-core run
+fo6 further down is historical v0.2 evidence; its physical results do not
+certify the 8x4 design.
 
 ## What it is
 
@@ -31,7 +35,13 @@ second pin; registers and arithmetic; per-pin open drain; CALL/RET
 
 **A protocol is a program.** No protocol is fixed in the silicon. UART, SPI,
 I2C, CAN, USB, 10BASE-T and the rest are files in `firmware/`, assembled on a PC and loaded over SPI. A new protocol needs a new
-program, not a new chip.
+program, not a new chip. v0.3 adds three: `eth10_tx_fcs` and `eth10_rx_fcs`
+append and check the 10BASE-T FCS in the engine (model, RTL simulation and
+the 3-core netlist, functional; `eth10_rx_fcs` needs 50 MHz), and
+`usb_enum_ep1` is the autonomous USB device with an interrupt IN endpoint
+(model, RTL at full speed, the 3-core netlist, functional). The README's
+protocol table gives each program's clock and where timing closes at it
+([README](../README.md#what-runs-on-it-and-how-far-each-is-proven)).
 
 **The line unit is a fixed menu that software picks from.** It offers line
 codings (NRZ, NRZI, Manchester), stuffing rules, frame endings and receive
@@ -55,7 +65,7 @@ infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU, MIDI,
 a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with PEC:
 21 programs. Each is checked against pins-only device models and against
 sigrok's decoder where one exists. Their 16 RTL tests through the SPI port
-also pass on the signed-off gate-level netlist (functional 16/16; with SDF
+also pass on fo6's signed-off gate-level netlist (functional 16/16; with SDF
 delays at the typical corner 16/16, two after their timing assertions got a
 1 ns tolerance). All three rounds also ran on the RTL in FPGA fabric (Kria
 KV260) against the other core or a pattern generator playing our own device
@@ -69,9 +79,9 @@ simulation, [blind-test.md](blind-test.md)).
 
 | Result | Level | Where |
 |---|---|---|
-| A full-speed USB device on one core at 48 MHz, handshake 10.5 clocks after the host's packet (spec 8-26) | RTL simulation; gate level on the signed-off netlist (141-word firmware, before the got_in guard) | [usb-full-speed.md](usb-full-speed.md) |
+| A full-speed USB device on one core at 48 MHz, handshake 10.5 clocks after the host's packet (spec 8-26) | RTL simulation; gate level on fo6's signed-off netlist (141-word firmware, before the got_in guard) and, with SDF at 20.834 ns at each corner, on the 3-core rehearsal netlist | [usb-full-speed.md](usb-full-speed.md), [release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate) |
 | USB enumeration with no host software after loading: Linux enumerated and configured it at low and full speed, 32 of 32 attaches, 66,000 of 66,000 descriptor reads, 188 of 188 bus resets | RTL in FPGA fabric, with the 246-word `usb_enum` from before `fault-fixes` (the current 254-word one has not run there) | [fpga/kv260](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30) |
-| 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz (which the release candidate meets in STA at the typical and fast corners, not the slow one) | RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
+| 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz (which the release candidate meets in STA at the typical and fast corners, not the slow one; at 40 MHz, met at every corner, ±12 ns in a one-off model sweep) | Model, RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
 | 10BASE-T cut-through match: a pin rises 200-220 ns after a frame field's last mid-bit edge, before the frame ends | Model; RTL in FPGA fabric on generator frames | [eth10-cut-through.md](eth10-cut-through.md) |
 | Logic analyzer, then an I2C target that clones what it captured | RTL simulation; RTL in FPGA fabric | [reverse-engineering.md](reverse-engineering.md) |
 | Quad host port: 193 Mbit/s of payload | RTL simulation; 193.6 Mbit/s in FPGA fabric against its own SPI master | [fpga/kv260](../fpga/kv260/README.md) |
@@ -86,11 +96,16 @@ rest on an agent's word:
 * **Two implementations of the spec**, a Python cycle model and the RTL, run
   random programs, pin stimulus and host traffic side by side, compared
   every cycle ([verification.md](verification.md)). A third, a Hardcaml and
-  OCaml port, generates Verilog that is formally proved equal to the v0.3 RTL
-  at 3 cores and at 2 ([hardcaml-port.md](hardcaml-port.md)).
+  OCaml port, generates Verilog that is formally proved equal to the current
+  RTL (after the CRC retime) at 3 cores and at 2, in the independent
+  verifier's rerun ([record](../evidence/hardcaml-equiv-20261112/README.md));
+  its full parity gates ran on v0.3 before the retime
+  ([hardcaml-port.md](hardcaml-port.md)).
 * **Formal proofs** of the FIFOs, the host port against a pin-level
   reference, core invariants and line-unit bounds; **mutation testing**
-  (34 of 34 mutants killed, recorded 2026-10-05).
+  (34 of 34 mutants killed in the run recorded 2026-10-05, the v2 code at
+  2 cores; `test/mutants.py` now defines 367, 29 of them judged by 3-core
+  tests, run by CI with no full run of today's list recorded here).
 * **The release candidate's netlist is formally equivalent to the v0.3 RTL**
   under the checker's model (10754 of 10754 points, 9 of 9 planted netlist
   bugs caught), and passes the gate-level release tests, functional and with
@@ -120,7 +135,7 @@ corner by 0.815 ns, so the margin belongs to this placement. A release
 rehearsal on a clean harden of the same netlist passes every receipt:
 functional and SDF gate level, fresh slow STA, clock and reset checks,
 precheck and equivalence. It is a release candidate pending the final clean
-harden of the shipping commit, not a taped-out design. Evidence levels: STA,
+harden of the shipping commit, not a fabricated chip. Evidence levels: STA,
 gate level, precheck, formal equivalence; not silicon, and FPGA is not
 silicon ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15),
 [release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).

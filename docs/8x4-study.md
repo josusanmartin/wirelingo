@@ -16,10 +16,13 @@ slow corner, a margin specific to its placement: a moved placement missed
 48 MHz) and misses 50 MHz at the slow corner by 0.40 ns; a release
 rehearsal passes every receipt, and its netlist is formally equivalent to the
 RTL under the checker's model. It is pending the final clean harden of the
-shipping commit. The 2-core fallback below has its own candidate and
-receipts. See [physical.md](physical.md#the-3-core-release-candidate-2026-11-15)
-and, for the fallback,
-[physical.md](physical.md#8x4-settings-searches-2026-11-11).
+shipping commit. The 2-core fallback below had its own candidate and
+receipts, on the RTL before the CRC retime. It is not a live option: a
+2-core harden of the current RTL misses 48 MHz at the slow corner by
+0.433 ns, and the 2-core work stopped on 2026-11-13
+([records](../evidence/8x4-search-20261111/README.md)). See
+[physical.md](physical.md#the-3-core-release-candidate-2026-11-15) and, for
+the fallback, [physical.md](physical.md#8x4-settings-searches-2026-11-11).
 The study itself changed no production RTL, flow or firmware.
 Prototypes live in [`syn/8x4-study/`](../syn/8x4-study/).
 

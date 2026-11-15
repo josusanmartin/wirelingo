@@ -9,9 +9,13 @@ defined the first time it appears. Appendix A reproduces the clock counts of
 section 1.
 
 The code still uses the old project name, `protoemu`, and the file prefix
-`pe_`. References to `src/` are unchanged since the RTL freeze; other line
-references are for branch `improve-2026-11`. Where a doc is cited by section
-rather than line, it is because that doc changes more often.
+`pe_`. Line references to `src/` are to the v0.2 RTL of the freeze tag
+`rc-01ce16d-t48ba`, which this page was written against. v0.3 has since
+changed `src/` for the 3-core build (three cores, a 32-bit CRC tap, the v0.3
+instructions, the retimed CRC step), so some of those lines have moved; the
+blocks and the path an instruction takes are the same. Other line
+references are to the repository as it was then. Where a doc is cited by
+section rather than line, it is because that doc changes more often.
 
 ## Evidence levels
 

@@ -48,8 +48,8 @@ What the records show:
 * **The release check.** `flow/release_evidence.py`'s own run of
   `release_check.py` failed on one line only: regenerating the configs from
   the shipping tree needs Tiny Tapeout's tool environment, which that run did
-  not pass on (`release-evidence.log`, last lines; `verdict.json`; verifier
-  item 100, finding 1, addressed by `d6dbd38`). Rerun from the prepared
+  not pass on (`release-evidence.log`, last lines; `verdict.json`; a
+  verifier finding, addressed by `d6dbd38`). Rerun from the prepared
   environment with the same receipts plus the non-latch STA receipt, it
   printed `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`
   (`release-check.log`). This rehearsal's receipt format predates `d6dbd38`'s

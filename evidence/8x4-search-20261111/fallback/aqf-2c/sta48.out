@@ -1,0 +1,6 @@
+image ghcr.io/librelane/librelane:3.1.0.dev3: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, LibreLane 3.1.0.dev3
+sta outputs ~/protoemu-flow/aq-search/results/aqf-2c/sta48/sta.8efj_p_4
+nom_typ_1p20V_25C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.21861690854171204, 0 violators
+nom_slow_1p08V_125C at 20.832 ns: setup WS -0.432866199581024, 44 violators; hold WS 0.4200466759977214, 0 violators
+nom_fast_1p32V_m40C at 20.832 ns: setup WS 0.0, 0 violators; hold WS 0.09082673759067608, 0 violators
+receipt: ~/protoemu-flow/aq-search/results/aqf-2c/sta48/sta.8efj_p_4/receipt.json

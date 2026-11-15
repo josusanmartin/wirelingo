@@ -69,7 +69,7 @@ The RTL `pe_chip` and the model run side by side in cocotb:
 The first mismatch stops the run with a register diff, recent bus traffic and
 the disassembly of every core's current instruction. Coverage counters (per
 opcode: attempted, completed, stalled) are printed. The regression runs on the
-8x4 target (3 cores, 3 SRAM banks, 8-deep FIFOs), its 2-core SRAM fallback,
+8x4 target (3 cores, 3 SRAM banks, 8-deep FIFOs), a 2-core SRAM build,
 and the full 4-core flop build.
 
 **CALL / RET**: random programs contain CALLs (conditions and targets as

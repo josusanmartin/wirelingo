@@ -26,9 +26,14 @@ and fast corners and missed at the slow corner by 0.40 ns. The netlist is
 formally equivalent to the RTL under the checker's model, and passes the
 gate-level release tests, functional and with SDF delays
 ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)).
-Full-speed USB needs exactly 48 MHz. The in-core 10BASE-T FCS receiver and
-the RMII examples require 50 MHz, which the slow corner does not meet; 10BASE-T receive's jitter results are for 50 and 40 MHz. The 2-core
-8x4 build is the fallback, and the 6x4, 2-core fo6 results are historical.
+Full-speed USB needs exactly 48 MHz, which closes at every corner. The
+in-core 10BASE-T FCS receiver (`eth10_rx_fcs`) and the RMII examples require
+50 MHz, which the slow corner does not meet; 10BASE-T's other programs run at
+40 MHz (every corner) or 50 MHz, not 48. 10BASE-T receive meets 802.3's
+±13.5 ns edge jitter at 50 MHz; at 40 MHz it tolerated ±12 ns in a one-off
+model sweep. The 2-core 8x4 build is not a live option (a 2-core harden of
+the current RTL misses 48 MHz at the slow corner), and the 6x4, 2-core fo6
+results are historical.
 
 Programs live in on-chip SRAM: each core has its own bank of 256 instructions.
 
@@ -61,7 +66,10 @@ TX/RX, a JTAG engine, 1-Wire, PS/2, WS2812, an I2C sniffer,
 an 8-channel logic analyzer and an I2C target for reverse engineering,
 DMX512, LIN, NEC infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI,
 Modbus RTU, MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0,
-SMBus with PEC and RC-5 infrared. The level differs by program, and the
+SMBus with PEC and RC-5 infrared, and, new with v0.3, a 10BASE-T transmitter
+that appends the FCS and a receiver that checks it in the engine
+(`eth10_tx_fcs`, `eth10_rx_fcs`) and the autonomous USB device with an
+interrupt IN endpoint (`usb_enum_ep1`). The level differs by program, and the
 README's firmware table gives it for each: most run through the SPI port in
 RTL simulation, while CAN, JTAG, 1-Wire, PS/2, WS2812 and the I2C sniffer are
 checked on the cycle model, which is lockstep-checked against the RTL. An SWD
@@ -69,7 +77,8 @@ debug probe exists on the model only, and is parked.
 Most of these programs have also run on an FPGA build of the RTL (Kria KV260)
 against pins-only device models or the other core: not SWD, the two-core USB
 device or the UART-over-USB pairs, and none of the bench firmware (MDIO,
-QSFP-style, PMBus), `pps_capture`, `eth10_reply` or the blind-test firmware.
+QSFP-style, PMBus), `pps_capture`, `eth10_reply`, the blind-test firmware or
+v0.3's three programs.
 Four of those programs (UART RX, I2C master, CAN RX
 and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
 need an FPGA rerun before those results apply to them. None of it has run on
@@ -113,7 +122,7 @@ The host talks to the chip over SPI mode 0:
 * Transaction: `cmd addr[15:0] data…`. The commands are 0x02 write, 0x03 read,
   0x0A write-fixed and 0x0B read-fixed. Data is 32-bit big-endian words.
 * Reading address 0x0800 returns the ID: `0x50453303` on the 8x4 chip (3 cores),
-  `0x50452203` on its 2-core fallback, `0x50450002` on the 6x4 v0.2 chip
+  `0x50452203` on a 2-core build, `0x50450002` on the 6x4 v0.2 chip
   (docs/isa.md §6.2).
 
 On the demo board, copy `tools/micropython/protoemu.py`, `protoemu_fw.py` and

@@ -24,6 +24,14 @@ candidate's release receipts.
   * `table.txt`: `tools/table.py`'s reading of the above and of the run's
     `final/metrics.json` (kept on the runner with the full log);
   * `config.json` (the two candidates only): the run's generated `src/config.json`.
+* `fallback/aqf-2c/` (2026-11-13): a 2-core harden of the RTL after the
+  CRC retime, which is the release candidate's `src/*.v`/`*.sv` with
+  `PE_NCORES` 2 in `src/project.v` (commit `5aca9e8`, on a branch not in
+  this repository's history), with the 2-core submission preset
+  (`fallback-8x4`): `spec.txt`, `time.txt`, `result.txt`, and `sta48.out`.
+  Signoff passes, and at 20.832 ns the slow corner's setup WS is −0.433 ns
+  with 44 violators, so this RTL at 2 cores misses 48 MHz. The 2-core work
+  stopped after it.
 * `fallback-release/`: the fallback candidate `aqf-d44l8lcch15`'s release
   receipts and equivalence, run from a clean clone of `aq-fallback-val`
   (`15dd367`): `release-evidence.out` (the jobs and their exit status),

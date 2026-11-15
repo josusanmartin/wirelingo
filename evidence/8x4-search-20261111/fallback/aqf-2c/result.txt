@@ -1,0 +1,25 @@
+flow exit status: 0
+5aca9e8 fallback profile: PE_NCORES 2, its submission config, its datasheet text
+tiles 8x4, cores 2, preset submission, FIFO_LOG2 3, STOP none
+macros {'bank0': [4.32, 3.78], 'bank1': [1302.72, 3.78]} period 20 density 44
+[18:14:48] INFO     Flow complete.                             sequential.py:413
+[INFO GPL-0019] Utilization:                    32.531 %                        
+Layer         Resource        Demand        Usage (%)    Max H / Max V / Total  
+Metal2          237739        101309           42.61%             0 /  1 /  2   
+Metal3          312432        142802           45.71%             1 /  0 /  4   
+Metal4          223226          8995            4.03%             0 /  0 /  0   
+[INFO DPL-0022] HPWL after           1527308.1 u
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.364576
+utilization incl. macros     0.416632
+nom_typ_1p20V_25C            setup WS 0, hold WS 0.21861690854171204, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS -1.2648655814088263, hold WS 0.4200466759977214, setup/hold violators 133/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0, hold WS 0.09082673759067608, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl cf934ec7897245d0  gds 2c4a109fe3484437
+SIGNOFF PASSED

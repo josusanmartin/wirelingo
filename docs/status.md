@@ -17,7 +17,7 @@ results below belong to the earlier 6x4, 2-core v0.2 chip.
 |---|---|---|
 | **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
 | **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
-| **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study and the blind-test firmware; `eth10_tx_cs` in the 2026-11-03 fabric ping, verified by report 037 ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun |
+| **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study, the blind-test firmware and v0.3's `usb_enum_ep1`, `eth10_tx_fcs` and `eth10_rx_fcs`; `eth10_tx_cs` in the 2026-11-03 fabric ping, verified by report 037 ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun |
 | **3-core 8x4 release candidate** | Signoff clean (DRC, LVS, antenna); 48 MHz at every corner in STA (worst non-latch setup slack +0.4304 ns at the slow corner), 50 MHz missed at the slow corner by 0.40 ns; the same netlist from four hardens; a release rehearsal on a clean harden passing functional GL 30/30 plus `test_pio` and `test_eth_service`, the SDF sets at each corner, a fresh slow STA, clock and reset checks, precheck, and RTL-to-netlist equivalence (10754 of 10754 points) | Pending the final clean harden of the shipping commit. A moved placement (density 48) misses 48 MHz at the slow corner by 0.815 ns, so the margin is this placement's. Timing-annotated gate level covers directed subsets |
 | **Historical signed-off layout (6x4 run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
 | **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
@@ -103,16 +103,30 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   the current 254-word one needs a KV260 rerun before it applies.)
 * A **full-speed USB (12 Mbit/s) device runs on one 48 MHz core**, with
   handshakes 10.5 clocks after the host's packet (spec: 8–26; g4: 11.5), in RTL and
-  gate-level simulation of the signed-off netlist
-  ([docs/usb-full-speed.md](usb-full-speed.md)); the chip meets 50 MHz,
-  so 48 MHz, at every corner. With no host software after loading, one core
-  also enumerates as a USB device on its own, low or full speed
-  ([docs/usb-enumeration.md](usb-enumeration.md)).
+  gate-level simulation of fo6's signed-off netlist
+  ([docs/usb-full-speed.md](usb-full-speed.md)). Its 48 MHz is covered at
+  every corner: fo6 met 50 MHz at all three, and the 3-core release
+  candidate meets 48 MHz at every corner in STA (it misses 50 MHz at the
+  slow corner by 0.40 ns), where the rehearsal also passed
+  `test_usb_fs_device` with SDF at 20.834 ns at each corner. With no host
+  software after loading, one core also enumerates as a USB device on its
+  own, low or full speed ([docs/usb-enumeration.md](usb-enumeration.md)),
+  and v0.3's `usb_enum_ep1` adds an interrupt IN endpoint 1 (model at both
+  speeds, RTL at full speed, the 3-core netlist functionally).
+* **v0.3's own firmware:** `eth10_tx_fcs` appends the 802.3 FCS and
+  `eth10_rx_fcs` checks it in the engine (the 32-bit CRC tap), on the model
+  and in RTL simulation (core 1 to core 0 at 50 MHz), and functionally on
+  the 3-core rehearsal netlist. `eth10_rx_fcs` needs 50 MHz, which the
+  candidate closes at the typical and fast corners only; 10BASE-T's other
+  programs run at 40 or 50 MHz, not 48. The README's protocol table gives
+  each program's clock and where timing closes at it
+  ([README](../README.md#what-runs-on-it-and-how-far-each-is-proven)).
 * Measured in simulation against the RP2040 PIO's reference programs,
   including where PIO is better ([docs/pio-comparison.md](pio-comparison.md)).
-* **Post-freeze protocol challenge:** with the RTL frozen (tag
-  `rc-01ce16d-t48ba`; the chip's Verilog `src/*.v` unchanged since, only the
-  hardening config `src/config.json` changed for fo6), three rounds of
+* **Post-freeze protocol challenge:** with the v0.2 RTL frozen at the time
+  (tag `rc-01ce16d-t48ba`; its Verilog stayed unchanged through fo6, which
+  changed only the hardening config `src/config.json`; v0.3 has since
+  changed the RTL for the 3-core build), three rounds of
   protocols were added in firmware, plus one assembler fix (`/` became
   integer division, which bidirectional DShot needed). Round one: DMX512, LIN
   (commander and a self-synchronising responder), NEC infrared (38 kHz carrier and receiver),
@@ -135,7 +149,7 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   where an invariant applies, and a firmware that uses it. The line unit's NRZI sample
   point moves half a clock earlier (full-speed USB in RTL simulation: 24/24
   packets at 28 ns edge-to-edge distortion, g4 11/24; v2c met 48 MHz only at
-  the typical corner, fo6 meets 50 MHz at all three); `SYNC_BYPASS` reads
+  the typical corner, fo6 met 50 MHz at all three); `SYNC_BYPASS` reads
   chosen pad inputs through one synchroniser flop (SPI master at 4 clocks
   per SCK, like PIO, if the pads and
   the device answer within 2 clocks); WAIT kind 7 waits until any of 8 pins

@@ -874,7 +874,7 @@ fabric (not silicon) only.
 
 **ID.** `[31:16]` = 0x5045 ("PE"), `[15:12]` NBANKS, `[11:8]` NCORES,
 `[7:0]` the ISA version, 0x03. The 3-core 8x4 build reads `0x50453303`, its
-two-core fallback `0x50452203`; v0.2 builds (the 6x4 build and its FPGA
+a two-core build `0x50452203`; v0.2 builds (the 6x4 build and its FPGA
 bitstreams) read `0x50450002`, with no geometry. Host software can so tell a
 stale bitstream from the new one, and the core count from the ID.
 
@@ -916,8 +916,8 @@ addresses read as 0 and ignore writes.
 A build may implement fewer than four cores (`NCORES`) and IMEM banks
 (`NBANKS`), and chooses the FIFO depth `D` (4 or 8 words per direction;
 "full" in this document means D entries). The 3-core 8x4 configuration's values
-(3 cores, 3 banks, D = 8) are the defaults in `src/project.v`; its fallback
-is the same RTL with 2 cores and 2 banks (`PE_NCORES=2`), and the 6x4 v0.2
+(3 cores, 3 banks, D = 8) are the defaults in `src/project.v`; a 2-core
+build is the same RTL with 2 cores and 2 banks (`PE_NCORES=2`), and the 6x4 v0.2
 build had 2, 2 and 8. For the parts that don't exist:
 
 * **Missing core *c*:** its register block reads as 0 and ignores writes

@@ -8,7 +8,8 @@ assembler, cycle model and main host tools in OCaml. The chip stays the Verilog 
 the 3-core package (the third core with its own bank, CRC widths to 32 bits with
 POLY_HI, the tick counter, the table read, CMPW, `jmp !t`, `flag tog`, the
 bank-relative PC), at 3 cores and 3 banks (the 3-core 8x4 configuration, `project.v`'s default) and at
-2 and 2 (its Dec 6 fallback, the same RTL with `PE_NCORES=2 PE_NBANKS=2`). The v0.2
+2 and 2 (a 2-core build, the same RTL with `PE_NCORES=2 PE_NBANKS=2`; the 2-core
+fallback is no longer a live option). The v0.2
 port's numbers, at a167455 for the 6x4 build, are in
 [evidence/ocaml-parity-20261104/](../evidence/ocaml-parity-20261104/README.md); they say
 nothing about v0.3, and this page replaces them. This page's own run is in
@@ -22,8 +23,18 @@ over to the generated Verilog through the proof, and the OCaml tools can stand i
 Python ones where they were compared.
 
 All numbers are from one run of `ocaml/scripts/evidence.sh` on runner1 at commit 0f98335,
-base `next-8x4` 25214f2 (`src/` as there), except four later reruns. `src/` has not changed
-since; `next-8x4` 27ac3f7 adds d68c7ec, a fix to two of `test/`'s cocotb suites, below.
+base `next-8x4` 25214f2 (`src/` as there), except four later reruns. `next-8x4` 27ac3f7
+adds d68c7ec, a fix to two of `test/`'s cocotb suites, below.
+
+**After the CRC retime.** `src/pe_core.sv` has changed since those runs: the CRC step
+moved one clock later (docs/physical.md, "The CRC step off the decode path"), and the
+port mirrors it (`ocaml/rtl/pe_core.ml`). So the numbers on this page are of the RTL
+before the retime. For today's RTL the record is the formal equivalence only: the
+independent verifier's rerun of `ocaml/formal/equiv_port.sh -j 4 --mutants`, EQUIVALENT at
+3 cores (10763 of 10763 points, 10 of 10 planted bugs caught) and at 2 (7978 of 7978, 10
+of 10), in [evidence/hardcaml-equiv-20261112/](../evidence/hardcaml-equiv-20261112/README.md).
+The other gates below (cocotb on the generated Verilog, assembler, cycle model, host
+tools) have not been rerun on the retimed RTL.
 
 * `test_kv260_3core.py` in the model gate, at 856194f (Stage 3); that commit changes only
   `ocaml/test/lock_chip.py`.

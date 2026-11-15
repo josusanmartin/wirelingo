@@ -202,7 +202,7 @@ reproduces the run's final STA metrics, which is how the tool was checked
 
 ## Clock, reset and SRAM power gates, and the shipping build
 
-Added for item 092 (the Astra review's findings 2 and 3). `release_check.py`
+Added for the Astra review's findings 2 and 3. `release_check.py`
 also requires the following; `flow/release_gates.py RUN [--checks-receipt R]`
 prints the three physical gates on their own, read-only.
 
@@ -216,8 +216,9 @@ clock of a min/max-type exception (`set_max_delay`, `set_min_delay`,
 `set_false_path -hold`): one such exception from `clk`, with or without a
 `-to`, to the same clock or another, removes `clk`'s checks, and one each way
 between `sck` and `clk`, as `src/protoemu.sdc` has, removes them all.
-Measured on runner1 (2026-11-13; the clock-by-clock cases by the item 092
-verifier, on their own three-flop design): with no exception a two-clock
+Measured on runner1 (2026-11-13; the clock-by-clock cases by the
+independent verifier, on its own three-flop design, in a report that is not
+in this repository): with no exception a two-clock
 three-flop design keeps every check; with one `set_max_delay -from A -to B`
 only clock B's flop keeps its check; with one each way, none; at a 0.2 ns
 clock, violations disappear the same way. On fo6's final netlist, applying
@@ -361,8 +362,8 @@ precheck. Beside them, `flow/sta_nonlatch.py` at 20.832 ns (+0.4304 ns slow,
 (`EQUIVALENT`, 10754/10754, 9 of 9 mutants caught). The release check
 printed `RELEASE PASSED (SDF profile v2, slow target 48 MHz)` once it ran in
 the prepared tool environment; its first run, from a plain shell, failed only
-on regenerating the configs, which needs that environment (verifier item
-100, finding 1). Records:
+on regenerating the configs, which needs that environment (a verifier
+finding, fixed by `d6dbd38`, which regenerates from a plain shell). Records:
 [evidence/8x4-release-candidate-20261115/](../evidence/8x4-release-candidate-20261115/README.md).
 
 The rehearsal cannot release the shipping commit: its tree is not the
@@ -370,8 +371,7 @@ shipping tree, and its clean-tree receipt predates the gate's current
 format. The release takes its own run.
 
 **The release run.** The release harden certifies one commit, the shipping
-commit `S`. The procedure needs `flow/harden.sh` from `e8ac948` (item 100d)
-or later, which runs LibreLane unbuffered so that `exp.log` keeps the
+commit `S`. The procedure needs `flow/harden.sh` from `e8ac948` or later, which runs LibreLane unbuffered so that `exp.log` keeps the
 container command naming the image, as `release_check.py`'s clean-tree gate
 requires. On the compute runner:
 
