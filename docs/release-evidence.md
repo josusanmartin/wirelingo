@@ -429,10 +429,13 @@ does. For `S` = `2c97c15` it is
 summarized in
 [the recorded release below](#recorded-release-3-core-8x4-shipping-commit-2c97c15-2026-11-16).
 
-**What may follow `S`.** Only commits that touch `evidence/` and `docs/`. For
-a later commit `T`, `git diff --stat S T -- . ':!evidence' ':!docs'` must
-print nothing, and `flow/build_manifest.py compare <S checkout> <T checkout>`
-must print `SAME BUILD`. The expected-identity file is under `evidence/` but
+**What may follow `S`.** Only commits that touch `evidence/` and `docs/`,
+and `README.md`: it is documentation, not a build input, and the author
+allowed it on 2026-11-16 so that its status lines could give the released
+state. For a later commit `T`, `git diff --stat S T -- . ':!evidence' ':!docs' ':!README.md'`
+must print nothing, and `flow/build_manifest.py compare <S checkout> <T checkout>`
+must print `SAME BUILD` (it does with the `README.md` change: the file is not
+among the build inputs the manifest binds). The expected-identity file is under `evidence/` but
 must not change either: `git diff --stat S T -- evidence/8x4-release-expected.json`
 must print nothing, since GitHub's build of `T` is compared with it.
 

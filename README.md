@@ -9,10 +9,13 @@ on IHP SG13CMOS5L through Tiny Tapeout (8x4 tiles). It has not been
 fabricated. Every result here names its evidence level: model, RTL
 simulation, formal, gate level, or RTL in FPGA fabric. FPGA is not silicon.
 
-**Release candidate:** 8x4 tiles, three cores, three 256-word instruction
+**Release build:** 8x4 tiles, three cores, three 256-word instruction
 SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
-clock. It is pending the final clean harden of the shipping commit
-([below](#physical-status-the-3-core-8x4-release-candidate)). The 2-core 8x4
+clock. A clean harden of the shipping commit `2c97c15` passed the release
+check on 2026-11-16, at the levels STA, gate level, precheck and formal
+equivalence; not silicon
+([below](#physical-status-the-3-core-8x4-release-candidate),
+[records](evidence/8x4-release-20261116/README.md)). The 2-core 8x4
 build is not a live option: its receipted build predates the CRC retime now
 in the RTL, a 2-core harden of the current RTL misses 48 MHz at the slow
 corner by 0.433 ns (STA), and that work stopped on 2026-11-13
@@ -209,8 +212,11 @@ records: [docs/physical.md](docs/physical.md#the-3-core-release-candidate-2026-1
   each corner, full-speed USB included; a fresh slow STA; clock and reset
   checks; precheck; and RTL-to-netlist equivalence, 10754 of 10754 points,
   9 of 9 planted netlist bugs caught.
-* **Status:** a release candidate, pending the final clean harden of the
-  shipping commit. It has not been fabricated. Nothing through the real pads
+* **Status:** the release build. The release run, a clean harden of the
+  shipping commit `2c97c15` on 2026-11-16, gave the same netlist and GDS
+  and passed: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`,
+  equivalence `EQUIVALENT` (STA, gate level, precheck, formal equivalence;
+  [records](evidence/8x4-release-20261116/README.md)). It has not been fabricated. Nothing through the real pads
   has been measured.
 
 ## Historical physical status (6x4 run fo6)
