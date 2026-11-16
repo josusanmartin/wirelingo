@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -444,29 +445,182 @@ def steps(workflow, job):
     return re.split(r"^      - ", body.split("    steps:\n", 1)[1], flags=re.M)[1:]
 
 
-def test_the_gds_workflow_pins_the_action_and_the_tools_and_checks_the_hashes():
+def job(workflow, name):
+    """One job of a workflow file, as its text before its steps."""
+    text = (ROOT / ".github/workflows" / workflow).read_text()
+    jobs = re.split(r"^  ([A-Za-z_]+):\n", text.split("\njobs:\n", 1)[1], flags=re.M)
+    return dict(zip(jobs[1::2], jobs[2::2]))[name].split("    steps:\n", 1)[0]
+
+
+def step(job_steps, name):
+    """The step of a job (steps() above) with this name."""
+    found = [s for s in job_steps if s.startswith(f"name: {name}\n")]
+    assert len(found) == 1, name
+    return found[0]
+
+
+def step_names(job_steps):
+    return [re.match(r"name: (.*)\n", s).group(1) for s in job_steps]
+
+
+# gds.yaml builds in three jobs, each under GitHub's 6 h limit for a job: each
+# job's LibreLane step range (LIBRELANE_PART) and whether it keeps runs/wokwi
+BUILD_JOBS = ("gds_place", "gds_route", "gds")
+PARTS = {
+    "gds_place": ("--to OpenROAD.STAMidPNR-3", "0"),
+    "gds_route": ("--from Project.DetailedRouting --to Project.DetailedRouting "
+                  "--with-initial-state runs/wokwi/50-openroad-stamidpnr-3/state_out.json", "1"),
+    "gds": ("--from Odb.RemoveRoutingObstructions "
+            "--with-initial-state runs/wokwi/51-project-detailedrouting/state_out.json", "1"),
+}
+# the GDS action's steps after its build (action.yml at ACTION_SHA), then the hash check
+ACTION_TAIL = ["Show build files (for debugging)", "Linter output", "Yosys warnings", "Routing summary",
+               "Cell usage summary", "Publish build logs", "Prepare tt_submission artifact",
+               "Publish tt_submission artifact", "Render PNG from GDS", "Upload gds_render (png) artifact",
+               "Compare the build with the release's expected hashes"]
+
+
+def test_the_gds_workflow_builds_in_three_chained_jobs_with_the_pinned_tools():
     text = (ROOT / ".github/workflows/gds.yaml").read_text()
-    uses = re.findall(r"uses: (TinyTapeout/tt-gds-action\S*)", text)
-    assert len(uses) == 4 and all(u.endswith("@" + ACTION_SHA) for u in uses)
-    gds_steps = steps("gds.yaml", "gds")
-    i = next(n for n, s in enumerate(gds_steps) if s.startswith("name: Build GDS\n"))
-    assert f"tools-ref: {TOOLS_SHA}\n" in gds_steps[i] and "librelane-version: 3.1.0.dev3\n" in gds_steps[i]
+    names = re.findall(r"^  ([A-Za-z_]+):\n", text.split("\njobs:\n", 1)[1], flags=re.M)
+    assert names == [*BUILD_JOBS, "precheck", "gl_test", "viewer"]
+    needs = {name: re.findall(r"^    needs: (\S+)\n", job("gds.yaml", name), re.M) for name in names}
+    assert needs == {"gds_place": [], "gds_route": ["gds_place"], "gds": ["gds_route"],
+                     "precheck": ["gds"], "gl_test": ["gds"], "viewer": ["gds"]}
+    setups = []
+    for name in BUILD_JOBS:
+        head = job("gds.yaml", name)
+        assert "    timeout-minutes: 350\n" in head
+        s = steps("gds.yaml", name)
+        n = step_names(s).index("Install LibreLane")
+        setups.append(s[:n + 1])
+        assert step_names(s)[:3] == ["checkout repo", "Check frozen submission configuration",
+                                     "Set up environment variables"]
+        assert ("cat << __EOF >> $GITHUB_ENV\n          PDK=ihp-sg13cmos5l\n          PDK_ROOT=$HOME/pdk\n"
+                "          TT_ARGS=--ihp\n          __EOF\n") in s[2]
+        assert "run: python3 flow/gen_config.py --preset submission --check\n" in s[1]
+        assert (f"repository: TinyTapeout/tt-support-tools\n          ref: {TOOLS_SHA}\n          path: tt\n"
+                in step(s, "Checkout tt-support-tools repo"))
+        assert (f"repository: TinyTapeout/tt-gds-action\n          ref: {ACTION_SHA} # ihp-cmos5l\n"
+                in step(s, "Checkout tt-gds-action"))
+        assert "run: ./tt-gds-action/install_sg13cmos5l.sh\n" in step(s, "Install ihp-sg13cmos5l PDK")
+        assert "run: pip install librelane==3.1.0.dev3\n" in step(s, "Install LibreLane")
+        assert "python-version: '3.11'\n" in step(s, "Setup python")
+    assert setups[0] == setups[1] == setups[2]                 # the same setup in each job
     assert f"tools-ref: {TOOLS_SHA}\n" in steps("gds.yaml", "precheck")[0]
-    assert any(re.search(r"^        run: python3 flow/release_expected.py \. evidence/8x4-release-expected.json$",
-                         s, re.M) for s in gds_steps[i + 1:])
     pins = json.loads((ROOT / "flow/release_pins.json").read_text())
     assert pins["tt_support_tools"] == TOOLS_SHA
 
 
+def test_each_build_job_runs_tt_tools_harden_on_its_part_of_the_flow():
+    make = []
+    for name in BUILD_JOBS:
+        s = step(steps("gds.yaml", name), "Make GDS with LibreLane")
+        part, keep = PARTS[name]
+        env = f"        env:\n          LIBRELANE_PART: {part}\n          KEEP_RUN_DIR: {keep}\n"
+        assert env in s
+        make.append(s.replace(env, ""))
+    assert make[0] == make[1] == make[2]                       # one script, apart from its env
+    assert 'sys.argv = ["tt/tt_tool.py", "--harden", *os.environ["TT_ARGS"].split()]' in make[0]
+
+
+def harden_script():
+    s = step(steps("gds.yaml", "gds"), "Make GDS with LibreLane")
+    body = s.split("python3 - <<'EOF'\n", 1)[1].split("\n          EOF\n", 1)[0]
+    return "\n".join(l[10:] for l in body.splitlines()) + "\n"
+
+
+# A stand-in for tt-support-tools' tt_tool.py --harden (Project.harden at TOOLS_SHA): it
+# clears runs/wokwi, runs LibreLane through the shell with the command it builds under CI,
+# then another command
+FAKE_TT_TOOL = """import os, shutil, subprocess, sys
+if __name__ == "__main__":
+    assert sys.argv[1:] == ["--harden", "--ihp"], sys.argv
+    shutil.rmtree("runs/wokwi", ignore_errors=True)
+    os.makedirs("runs/wokwi", exist_ok=True)
+    cmd = ('python -m librelane --pdk-root "$PDK_ROOT" --docker-no-tty --dockerized --pdk-root "$PDK_ROOT" '
+           '--pdk ihp-sg13cmos5l --manual-pdk --run-tag wokwi --force-run-dir runs/wokwi --hide-progress-bar '
+           'src/config_merged.json')
+    if subprocess.run(cmd, shell=True, env=os.environ.copy()).returncode != 0:
+        sys.exit(1)
+    subprocess.run(["sh", "-c", "echo other >> runs/wokwi/other"], check=True)
+"""
+
+
+@pytest.mark.parametrize("name", BUILD_JOBS)
+def test_the_harden_script_adds_the_part_and_keeps_a_resumed_run(tmp_path, name):
+    (tmp_path / "tt").mkdir()
+    (tmp_path / "tt/tt_tool.py").write_text(FAKE_TT_TOOL)
+    (tmp_path / "bin").mkdir()
+    fake = tmp_path / "bin/python"                             # `python -m librelane` records its arguments
+    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > runs/wokwi/librelane.argv\n')
+    fake.chmod(0o755)
+    (tmp_path / "runs/wokwi").mkdir(parents=True)
+    (tmp_path / "runs/wokwi/50-openroad-stamidpnr-3").mkdir()
+    part, keep = PARTS[name]
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin", "LIBRELANE_PART": part, "KEEP_RUN_DIR": keep,
+           "TT_ARGS": "--ihp", "PDK_ROOT": "/pdk"}
+    r = subprocess.run([sys.executable, "-c", harden_script()], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    argv = (tmp_path / "runs/wokwi/librelane.argv").read_text().split("\n")[:-1]
+    assert argv == ["-m", "librelane", "--pdk-root", "/pdk", "--docker-no-tty", "--dockerized", "--pdk-root", "/pdk",
+                    "--pdk", "ihp-sg13cmos5l", "--manual-pdk", "--run-tag", "wokwi", "--force-run-dir", "runs/wokwi",
+                    "--hide-progress-bar", *part.split(), "src/config_merged.json"]
+    assert "LibreLane command: python -m librelane " in r.stdout
+    assert (tmp_path / "runs/wokwi/50-openroad-stamidpnr-3").exists() == (keep == "1")
+    assert (tmp_path / "runs/wokwi/other").read_text() == "other\n"
+    (tmp_path / "bin/python").write_text("#!/bin/sh\nexit 3\n")  # a failed LibreLane fails the step
+    assert subprocess.run([sys.executable, "-c", harden_script()], cwd=tmp_path, env=env,
+                          capture_output=True).returncode == 1
+
+
+def uploads(job_steps):
+    return [re.search(r"^          name: (\S+)$", s, re.M).group(1) for s in job_steps
+            if "uses: actions/upload-artifact@v7\n" in s]
+
+
+def downloads(job_steps):
+    return [re.search(r"^          name: (\S+)$", s, re.M).group(1) for s in job_steps
+            if "uses: actions/download-artifact@v7\n" in s]
+
+
+def test_the_run_directory_goes_from_job_to_job_and_gds_ends_as_the_action_did():
+    place, route, gds = (steps("gds.yaml", name) for name in BUILD_JOBS)
+    assert (uploads(place), downloads(place)) == (["gds_run_placed", "GDS_logs_gds_place"], [])
+    assert (uploads(route), downloads(route)) == (["gds_run_routed", "GDS_logs_gds_route"], ["gds_run_placed"])
+    assert (uploads(gds), downloads(gds)) == (["GDS_logs", "tt_submission", "gds_render"], ["gds_run_routed"])
+    pack = ("tar --zstd --format=posix -cf gds-run.tar.zst runs/wokwi\n"
+            "          sha256sum src/user_config.json src/config_merged.json > gds-run-config.sha256\n")
+    unpack = ("sha256sum -c gds-run-config.sha256\n          tar --zstd -xf gds-run.tar.zst\n"
+              "          rm gds-run.tar.zst gds-run-config.sha256\n          rm -rf runs/wokwi/final\n")
+    for s, stop in ((place, "50-openroad-stamidpnr-3"), (route, "51-project-detailedrouting")):
+        names = step_names(s)
+        assert pack in s[names.index("Make GDS with LibreLane") + 2]
+        assert f"test -f runs/wokwi/{stop}/state_out.json\n" in s[names.index("Make GDS with LibreLane") + 1]
+        assert "        if: failure()\n" in step(s, "Publish build logs of a failed part")
+    for s in (route, gds):
+        names = step_names(s)
+        assert unpack in s[names.index("Make GDS with LibreLane") - 1]
+        assert names.index("Install LibreLane") + 1 == names.index("Make GDS with LibreLane") - 2
+    names = step_names(gds)
+    assert names[names.index("Make GDS with LibreLane") + 2:] == ACTION_TAIL
+    assert "test -f runs/wokwi/52-odb-removeroutingobstructions/state_out.json" in gds[names.index("Make GDS with LibreLane") + 1]
+    assert re.search(r"^        run: python3 flow/release_expected.py \. evidence/8x4-release-expected.json$",
+                     gds[-1], re.M)
+    assert "          name: GDS_logs\n          path: |\n            src/*\n            runs/wokwi/*\n" in step(gds, "Publish build logs")
+    assert "        if: success() || failure()\n" in step(gds, "Publish build logs")
+
+
 def test_every_workflow_uses_the_action_by_the_pinned_commit():
-    # gds.yaml's four uses (above), docs.yaml's and fpga.yaml's: none by branch or tag
+    # gds.yaml's three uses and three checkouts (above), docs.yaml's and fpga.yaml's: none by branch or tag
     found = {}
     for path in sorted((ROOT / ".github/workflows").glob("*.y*ml")):
         text = "\n".join(l for l in path.read_text().splitlines() if not l.lstrip().startswith("#"))
-        found[path.name] = re.findall(r"TinyTapeout/tt-gds-action\S*", text)
-    assert {name: len(uses) for name, uses in found.items()} == {"docs.yaml": 1, "fpga.yaml": 1, "gds.yaml": 4,
-                                                                 "test.yaml": 0}
-    assert all(u.endswith("@" + ACTION_SHA) for uses in found.values() for u in uses)
+        uses = re.findall(rf"uses: TinyTapeout/tt-gds-action(?:/[\w/]+)?@{ACTION_SHA} # ihp-cmos5l\n", text + "\n")
+        checkouts = re.findall(rf"repository: TinyTapeout/tt-gds-action\n +ref: {ACTION_SHA} # ihp-cmos5l\n", text)
+        assert len(re.findall("TinyTapeout/tt-gds-action", text)) == len(uses) + len(checkouts), path.name
+        found[path.name] = (len(uses), len(checkouts))
+    assert found == {"docs.yaml": (1, 0), "fpga.yaml": (1, 0), "gds.yaml": (3, 3), "test.yaml": (0, 0)}
     docs = steps("docs.yaml", "docs")
     build = next(s for s in docs if s.startswith("name: Build docs\n"))
     assert f"uses: TinyTapeout/tt-gds-action/docs@{ACTION_SHA} # ihp-cmos5l\n" in build

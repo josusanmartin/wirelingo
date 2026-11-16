@@ -1,0 +1,36 @@
+[2026-11-16T18:29:02Z] copy ~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15 -> ~/protoemu-flow/ci-split/quick
+[2026-11-16T18:29:10Z] handoff done
+[2026-11-16T18:29:10Z] librelane --from Odb.RemoveRoutingObstructions --with-initial-state runs/wokwi/51-project-detailedrouting/state_out.json
+[2026-11-16T18:40:26Z] librelane exit 0
+netlist_sha256 expected 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+netlist_sha256 actual   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08 (match)
+gds_normalized_sha256 expected 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+gds_normalized_sha256 actual   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a (match)
+RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json
+< pdk.json
+[2026-11-16T18:40:27Z] final/metrics.csv differs (4 diff lines)
+[2026-11-16T18:40:28Z] final/ files that differ:
+< 69692787b1e03189c2a7c119a2ebf0b7e992969bde8a2f1c7ca815e65ba8f3e5  ./gds/tt_um_josusanmartin_protoemu.gds
+> 41c428ecb1375fa11fda0b0d7985b5b955c21d9e99ee1f00a7e380c6ea824082  ./gds/tt_um_josusanmartin_protoemu.gds
+< 69692787b1e03189c2a7c119a2ebf0b7e992969bde8a2f1c7ca815e65ba8f3e5  ./klayout_gds/tt_um_josusanmartin_protoemu.klayout.gds
+> 41c428ecb1375fa11fda0b0d7985b5b955c21d9e99ee1f00a7e380c6ea824082  ./klayout_gds/tt_um_josusanmartin_protoemu.klayout.gds
+< 6a3379a8e2c136014dcb5aef82a6baa809765bdd05f8d842ad0b6f576fd14461  ./mag_gds/tt_um_josusanmartin_protoemu.magic.gds
+< 76b19bf1bcf2cec1eba50a88f4c9dfe8424da16ed0845658b7ae9b578c4e5039  ./mag/tt_um_josusanmartin_protoemu.mag
+< 37e7a6c5c642dec7ae8dfc4401fe67b513c5084d0b1a36808be72f5ea290775f  ./metrics.csv
+> fa2b9ee74f1b87c8128753bc11963119c1848d3aa25734f21afe012a6d5fdbff  ./mag_gds/tt_um_josusanmartin_protoemu.magic.gds
+> 58d9847dced6c734b9012a952b3b9140ca40b6d551733f71f7631b66a334eb43  ./mag/tt_um_josusanmartin_protoemu.mag
+> 6c98f279327972e7eb925796d07c1fbd5c93c86d343257afcb02afa6b8680483  ./metrics.csv
+< 4554cc23e55c21684737337116d4eb9107e35fedea300660a9f9d10caa1fc9c4  ./sdf/nom_fast_1p32V_m40C/tt_um_josusanmartin_protoemu__nom_fast_1p32V_m40C.sdf
+< e73111a89c2df11ae1597017dc7aba7d0f820934e334e18f1ff5a8b184c68379  ./sdf/nom_slow_1p08V_125C/tt_um_josusanmartin_protoemu__nom_slow_1p08V_125C.sdf
+< d5915632479879273bc491f0153a66dd50324c47058477de46ab24562bef7240  ./sdf/nom_typ_1p20V_25C/tt_um_josusanmartin_protoemu__nom_typ_1p20V_25C.sdf
+< 7f0ad290f864daeae383e126eee05ef49872d7b80208e4d7d046cc65bb499c14  ./spef/nom/tt_um_josusanmartin_protoemu.nom.spef
+> c30e37e61f067b623a9f7e36dcbd3b30023c92706ee39d29d6e3bae06bcbe619  ./sdf/nom_fast_1p32V_m40C/tt_um_josusanmartin_protoemu__nom_fast_1p32V_m40C.sdf
+> e32c0dfc36de797608764c1a3838895626775de6d8d0c8628ae54e1618e2a3de  ./sdf/nom_slow_1p08V_125C/tt_um_josusanmartin_protoemu__nom_slow_1p08V_125C.sdf
+> d3bf4eaf48a87fd14baf8a5a44776638d9bae3466a9d3aa7d38042888d46c753  ./sdf/nom_typ_1p20V_25C/tt_um_josusanmartin_protoemu__nom_typ_1p20V_25C.sdf
+> 9e27d72b02e15a9560c9a4cc50a615292dee1808e760f848cb9c3a2f9f550d0e  ./spef/nom/tt_um_josusanmartin_protoemu.nom.spef
+[2026-11-16T18:40:28Z] done
+== metrics.csv: diff release-run copy
+127c127
+< route__wirelength__estimated,2.51914E+6
+---
+> route__wirelength__estimated,2519140

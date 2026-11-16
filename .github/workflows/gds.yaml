@@ -4,9 +4,40 @@ on:
   push:
   workflow_dispatch:
 
+# The GDS build is split across three jobs because one job does not fit
+# GitHub's 6 h limit for a hosted-runner job on the slower runners: there the
+# build took about 6 h 10 min (4 h 27 min to 4 h 40 min of it in detailed
+# routing) and was cancelled. Each job has its own limit:
+#
+#   gds_place  LibreLane steps 1 to 50 (to OpenROAD.STAMidPNR-3, just before routing)
+#   gds_route  step 51, Project.DetailedRouting, alone
+#   gds        steps 52 to 79, then the rest of the GDS action and the hash check
+#
+# The chip does not change. Each job sets up exactly what
+# TinyTapeout/tt-gds-action at the pinned commit (3412659) does before it
+# hardens (its action.yml: the same environment, packages, tt-support-tools at
+# d66cf17, Python 3.11, the action's own install_sg13cmos5l.sh for the PDK and
+# LibreLane 3.1.0.dev3), then runs tt-support-tools' own `tt_tool.py --harden`
+# with two changes only: the part's step range is added to its LibreLane
+# command, and the run directory is kept in the parts that resume it. The run
+# directory goes from job to job as a tar artifact; GitHub's checkout path is
+# the same on every runner, so its absolute paths stay valid. A resumed part
+# starts from the state file of the step before it (--with-initial-state) and
+# numbers its steps on from there, as one LibreLane run would. The last step
+# of `gds` compares the final netlist's sha256 and the dates-zeroed GDS digest
+# with evidence/8x4-release-expected.json, so a green run proves the shipped
+# GDS is the receipted build (docs/release-evidence.md).
+#
+# The setup steps of the three jobs are identical, from "checkout repo" to
+# "Install LibreLane"; so is the step that runs LibreLane, apart from its env.
+
 jobs:
-  gds:
+  gds_place:
     runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
@@ -16,16 +47,476 @@ jobs:
       - name: Check frozen submission configuration
         run: python3 flow/gen_config.py --preset submission --check
 
-      # Pinned by commit: tt-gds-action at the head of its ihp-cmos5l branch on
-      # 2026-11-15, and tt-support-tools at d66cf17, the commit the receipted
-      # release runs used. At this action commit it installs IHP-Open-PDK
-      # 2bbec755 and LibreLane 3.1.0.dev3, the runs' versions (flow/release_pins.json).
-      - name: Build GDS
-        uses: TinyTapeout/tt-gds-action@3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
+      # The action's first step, for its inputs here (pdk ihp-sg13cmos5l). The
+      # action writes PDK_ROOT as the literal path of the hosted runner's home
+      # plus /pdk, which $HOME/pdk is on GitHub's hosted runners.
+      - name: Set up environment variables
+        run: |
+          cat << __EOF >> $GITHUB_ENV
+          PDK=ihp-sg13cmos5l
+          PDK_ROOT=$HOME/pdk
+          TT_ARGS=--ihp
+          __EOF
+
+      # Install packages for 'Render PNG from GDS' step and ghdl to process VHDL files:
+      - name: Install prerequisites
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          pdk: ihp-sg13cmos5l
-          tools-ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
-          librelane-version: 3.1.0.dev3
+          packages: librsvg2-bin pngquant ghdl-llvm # librsvg2-bin for rsvg-convert; pngquant for heavy PNG compression.
+          version: tinytapeout_gds_action # I think naming a version builds a reusable packages cache for that name.
+
+      - name: Checkout tt-support-tools repo
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-support-tools
+          ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+          path: tt
+
+      - name: Setup python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip' # caching pip dependencies
+
+      - name: Install tt-support-tools dependencies
+        run: pip install -r tt/requirements.txt
+
+      - name: Fetch verilog and build config
+        run: ./tt/tt_tool.py --create-user-config $TT_ARGS
+
+      # The action's PDK install script, from the action at the pinned commit
+      # (IHP-Open-PDK 2bbec755).
+      - name: Checkout tt-gds-action
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-gds-action
+          ref: 3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
+          path: tt-gds-action
+
+      - name: Install ihp-sg13cmos5l PDK
+        run: ./tt-gds-action/install_sg13cmos5l.sh
+
+      - name: Install LibreLane
+        run: pip install librelane==3.1.0.dev3
+
+      - name: Make GDS with LibreLane
+        env:
+          LIBRELANE_PART: --to OpenROAD.STAMidPNR-3
+          KEEP_RUN_DIR: 0
+        run: |
+          python3 - <<'EOF'
+          # tt-support-tools' `tt_tool.py --harden $TT_ARGS` (Project.harden: it writes
+          # src/config_merged.json, clears runs/wokwi, runs LibreLane, then writes
+          # runs/wokwi/final/commit_id.json and runs/wokwi/pdk.json), with LIBRELANE_PART
+          # added to its LibreLane command and, if KEEP_RUN_DIR is 1, runs/wokwi kept.
+          import os, runpy, shutil, subprocess, sys
+          part, keep = os.environ["LIBRELANE_PART"], os.environ["KEEP_RUN_DIR"] == "1"
+          run, rmtree, calls = subprocess.run, shutil.rmtree, []
+          def run_part(cmd, *args, **kwargs):
+              if isinstance(cmd, str) and cmd.startswith("python -m librelane "):
+                  tail = " src/config_merged.json"
+                  assert cmd.endswith(tail) and cmd.count(tail) == 1, cmd
+                  cmd = f"{cmd[:-len(tail)]} {part}{tail}"
+                  calls.append(cmd)
+                  print(f"LibreLane command: {cmd}", flush=True)
+              return run(cmd, *args, **kwargs)
+          def keep_run_dir(path, *args, **kwargs):
+              if keep and path == "runs/wokwi":
+                  print("runs/wokwi kept: this part resumes it", flush=True)
+                  return
+              return rmtree(path, *args, **kwargs)
+          subprocess.run, shutil.rmtree = run_part, keep_run_dir
+          sys.path.insert(0, os.path.abspath("tt"))
+          sys.argv = ["tt/tt_tool.py", "--harden", *os.environ["TT_ARGS"].split()]
+          runpy.run_path("tt/tt_tool.py", run_name="__main__")
+          assert len(calls) == 1, calls
+          EOF
+
+      - name: Check that the part stopped before detailed routing
+        run: |
+          test -f runs/wokwi/50-openroad-stamidpnr-3/state_out.json
+          test ! -e runs/wokwi/51-project-detailedrouting
+
+      - name: Pack the run directory
+        run: |
+          tar --zstd --format=posix -cf gds-run.tar.zst runs/wokwi
+          sha256sum src/user_config.json src/config_merged.json > gds-run-config.sha256
+          ls -l gds-run.tar.zst
+
+      - name: Publish the run directory for gds_route
+        uses: actions/upload-artifact@v7
+        with:
+          name: gds_run_placed
+          path: |
+            gds-run.tar.zst
+            gds-run-config.sha256
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Publish build logs of a failed part
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: GDS_logs_gds_place
+          path: |
+            src/*
+            runs/wokwi/*
+
+  gds_route:
+    needs: gds_place
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Check frozen submission configuration
+        run: python3 flow/gen_config.py --preset submission --check
+
+      # The action's first step, for its inputs here (pdk ihp-sg13cmos5l). The
+      # action writes PDK_ROOT as the literal path of the hosted runner's home
+      # plus /pdk, which $HOME/pdk is on GitHub's hosted runners.
+      - name: Set up environment variables
+        run: |
+          cat << __EOF >> $GITHUB_ENV
+          PDK=ihp-sg13cmos5l
+          PDK_ROOT=$HOME/pdk
+          TT_ARGS=--ihp
+          __EOF
+
+      # Install packages for 'Render PNG from GDS' step and ghdl to process VHDL files:
+      - name: Install prerequisites
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
+        with:
+          packages: librsvg2-bin pngquant ghdl-llvm # librsvg2-bin for rsvg-convert; pngquant for heavy PNG compression.
+          version: tinytapeout_gds_action # I think naming a version builds a reusable packages cache for that name.
+
+      - name: Checkout tt-support-tools repo
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-support-tools
+          ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+          path: tt
+
+      - name: Setup python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip' # caching pip dependencies
+
+      - name: Install tt-support-tools dependencies
+        run: pip install -r tt/requirements.txt
+
+      - name: Fetch verilog and build config
+        run: ./tt/tt_tool.py --create-user-config $TT_ARGS
+
+      # The action's PDK install script, from the action at the pinned commit
+      # (IHP-Open-PDK 2bbec755).
+      - name: Checkout tt-gds-action
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-gds-action
+          ref: 3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
+          path: tt-gds-action
+
+      - name: Install ihp-sg13cmos5l PDK
+        run: ./tt-gds-action/install_sg13cmos5l.sh
+
+      - name: Install LibreLane
+        run: pip install librelane==3.1.0.dev3
+
+      - name: Fetch the run directory from gds_place
+        uses: actions/download-artifact@v7
+        with:
+          name: gds_run_placed
+
+      # The config this job generated must be the one the run directory was made with.
+      - name: Unpack the run directory
+        run: |
+          sha256sum -c gds-run-config.sha256
+          tar --zstd -xf gds-run.tar.zst
+          rm gds-run.tar.zst gds-run-config.sha256
+          rm -rf runs/wokwi/final
+
+      - name: Make GDS with LibreLane
+        env:
+          LIBRELANE_PART: --from Project.DetailedRouting --to Project.DetailedRouting --with-initial-state runs/wokwi/50-openroad-stamidpnr-3/state_out.json
+          KEEP_RUN_DIR: 1
+        run: |
+          python3 - <<'EOF'
+          # tt-support-tools' `tt_tool.py --harden $TT_ARGS` (Project.harden: it writes
+          # src/config_merged.json, clears runs/wokwi, runs LibreLane, then writes
+          # runs/wokwi/final/commit_id.json and runs/wokwi/pdk.json), with LIBRELANE_PART
+          # added to its LibreLane command and, if KEEP_RUN_DIR is 1, runs/wokwi kept.
+          import os, runpy, shutil, subprocess, sys
+          part, keep = os.environ["LIBRELANE_PART"], os.environ["KEEP_RUN_DIR"] == "1"
+          run, rmtree, calls = subprocess.run, shutil.rmtree, []
+          def run_part(cmd, *args, **kwargs):
+              if isinstance(cmd, str) and cmd.startswith("python -m librelane "):
+                  tail = " src/config_merged.json"
+                  assert cmd.endswith(tail) and cmd.count(tail) == 1, cmd
+                  cmd = f"{cmd[:-len(tail)]} {part}{tail}"
+                  calls.append(cmd)
+                  print(f"LibreLane command: {cmd}", flush=True)
+              return run(cmd, *args, **kwargs)
+          def keep_run_dir(path, *args, **kwargs):
+              if keep and path == "runs/wokwi":
+                  print("runs/wokwi kept: this part resumes it", flush=True)
+                  return
+              return rmtree(path, *args, **kwargs)
+          subprocess.run, shutil.rmtree = run_part, keep_run_dir
+          sys.path.insert(0, os.path.abspath("tt"))
+          sys.argv = ["tt/tt_tool.py", "--harden", *os.environ["TT_ARGS"].split()]
+          runpy.run_path("tt/tt_tool.py", run_name="__main__")
+          assert len(calls) == 1, calls
+          EOF
+
+      - name: Check that the part stopped after detailed routing
+        run: |
+          test -f runs/wokwi/51-project-detailedrouting/state_out.json
+          test ! -e runs/wokwi/52-odb-removeroutingobstructions
+
+      - name: Pack the run directory
+        run: |
+          tar --zstd --format=posix -cf gds-run.tar.zst runs/wokwi
+          sha256sum src/user_config.json src/config_merged.json > gds-run-config.sha256
+          ls -l gds-run.tar.zst
+
+      - name: Publish the run directory for gds
+        uses: actions/upload-artifact@v7
+        with:
+          name: gds_run_routed
+          path: |
+            gds-run.tar.zst
+            gds-run-config.sha256
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Publish build logs of a failed part
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: GDS_logs_gds_route
+          path: |
+            src/*
+            runs/wokwi/*
+
+  gds:
+    needs: gds_route
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Check frozen submission configuration
+        run: python3 flow/gen_config.py --preset submission --check
+
+      # The action's first step, for its inputs here (pdk ihp-sg13cmos5l). The
+      # action writes PDK_ROOT as the literal path of the hosted runner's home
+      # plus /pdk, which $HOME/pdk is on GitHub's hosted runners.
+      - name: Set up environment variables
+        run: |
+          cat << __EOF >> $GITHUB_ENV
+          PDK=ihp-sg13cmos5l
+          PDK_ROOT=$HOME/pdk
+          TT_ARGS=--ihp
+          __EOF
+
+      # Install packages for 'Render PNG from GDS' step and ghdl to process VHDL files:
+      - name: Install prerequisites
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
+        with:
+          packages: librsvg2-bin pngquant ghdl-llvm # librsvg2-bin for rsvg-convert; pngquant for heavy PNG compression.
+          version: tinytapeout_gds_action # I think naming a version builds a reusable packages cache for that name.
+
+      - name: Checkout tt-support-tools repo
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-support-tools
+          ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+          path: tt
+
+      - name: Setup python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip' # caching pip dependencies
+
+      - name: Install tt-support-tools dependencies
+        run: pip install -r tt/requirements.txt
+
+      - name: Fetch verilog and build config
+        run: ./tt/tt_tool.py --create-user-config $TT_ARGS
+
+      # The action's PDK install script, from the action at the pinned commit
+      # (IHP-Open-PDK 2bbec755).
+      - name: Checkout tt-gds-action
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-gds-action
+          ref: 3412659307918422f3f0727917cf9b499aaca588 # ihp-cmos5l
+          path: tt-gds-action
+
+      - name: Install ihp-sg13cmos5l PDK
+        run: ./tt-gds-action/install_sg13cmos5l.sh
+
+      - name: Install LibreLane
+        run: pip install librelane==3.1.0.dev3
+
+      - name: Fetch the run directory from gds_route
+        uses: actions/download-artifact@v7
+        with:
+          name: gds_run_routed
+
+      # The config this job generated must be the one the run directory was made with.
+      - name: Unpack the run directory
+        run: |
+          sha256sum -c gds-run-config.sha256
+          tar --zstd -xf gds-run.tar.zst
+          rm gds-run.tar.zst gds-run-config.sha256
+          rm -rf runs/wokwi/final
+
+      - name: Make GDS with LibreLane
+        env:
+          LIBRELANE_PART: --from Odb.RemoveRoutingObstructions --with-initial-state runs/wokwi/51-project-detailedrouting/state_out.json
+          KEEP_RUN_DIR: 1
+        run: |
+          python3 - <<'EOF'
+          # tt-support-tools' `tt_tool.py --harden $TT_ARGS` (Project.harden: it writes
+          # src/config_merged.json, clears runs/wokwi, runs LibreLane, then writes
+          # runs/wokwi/final/commit_id.json and runs/wokwi/pdk.json), with LIBRELANE_PART
+          # added to its LibreLane command and, if KEEP_RUN_DIR is 1, runs/wokwi kept.
+          import os, runpy, shutil, subprocess, sys
+          part, keep = os.environ["LIBRELANE_PART"], os.environ["KEEP_RUN_DIR"] == "1"
+          run, rmtree, calls = subprocess.run, shutil.rmtree, []
+          def run_part(cmd, *args, **kwargs):
+              if isinstance(cmd, str) and cmd.startswith("python -m librelane "):
+                  tail = " src/config_merged.json"
+                  assert cmd.endswith(tail) and cmd.count(tail) == 1, cmd
+                  cmd = f"{cmd[:-len(tail)]} {part}{tail}"
+                  calls.append(cmd)
+                  print(f"LibreLane command: {cmd}", flush=True)
+              return run(cmd, *args, **kwargs)
+          def keep_run_dir(path, *args, **kwargs):
+              if keep and path == "runs/wokwi":
+                  print("runs/wokwi kept: this part resumes it", flush=True)
+                  return
+              return rmtree(path, *args, **kwargs)
+          subprocess.run, shutil.rmtree = run_part, keep_run_dir
+          sys.path.insert(0, os.path.abspath("tt"))
+          sys.argv = ["tt/tt_tool.py", "--harden", *os.environ["TT_ARGS"].split()]
+          runpy.run_path("tt/tt_tool.py", run_name="__main__")
+          assert len(calls) == 1, calls
+          EOF
+
+      - name: Check that the part numbered its steps on from detailed routing
+        run: test -f runs/wokwi/52-odb-removeroutingobstructions/state_out.json
+
+      # From here to "Upload gds_render (png) artifact": the rest of the action's
+      # steps at the pinned commit, as they are there.
+      - name: Show build files (for debugging)
+        run: find runs/wokwi/
+
+      - name: Linter output
+        if: always()
+        run: |
+          LINTER_LOG=(runs/wokwi/*-verilator-lint/verilator-lint.log)
+          LINTER_LOG=${LINTER_LOG[0]}
+
+          echo "DEBUG LINTER_LOG *$LINTER_LOG*"
+          cat $LINTER_LOG
+          echo "END DEBUG"
+
+          if [ -s "$LINTER_LOG" ]; then
+            set +e
+            count_error=$(egrep -i "^%Error"   $LINTER_LOG | wc -l)
+            count_warn=$( egrep -i "^%Warning" $LINTER_LOG | wc -l)
+            count_other=$(egrep -i "^%"        $LINTER_LOG | egrep -v "%(Warning|Error)" | wc -l)
+            set -e
+
+            open=""
+            summary=""
+            icon=":green_circle:"
+            if [ $count_other -gt 0 ]; then
+              summary="$count_other message(s)"
+              icon=":orange_circle:"
+            fi
+            if [ $count_warn -gt 0 ]; then
+              summary="$count_warn warning(s)"
+              icon=":orange_circle:"
+            fi
+            if [ $count_error -gt 0 ]; then
+              summary="$count_error error(s)"
+              icon=":red_circle:"
+              open="open"
+            fi
+            if [ -n "$summary" ]; then
+              summary="[$summary]"
+            fi
+
+            echo "<details ${open}>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary><h1>Linter output&nbsp;&nbsp;<h4>${summary} ${icon}</h4></h1></summary>" >> $GITHUB_STEP_SUMMARY
+            echo "<pre>" >> $GITHUB_STEP_SUMMARY
+            # Print each line of the file preceeded by four spaces:
+            sed 's/^/    /' < $LINTER_LOG >> $GITHUB_STEP_SUMMARY
+            echo "</pre>" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Yosys warnings
+        run: ./tt/tt_tool.py --print-warnings $TT_ARGS >> $GITHUB_STEP_SUMMARY
+
+      - name: Routing summary
+        run: ./tt/tt_tool.py --print-stats $TT_ARGS >> $GITHUB_STEP_SUMMARY
+
+      - name: Cell usage summary
+        run: ./tt/tt_tool.py --print-cell-category $TT_ARGS >> $GITHUB_STEP_SUMMARY
+
+      - name: Publish build logs
+        if: success() || failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: GDS_logs
+          path: |
+            src/*
+            runs/wokwi/*
+
+      - name: Prepare tt_submission artifact
+        run: ./tt/tt_tool.py --create-tt-submission $TT_ARGS
+
+      - name: Publish tt_submission artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tt_submission
+          path: |
+            src/*
+            docs/*
+            tt_submission/*
+            info.yaml
+            LICENSE
+
+      # Create and store PNG...
+      - name: Render PNG from GDS
+        run: './tt/tt_tool.py --create-png $TT_ARGS 2>&1 || echo "WARNING: Failed to render PNG preview from GDS; error $?"'
+
+      - name: Upload gds_render (png) artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gds_render
+          path: 'gds_render.png'
 
       # The GDS that ships must be the receipted build: the final netlist's sha256
       # and the GDS's sha256 with its dates zeroed must equal the expected pair

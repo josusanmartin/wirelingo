@@ -430,30 +430,44 @@ summarized in
 [the recorded release below](#recorded-release-3-core-8x4-shipping-commit-2c97c15-2026-11-16).
 
 **What may follow `S`.** Only commits that touch `evidence/` and `docs/`,
-and `README.md`: it is documentation, not a build input, and the author
-allowed it on 2026-11-16 so that its status lines could give the released
-state. For a later commit `T`, `git diff --stat S T -- . ':!evidence' ':!docs' ':!README.md'`
+`README.md`, `.github/workflows/gds.yaml` and the test file that reads it,
+`test/model/test_release_expected.py`. `README.md` is documentation,
+not a build input, and the author allowed it on 2026-11-16 so that its
+status lines could give the released state. `gds.yaml` is not a build input
+either: it says how GitHub runs the build, not what is built, and its last
+step compares GitHub's build with the expected identity below, so a green
+`gds` job shows that the shipped GDS is the receipted build whatever the
+workflow looks like. The author allowed it on 2026-11-16 to split the GitHub
+build into three jobs (**Why GitHub builds in three jobs**, below); the test
+file came with it, since its workflow tests check the jobs, the pins and the
+hash step. For a later commit `T`,
+`git diff --stat S T -- . ':!evidence' ':!docs' ':!README.md' ':!.github/workflows/gds.yaml' ':!test/model/test_release_expected.py'`
 must print nothing, and `flow/build_manifest.py compare <S checkout> <T checkout>`
-must print `SAME BUILD` (it does with the `README.md` change: the file is not
-among the build inputs the manifest binds). The expected-identity file is under `evidence/` but
+must print `SAME BUILD` (it does with the `README.md`, `gds.yaml` and test
+changes: none of them is among the build inputs the manifest binds). The expected-identity file is under `evidence/` but
 must not change either: `git diff --stat S T -- evidence/8x4-release-expected.json`
 must print nothing, since GitHub's build of `T` is compared with it.
 
-**What GitHub builds.** The repository's GDS action builds from the pushed
+**What GitHub builds.** The repository's GDS workflow builds from the pushed
 commit, not from the release run. The workflows pin
 `TinyTapeout/tt-gds-action` to commit `3412659` (the head of its
-`ihp-cmos5l` branch on 2026-11-15) at every use: the four in
-`.github/workflows/gds.yaml`, and the one each in `docs.yaml` and
-`fpga.yaml`. tt-support-tools is pinned to `d66cf17` (`tools-ref`) for the
+`ihp-cmos5l` branch on 2026-11-15) at every use: in
+`.github/workflows/gds.yaml` the three actions `precheck`, `gl_test` and
+`viewer` use, and the three checkouts of the action's repository in the build
+jobs, which run its `install_sg13cmos5l.sh`; and the one each in `docs.yaml`
+and `fpga.yaml`. tt-support-tools is pinned to `d66cf17` (`tools-ref`, or
+`ref` in the build jobs' checkout) for the
 build, the precheck and the docs job. `gl_test` and the viewer check out no
 tt-support-tools. The FPGA workflow (started by hand; its push trigger is
 disabled) passes no `tools-ref`, so it takes its action's default, the
 tools' `main` branch. At that commit the
-action installs IHP-Open-PDK `2bbec755` (its `install_sg13cmos5l.sh`) and
-LibreLane 3.1.0.dev3 with pip, the versions `flow/release_pins.json` pins.
-LibreLane then runs in its docker image by the version tag; the action does
-not pin the image digest (`sha256:d109140b…` in the release runs). After
-"Build GDS", the job runs `flow/release_expected.py . evidence/8x4-release-expected.json`:
+action's script installs IHP-Open-PDK `2bbec755`, and the build jobs install
+LibreLane 3.1.0.dev3 with pip as the action does, the versions
+`flow/release_pins.json` pins.
+LibreLane then runs in its docker image by the version tag; neither the action
+nor the workflow pins the image digest (`sha256:d109140b…` in the release
+runs). The last step of the `gds` job runs
+`flow/release_expected.py . evidence/8x4-release-expected.json`:
 it prints the expected and the actual netlist sha256 and dates-zeroed GDS
 digest and fails the job on a difference, so a GitHub build of another
 placement cannot finish green.
@@ -475,6 +489,59 @@ read, `S`'s `test` and `gds` jobs and `a84401f`'s `precheck` had not finished.
 Records, with the other jobs' results and their times:
 [evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md).
 
+**Why GitHub builds in three jobs.** On a slower hosted runner the one-job
+build needs about 6 h 10 min, and GitHub cancels a hosted job at 6 h:
+`main`'s GDS run 43811275309 was cancelled at the limit twice. In GitHub's
+step times for such runners, setup takes about 3 min, LibreLane's steps 1 to
+50 about 1 h 05 min, detailed routing (step 51) 4 h 27 min to about 4 h 40 min,
+steps 52 to 79 about 30 min and the action's PNG render 8 to 16 min. So
+`gds.yaml` runs the build as three jobs, each with its own 6 h limit and
+`timeout-minutes: 350`:
+
+| Job | LibreLane steps | Hands on | Estimated time on that runner |
+| --- | --- | --- | --- |
+| `gds_place` | 1 to 50, `--to OpenROAD.STAMidPNR-3` | `gds_run_placed` | about 1 h 10 min |
+| `gds_route` | 51, `--from Project.DetailedRouting --to Project.DetailedRouting` | `gds_run_routed` | about 4 h 35 min to 4 h 50 min |
+| `gds` | 52 to 79, `--from Odb.RemoveRoutingObstructions`, then the action's remaining steps and the hash check | `GDS_logs`, `tt_submission`, `gds_render` | about 1 h |
+
+The times are estimates: the cancelled run's step times plus each job's setup
+(about 3 min there), not a measured split run. Each job first does what the
+action does before it hardens, at the same pins (its environment, packages,
+tt-support-tools, Python 3.11, its PDK script, LibreLane 3.1.0.dev3), then
+runs tt-support-tools' own `tt_tool.py --harden` with two changes made from
+the workflow: the job's step range is added to the LibreLane command the
+tools build, and the resuming jobs keep `runs/wokwi` instead of clearing it.
+So `commit_id.json` and `pdk.json` are still the tools' own. The run
+directory goes to the next job as a zstd tar in an artifact (kept three
+days), with the sha256 of `src/user_config.json` and `src/config_merged.json`,
+which the next job checks against its own. GitHub checks the repository out
+at the same path on every runner, so the absolute paths in the run directory's
+state files stay valid. A resumed job names its starting state
+(`--with-initial-state`, the state file of the step before it): without it
+LibreLane takes the newest `state_out.json` by modification time, and a
+composite step's last sub-step writes its state file in the same instant as
+the step itself. LibreLane numbers a resumed run's steps on from the highest
+step directory, so the directories are named as in one run, and each job
+checks the boundary directory. The `gds` job keeps the job id, the artifact
+names and the steps after the build, so `precheck`, `gl_test`, `viewer` and
+Tiny Tapeout's app read the same artifacts as before. The hash step, unchanged
+at the end of `gds`, is what shows the split changed nothing in the chip.
+Checked on runner1 (2026-11-16), on copies of the release run aqp-rel-2c97c15
+with the later steps removed, the run directory packed and unpacked as the
+jobs do, and LibreLane resumed with the jobs' arguments in the release run's
+image (the copy mounted at the original's path). Once with the `gds` job's
+part alone (steps 52 to 79), and once with step 50 under `gds_place`'s stop,
+then `gds_route`'s part (2 h 02 min of routing there) and the `gds` job's:
+both gave netlist `453d0af7…` and dates-zeroed GDS `357ea15b…` (`RELEASE
+IDENTITY MATCHES`); step 51's routed database, DEF and netlist were
+byte-identical to the release run's; the step directories were the same, and
+the final views differed from the
+release run's only in their dates (the GDS headers, the SDF and SPEF `DATE`
+lines, the magic `timestamp`) and in how `metrics.csv` writes one number:
+`route__wirelength__estimated` is `2519140` where the one-job run wrote
+`2.51914E+6`, the same value read back from a state file. Records:
+[evidence/gds-split-20261116/](../evidence/gds-split-20261116/README.md).
+
 **What the pin fixes, and what it does not.** This list is read from the
 action's source at `3412659` and from tt-support-tools at `d66cf17`. None of
 it was run. The only commands run for it were the two branch-head lookups on
@@ -488,8 +555,9 @@ is at `d66cf17`) and `python --version` in runner1's flow venv.
   precheck's nixpkgs, by a tarball commit; and the two actions
   `awalsh128/cache-apt-pkgs-action` and `rikhuijzer/cache-install`, by commit.
 * **Not fixed:**
-  - the LibreLane docker image, taken by its version tag (above). This is the
-    one that matters for the build;
+  - the LibreLane docker image, taken by its version tag (above) and pulled
+    again by each of the three build jobs. This is the one that matters for
+    the build;
   - LibreLane's own pip dependencies: only LibreLane's version is given, and
     pip resolves the rest at install time;
   - the `actions/*` actions (`checkout`, `setup-python`, `upload-artifact`,
@@ -511,8 +579,8 @@ is at `d66cf17`) and `python --version` in runner1's flow venv.
   - apt packages, at whatever version the runner has.
 
 **What the hash step covers.** It is the backstop for the build only: it does
-not cover the tools of the precheck or of `gl_test`. It runs after the action
-has uploaded the `tt_submission` artifact, so on a mismatch the job is red but
+not cover the tools of the precheck or of `gl_test`. It runs after the `gds`
+job has uploaded the `tt_submission` artifact, so on a mismatch the job is red but
 the artifact exists. tt-support-tools' `create_tt_submission` copies the
 hashed GDS into `tt_submission/` with `shutil.copyfile`, so the artifact's
 `.gds` is a byte copy of the hashed file. Next to it the same function writes
