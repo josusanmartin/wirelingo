@@ -53,7 +53,7 @@ It fails on claim 5: the doc makes an unqualified "only" claim, which RULES.md f
 4. Rival framing:
    - **[other entry redacted].** The comparison says ours "depends on host software" and theirs "can be downloaded".
      - True as far as it goes: the release `[other entry's release redacted]` has `[other entry's file redacted]`.
-     - In it, `keyboard.kernel` shows `new low-speed USB device number 70 using xhci_hcd` and `input: HID 1209:0001 Keyboard` on a separate PC, and `pico_b.log` shows it typing "[other entry's text redacted]".
+     - In it, `[other entry's file redacted]` shows `new low-speed USB device number 70 using xhci_hcd` and `input: HID 1209:0001 Keyboard` on a separate PC, and `pico_b.log` shows it typing "[other entry's text redacted]".
      - But their run is also driven by a Pico as the chip's host: `run.txt` copies `[other entry's file redacted]` and `[other entry's file redacted]` onto a Pico. Say so, or drop the contrast.
    - **[other entry redacted].** What is committed is decoded records written from a DSLogic capture (`[other entry's file redacted]`, `[other entry's file redacted]`: "[other entry's text redacted]"), not raw captures. Its README says the same, and that the UART run is not a witness. "Captures committed" overstates it slightly.
 

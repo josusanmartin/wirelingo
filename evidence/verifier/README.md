@@ -162,7 +162,7 @@ source after copying). The time can't be checked from the repository; the
 hash pins the content. The 60 files concatenated in name order
 (`cat evidence/verifier/0[0-2]?-*.md | sha256sum`, in the C locale) had
 sha256 `f8293aa094267dad4f46266223bc03f0350f269abb1966b655f68721a568c561`,
-in the inbox and as first committed; 4 of them were redacted on 2026-11-15 ([024 and 026](#024-and-026-on-2026-11-15), with the sha256 since then). Before committing they were searched for the
+in the inbox and as first committed; 4 of them were redacted on 2026-11-15 and 2026-11-16 ([024 and 026](#024-and-026-on-2026-11-15-and-2026-11-16), with the sha256 since then). Before committing they were searched for the
 following, to be redacted:
 
 | Searched for | Found | Redacted |
@@ -174,7 +174,7 @@ following, to be redacted:
 | the build machine's provider hostname | none | nothing |
 | anything that looks like a credential or key (passwords, tokens, API keys, private-key blocks) | none | nothing |
 
-So no file 000-029 differed from the verifier's own as first committed; 56 of the 60 still do not, and the 4 files of 024 and 026 differ by the replacements listed [below](#024-and-026-on-2026-11-15). Runner names (`runner1`)
+So no file 000-029 differed from the verifier's own as first committed; 56 of the 60 still do not, and the 4 files of 024 and 026 differ by the replacements listed [below](#024-and-026-on-2026-11-15-and-2026-11-16). Runner names (`runner1`)
 and paths under `~/protoemu-flow` are kept, as are the home-directory paths
 there (`~/…`, and `/home/pi` and `/home/someone` in examples); none of them is
 the local user's home directory. A later search of 000-029 for the classes
@@ -578,14 +578,18 @@ unchanged file has the same digest in the inbox.
 To check: `sha256sum evidence/verifier/05[1-9]-*.md evidence/verifier/06*-*.md evidence/verifier/07[0-8]*-*.md`
 gives the middle column.
 
-### 024 and 026, on 2026-11-15
+### 024 and 026, on 2026-11-15 and 2026-11-16
 
 Items 024 and 026 and their reports check a survey of other entries to the
 competition that `docs/rules-check.md` held at the time. The survey of other
 entries is not part of this repository's published record (the section is no
 longer in that document), so on 2026-11-15 the strings that identify those
-entries were replaced in these 4 files as well. The same content remains in
-the repository's earlier history. This is not a privacy redaction.
+entries were replaced in these 4 files as well. On 2026-11-16 three more
+strings were replaced in the two files of 024: two descriptions and a file
+name, none of them a name, that a reader who knows the field could match to
+two entries (a verifier finding on the first round; its report is not in this
+repository). The same content remains in the repository's earlier history.
+This is not a privacy redaction.
 
 **What was searched for.** The 4 files were read in full, and every tracked
 file was searched, in any case, for each entry, author and repository name of
@@ -596,33 +600,38 @@ from the credit to PRISM (below). Replaced, in the 4 files:
 * its repository (`owner/name`), as `[other entry's repository redacted]`, a
   branch of it, as `[other entry's branch redacted]`, and the name of a
   release, as `[other entry's release redacted]`;
-* a file path of its repository or the file name of a release, as
+* a file path of its repository, the file name of a release, or a file name
+  inside a release's archive that only that entry has, as
   `[other entry's file redacted]`;
 * text quoted from its repository or release that is its own wording, as
-  `[other entry's text redacted]`.
+  `[other entry's text redacted]`;
+* the item's description of an entry (what it had shown, and how), where the
+  description could identify the entry, as
+  `[other entry's description redacted]`.
 
 Kept: the verifier's verdicts, findings and reasoning; what it says of an
-entry in its own words, with dates and numbers; quotes of this repository's
+entry in its own words, with dates and numbers (apart from the two
+descriptions above); quotes of this repository's
 own documents; file names that every Tiny Tapeout project has (`info.yaml`,
-`gds.yaml`) and bare file names inside a downloaded archive (`run.txt`,
-`pico_b.log`, `ledger.txt`, `keyboard.kernel`); Linux kernel log text; names of
+`gds.yaml`) and generic bare file names inside a downloaded archive (`run.txt`,
+`pico_b.log`, `ledger.txt`); Linux kernel log text; names of
 boards and instruments; and the names of Tiny Tapeout's repositories and of
 the competition's organisers. Also kept: the credit to PRISM
 (`kdp1965/ihp-um-janestreet-prism`), from which this repository copies files
 under Apache-2.0 (item 024 `:8`; report 024 `:7`, `:114` and `:123`).
 
-Each replacement changes exactly the redacted string (inside its backticks or
-quotation marks where it had them; a line number after a file path is kept)
-and nothing else on the line. One row per line:
+Each replacement changes exactly the redacted string (inside its backticks,
+quotation marks or parentheses where it had them; a line number after a file
+path is kept) and nothing else on the line. One row per line:
 
 | File | Line | What | Replaced with |
 |---|---|---|---|
-| `024-rules-check.md` | 8 | the name of another entry or of its author, twice | `[other entry redacted]` (twice) |
+| `024-rules-check.md` | 8 | the name of another entry or of its author, twice; a description of it, twice | `[other entry redacted]` (twice), `[other entry's description redacted]` (twice) |
 | `024-rules-check.report.md` | 45 | the name of another entry or of its author | `[other entry redacted]` |
 | `024-rules-check.report.md` | 47 | the name of another entry or of its author, twice | `[other entry redacted]` (twice) |
 | `024-rules-check.report.md` | 54 | the name of another entry or of its author | `[other entry redacted]` |
 | `024-rules-check.report.md` | 55 | its release's name; a file path of its repository or release | `[other entry's release redacted]`, `[other entry's file redacted]` |
-| `024-rules-check.report.md` | 56 | text quoted from it | `[other entry's text redacted]` |
+| `024-rules-check.report.md` | 56 | a file path of its repository or release; text quoted from it | `[other entry's file redacted]`, `[other entry's text redacted]` |
 | `024-rules-check.report.md` | 57 | a file path of its repository or release, twice | `[other entry's file redacted]` (twice) |
 | `024-rules-check.report.md` | 58 | the name of another entry or of its author; a file path of its repository or release, twice; text quoted from it | `[other entry redacted]`, `[other entry's file redacted]` (twice), `[other entry's text redacted]` |
 | `024-rules-check.report.md` | 100 | the name of another entry or of its author | `[other entry redacted]` |
@@ -649,19 +658,25 @@ and nothing else on the line. One row per line:
 | `026-rules-check-fix.report.md` | 95 | the name of another entry or of its author; a file path of its repository or release, twice | `[other entry redacted]`, `[other entry's file redacted]` (twice) |
 | `026-rules-check-fix.report.md` | 96 | its release's name; its repository | `[other entry's release redacted]`, `[other entry's repository redacted]` |
 
-That is 51 replacements on 31 lines of 4 files (26 names, 2 repositories, 1
-branch, 2 release names, 14 file paths and 6 quoted texts); the other 56 files
-000-029 are unchanged. The sha256 of each of the 4 files as committed:
+That is 54 replacements on 31 lines of 4 files (26 names, 2 repositories, 1
+branch, 2 release names, 15 file paths, 6 quoted texts and 2 descriptions);
+the other 56 files 000-029 are unchanged. Of the 54, 51 were made on
+2026-11-15; the two descriptions (item 024, line 8) and one of the file names
+(report 024, line 56) were made on 2026-11-16, on lines that already held a
+replacement, so the count of lines did not change. The sha256 of each of the
+4 files as committed:
 
 | File | sha256 committed |
 |---|---|
-| `024-rules-check.md` | `44ec3d3b0499391d76770bfb1bb07e7f4cc516373e285bf496ee6f3bfdbe0abb` |
-| `024-rules-check.report.md` | `568266977b82150738b8a806c1df84544ea273e6aad95166671bdca8e2d86ff3` |
+| `024-rules-check.md` | `a7c4cf346a77c1a52387ad202caa53786706f258cb11fd683f263bd28cd099df` |
+| `024-rules-check.report.md` | `55298fce32210f64fd4165701c065937bbd46bb459eaf6c047bf01708eae302b` |
 | `026-rules-check-fix.md` | `d2b42bce56ca50939465fedf446d39a62f203d74bfbefae3881679bb03e0e6ac` |
 | `026-rules-check-fix.report.md` | `b423f30533eb49e0bc152013e38376372837f1de848b1975470c22d41c87905d` |
 
 To check: `sha256sum evidence/verifier/02[46]-*.md` gives the right-hand
 column, and the 60 files 000-029 concatenated as [above](#000-029) now have
-sha256 `03ef7d7b0fb877fc61e0a20bb61471ecbf51eebb8cc5136d1e9bdb86aa65a303`.
+sha256 `5247186da6ff418778269056d75de069f517c8f9ddc98196d6b597ec088d5a72`.
+Between the two dates the two files of 024 had sha256 `44ec3d3b…` and
+`56826697…`, and the concatenation `03ef7d7b…`.
 
 Item 079 and later items and reports are not here.
