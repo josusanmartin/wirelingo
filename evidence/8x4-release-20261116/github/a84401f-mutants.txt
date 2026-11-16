@@ -1,0 +1,11 @@
+Extract of the log of job 132930881939 (mutants) of josusanmartin/wirelingo, commit a84401f.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/132930881939/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+The command:
+267: 2026-11-15T19:33:16.3135567Z ##[group]Run python3 test/mutants.py
+
+The one line that is not 'killed' (366 lines are), the total and the job's exit:
+600: 2026-11-15T20:09:26.3136963Z flow-sta-inputs-not-compared     SURVIVED (2 s)
+676: 2026-11-15T20:16:18.6916004Z 366 of 367 mutants killed (scratch: /tmp/protoemu-mutants-l1hs3jgl)
+677: 2026-11-15T20:16:18.6990938Z ##[error]Process completed with exit code 1.

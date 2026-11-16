@@ -446,9 +446,21 @@ not pin the image digest (`sha256:d109140b…` in the release runs). After
 "Build GDS", the job runs `flow/release_expected.py . evidence/8x4-release-expected.json`:
 it prints the expected and the actual netlist sha256 and dates-zeroed GDS
 digest and fails the job on a difference, so a GitHub build of another
-placement cannot finish green. No GitHub-built GDS of the 3-core design
-has been compared yet: that needs a pushed branch, and the workflow at this
-commit has not run on GitHub.
+placement cannot finish green.
+
+**Measured on GitHub (the push of 2026-11-15).** The workflow ran on GitHub for `a84401f`,
+the verified commit before `S`, pushed to a test branch of the public
+repository (`a84401f` and `S` have the same build inputs:
+`flow/build_manifest.py compare` prints `SAME BUILD`). The `gds` job
+succeeded, and the hash step printed both pairs as `(match)`, netlist
+`453d0af7…` and dates-zeroed GDS `357ea15b…`, then
+`RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json`. The image tag
+resolved to the digest above. The job took 5 h 13 min 33 s, 3 h 45 min 52 s
+of it in detailed routing, against GitHub's 6 h limit for a job: about 46
+minutes of margin, measured once, on one hosted runner. The same push's
+mutation job found a mutant the tests did not kill; the test fix is `e610fcb`,
+which is in `S`. Records, with the other jobs' results:
+[evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md).
 
 **What the pin fixes, and what it does not.** This list is read from the
 action's source at `3412659` and from tt-support-tools at `d66cf17`. None of

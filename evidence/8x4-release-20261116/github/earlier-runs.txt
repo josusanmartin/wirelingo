@@ -1,0 +1,13 @@
+The workflow runs of josusanmartin/wirelingo before the ci-8x4-test branch's, as the API listed them at 2026-11-16 02:26 UTC
+(gh api repos/josusanmartin/wirelingo/actions/runs: 12 runs in all, these 6 and the 6 of runs.txt), oldest first,
+and the mutants job's total line in the two earlier runs of the test workflow (their job logs).
+
+run 42657634223  gds   branch main         commit aa958a7  created 2026-11-09T16:43:26Z  completed   failure
+run 42657640380  test  branch main         commit aa958a7  created 2026-11-09T16:43:28Z  completed   success
+run 42657646027  docs  branch main         commit aa958a7  created 2026-11-09T16:43:30Z  completed   success
+run 42827020143  test  branch main         commit d2ed344  created 2026-11-10T13:42:46Z  completed   success
+run 42827020276  docs  branch main         commit d2ed344  created 2026-11-10T13:42:46Z  completed   success
+run 42827020321  gds   branch main         commit d2ed344  created 2026-11-10T13:42:46Z  completed   success
+
+run 42657640380 (main, aa958a7), job 129300357869 (mutants, success), log line 560: 2026-11-09T17:10:44.0329694Z 245 of 245 mutants killed (scratch: /tmp/protoemu-mutants-jepy1m7i)
+run 42827020143 (main, d2ed344), job 129866886538 (mutants, success), log line 560: 2026-11-10T14:24:26.9029243Z 245 of 245 mutants killed (scratch: /tmp/protoemu-mutants-h8v25ye8)

@@ -1,0 +1,29 @@
+GitHub Actions runs of josusanmartin/wirelingo, branch ci-8x4-test, as the API gave them at 2026-11-16 02:26 UTC.
+Source: gh api repos/josusanmartin/wirelingo/actions/runs/RUN and .../runs/RUN/jobs (read-only). Times are UTC.
+A job with no end time had not finished when this was read; a job that waits for another (precheck, gl_test
+and viewer wait for gds) is not listed until it starts.
+
+run 43753001925  workflow gds  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status in_progress  conclusion -  attempt 1
+  job 132930882285  gds       completed   success  started 2026-11-15T19:32:36Z  ended 2026-11-16T00:46:09Z  (5 h 13 min 33 s)  runner image ubuntu-24.04
+  job 133022084315  viewer    completed   success  started 2026-11-16T00:46:12Z  ended 2026-11-16T00:46:40Z  (0 min 28 s)  runner image ubuntu-24.04
+  job 133022084329  gl_test   completed   success  started 2026-11-16T00:46:11Z  ended 2026-11-16T02:00:26Z  (1 h 14 min 15 s)  runner image ubuntu-24.04
+  job 133022084379  precheck  in_progress -        started 2026-11-16T00:46:12Z  ended -  runner image ubuntu-24.04
+
+run 43753002010  workflow test  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion failure  attempt 1
+  job 132930881939  mutants   completed   failure  started 2026-11-15T19:32:36Z  ended 2026-11-15T20:16:20Z  (43 min 44 s)  runner image ubuntu-24.04
+  job 132930882083  test      completed   success  started 2026-11-15T19:32:36Z  ended 2026-11-15T20:59:00Z  (1 h 26 min 24 s)  runner image ubuntu-24.04
+  job 132930882096  formal    completed   success  started 2026-11-15T19:32:35Z  ended 2026-11-15T19:42:00Z  (9 min 25 s)  runner image ubuntu-24.04
+
+run 43753001926  workflow docs  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion success  attempt 1
+  job 132930882053  docs      completed   success  started 2026-11-15T19:32:36Z  ended 2026-11-15T19:33:14Z  (0 min 38 s)  runner image ubuntu-24.04
+
+run 43787610261  workflow gds  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status in_progress  conclusion -  attempt 1
+  job 133038662531  gds       in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
+
+run 43787610305  workflow test  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status in_progress  conclusion -  attempt 1
+  job 133038662609  formal    completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T01:54:16Z  (13 min 52 s)  runner image ubuntu-24.04
+  job 133038662882  test      in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
+  job 133038663032  mutants   in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
+
+run 43787610191  workflow docs  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status completed  conclusion success  attempt 1
+  job 133038662703  docs      completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T01:41:24Z  (1 min 00 s)  runner image ubuntu-24.04
