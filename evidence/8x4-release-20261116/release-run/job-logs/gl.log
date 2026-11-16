@@ -1,0 +1,5 @@
+netlist 453d0af7bea77dd5  cores=3 banks=3 fifo_log2=3  outputs ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY
+~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/test.xml: 30 tests, 0 not passing
+~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/test_pio.xml: 2 tests, 0 not passing
+~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/test_eth_service.xml: 2 tests, 0 not passing
+receipt: ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/receipt.json

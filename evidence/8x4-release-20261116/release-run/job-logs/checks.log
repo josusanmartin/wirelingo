@@ -1,0 +1,58 @@
+image ghcr.io/librelane/librelane:3.1.0.dev3: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, LibreLane 3.1.0.dev3
+checks outputs ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju
+pulse pass disables: set_max_delay -ignore_clock_latency $period -from [get_clocks sck] -to [get_clocks clk]
+pulse pass disables: set_max_delay -ignore_clock_latency $period -from [get_clocks clk] -to [get_clocks sck]
+pulse pass disables: set_false_path -hold -from [get_clocks sck] -to [get_clocks clk]
+pulse pass disables: set_false_path -hold -from [get_clocks clk] -to [get_clocks sck]
+nom_typ_1p20V_25C signoff worst min_pulse_width: no check
+nom_typ_1p20V_25C signoff violators min_pulse_width: 0
+nom_typ_1p20V_25C signoff worst min_period: no check
+nom_typ_1p20V_25C signoff violators min_period: 0
+nom_typ_1p20V_25C signoff worst recovery: slack 7.09221 ns
+nom_typ_1p20V_25C signoff violators recovery: 0
+nom_typ_1p20V_25C signoff worst removal: slack 0.946425 ns
+nom_typ_1p20V_25C signoff violators removal: 0
+nom_typ_1p20V_25C signoff worst clock_gating_setup: no check
+nom_typ_1p20V_25C signoff violators clock_gating_setup: 0
+nom_typ_1p20V_25C signoff worst clock_gating_hold: no check
+nom_typ_1p20V_25C signoff violators clock_gating_hold: 0
+nom_typ_1p20V_25C pulse worst min_pulse_width: slack 9.47267 ns
+nom_typ_1p20V_25C pulse violators min_pulse_width: 0
+nom_typ_1p20V_25C pulse u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: worst slack 9.77468 ns
+nom_typ_1p20V_25C pulse u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: worst slack 9.77733 ns
+nom_typ_1p20V_25C pulse u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: worst slack 9.78005 ns
+nom_slow_1p08V_125C signoff worst min_pulse_width: no check
+nom_slow_1p08V_125C signoff violators min_pulse_width: 0
+nom_slow_1p08V_125C signoff worst min_period: no check
+nom_slow_1p08V_125C signoff violators min_period: 0
+nom_slow_1p08V_125C signoff worst recovery: slack 5.53785 ns
+nom_slow_1p08V_125C signoff violators recovery: 0
+nom_slow_1p08V_125C signoff worst removal: slack 1.30139 ns
+nom_slow_1p08V_125C signoff violators removal: 0
+nom_slow_1p08V_125C signoff worst clock_gating_setup: no check
+nom_slow_1p08V_125C signoff violators clock_gating_setup: 0
+nom_slow_1p08V_125C signoff worst clock_gating_hold: no check
+nom_slow_1p08V_125C signoff violators clock_gating_hold: 0
+nom_slow_1p08V_125C pulse worst min_pulse_width: slack 9.39472 ns
+nom_slow_1p08V_125C pulse violators min_pulse_width: 0
+nom_slow_1p08V_125C pulse u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: worst slack 9.57855 ns
+nom_slow_1p08V_125C pulse u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: worst slack 9.5838 ns
+nom_slow_1p08V_125C pulse u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: worst slack 9.58816 ns
+nom_fast_1p32V_m40C signoff worst min_pulse_width: no check
+nom_fast_1p32V_m40C signoff violators min_pulse_width: 0
+nom_fast_1p32V_m40C signoff worst min_period: no check
+nom_fast_1p32V_m40C signoff violators min_period: 0
+nom_fast_1p32V_m40C signoff worst recovery: slack 8.01888 ns
+nom_fast_1p32V_m40C signoff violators recovery: 0
+nom_fast_1p32V_m40C signoff worst removal: slack 0.598014 ns
+nom_fast_1p32V_m40C signoff violators removal: 0
+nom_fast_1p32V_m40C signoff worst clock_gating_setup: no check
+nom_fast_1p32V_m40C signoff violators clock_gating_setup: 0
+nom_fast_1p32V_m40C signoff worst clock_gating_hold: no check
+nom_fast_1p32V_m40C signoff violators clock_gating_hold: 0
+nom_fast_1p32V_m40C pulse worst min_pulse_width: slack 9.53467 ns
+nom_fast_1p32V_m40C pulse violators min_pulse_width: 0
+nom_fast_1p32V_m40C pulse u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: worst slack 9.8689 ns
+nom_fast_1p32V_m40C pulse u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: worst slack 9.87191 ns
+nom_fast_1p32V_m40C pulse u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: worst slack 9.8732 ns
+receipt: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju/receipt.json

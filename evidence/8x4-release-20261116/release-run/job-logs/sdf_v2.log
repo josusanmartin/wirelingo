@@ -1,0 +1,22 @@
+netlist 453d0af7bea77dd5  cores=3 banks=3 fifo_log2=3  outputs ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2
+set v2
+[typ_20ns_pass] test.test_spi_master_fast passed
+[typ_20ns_pass] test.test_la_capture_ticks passed
+[typ_20ns_pass] test.test_call_ret passed
+[typ_20ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0            1043820.00         597.77       1746.20  ** (626 s)
+[typ_20.834ns_pass_usb_fs_device] test.test_usb_fs_device passed
+[typ_20.834ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0            3411692.50         912.26       3739.83  ** (946 s)
+[slow_20.832ns_pass] test.test_spi_master_fast passed
+[slow_20.832ns_pass] test.test_la_capture_ticks passed
+[slow_20.832ns_pass] test.test_call_ret passed
+[slow_20.832ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0            1087242.91         478.94       2270.13  ** (513 s)
+[slow_20.834ns_pass_usb_fs_device] test.test_usb_fs_device passed
+[slow_20.834ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0            3411692.50         915.86       3725.11  ** (949 s)
+[fast_20ns_pass] test.test_spi_master_fast passed
+[fast_20ns_pass] test.test_la_capture_ticks passed
+[fast_20ns_pass] test.test_call_ret passed
+[fast_20ns_pass] PASS as required: ** TESTS=3 PASS=3 FAIL=0 SKIP=0            1043820.00         589.79       1769.83  ** (620 s)
+[fast_20.834ns_pass_usb_fs_device] test.test_usb_fs_device passed
+[fast_20.834ns_pass_usb_fs_device] PASS as required: ** TESTS=1 PASS=1 FAIL=0 SKIP=0            3412109.18         916.77       3721.90  ** (950 s)
+receipt: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2/receipt.json
+gl_sdf_test (v2): all cases as required

@@ -16,8 +16,11 @@ logic. Each core executes one 32-bit instruction per tick and has:
 * 8-word FIFOs to the host, which can be joined into one 16-word TX FIFO.
 
 This chip is the **8x4 build with three cores and three SRAM banks**, ISA
-v0.3, at a **48 MHz** project clock. It is a release candidate, pending the
-final clean harden of the shipping commit; nothing has been fabricated. Its
+v0.3, at a **48 MHz** project clock. It is the release build: a clean
+harden of the shipping commit `2c97c15` passed the release check on
+2026-11-16, at the levels STA, gate level (functional and with SDF),
+precheck and formal equivalence ([records](../evidence/8x4-release-20261116/README.md)). Nothing has been
+fabricated. Its
 layout passes signoff (DRC, LVS and antenna clean) and, in static timing,
 meets 48 MHz at every corner: the worst non-latch setup slack at the slow
 corner is +0.4304 ns, a margin that belongs to this placement (a run with a

@@ -1,0 +1,3 @@
+2026-11-15T23:20:23Z aqp-rel-2c97c15 start (repo rel-2c97c15 ): aqp-rel-2c97c15 REPO=rel-2c97c15
+2026-11-16T01:42:23Z aqp-rel-2c97c15 harden rc=0 (142 min)
+2026-11-16T01:44:30Z aqp-rel-2c97c15 ROUTED CLEAN (0 routing DRC, 0 KLayout DRC, LVS clean): pinned; queue stops for signoff and release checks

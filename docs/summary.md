@@ -6,10 +6,13 @@ a Tiny Tapeout design on IHP SG13CMOS5L, 8x4 tiles. It has not been
 fabricated. Every result below names its evidence level: model, RTL
 simulation, formal, gate level, RTL in FPGA fabric. FPGA is not silicon.
 
-**Release candidate:** 8x4 tiles, three cores, three 256-word instruction
+**Release build:** 8x4 tiles, three cores, three 256-word instruction
 SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
-clock; pending the final clean harden of the shipping commit
-([below](#physical-status-the-3-core-8x4-release-candidate)). The 2-core 8x4
+clock. A clean harden of the shipping commit `2c97c15` passed the release
+check on 2026-11-16, at the levels STA, gate level, precheck and formal
+equivalence; not silicon
+([below](#physical-status-the-3-core-8x4-release-candidate),
+[records](../evidence/8x4-release-20261116/README.md)). The 2-core 8x4
 build is not a live option: its receipted build predates the CRC retime now
 in the RTL, a 2-core harden of the current RTL misses 48 MHz at the slow
 corner by 0.433 ns (STA), and that work stopped on 2026-11-13
@@ -135,8 +138,11 @@ to 4 CPUs and 16 GB; a run with a moved placement misses 48 MHz at the slow
 corner by 0.815 ns, so the margin belongs to this placement. A release
 rehearsal on a clean harden of the same netlist passes every receipt:
 functional and SDF gate level, fresh slow STA, clock and reset checks,
-precheck and equivalence. It is a release candidate pending the final clean
-harden of the shipping commit, not a fabricated chip. Evidence levels: STA,
+precheck and equivalence. The release run, a clean harden of the shipping
+commit `2c97c15` on 2026-11-16, gave the same netlist and GDS and passed the
+same receipts: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)` and
+equivalence `EQUIVALENT` ([records](../evidence/8x4-release-20261116/README.md)). It is the release build, not a
+fabricated chip. Evidence levels: STA,
 gate level, precheck, formal equivalence; not silicon, and FPGA is not
 silicon ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15),
 [release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).

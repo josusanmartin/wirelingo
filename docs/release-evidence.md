@@ -342,8 +342,12 @@ separately.
 
 ## The 3-core 8x4 release candidate
 
-**Status: a release candidate, pending the final clean harden of the
-shipping commit.** Nothing here is silicon or FPGA; the levels are STA, gate
+**Status: the release build (2026-11-16).** The release run, a clean harden
+of the shipping commit `2c97c15` by the procedure below, passed:
+`RELEASE PASSED (SDF profile v2, slow target 48 MHz)`, its identity matching
+and equivalence `EQUIVALENT`
+([the record](#recorded-release-3-core-8x4-shipping-commit-2c97c15-2026-11-16)).
+Nothing here is silicon or FPGA; the levels are STA, gate
 level (functional and with SDF), precheck and formal equivalence under the
 checker's model. The design, its timing and its reproductions are in
 [physical.md](physical.md#the-3-core-release-candidate-2026-11-15).
@@ -420,7 +424,10 @@ commit: a summary of the `release_evidence.py` archive (verdict, receipt
 list, case counts), the non-latch receipt, the equivalence output, the
 netlist and dates-zeroed GDS hashes, and `S`'s commit id. This section
 describes the procedure and does not quote the run's results; that folder
-does.
+does. For `S` = `2c97c15` it is
+[evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md),
+summarized in
+[the recorded release below](#recorded-release-3-core-8x4-shipping-commit-2c97c15-2026-11-16).
 
 **What may follow `S`.** Only commits that touch `evidence/` and `docs/`. For
 a later commit `T`, `git diff --stat S T -- . ':!evidence' ':!docs'` must
@@ -459,7 +466,10 @@ resolved to the digest above. The job took 5 h 13 min 33 s, 3 h 45 min 52 s
 of it in detailed routing, against GitHub's 6 h limit for a job: about 46
 minutes of margin, measured once, on one hosted runner. The same push's
 mutation job found a mutant the tests did not kill; the test fix is `e610fcb`,
-which is in `S`. Records, with the other jobs' results:
+which is in `S`. On GitHub's run of `S` (pushed 2026-11-16) the mutation job
+killed 367 of 367, and `formal` and `docs` passed; when the records were last
+read, `S`'s `test` and `gds` jobs and `a84401f`'s `precheck` had not finished.
+Records, with the other jobs' results and their times:
 [evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md).
 
 **What the pin fixes, and what it does not.** This list is read from the
@@ -505,6 +515,64 @@ hashed GDS into `tt_submission/` with `shutil.copyfile`, so the artifact's
 `.gds` is a byte copy of the hashed file. Next to it the same function writes
 an `.oas` conversion (KLayout), which nothing hashes. This too is read from
 the source, not run.
+
+## Recorded release: 3-core 8x4, shipping commit 2c97c15 (2026-11-16)
+
+The release run of the procedure above, on runner1, for the shipping commit
+`S` = `2c97c15b5ab47d226798ed51d3d88f09eb548b21` (tree `b4b79c79…`).
+Evidence levels: harden and STA, gate-level simulation (functional and with
+SDF delays), Tiny Tapeout's precheck, formal equivalence under the
+checker's model. None of it is silicon; the chip has not been fabricated.
+Records:
+[evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md)
+(`release-run/`).
+
+* **The harden.** Run aqp-rel-2c97c15: `flow/harden.sh aqp-rel-2c97c15` with
+  no options in a clean clone of `S`, at nice 19, with `PYTHONPATH`,
+  `LIBRELANE_IMAGE_OVERRIDE`, `STOP` and `FIFO_LOG2` unset, from 2026-11-15
+  23:20 to 2026-11-16 01:42 UTC (142 minutes). The clean-tree receipt says
+  `CLEAN (commit 2c97c15b5ab4, tree b4b79c79c94a)` at the start and after
+  config generation. `flow/signoff.py`: 0 routing DRC, 0 KLayout DRC, 0 LVS
+  errors, 0 antenna violations, no slew or capacitance violation,
+  `SIGNOFF PASSED`; at the run's 20 ns constraint, setup WS −0.4016 ns with
+  13 violators at the slow corner (so 50 MHz is not claimed), hold
+  +0.212 / +0.395 / +0.105 ns typ / slow / fast.
+* **The receipts.** `flow/release_evidence.py` from a second clean clone of
+  `S` as the validation root, a third as the shipping root, `--slow-mhz 48
+  --require-nonlatch-floor 0.3 --expect`, 01:49 to 03:19 UTC, ten jobs, all
+  exit 0:
+
+  | Job | Result |
+  | --- | --- |
+  | functional GL | `test` 30/30, `test_pio` 2/2, `test_eth_service` 2/2 |
+  | SDF standard | 5/5 at typ 20 ns, slow 20.832 ns and fast 20 ns; the slow 10 ns control fails as required |
+  | SDF v2 | 3/3 at typ 20 ns, slow 20.832 ns and fast 20 ns; USB full speed 1/1 at 20.834 ns at each corner |
+  | autonomous USB, SDF | low and full speed 2/2 at 20.834 ns at typ, slow and fast |
+  | fresh slow STA | 20.832 ns: setup WS 0 (latches included), 0 violators, at each corner |
+  | non-latch STA | 20.832 ns: +0.4304 ns slow (at `_53246_/D`, above the 0.3 ns floor), +3.3180 typ, +3.9191 fast |
+  | clock and reset checks | 3885 register clock pins clocked and pulse-width checked at each corner; pulse width, recovery and removal met |
+  | precheck | passes; its receipt verifies |
+
+  The release check: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`,
+  no waiver. Clean tree: the run's tree equals the shipping commit's; tt,
+  image and PDK as pinned; the configs regenerated from the shipping tree
+  equal the files LibreLane read; the build inputs equal the shipping
+  clone's. Release identity: netlist `453d0af7…`, dates-zeroed GDS
+  `357ea15b…` and the late clock, 64 registers on 23 branches, each a match
+  with [evidence/8x4-release-expected.json](../evidence/8x4-release-expected.json).
+* **Equivalence.** `formal/equiv/equiv_check.sh --mutants` on the run:
+  `EQUIVALENT`, ABC equivalent, `equiv_simple` 10754/10754 proven, 9 of 9
+  planted netlist mutants caught.
+* **The archive.** `wirelingo-release-evidence-2c97c15-aqp-rel-2c97c15.tar.gz`,
+  sha256 `1ff19b7d7d673aeb37c88d941d13ae01750274f2cc838fbdb9283ef2e8bedb8b`,
+  72,314,042 bytes, 568 payload files, 10 verified receipts. It is not in
+  git: it is to be attached as a release asset.
+
+The netlist and GDS are the release candidate's
+([evidence/8x4-release-candidate-20261115/](../evidence/8x4-release-candidate-20261115/README.md)),
+so the figures in [physical.md](physical.md#the-3-core-release-candidate-2026-11-15)
+are the released build's. GitHub's build of `a84401f`, which has the same
+build inputs, printed the same two hashes (above).
 
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 

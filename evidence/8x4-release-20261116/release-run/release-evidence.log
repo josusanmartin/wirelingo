@@ -1,0 +1,154 @@
+2026-11-16T01:49:11Z candidate ~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15; validation root ~/protoemu-flow/aq-search/val-2c97c15 at 2c97c15b5ab47d226798ed51d3d88f09eb548b21; runners ~/protoemu-flow/aq-search/val-2c97c15/flow; work ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15
+2026-11-16T01:49:11Z gl: bash ~/protoemu-flow/aq-search/val-2c97c15/flow/gl_test.sh ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate ~/protoemu-flow/aq-search/val-2c97c15
+2026-11-16T01:49:11Z started gl (weight 1, 1/4 in use)
+2026-11-16T01:49:11Z sdf_auto_slow: bash ~/protoemu-flow/aq-search/val-2c97c15/flow/gl_sdf_test.sh ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate slow 20.834
+2026-11-16T01:49:11Z started sdf_auto_slow (weight 1, 2/4 in use)
+2026-11-16T01:49:11Z sdf_auto_typ: bash ~/protoemu-flow/aq-search/val-2c97c15/flow/gl_sdf_test.sh ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate typ 20.834
+2026-11-16T01:49:11Z started sdf_auto_typ (weight 1, 3/4 in use)
+2026-11-16T01:49:11Z sdf_auto_fast: bash ~/protoemu-flow/aq-search/val-2c97c15/flow/gl_sdf_test.sh ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate fast 20.834
+2026-11-16T01:49:11Z started sdf_auto_fast (weight 1, 4/4 in use)
+2026-11-16T02:19:56Z finished sdf_auto_fast: exit 0 after 1845 s
+2026-11-16T02:20:01Z precheck: ~/protoemu-flow/protoemu/.venv-flow/bin/python ~/protoemu-flow/aq-search/val-2c97c15/flow/precheck_test.py ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate --tt-root ~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15/tt --out ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/precheck
+2026-11-16T02:20:01Z started precheck (weight 1, 4/4 in use)
+2026-11-16T02:20:06Z finished sdf_auto_typ: exit 0 after 1855 s
+2026-11-16T02:20:11Z sta_slow: /usr/bin/python3 ~/protoemu-flow/aq-search/val-2c97c15/flow/sta_rerun.py ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate 20.832 --out-parent ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build
+2026-11-16T02:20:11Z started sta_slow (weight 1, 4/4 in use)
+2026-11-16T02:20:51Z finished sdf_auto_slow: exit 0 after 1900 s
+2026-11-16T02:20:56Z nonlatch: /usr/bin/python3 ~/protoemu-flow/aq-search/val-2c97c15/flow/sta_nonlatch.py ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate --period 20.832 --out-parent ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build
+2026-11-16T02:20:56Z started nonlatch (weight 1, 4/4 in use)
+2026-11-16T02:21:41Z finished sta_slow: exit 0 after 90 s
+2026-11-16T02:21:46Z checks: /usr/bin/python3 ~/protoemu-flow/aq-search/val-2c97c15/flow/check_rerun.py ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate --out-parent ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build
+2026-11-16T02:21:46Z started checks (weight 1, 4/4 in use)
+2026-11-16T02:22:16Z finished nonlatch: exit 0 after 80 s
+2026-11-16T02:24:21Z finished checks: exit 0 after 155 s
+2026-11-16T02:26:36Z finished precheck: exit 0 after 395 s
+2026-11-16T02:55:51Z finished gl: exit 0 after 4000 s
+2026-11-16T02:55:56Z sdf_standard: bash ~/protoemu-flow/aq-search/val-2c97c15/flow/gl_sdf_test.sh ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate standard
+2026-11-16T02:55:56Z started sdf_standard (weight 4, 4/4 in use)
+2026-11-16T03:03:21Z finished sdf_standard: exit 0 after 445 s
+2026-11-16T03:03:26Z sdf_v2: bash ~/protoemu-flow/aq-search/val-2c97c15/flow/gl_sdf_test.sh ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate v2
+2026-11-16T03:03:26Z started sdf_v2 (weight 4, 4/4 in use)
+2026-11-16T03:19:21Z finished sdf_v2: exit 0 after 955 s
+2026-11-16T03:19:21Z gl: receipt ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/receipt.json
+2026-11-16T03:19:21Z sdf_auto_slow: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.FlO03n/receipt.json
+2026-11-16T03:19:21Z sdf_auto_typ: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5/receipt.json
+2026-11-16T03:19:21Z sdf_auto_fast: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.IbgmEQ/receipt.json
+2026-11-16T03:19:21Z precheck: receipt ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/precheck/receipt.json
+2026-11-16T03:19:21Z sdf_standard: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD/receipt.json
+2026-11-16T03:19:21Z sdf_v2: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2/receipt.json
+2026-11-16T03:19:21Z sta_slow: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/sta.rnyengje/receipt.json
+2026-11-16T03:19:21Z nonlatch: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/nonlatch.gjk0qmfh/receipt.json
+2026-11-16T03:19:21Z checks: receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju/receipt.json
+2026-11-16T03:19:21Z release check: /usr/bin/python3 ~/protoemu-flow/aq-search/val-2c97c15/flow/release_check.py ~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15 --validation-root ~/protoemu-flow/aq-search/val-2c97c15 --sdf-profile v2 --require-sta-inputs --slow-mhz 48 --shipping-root ~/protoemu-flow/aq-search/ship-2c97c15 --flow-python ~/protoemu-flow/protoemu/.venv-flow/bin/python --require-nonlatch-floor 0.3 --expect ~/protoemu-flow/aq-search/val-2c97c15/evidence/8x4-release-expected.json --gl-receipt ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/receipt.json --sdf-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.FlO03n/receipt.json --sdf-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5/receipt.json --sdf-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.IbgmEQ/receipt.json --precheck-receipt ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/precheck/receipt.json --sdf-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD/receipt.json --sdf-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2/receipt.json --slow-sta-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/sta.rnyengje/receipt.json --nonlatch-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/nonlatch.gjk0qmfh/receipt.json --checks-receipt ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju/receipt.json
+2026-11-16T03:19:30Z == minimum signoff
+routing DRC                  0
+KLayout DRC                  0
+LVS errors                   0
+antenna violations           0
+stdcell utilization          0.570045
+utilization incl. macros     0.62288
+nom_typ_1p20V_25C            setup WS 0 (all endpoints, latches included), hold WS 0.21215074741881465, setup/hold violators 0/0, max slew/cap violations 0/0
+nom_slow_1p08V_125C          setup WS -0.40156856754247355 (all endpoints, latches included), hold WS 0.39490056786799094, setup/hold violators 13/0, max slew/cap violations 0/0
+nom_fast_1p32V_m40C          setup WS 0 (all endpoints, latches included), hold WS 0.10503820333046933, setup/hold violators 0/0, max slew/cap violations 0/0
+SRAM timing view, nom_typ_1p20V_25C    typ_1p20V_25C
+SRAM timing view, nom_slow_1p08V_125C  slow_1p08V_125C
+SRAM timing view, nom_fast_1p32V_m40C  fast_1p32V_m55C
+sha256 nl 453d0af7bea77dd5  gds 69692787b1e03189
+SIGNOFF PASSED
+== release criteria
+non-latch STA verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/nonlatch.gjk0qmfh/receipt.json (20.832 ns, corners nom_fast_1p32V_m40C, nom_slow_1p08V_125C, nom_typ_1p20V_25C, image sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a (the run's))
+nom_slow_1p08V_125C: worst non-latch setup slack +0.4304 ns meets the floor of 0.3 ns
+slow-corner STA verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/sta.rnyengje/receipt.json (20.832 ns, image sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, LibreLane 3.1.0.dev3)
+nom_typ_1p20V_25C: actual constraint 20 ns; setup 0 ns (all endpoints, latches included); hold 0.21215074741881465 ns
+nom_typ_1p20V_25C: worst non-latch setup slack +3.3180 ns at uo_out[4] (20.832 ns, flow/sta_nonlatch.py)
+nom_slow_1p08V_125C: fresh STA 20.832 ns; setup 0.0 ns (all endpoints, latches included); hold 0.39490056786799094 ns
+nom_slow_1p08V_125C: worst non-latch setup slack +0.4304 ns at _53246_/D (20.832 ns, flow/sta_nonlatch.py)
+nom_fast_1p32V_m40C: actual constraint 20 ns; setup 0 ns (all endpoints, latches included); hold 0.10503820333046933 ns
+nom_fast_1p32V_m40C: worst non-latch setup slack +3.9191 ns at uo_out[4] (20.832 ns, flow/sta_nonlatch.py)
+== clock and reset checks
+checks receipt verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju/receipt.json (image sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a; the pulse pass disabled the path exceptions of 4 SDC lines)
+nom_typ_1p20V_25C: clock clk: all 3748 register clock pins have a pulse width check
+nom_typ_1p20V_25C: clock sck: all 137 register clock pins have a pulse width check
+nom_typ_1p20V_25C: all 3885 register clock pins are clocked and checked
+nom_typ_1p20V_25C: min_pulse_width: worst slack 9.47267 ns (met)
+nom_typ_1p20V_25C: recovery: worst slack 7.09221 ns (met)
+nom_typ_1p20V_25C: removal: worst slack 0.946425 ns (met)
+nom_typ_1p20V_25C: SRAM clock pin u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.77468 ns (met)
+nom_typ_1p20V_25C: SRAM clock pin u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.77733 ns (met)
+nom_typ_1p20V_25C: SRAM clock pin u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.78005 ns (met)
+nom_slow_1p08V_125C: clock clk: all 3748 register clock pins have a pulse width check
+nom_slow_1p08V_125C: clock sck: all 137 register clock pins have a pulse width check
+nom_slow_1p08V_125C: all 3885 register clock pins are clocked and checked
+nom_slow_1p08V_125C: min_pulse_width: worst slack 9.39472 ns (met)
+nom_slow_1p08V_125C: recovery: worst slack 5.53785 ns (met)
+nom_slow_1p08V_125C: removal: worst slack 1.30139 ns (met)
+nom_slow_1p08V_125C: SRAM clock pin u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.57855 ns (met)
+nom_slow_1p08V_125C: SRAM clock pin u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.5838 ns (met)
+nom_slow_1p08V_125C: SRAM clock pin u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.58816 ns (met)
+nom_fast_1p32V_m40C: clock clk: all 3748 register clock pins have a pulse width check
+nom_fast_1p32V_m40C: clock sck: all 137 register clock pins have a pulse width check
+nom_fast_1p32V_m40C: all 3885 register clock pins are clocked and checked
+nom_fast_1p32V_m40C: min_pulse_width: worst slack 9.53467 ns (met)
+nom_fast_1p32V_m40C: recovery: worst slack 8.01888 ns (met)
+nom_fast_1p32V_m40C: removal: worst slack 0.598014 ns (met)
+nom_fast_1p32V_m40C: SRAM clock pin u_chip.u_imem.g_bank[0].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.8689 ns (met)
+nom_fast_1p32V_m40C: SRAM clock pin u_chip.u_imem.g_bank[1].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.87191 ns (met)
+nom_fast_1p32V_m40C: SRAM clock pin u_chip.u_imem.g_bank[2].g_on.u_bank.sram/A_CLK: 1 pulse width checks, worst slack 9.8732 ns (met)
+min_period: no check at nom_typ_1p20V_25C, nom_slow_1p08V_125C, nom_fast_1p32V_m40C (exception: no library the chip uses (the IHP SG13CMOS5L standard cell, SRAM and I/O .lib files) defines a minimum_period arc or a min_period attribute, so OpenSTA has no minimum-period check; the clock period is bounded by setup/hold and pulse width, which are gated)
+clock_gating_setup: no check at nom_typ_1p20V_25C, nom_slow_1p08V_125C, nom_fast_1p32V_m40C (exception: the clock gates are the library's integrated clock-gating cells (sg13cmos5l_lgcp_1 and slgcp_1 are clock_gating_integrated_cell), whose enable is timed by their setup/hold arcs with every other register; OpenSTA infers clock-gating checks only for gating built from plain logic)
+clock_gating_hold: no check at nom_typ_1p20V_25C, nom_slow_1p08V_125C, nom_fast_1p32V_m40C (exception: the clock gates are the library's integrated clock-gating cells (sg13cmos5l_lgcp_1 and slgcp_1 are clock_gating_integrated_cell), whose enable is timed by their setup/hold arcs with every other register; OpenSTA infers clock-gating checks only for gating built from plain logic)
+== SRAM power stripes (ExtendPowerStripes log)
+ExtendPowerStripes: 1 x [WARNING ORD-0039] .openroad ignored with -python (exception: OpenROAD's notice that it skips the user's .openroad start-up file when it runs a Python script; it says nothing about the power grid)
+ExtendPowerStripes: u_chip.u_imem.g_bank[0].g_on.u_bank.sram: array L 9, band 2, array R 9 VPWR/VGND pairs
+ExtendPowerStripes: u_chip.u_imem.g_bank[1].g_on.u_bank.sram: array L 8, band 2, array R 9 VPWR/VGND pairs
+ExtendPowerStripes: u_chip.u_imem.g_bank[2].g_on.u_bank.sram: array L 8, band 2, array R 7 VPWR/VGND pairs
+== macro power pins (final DEF)
+u_chip.u_imem.g_bank\[0\].g_on.u_bank.sram VDD! -> VPWR: 10 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[0\].g_on.u_bank.sram VDDARRAY! -> VPWR: 9 stripes (left half), 9 stripes (right half)
+u_chip.u_imem.g_bank\[0\].g_on.u_bank.sram VSS! -> VGND: 10 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[1\].g_on.u_bank.sram VDD! -> VPWR: 9 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[1\].g_on.u_bank.sram VDDARRAY! -> VPWR: 8 stripes (left half), 9 stripes (right half)
+u_chip.u_imem.g_bank\[1\].g_on.u_bank.sram VSS! -> VGND: 9 stripes (left half), 10 stripes (right half)
+u_chip.u_imem.g_bank\[2\].g_on.u_bank.sram VDD! -> VPWR: 9 stripes (left half), 8 stripes (right half)
+u_chip.u_imem.g_bank\[2\].g_on.u_bank.sram VDDARRAY! -> VPWR: 8 stripes (left half), 7 stripes (right half)
+u_chip.u_imem.g_bank\[2\].g_on.u_bank.sram VSS! -> VGND: 9 stripes (left half), 8 stripes (right half)
+== shipping build
+clean tree: tree b4b79c79c94a70f0981f16f18855023218bcc62d: equal (run commit 2c97c15b5ab4, shipping commit 2c97c15b5ab4)
+clean tree: tt_support_tools: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665 (pinned)
+clean tree: librelane_image: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a (pinned)
+clean tree: pdk: 2bbec755dc67ca3db0261c3d6163e15735d66710 (pinned)
+clean tree: LibreLane ran ghcr.io/librelane/librelane:3.1.0.dev3
+clean tree: generated configs: regenerated from the shipping tree, equal to the record and to the files LibreLane read
+clean tree: the run hardened a clean checkout of ~/protoemu-flow/aq-search/ship-2c97c15's tree
+shipping build: tool files: not compared (run: 1, shipping: 0)
+shipping build: librelane_image: not compared (run: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a, shipping: None)
+shipping build: librelane_version: not compared (run: 3.1.0.dev3, shipping: None)
+shipping build: pdk: not compared (run: IHP-Open-PDK 2bbec755dc67ca3db0261c3d6163e15735d66710, shipping: None)
+shipping build: tt_support_tools: not compared (run: {'commit': 'd66cf179e7bc4d296362ab7e2e3b344dc3c4f665', 'tree': 'b17c17d420fcf87ff9737990106432191e015c7f577f08e8297e37b290d9a275', 'files': 173}, shipping: None)
+shipping build: gds_normalized: not compared (run: 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a, shipping: None)
+shipping build: netlist: not compared (run: 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08, shipping: None)
+shipping build: the run's build inputs equal ~/protoemu-flow/aq-search/ship-2c97c15's
+shipping build: gen_config.py --preset submission --check: configuration matches submission preset (rc 0)
+== release identity
+release identity: netlist_sha256 expected 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+release identity: netlist_sha256 actual   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08 (match)
+release identity: gds_normalized_sha256 expected 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+release identity: gds_normalized_sha256 actual   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a (match)
+release identity: late clock expected 64 registers on 23 branches; actual 64 on 23 (match)
+release identity: the run is the build ~/protoemu-flow/aq-search/val-2c97c15/evidence/8x4-release-expected.json names
+GL verified: ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.FlO03n/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.IbgmEQ/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD/receipt.json
+SDF verified: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2/receipt.json
+precheck verified: ~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/precheck/receipt.json
+RELEASE PASSED (SDF profile v2, slow target 48 MHz)
+2026-11-16T03:19:30Z verdict: RELEASE PASSED (SDF profile v2, slow target 48 MHz)
+2026-11-16T03:20:32Z {
+  "path": "~/protoemu-flow/aq-search/wirelingo-release-evidence-2c97c15-aqp-rel-2c97c15.tar.gz",
+  "sha256": "1ff19b7d7d673aeb37c88d941d13ae01750274f2cc838fbdb9283ef2e8bedb8b",
+  "bytes": 72314042,
+  "payload_files": 568,
+  "verified_receipts": 10
+}

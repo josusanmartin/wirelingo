@@ -17,12 +17,14 @@ logs, partial suites and arithmetic estimates at another clock cannot pass.
 [Release evidence](release-evidence.md) gives the commands, coverage and limits.
 v2c fails at 50 MHz (slow setup −1.57 ns, 3 slew and 85 fanout violations).
 
-**Release candidate:** 8x4 tiles, three cores, three 256-word instruction
+**Release build:** 8x4 tiles, three cores, three 256-word instruction
 SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
 clock: signoff clean, worst non-latch setup slack +0.4304 ns at the slow
 corner at 48 MHz (STA), 50 MHz missed at the slow corner by 0.40 ns, and a
-release rehearsal whose receipts pass. It is pending the final clean harden
-of the shipping commit; see
+release rehearsal whose receipts pass. The release run, a clean harden of
+the shipping commit `2c97c15`, passed the release check on 2026-11-16 (STA,
+gate level, precheck, formal equivalence; not silicon;
+[records](../evidence/8x4-release-20261116/README.md)); see
 [the 3-core release candidate](#the-3-core-release-candidate-2026-11-15).
 The 2-core 8x4 build is not a live option: its receipted candidate below
 predates the CRC retime now in the RTL, a 2-core harden of the current RTL
@@ -352,8 +354,11 @@ buffers (an estimate; `flow/` settings are not changed here).
 
 ### The 3-core release candidate (2026-11-15)
 
-**Status: a release candidate, pending the final clean harden of the
-shipping commit** ([release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)).
+**Status: the release build (2026-11-16).** The release run, a clean harden
+of the shipping commit `2c97c15`, gave this netlist and GDS and passed the
+release check: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`
+([release-evidence.md](release-evidence.md#recorded-release-3-core-8x4-shipping-commit-2c97c15-2026-11-16),
+[records](../evidence/8x4-release-20261116/README.md)).
 It has not been taped out. Evidence levels below: harden and static timing
 (STA); gate-level simulation, functional and with SDF delays; Tiny Tapeout's
 precheck; formal equivalence of the RTL and the netlist under the checker's

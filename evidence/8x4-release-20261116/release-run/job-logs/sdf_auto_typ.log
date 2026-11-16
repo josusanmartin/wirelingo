@@ -1,0 +1,8 @@
+netlist 453d0af7bea77dd5  cores=3 banks=3 fifo_log2=3  outputs ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5
+tests (test): test_usb_autonomous test_usb_autonomous_fs
+set single
+[typ_20.834ns_pass] test.test_usb_autonomous passed
+[typ_20.834ns_pass] test.test_usb_autonomous_fs passed
+[typ_20.834ns_pass] PASS as required: ** TESTS=2 PASS=2 FAIL=0 SKIP=0            9899733.45        1825.27       5423.70  ** (1853 s)
+receipt: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5/receipt.json
+gl_sdf_test (single): all cases as required

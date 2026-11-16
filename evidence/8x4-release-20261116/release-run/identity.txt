@@ -1,0 +1,26 @@
+The release build's identity: what the release run aqp-rel-2c97c15 hardened, and what it produced.
+
+shipping commit S     2c97c15b5ab47d226798ed51d3d88f09eb548b21
+S's tree              b4b79c79c94a70f0981f16f18855023218bcc62d
+                      (git rev-parse 2c97c15 and 2c97c15^{tree}; the release check's clean-tree line, release-check.log:
+                      "tree b4b79c79c94a70f0981f16f18855023218bcc62d: equal (run commit 2c97c15b5ab4, shipping commit 2c97c15b5ab4)")
+
+final netlist sha256  453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+GDS sha256, its BGNLIB/BGNSTR dates zeroed
+                      357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+GDS sha256, raw       69692787b1e03189c2a7c119a2ebf0b7e992969bde8a2f1c7ca815e65ba8f3e5
+                      (it differs from other hardens of the same inputs by the dates only; verdict.json, candidate)
+late clock            64 registers on 23 branches (the SRAM clock advance step's LATE_CLOCK_COMPLETE count)
+
+Each of the first two hashes and the late-clock count equals evidence/8x4-release-expected.json. The release check's
+own lines (release-check.log, "== release identity", with the runner's home directory written as ~):
+
+release identity: netlist_sha256 expected 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+release identity: netlist_sha256 actual   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08 (match)
+release identity: gds_normalized_sha256 expected 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+release identity: gds_normalized_sha256 actual   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a (match)
+release identity: late clock expected 64 registers on 23 branches; actual 64 on 23 (match)
+release identity: the run is the build ~/protoemu-flow/aq-search/val-2c97c15/evidence/8x4-release-expected.json names
+
+GitHub's build of a84401f, a commit with the same build inputs as S, printed the same two hashes as (match)
+(github/a84401f-gds.txt).

@@ -1,0 +1,3 @@
+clean tree (start): CLEAN (commit 2c97c15b5ab4, tree b4b79c79c94a)
+wrote ~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15/src/config.json: 3 banks at {0: (4.32, 3.78), 1: (1302.72, 3.78), 2: (653.28, 3.78)}
+clean tree (generated): CLEAN (commit 2c97c15b5ab4, tree b4b79c79c94a)

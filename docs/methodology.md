@@ -49,6 +49,15 @@ do not name the model those sessions used. The rest of this page is the record b
 statement above: what the agents did, what the author did, and the evidence
 that stands between an agent's claim and the GDS.
 
+From 2026-11-15 to 2026-11-16, the second design audit, part of the
+orchestration, the last six commits of the 3-core 8x4 build's release
+preparation (up to its shipping commit) and its first two evidence commits
+were done with Claude Fable 5.2, in Claude Code, as the session that
+reviewed that work reports; those eight commits' `Co-Authored-By` lines
+name it. The commits
+that record the release run's results name Claude Opus 5.5. The rest of the
+work is credited as this page says.
+
 ## Who did what
 
 | Role | Who | What it did here |

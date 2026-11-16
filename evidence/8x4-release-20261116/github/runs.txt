@@ -1,4 +1,4 @@
-GitHub Actions runs of josusanmartin/wirelingo, branch ci-8x4-test, as the API gave them at 2026-11-16 02:26 UTC.
+GitHub Actions runs of josusanmartin/wirelingo, branch ci-8x4-test, as the API gave them at 2026-11-16 03:34 UTC.
 Source: gh api repos/josusanmartin/wirelingo/actions/runs/RUN and .../runs/RUN/jobs (read-only). Times are UTC.
 A job with no end time had not finished when this was read; a job that waits for another (precheck, gl_test
 and viewer wait for gds) is not listed until it starts.
@@ -23,7 +23,7 @@ run 43787610261  workflow gds  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  
 run 43787610305  workflow test  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status in_progress  conclusion -  attempt 1
   job 133038662609  formal    completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T01:54:16Z  (13 min 52 s)  runner image ubuntu-24.04
   job 133038662882  test      in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
-  job 133038663032  mutants   in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
+  job 133038663032  mutants   completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T02:47:58Z  (1 h 07 min 34 s)  runner image ubuntu-24.04
 
 run 43787610191  workflow docs  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status completed  conclusion success  attempt 1
   job 133038662703  docs      completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T01:41:24Z  (1 min 00 s)  runner image ubuntu-24.04

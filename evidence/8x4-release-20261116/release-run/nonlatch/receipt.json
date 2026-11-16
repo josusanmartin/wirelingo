@@ -1,0 +1,126 @@
+{
+  "candidate": {
+    "info.yaml": "c8534f38e529020de94d4f8e486a7d095bef1890293e641a24faaf3e9fa534ca",
+    "runs/wokwi/62-openroad-stapostpnr/nom_fast_1p32V_m40C/clock.rpt": "9fa7b4249d6e3aa2d7c314fa0f6fb62b2e8d03c004ee628f1af19c25158e3e21",
+    "runs/wokwi/62-openroad-stapostpnr/nom_fast_1p32V_m40C/sta.log": "a7a60dec2cb0204014cfce8a87594ca05e8821941c48292fd0ede2742a321d3a",
+    "runs/wokwi/62-openroad-stapostpnr/nom_slow_1p08V_125C/clock.rpt": "150d909962fde5546341ff173988826a48c26c1173b70c4a3e77140c9f7daa83",
+    "runs/wokwi/62-openroad-stapostpnr/nom_slow_1p08V_125C/sta.log": "cd3b6b080bea5baeb62215f56bd8e2dd26907f9d0dc72c1eafcc072ac401f6cf",
+    "runs/wokwi/62-openroad-stapostpnr/nom_typ_1p20V_25C/clock.rpt": "c13de685039345d9db38fc50027decfb668ffa0934f2ac849174ba06c516f0c6",
+    "runs/wokwi/62-openroad-stapostpnr/nom_typ_1p20V_25C/sta.log": "ce5fe83b32e13d39a3a6b9808ddad5322f3a0aa8b2f5a9d7b1e1a681fa97dc43",
+    "runs/wokwi/final/gds/tt_um_josusanmartin_protoemu.gds": "69692787b1e03189c2a7c119a2ebf0b7e992969bde8a2f1c7ca815e65ba8f3e5",
+    "runs/wokwi/final/lef/tt_um_josusanmartin_protoemu.lef": "498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d",
+    "runs/wokwi/final/metrics.json": "cddeb1c8bdb73058d98f11f1e24461c1fe0872e4393f4b4b940d764bea8bda8a",
+    "runs/wokwi/final/nl/tt_um_josusanmartin_protoemu.nl.v": "453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08",
+    "runs/wokwi/final/sdf/nom_fast_1p32V_m40C/tt_um_josusanmartin_protoemu__nom_fast_1p32V_m40C.sdf": "4554cc23e55c21684737337116d4eb9107e35fedea300660a9f9d10caa1fc9c4",
+    "runs/wokwi/final/sdf/nom_slow_1p08V_125C/tt_um_josusanmartin_protoemu__nom_slow_1p08V_125C.sdf": "e73111a89c2df11ae1597017dc7aba7d0f820934e334e18f1ff5a8b184c68379",
+    "runs/wokwi/final/sdf/nom_typ_1p20V_25C/tt_um_josusanmartin_protoemu__nom_typ_1p20V_25C.sdf": "d5915632479879273bc491f0153a66dd50324c47058477de46ab24562bef7240",
+    "runs/wokwi/resolved.json": "c3ecaaf73850f28a24b354a3adb158af62910d99ace1a1b1617c05657b7ba52f",
+    "src/config.json": "1bd6347e6e9856e5c1a6464c18c31a15741c0a399161d6946686c8a5f867401c",
+    "src/config_merged.json": "069bd6a9b9a347131ec8a3199b4fefc6ca4a5d06021382d5fbc5424622654e20",
+    "src/macros/RM_IHPSG13_1P_256x32_c2_bm_bist.v": "022072bd76c6c9f27fb989d55bea5d1c8130314415c23535425efe2b5a44a27a",
+    "src/pdn_cfg.tcl": "8345cb599c713ebe3c0f4324772398bb639479fd92e5637214eb837f46255cea",
+    "src/pe_cg.sv": "ac0d1036c267935729c6caf318c6ea10fae069ff707c309fb668d5fd52a73758",
+    "src/pe_chip.sv": "dc2f12e0fa50c60b3cfcf32f25f7fea869558f266164384eb2f53bbe54e572ae",
+    "src/pe_core.sv": "a07e95a0920ab3030de13448e3eeda739f603af286abd38871c9ddf8f7223779",
+    "src/pe_fifo.sv": "1d81aca7909796656a2ec9dd2baa24e6e65f2326510be7fb961c8a8c10b1f182",
+    "src/pe_fifos.sv": "bffa966672cf9eb65bed771566b084581db6323c414a560b53f4c5b3ef2185cf",
+    "src/pe_hostport.sv": "05d2313596c411aecee3a733b63b0de02c9994a2aa947811edb1794868b28c38",
+    "src/pe_imem.sv": "92cf27885e7133c738d2f993cba9740e68163adabc91fad035b44bd0f96d0bb3",
+    "src/pe_line.sv": "a3a07d395435ebe79900336c5d83a8ec2125134c0ebed0a8000df0e4c1667b11",
+    "src/project.v": "62c13b6340200a1310b773f03963a03392968502247ae14b2ecae5bb409b9936",
+    "src/protoemu.sdc": "9c50f3668a1c9c83aec5b7eaa5bfe1bf54961bac947cbaf9582edc233cfb2836",
+    "src/protoemu_pnr.sdc": "6f5446b8ea71686be32132baf49318304c1e4a19a26dd6760a562f9c960a49bc",
+    "src/protoemu_pnr_elec.sdc": "c5ebccceed60b47971b0679a44a59b5e52b9077c4e8ff0f597ac54fa212621f7",
+    "src/protoemu_pnr_margin.sdc": "01a83357be5e5c3ac3eb5a0877c2e8319cb09ec06d94fe6e2e76f930f97e8b0a",
+    "src/timing_checks.tcl": "f0f72b59cc61ff6cd11b5f8ca9b1e9d9a183281e6882dde41a82b2d11bfd095c",
+    "src/user_config.json": "48030457555b13d58f5d3375c9283540d6fd8a7118c8e19ef8b71fe0e5d90733"
+  },
+  "kind": "nonlatch",
+  "plan": {
+    "corners": [
+      "nom_fast_1p32V_m40C",
+      "nom_slow_1p08V_125C",
+      "nom_typ_1p20V_25C"
+    ],
+    "image": "ghcr.io/librelane/librelane:3.1.0.dev3",
+    "image_id": "sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a",
+    "librelane_version": "3.1.0.dev3",
+    "period_ns": 20.832,
+    "step": "62-openroad-stapostpnr"
+  },
+  "reports": {
+    "nom_fast_1p32V_m40C.rpt": "f750ffe78652fd18f24800e7494826e0c2b45e8d03f707265f4a4d827ec3268b",
+    "nom_slow_1p08V_125C.rpt": "af045b6b1c90b74e02924690a7f63a8923193bfe788ceae01c28d338b047a539",
+    "nom_typ_1p20V_25C.rpt": "3c34f57a7ac56f244db024f5095b382cb8d79ba02b8262672297dac121192624"
+  },
+  "results": {
+    "nom_fast_1p32V_m40C": {
+      "all": 0.0,
+      "clocks": {
+        "clk": 20.832001,
+        "sck": 20.832001
+      },
+      "corner": "nom_fast_1p32V_m40C",
+      "latch": 0.0,
+      "latch_borrow": 0.5522,
+      "libs": [
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/lib/sg13cmos5l_stdcell_fast_1p32V_m40C.lib",
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/lib/sg13cmos5l_io_fast_1p32V_3p6V_m40C.lib",
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_256x32_c2_bm_bist_fast_1p32V_m55C.lib"
+      ],
+      "nonlatch": 3.9191,
+      "nonlatch_endpoint": "uo_out[4]"
+    },
+    "nom_slow_1p08V_125C": {
+      "all": 0.0,
+      "clocks": {
+        "clk": 20.832001,
+        "sck": 20.832001
+      },
+      "corner": "nom_slow_1p08V_125C",
+      "latch": 0.0,
+      "latch_borrow": 0.937,
+      "libs": [
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/lib/sg13cmos5l_stdcell_slow_1p08V_125C.lib",
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/lib/sg13cmos5l_io_slow_1p08V_3p0V_125C.lib",
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_256x32_c2_bm_bist_slow_1p08V_125C.lib"
+      ],
+      "nonlatch": 0.4304,
+      "nonlatch_endpoint": "_53246_/D"
+    },
+    "nom_typ_1p20V_25C": {
+      "all": 0.0,
+      "clocks": {
+        "clk": 20.832001,
+        "sck": 20.832001
+      },
+      "corner": "nom_typ_1p20V_25C",
+      "latch": 0.0,
+      "latch_borrow": 0.6961,
+      "libs": [
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/lib/sg13cmos5l_stdcell_typ_1p20V_25C.lib",
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/lib/sg13cmos5l_io_typ_1p2V_3p3V_25C.lib",
+        "~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_256x32_c2_bm_bist_typ_1p20V_25C.lib"
+      ],
+      "nonlatch": 3.318,
+      "nonlatch_endpoint": "uo_out[4]"
+    }
+  },
+  "schema": "protoemu-sta-nonlatch-1",
+  "sta_inputs": {
+    "runs/wokwi/59-openroad-fillinsertion/tt_um_josusanmartin_protoemu.nl.v": "453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08",
+    "runs/wokwi/59-openroad-fillinsertion/tt_um_josusanmartin_protoemu.sdc": "da092b13678765747f94ba0263f4b01034a97774e9fd9a238c0bbd5322852cc7",
+    "runs/wokwi/60-odb-cellfrequencytables/tt_um_josusanmartin_protoemu.odb": "b6047b06a49de8ca95faf23daa5fa77e5174b8b5a3660fcca01ffe477dfe0193",
+    "runs/wokwi/61-openroad-rcx/nom/tt_um_josusanmartin_protoemu.nom.spef": "7f0ad290f864daeae383e126eee05ef49872d7b80208e4d7d046cc65bb499c14",
+    "runs/wokwi/62-openroad-stapostpnr/config.json": "580595e48a82f40016e65219441392ebd58a0099fc1ec9bc93cf571c2deebc45",
+    "runs/wokwi/62-openroad-stapostpnr/state_in.json": "2cbda4b0b17a68c42ae991dabbb6d1ffee8cc6c6aa0fc4ba63cb16e775f8c8a6",
+    "runs/wokwi/final/spef/nom/tt_um_josusanmartin_protoemu.nom.spef": "7f0ad290f864daeae383e126eee05ef49872d7b80208e4d7d046cc65bb499c14",
+    "src/protoemu.sdc": "9c50f3668a1c9c83aec5b7eaa5bfe1bf54961bac947cbaf9582edc233cfb2836",
+    "src/timing_checks.tcl": "f0f72b59cc61ff6cd11b5f8ca9b1e9d9a183281e6882dde41a82b2d11bfd095c"
+  },
+  "status": "complete",
+  "tool": {
+    "sta_nonlatch.py": "35061fe1f3658c8d8acf79bc2464b6c497dcbbeb8311af2284d662862f523c1f",
+    "sta_nonlatch.tcl": "498a8b68f88337a6c4f1b943ea1582279f703ab3dd013febb652a6ad6bcbeabb"
+  }
+}

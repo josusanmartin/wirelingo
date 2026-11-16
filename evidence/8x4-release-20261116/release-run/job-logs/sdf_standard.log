@@ -1,0 +1,24 @@
+netlist 453d0af7bea77dd5  cores=3 banks=3 fifo_log2=3  outputs ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD
+tests (test): test_id test_uart_tx test_spi_master test_host_port_fast test_fetch_to_pin
+[typ_20ns_pass] test.test_id passed
+[typ_20ns_pass] test.test_uart_tx passed
+[typ_20ns_pass] test.test_spi_master passed
+[typ_20ns_pass] test.test_fetch_to_pin passed
+[typ_20ns_pass] test.test_host_port_fast passed
+[typ_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0             933950.00         414.99       2250.56  ** (441 s)
+[slow_20.832ns_pass] test.test_id passed
+[slow_20.832ns_pass] test.test_uart_tx passed
+[slow_20.832ns_pass] test.test_spi_master passed
+[slow_20.832ns_pass] test.test_fetch_to_pin passed
+[slow_20.832ns_pass] test.test_host_port_fast passed
+[slow_20.832ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0             972802.32         416.36       2336.43  ** (442 s)
+[fast_20ns_pass] test.test_id passed
+[fast_20ns_pass] test.test_uart_tx passed
+[fast_20ns_pass] test.test_spi_master passed
+[fast_20ns_pass] test.test_fetch_to_pin passed
+[fast_20ns_pass] test.test_host_port_fast passed
+[fast_20ns_pass] PASS as required: ** TESTS=5 PASS=5 FAIL=0 SKIP=0             933950.00         411.96       2267.09  ** (437 s)
+[slow_10ns_fail_fetch_to_pin] test.test_fetch_to_pin failed
+[slow_10ns_fail_fetch_to_pin] FAILS as required: ** TESTS=1 PASS=0 FAIL=1 SKIP=0              88735.00         327.73        270.76  ** (353 s)
+receipt: ~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD/receipt.json
+gl_sdf_test (standard): all cases as required

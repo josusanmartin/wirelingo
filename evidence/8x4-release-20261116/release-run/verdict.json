@@ -1,0 +1,196 @@
+{
+  "archive": "~/protoemu-flow/aq-search/wirelingo-release-evidence-2c97c15-aqp-rel-2c97c15.tar.gz",
+  "candidate": {
+    "info.yaml": "c8534f38e529020de94d4f8e486a7d095bef1890293e641a24faaf3e9fa534ca",
+    "runs/wokwi/62-openroad-stapostpnr/nom_fast_1p32V_m40C/clock.rpt": "9fa7b4249d6e3aa2d7c314fa0f6fb62b2e8d03c004ee628f1af19c25158e3e21",
+    "runs/wokwi/62-openroad-stapostpnr/nom_fast_1p32V_m40C/sta.log": "a7a60dec2cb0204014cfce8a87594ca05e8821941c48292fd0ede2742a321d3a",
+    "runs/wokwi/62-openroad-stapostpnr/nom_slow_1p08V_125C/clock.rpt": "150d909962fde5546341ff173988826a48c26c1173b70c4a3e77140c9f7daa83",
+    "runs/wokwi/62-openroad-stapostpnr/nom_slow_1p08V_125C/sta.log": "cd3b6b080bea5baeb62215f56bd8e2dd26907f9d0dc72c1eafcc072ac401f6cf",
+    "runs/wokwi/62-openroad-stapostpnr/nom_typ_1p20V_25C/clock.rpt": "c13de685039345d9db38fc50027decfb668ffa0934f2ac849174ba06c516f0c6",
+    "runs/wokwi/62-openroad-stapostpnr/nom_typ_1p20V_25C/sta.log": "ce5fe83b32e13d39a3a6b9808ddad5322f3a0aa8b2f5a9d7b1e1a681fa97dc43",
+    "runs/wokwi/final/gds/tt_um_josusanmartin_protoemu.gds": "69692787b1e03189c2a7c119a2ebf0b7e992969bde8a2f1c7ca815e65ba8f3e5",
+    "runs/wokwi/final/lef/tt_um_josusanmartin_protoemu.lef": "498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d",
+    "runs/wokwi/final/metrics.json": "cddeb1c8bdb73058d98f11f1e24461c1fe0872e4393f4b4b940d764bea8bda8a",
+    "runs/wokwi/final/nl/tt_um_josusanmartin_protoemu.nl.v": "453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08",
+    "runs/wokwi/final/sdf/nom_fast_1p32V_m40C/tt_um_josusanmartin_protoemu__nom_fast_1p32V_m40C.sdf": "4554cc23e55c21684737337116d4eb9107e35fedea300660a9f9d10caa1fc9c4",
+    "runs/wokwi/final/sdf/nom_slow_1p08V_125C/tt_um_josusanmartin_protoemu__nom_slow_1p08V_125C.sdf": "e73111a89c2df11ae1597017dc7aba7d0f820934e334e18f1ff5a8b184c68379",
+    "runs/wokwi/final/sdf/nom_typ_1p20V_25C/tt_um_josusanmartin_protoemu__nom_typ_1p20V_25C.sdf": "d5915632479879273bc491f0153a66dd50324c47058477de46ab24562bef7240",
+    "runs/wokwi/resolved.json": "c3ecaaf73850f28a24b354a3adb158af62910d99ace1a1b1617c05657b7ba52f",
+    "src/config.json": "1bd6347e6e9856e5c1a6464c18c31a15741c0a399161d6946686c8a5f867401c",
+    "src/config_merged.json": "069bd6a9b9a347131ec8a3199b4fefc6ca4a5d06021382d5fbc5424622654e20",
+    "src/macros/RM_IHPSG13_1P_256x32_c2_bm_bist.v": "022072bd76c6c9f27fb989d55bea5d1c8130314415c23535425efe2b5a44a27a",
+    "src/pdn_cfg.tcl": "8345cb599c713ebe3c0f4324772398bb639479fd92e5637214eb837f46255cea",
+    "src/pe_cg.sv": "ac0d1036c267935729c6caf318c6ea10fae069ff707c309fb668d5fd52a73758",
+    "src/pe_chip.sv": "dc2f12e0fa50c60b3cfcf32f25f7fea869558f266164384eb2f53bbe54e572ae",
+    "src/pe_core.sv": "a07e95a0920ab3030de13448e3eeda739f603af286abd38871c9ddf8f7223779",
+    "src/pe_fifo.sv": "1d81aca7909796656a2ec9dd2baa24e6e65f2326510be7fb961c8a8c10b1f182",
+    "src/pe_fifos.sv": "bffa966672cf9eb65bed771566b084581db6323c414a560b53f4c5b3ef2185cf",
+    "src/pe_hostport.sv": "05d2313596c411aecee3a733b63b0de02c9994a2aa947811edb1794868b28c38",
+    "src/pe_imem.sv": "92cf27885e7133c738d2f993cba9740e68163adabc91fad035b44bd0f96d0bb3",
+    "src/pe_line.sv": "a3a07d395435ebe79900336c5d83a8ec2125134c0ebed0a8000df0e4c1667b11",
+    "src/project.v": "62c13b6340200a1310b773f03963a03392968502247ae14b2ecae5bb409b9936",
+    "src/protoemu.sdc": "9c50f3668a1c9c83aec5b7eaa5bfe1bf54961bac947cbaf9582edc233cfb2836",
+    "src/protoemu_pnr.sdc": "6f5446b8ea71686be32132baf49318304c1e4a19a26dd6760a562f9c960a49bc",
+    "src/protoemu_pnr_elec.sdc": "c5ebccceed60b47971b0679a44a59b5e52b9077c4e8ff0f597ac54fa212621f7",
+    "src/protoemu_pnr_margin.sdc": "01a83357be5e5c3ac3eb5a0877c2e8319cb09ec06d94fe6e2e76f930f97e8b0a",
+    "src/timing_checks.tcl": "f0f72b59cc61ff6cd11b5f8ca9b1e9d9a183281e6882dde41a82b2d11bfd095c",
+    "src/user_config.json": "48030457555b13d58f5d3375c9283540d6fd8a7118c8e19ef8b71fe0e5d90733"
+  },
+  "created_utc": "2026-11-16T01:49:11.244314+00:00",
+  "exit": 0,
+  "finished_utc": "2026-11-16T03:19:30.896052+00:00",
+  "jobs": {
+    "checks": {
+      "returncode": 0,
+      "seconds": 155
+    },
+    "gl": {
+      "returncode": 0,
+      "seconds": 4000
+    },
+    "nonlatch": {
+      "returncode": 0,
+      "seconds": 80
+    },
+    "precheck": {
+      "returncode": 0,
+      "seconds": 395
+    },
+    "sdf_auto_fast": {
+      "returncode": 0,
+      "seconds": 1845
+    },
+    "sdf_auto_slow": {
+      "returncode": 0,
+      "seconds": 1900
+    },
+    "sdf_auto_typ": {
+      "returncode": 0,
+      "seconds": 1855
+    },
+    "sdf_standard": {
+      "returncode": 0,
+      "seconds": 445
+    },
+    "sdf_v2": {
+      "returncode": 0,
+      "seconds": 955
+    },
+    "sta_slow": {
+      "returncode": 0,
+      "seconds": 90
+    }
+  },
+  "peak_simulators": 4,
+  "receipts": [
+    {
+      "job": "gl",
+      "kind": "gl",
+      "path": "~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/receipt.json",
+      "sha256": "e8f2354d8427f9e8387799d86b290ec351461584907b31b41bdcc01371453c81"
+    },
+    {
+      "job": "sdf_auto_slow",
+      "kind": "sdf",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.FlO03n/receipt.json",
+      "sha256": "9ce05b91982d811d975b453970b60e9597e87a38df5ffb655ee31e89fc85f142"
+    },
+    {
+      "job": "sdf_auto_typ",
+      "kind": "sdf",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5/receipt.json",
+      "sha256": "e93aecd8e7b2ae005f115b70f2ebe9e3ecfd995dc33ede30c5991d091687963b"
+    },
+    {
+      "job": "sdf_auto_fast",
+      "kind": "sdf",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.IbgmEQ/receipt.json",
+      "sha256": "4a7b845ed0205d099c9d06c799d9fba0146e02b1cf412bfce8f260ab4b4f400e"
+    },
+    {
+      "job": "precheck",
+      "kind": "precheck",
+      "path": "~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/precheck/receipt.json",
+      "sha256": "33f927799bc317755fae3ca68f6eb41cb6eda2e63d5b59a6d3f1282dc5b721e8"
+    },
+    {
+      "job": "sdf_standard",
+      "kind": "sdf",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD/receipt.json",
+      "sha256": "d1714c30cb3f29dc998aa190c3ce87f7570d8d078e2a3d3c6fb62beea2a4161d"
+    },
+    {
+      "job": "sdf_v2",
+      "kind": "sdf",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2/receipt.json",
+      "sha256": "3621c876bff381b3527234652deed990ddd27f8c1c22250be33b5c5a3fb59d2e"
+    },
+    {
+      "job": "sta_slow",
+      "kind": "sta",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/sta.rnyengje/receipt.json",
+      "sha256": "d487a5bdec5c5d75cd95f6b2eaeff61967f91eda0e3a81a2c2ffb4502a404f10"
+    },
+    {
+      "job": "nonlatch",
+      "kind": "nonlatch",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/nonlatch.gjk0qmfh/receipt.json",
+      "sha256": "5ade898f768844513aded7a21a8123f64e877fc51917200798f4f94a0a665e2a"
+    },
+    {
+      "job": "checks",
+      "kind": "checks",
+      "path": "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju/receipt.json",
+      "sha256": "f6490d6e3a82996b1240c0721be115f3c2ecfb69a263151fb084abd0efee6a46"
+    }
+  ],
+  "release_check": [
+    "/usr/bin/python3",
+    "~/protoemu-flow/aq-search/val-2c97c15/flow/release_check.py",
+    "~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15",
+    "--validation-root",
+    "~/protoemu-flow/aq-search/val-2c97c15",
+    "--sdf-profile",
+    "v2",
+    "--require-sta-inputs",
+    "--slow-mhz",
+    "48",
+    "--shipping-root",
+    "~/protoemu-flow/aq-search/ship-2c97c15",
+    "--flow-python",
+    "~/protoemu-flow/protoemu/.venv-flow/bin/python",
+    "--require-nonlatch-floor",
+    "0.3",
+    "--expect",
+    "~/protoemu-flow/aq-search/val-2c97c15/evidence/8x4-release-expected.json",
+    "--gl-receipt",
+    "~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate/test/sim_build/gl.bXc1jY/receipt.json",
+    "--sdf-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.FlO03n/receipt.json",
+    "--sdf-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.lI7If5/receipt.json",
+    "--sdf-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.IbgmEQ/receipt.json",
+    "--precheck-receipt",
+    "~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/precheck/receipt.json",
+    "--sdf-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.qmNqpD/receipt.json",
+    "--sdf-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/gl_sdf.nQWTL2/receipt.json",
+    "--slow-sta-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/sta.rnyengje/receipt.json",
+    "--nonlatch-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/nonlatch.gjk0qmfh/receipt.json",
+    "--checks-receipt",
+    "~/protoemu-flow/aq-search/val-2c97c15/test/sim_build/checks.zz0fmcju/receipt.json"
+  ],
+  "run": "~/protoemu-flow/aq-search/runs/protoemu-exp-aqp-rel-2c97c15",
+  "runner_head": "2c97c15b5ab47d226798ed51d3d88f09eb548b21",
+  "runner_root": "~/protoemu-flow/aq-search/val-2c97c15/flow",
+  "schema": 1,
+  "validation_head": "2c97c15b5ab47d226798ed51d3d88f09eb548b21",
+  "validation_root": "~/protoemu-flow/aq-search/val-2c97c15",
+  "verdict": "RELEASE PASSED (SDF profile v2, slow target 48 MHz)",
+  "view": "~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15/candidate",
+  "work": "~/protoemu-flow/aq-search/rcpt-aqp-rel-2c97c15-2c97c15"
+}

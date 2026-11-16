@@ -1,0 +1,86 @@
+== CORNER nom_typ_1p20V_25C
+LIB ~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/lib/sg13cmos5l_stdcell_typ_1p20V_25C.lib
+LIB ~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/lib/sg13cmos5l_io_typ_1p2V_3p3V_25C.lib
+LIB ~/ttpdk/ihp-sg13cmos5l/libs.ref/sg13cmos5l_sram/lib/RM_IHPSG13_1P_256x32_c2_bm_bist_typ_1p20V_25C.lib
+== CLOCKS
+CLOCK clk 20.832001
+CLOCK sck 20.832001
+== ALL
+worst slack max 0.0000
+== LATCH 1536
+Startpoint: _55328_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: u_chip.g_core[2].g_on.u_core.u_fifos.rxf.g_ent[2].u_lat.g_bit[6].l
+          (positive level-sensitive latch clocked by clk)
+Path Group: clk
+Path Type: max
+
+    Delay      Time   Description
+-------------------------------------------------------------
+   0.0000    0.0000   clock clk (rise edge)
+   2.0232    2.0232   clock network delay (propagated)
+   0.0000    2.0232 ^ _55328_/CLK (sg13cmos5l_dfrbpq_1)
+   0.3125    2.3357 ^ _55328_/Q (sg13cmos5l_dfrbpq_1)
+   0.0052    2.3409 ^ u_chip.g_core[2].g_on.u_core.u_fifos.rxf.g_ent[2].u_lat.g_bit[6].l/D (sg13cmos5l_dlhq_1)
+             2.3409   data arrival time
+
+   0.0000    0.0000   clock clk (rise edge)
+   1.7436    1.7436   clock network delay (propagated)
+  -0.2500    1.4936   clock uncertainty
+   0.1511    1.6447   clock reconvergence pessimism
+             1.6447 ^ u_chip.g_core[2].g_on.u_core.u_fifos.rxf.g_ent[2].u_lat.g_bit[6].l/GATE (sg13cmos5l_dlhq_1)
+   0.6961    2.3409   time borrowed from endpoint
+             2.3409   data required time
+-------------------------------------------------------------
+             2.3409   data required time
+            -2.3409   data arrival time
+-------------------------------------------------------------
+             0.0000   slack (MET)
+
+Time Borrowing Information
+----------------------------------------------
+clk nominal pulse width                10.4160
+clock latency difference               -0.0066
+library setup time                     -0.1432
+----------------------------------------------
+CRPR difference                        -0.0014
+max time borrow                        10.2649
+----------------------------------------------
+actual time borrow                      0.6961
+open edge uncertainty                  -0.2500
+open edge CRPR                          0.1511
+----------------------------------------------
+time given to startpoint                0.5972
+----------------------------------------------
+
+
+ICG_PINS 79
+== NONLATCH 5707
+max_delay/setup group asynchronous
+
+                                      Required    Actual
+Endpoint                                 Delay     Delay     Slack
+------------------------------------------------------------------
+_55446_/RESET_B (sg13cmos5l_dfrbpq_1)   12.0054    4.4972    7.5082 (MET)
+
+max_delay/setup group path delay
+
+                                      Required    Actual
+Endpoint                                 Delay     Delay     Slack
+------------------------------------------------------------------
+uo_out[6] (output)                     15.8320    5.8415    9.9905 (MET)
+
+max_delay/setup group clk
+
+                                      Required    Actual
+Endpoint                                 Delay     Delay     Slack
+------------------------------------------------------------------
+_55446_/D (sg13cmos5l_dfrbpq_1)        11.8857    5.0644    6.8213 (MET)
+
+max_delay/setup group sck
+
+                                      Required    Actual
+Endpoint                                 Delay     Delay     Slack
+------------------------------------------------------------------
+uo_out[4] (output)                     15.5820   12.2640    3.3180 (MET)
+
+== END
