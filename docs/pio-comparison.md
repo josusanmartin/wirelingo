@@ -96,7 +96,7 @@ protoemu 8 ticks per bit at 800 kHz.
 | I2C SDA held low | false ACK, "success" | bus fault: reply 0x200, F1 (false ACK and data 0x00 before `fault-fixes`) | protoemu |
 | **USB** | Pico-PIO-USB: 32 instr, 3 SMs; CPU does NRZI/stuff encoding, CRC and handshake timing (source); FS device, FS/LS host | LS device only: 130 instr on one core + line unit (or 143 + 56 on two cores); handshakes, CRC check and stuff errors in the engine | different scope; protoemu on CPU offload |
 | **Area** | not published; "each SM ≈ a standard SPI/I2C controller" (datasheet §3.1) | 0.354 mm² std cells + 0.099 mm² SRAM, whole chip incl. host port and line unit (run g4) | not comparable |
-| **Host link** | on-chip bus, DMA up to 1 word per clock (datasheet §3.1) | external SPI: 193 Mbit/s quad (simulated, 193.6 on FPGA) | PIO |
+| **Host link** | on-chip bus, DMA up to 1 word per clock (datasheet §3.1) | external SPI: 193 Mbit/s quad at 50 MHz (simulated, 193.6 on FPGA) | PIO |
 
 ## UART TX
 

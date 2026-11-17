@@ -46,7 +46,7 @@ order, under the host timing contract, with reset reasserted at any step.
 | A3 | SCK high and low each ≥ 0.5 clk (period ≥ 1 clk). | §6.1 timing table |
 | A4 | SCK is low while CS_n is high. | SPI mode 0 |
 | A5 | CS_n low to the first SCK rise ≥ 1 clk; last SCK fall to CS_n high ≥ 1 clk; CS_n high between transactions ≥ 4 clk. | §6.1 timing table |
-| A6 | After reset release, CS_n stays high ≥ 5 clk before the next transaction, unless CS_n was held low through the release (that transaction is ignored; the next one keeps the A5 gap). | §6.1 timing table and reset text |
+| A6 | After reset release, CS_n stays high ≥ 5 clk before the next transaction, unless CS_n was held low through the release (that transaction is ignored; the next one keeps the A5 gap). The proof assumes 5 clk with reset released on a clock edge; §6.1 documents 7 for margin at the pin, where the release can fall between edges. | §6.1 timing table and reset text |
 | A7 | IO[3:0] is stable across each SCK rise (the host changes it on falls). | §6.1 |
 | A8 | QUAD_EN changes only while CS_n is high, or falls under reset (HOSTCFG's reset). | §6.1 |
 

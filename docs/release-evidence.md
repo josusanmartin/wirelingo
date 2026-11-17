@@ -558,7 +558,10 @@ the step itself. LibreLane numbers a resumed run's steps on from the highest
 step directory, so the directories are named as in one run, and each job
 checks the boundary directory. The `gds` job keeps the job id, the artifact
 names and the steps after the build, so `precheck`, `gl_test` and `viewer`
-read the same artifacts as before (they ran green on the split runs). That
+read the same artifacts as before (`gl_test` and `viewer` ran green on both
+split runs, 43956712707 and 44034950929; `precheck` ran green on the
+test-branch split run 43956712707, and on `main`'s 44034950929 it had not
+finished when this was written). That
 Tiny Tapeout's app reads a split run as it reads a one-job run is an
 expectation only: the app's source is not public, and nothing in these
 records tests it. The hash step, unchanged
