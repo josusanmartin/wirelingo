@@ -472,22 +472,46 @@ it prints the expected and the actual netlist sha256 and dates-zeroed GDS
 digest and fails the job on a difference, so a GitHub build of another
 placement cannot finish green.
 
-**Measured on GitHub (the push of 2026-11-15).** The workflow ran on GitHub for `a84401f`,
-the verified commit before `S`, pushed to a test branch of the public
-repository (`a84401f` and `S` have the same build inputs:
-`flow/build_manifest.py compare` prints `SAME BUILD`). The `gds` job
-succeeded, and the hash step printed both pairs as `(match)`, netlist
-`453d0af7…` and dates-zeroed GDS `357ea15b…`, then
-`RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json`. The image tag
-resolved to the digest above. The job took 5 h 13 min 33 s, 3 h 45 min 52 s
-of it in detailed routing, against GitHub's 6 h limit for a job: about 46
-minutes of margin, measured once, on one hosted runner. The same push's
-mutation job found a mutant the tests did not kill; the test fix is `e610fcb`,
-which is in `S`. On GitHub's run of `S` (pushed 2026-11-16) the mutation job
-killed 367 of 367, and `formal` and `docs` passed; when the records were last
-read, `S`'s `test` and `gds` jobs and `a84401f`'s `precheck` had not finished.
-Records, with the other jobs' results and their times:
+**Measured on GitHub (2026-11-15 to 17).** The workflows ran on GitHub's
+hosted runners for four commits with the same build inputs
+(`flow/build_manifest.py compare` prints `SAME BUILD` for each of the others
+against `S`):
+`a84401f`, the verified commit before `S`, and `S` itself, on a test branch
+of the public repository; `bc8882b` (`S` plus the release run's evidence) on
+`main`; and `00cd1c6` (the three-job split below), on the test branch and
+then on `main`. Every `gds` job that succeeded printed both pairs of the
+hash step as `(match)`, netlist `453d0af7…` and dates-zeroed GDS
+`357ea15b…`, then `RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json`,
+with the image tag resolved to the digest above:
+
+| Commit (branch) | `gds` run | Build | Precheck step | Other jobs |
+| --- | --- | --- | --- | --- |
+| `a84401f` (test branch) | 43753001925 | one job, 5 h 13 min 33 s | 4 h 39 min | `gl_test`, `viewer`, `test`, `formal` green; `mutants` 366 of 367 (the survivor's test fix `e610fcb` is in `S`) |
+| `2c97c15` = `S` (test branch) | 43787610261 | one job, 4 h 21 min 58 s | 4 h 28 min | all green; `mutants` 367 of 367 |
+| `bc8882b` (`main`) | 43811275309 | attempts 1 and 2 cancelled at the 6 h limit; attempt 3 one job, 4 h 29 min 53 s | 5 h 04 min | all green; `mutants` 367 of 367 |
+| `00cd1c6` (test branch) | 43956712707 | three jobs: 44 min 38 s, 2 h 51 min 36 s, 36 min 46 s | 5 h 30 min | all green; `mutants` 367 of 367 |
+
+On `main`, attempt 1 of the one-job build was still in LibreLane (its
+`KLayout.DRC` step) when GitHub cancelled it; attempt 2's flow completed
+after 5 h 49 min but the job was cancelled in the action's PNG render after
+it, so its hash step did not run. Detailed routing alone took from 2 h 49 min
+(the split run's) to 4 h 41 min (`main`'s attempt 1). `main` was fast-forwarded to `00cd1c6` on
+2026-11-17; its runs there (`gds` 44034950929, `test` 44034950943) had not
+finished when this was written, and their results are not claimed here.
+Records, with every job's result, times and the log lines quoted:
 [evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md).
+
+**The precheck's time on GitHub (a measured risk).** The `precheck` job is
+Tiny Tapeout's own action, one job running one KLayout process for its main
+DRC run; the split does not change it. Its step took 268 min (`S`), 279 min
+(`a84401f`), 304 min (`bc8882b`) and 330 min (`00cd1c6`, the split run's),
+against GitHub's 6 h (360 min) limit for a job. Most of it is one phase of
+that DRC run, from "Starting IHP-SG13CMOS5L DRC connectivity setup" to
+"Starting IHP-SG13CMOS5L DRC rules.": 01:22:44 to 06:30:25 UTC (5 h 08 min)
+in the split run's precheck job 133743926009. None timed out, but the
+slowest ended about 30 min before the limit. A precheck that timed out would
+be re-run on the same GDS (re-running a run's failed jobs leaves its
+successful build and its artifacts in place).
 
 **Why GitHub builds in three jobs.** On a slower hosted runner the one-job
 build needs about 6 h 10 min, and GitHub cancels a hosted job at 6 h:
@@ -505,7 +529,9 @@ steps 52 to 79 about 30 min and the action's PNG render 8 to 16 min. So
 | `gds` | 52 to 79, `--from Odb.RemoveRoutingObstructions`, then the action's remaining steps and the hash check | `GDS_logs`, `tt_submission`, `gds_render` | about 1 h |
 
 The times are estimates: the cancelled run's step times plus each job's setup
-(about 3 min there), not a measured split run. Each job first does what the
+(about 3 min there), not a measured split run. The split run on GitHub
+since (`00cd1c6`, above) took 44 min 38 s, 2 h 51 min 36 s and 36 min 46 s.
+Each job first does what the
 action does before it hardens, at the same pins (its environment, packages,
 tt-support-tools, Python 3.11, its PDK script, LibreLane 3.1.0.dev3), then
 runs tt-support-tools' own `tt_tool.py --harden` with two changes made from
@@ -639,11 +665,12 @@ Records:
   72,314,042 bytes, 568 payload files, 10 verified receipts. It is not in
   git: it is to be attached as a release asset.
 
-The netlist and GDS are the release candidate's
+The netlist and the dates-zeroed GDS are the release candidate's
 ([evidence/8x4-release-candidate-20261115/](../evidence/8x4-release-candidate-20261115/README.md)),
 so the figures in [physical.md](physical.md#the-3-core-release-candidate-2026-11-15)
-are the released build's. GitHub's build of `a84401f`, which has the same
-build inputs, printed the same two hashes (above).
+are the released build's. GitHub's builds of `a84401f`, `S`, `bc8882b` and
+`00cd1c6`, which have the same build inputs, printed the same two hashes
+(above).
 
 ## Recorded release: fo6 with software 5457d8e (2026-10-14)
 

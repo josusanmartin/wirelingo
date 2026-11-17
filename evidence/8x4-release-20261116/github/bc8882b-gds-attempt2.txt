@@ -1,0 +1,43 @@
+Extract of the log of job 133273103876 (gds) of josusanmartin/wirelingo, commit bc8882b.
+Run 43811275309 (workflow gds), branch main, run attempt 2.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133273103876/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+Steps (from gh api .../actions/jobs/133273103876):
+   1  Set up job                                              success  2026-11-16T11:40:01Z to 2026-11-16T11:40:02Z  (0 min 01 s)
+   2  checkout repo                                           success  2026-11-16T11:40:02Z to 2026-11-16T11:40:04Z  (0 min 02 s)
+   3  Check frozen submission configuration                   success  2026-11-16T11:40:04Z to 2026-11-16T11:40:04Z  (0 min 00 s)
+   4  Build GDS                                               cancelled 2026-11-16T11:40:04Z to 2026-11-16T17:40:13Z  (6 h 00 min 09 s)
+   5  Compare the build with the release's expected hashes    skipped  2026-11-16T17:40:13Z to 2026-11-16T17:40:13Z  (0 min 00 s)
+   9  Post Build GDS                                          success  2026-11-16T17:40:13Z to 2026-11-16T17:40:13Z  (0 min 00 s)
+  10  Post checkout repo                                      success  2026-11-16T17:40:13Z to 2026-11-16T17:40:13Z  (0 min 00 s)
+  11  Complete job                                            success  2026-11-16T17:40:13Z to 2026-11-16T17:40:13Z  (0 min 00 s)
+
+The submission preset check:
+150: 2026-11-16T11:40:04.3666971Z configuration matches submission preset
+
+The tools: tt-support-tools, LibreLane and the LibreLane image's digest as pulled by its version tag:
+154: 2026-11-16T11:40:04.4260412Z   tools-ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+706: 2026-11-16T11:40:49.8557885Z Collecting librelane==3.1.0.dev3
+811: 2026-11-16T11:42:10.4385993Z Digest: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a
+812: 2026-11-16T11:42:10.4406000Z Status: Downloaded newer image for ghcr.io/librelane/librelane:3.1.0.dev3
+
+The late-clock step's count:
+221828: 2026-11-16T11:47:49.6698870Z LATE_CLOCK_COMPLETE 64 registers 23 branches
+
+Detailed routing, from its start to the next step's start (4 h 27 min 01 s by these two timestamps):
+238375: 2026-11-16T12:43:03.4643036Z [12:43:03] VERBOSE  Running 'Project.DetailedRouting' at            step.py:1138
+241008: 2026-11-16T17:10:04.1133821Z [17:10:04] VERBOSE  Running 'Odb.RemoveRoutingObstructions' at      step.py:1138
+
+The last LibreLane step started, and the flow's end:
+254558: 2026-11-16T17:30:11.3964627Z [17:30:11] VERBOSE  Running 'Misc.ReportManufacturability' at       step.py:1138
+254574: 2026-11-16T17:30:11.6065222Z [17:30:11] INFO     Flow complete.                             sequential.py:413
+
+Artifacts uploaded:
+256280: 2026-11-16T17:31:40.7280721Z Artifact GDS_logs has been successfully uploaded! Final size is 568268846 bytes. Artifact ID is 14254545336
+256343: 2026-11-16T17:31:46.6655725Z Artifact tt_submission has been successfully uploaded! Final size is 26715777 bytes. Artifact ID is 14254545353
+
+The action's steps started after the build, the cancellation, and what ran when it came:
+786: 2026-11-16T11:40:53.2016070Z ##[start-action display=Make GDS with LibreLane;id=__TinyTapeout_tt-gds-action.__run_6]
+256346: 2026-11-16T17:31:46.6837001Z ##[start-action display=Render PNG from GDS;id=__TinyTapeout_tt-gds-action.__run_13]
+256366: 2026-11-16T17:40:13.0558417Z ##[error]The operation was canceled.

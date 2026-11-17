@@ -139,8 +139,9 @@ corner by 0.815 ns, so the margin belongs to this placement. A release
 rehearsal on a clean harden of the same netlist passes every receipt:
 functional and SDF gate level, fresh slow STA, clock and reset checks,
 precheck and equivalence. The release run, a clean harden of the shipping
-commit `2c97c15` on 2026-11-16, gave the same netlist and GDS and passed the
-same receipts: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)` and
+commit `2c97c15` (2026-11-15 23:20 to 2026-11-16 01:42 UTC), gave the same
+netlist and the same GDS once its dates are zeroed, and passed the same
+receipts on 2026-11-16: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)` and
 equivalence `EQUIVALENT` ([records](../evidence/8x4-release-20261116/README.md)). It is the release build, not a
 fabricated chip. Evidence levels: STA,
 gate level, precheck, formal equivalence; not silicon, and FPGA is not

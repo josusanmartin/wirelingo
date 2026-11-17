@@ -24,12 +24,15 @@ check the script:
    and `pdk.json`;
 3. packs `runs/wokwi` and unpacks it in place as the workflow's jobs do
    (`tar --zstd --format=posix`, then `final/` removed);
-4. runs LibreLane's container command as `tt_tool.py --harden` builds it under
-   CI (`--pdk-root`, `--pdk ihp-sg13cmos5l --manual-pdk --run-tag wokwi
+4. runs LibreLane in its container directly (`docker run`, `prove.sh` lines
+   21-23), with the arguments `tt_tool.py --harden` gives it under CI
+   (`--pdk-root`, `--pdk ihp-sg13cmos5l --manual-pdk --run-tag wokwi
    --force-run-dir runs/wokwi --hide-progress-bar`, the part's arguments,
-   `src/config_merged.json`), with the copy mounted at the original's path, so
-   that the absolute paths in the run directory's state files resolve to the
-   copy. On GitHub no mount is needed: every job checks out at the same path;
+   `src/config_merged.json`), not through tt-support-tools, the workflow's
+   wrapper or LibreLane's `--dockerized` launcher. The copy is mounted at the
+   original's path, so that the absolute paths in the run directory's state
+   files resolve to the copy. On GitHub no mount is needed: every job checks
+   out at the same path;
 5. runs `flow/release_expected.py . evidence/8x4-release-expected.json` and
    compares the step directory names, `final/metrics.csv` and the sha256 of
    every file in `final/` with the release run's.
@@ -67,7 +70,8 @@ Paths in the records: the runner's home is written `~`.
   and `metrics.csv`, where `route__wirelength__estimated` reads `2519140`
   instead of the one-job run's `2.51914E+6`: the same number, written after a
   round trip through a state file.
-* **`full.out`, all three parts:** on a second copy with steps 50 to 79
+* **`full.out`, step 50 alone with `gds_place`'s stop, then the `gds_route`
+  and `gds` parts:** on a second copy with steps 50 to 79
   removed, step 50 run alone with `gds_place`'s stop (`--from
   OpenROAD.STAMidPNR-3 --to OpenROAD.STAMidPNR-3`, steps 1 to 49 kept from the
   release run: it stopped with `50-openroad-stamidpnr-3` and no step 51), then
@@ -82,7 +86,12 @@ Paths in the records: the runner's home is written `~`.
   the same `metrics.csv` line.
 
 Not checked here: steps 1 to 49 under `gds_place`'s command (only its stop
-was run), and anything on GitHub's runners. The `gds` job's hash step is the
-check for those.
+was run), the three parts through the workflow's wrapper and LibreLane's
+`--dockerized` launcher, and anything on GitHub's runners. The `gds` job's
+hash step is the check for those. GitHub has since run the split workflow at
+`00cd1c6` (test branch, run 43956712707): `gds_place`, `gds_route` and `gds`
+succeeded, and the hash step printed both pairs as `(match)` and `RELEASE
+IDENTITY MATCHES` (records in
+[8x4-release-20261116/](../8x4-release-20261116/README.md), `github/00cd1c6-*.txt`).
 
 Both copies were deleted after these records were taken.

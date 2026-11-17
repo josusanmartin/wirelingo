@@ -1,0 +1,82 @@
+Extract of the log of job 133727433238 (gds) of josusanmartin/wirelingo, commit 00cd1c6.
+Run 43956712707 (workflow gds), branch ci-8x4-test, run attempt 1.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133727433238/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+Steps (from gh api .../actions/jobs/133727433238):
+   1  Set up job                                              success  2026-11-17T00:43:13Z to 2026-11-17T00:43:17Z  (0 min 04 s)
+   2  checkout repo                                           success  2026-11-17T00:43:17Z to 2026-11-17T00:43:23Z  (0 min 06 s)
+   3  Check frozen submission configuration                   success  2026-11-17T00:43:23Z to 2026-11-17T00:43:23Z  (0 min 00 s)
+   4  Set up environment variables                            success  2026-11-17T00:43:23Z to 2026-11-17T00:43:23Z  (0 min 00 s)
+   5  Install prerequisites                                   success  2026-11-17T00:43:23Z to 2026-11-17T00:43:46Z  (0 min 23 s)
+   6  Checkout tt-support-tools repo                          success  2026-11-17T00:43:46Z to 2026-11-17T00:43:46Z  (0 min 00 s)
+   7  Setup python                                            success  2026-11-17T00:43:46Z to 2026-11-17T00:43:54Z  (0 min 08 s)
+   8  Install tt-support-tools dependencies                   success  2026-11-17T00:43:54Z to 2026-11-17T00:44:04Z  (0 min 10 s)
+   9  Fetch verilog and build config                          success  2026-11-17T00:44:04Z to 2026-11-17T00:44:15Z  (0 min 11 s)
+  10  Checkout tt-gds-action                                  success  2026-11-17T00:44:15Z to 2026-11-17T00:44:15Z  (0 min 00 s)
+  11  Install ihp-sg13cmos5l PDK                              success  2026-11-17T00:44:15Z to 2026-11-17T00:44:28Z  (0 min 13 s)
+  12  Install LibreLane                                       success  2026-11-17T00:44:28Z to 2026-11-17T00:44:32Z  (0 min 04 s)
+  13  Fetch the run directory from gds_route                  success  2026-11-17T00:44:32Z to 2026-11-17T00:44:49Z  (0 min 17 s)
+  14  Unpack the run directory                                success  2026-11-17T00:44:49Z to 2026-11-17T00:44:51Z  (0 min 02 s)
+  15  Make GDS with LibreLane                                 success  2026-11-17T00:44:51Z to 2026-11-17T01:02:48Z  (17 min 57 s)
+  16  Check that the part numbered its steps on from detailed routing success  2026-11-17T01:02:48Z to 2026-11-17T01:02:48Z  (0 min 00 s)
+  17  Show build files (for debugging)                        success  2026-11-17T01:02:48Z to 2026-11-17T01:02:48Z  (0 min 00 s)
+  18  Linter output                                           success  2026-11-17T01:02:48Z to 2026-11-17T01:02:48Z  (0 min 00 s)
+  19  Yosys warnings                                          success  2026-11-17T01:02:48Z to 2026-11-17T01:02:48Z  (0 min 00 s)
+  20  Routing summary                                         success  2026-11-17T01:02:48Z to 2026-11-17T01:02:49Z  (0 min 01 s)
+  21  Cell usage summary                                      success  2026-11-17T01:02:49Z to 2026-11-17T01:02:49Z  (0 min 00 s)
+  22  Publish build logs                                      success  2026-11-17T01:02:49Z to 2026-11-17T01:03:56Z  (1 min 07 s)
+  23  Prepare tt_submission artifact                          success  2026-11-17T01:03:56Z to 2026-11-17T01:03:57Z  (0 min 01 s)
+  24  Publish tt_submission artifact                          success  2026-11-17T01:03:57Z to 2026-11-17T01:04:02Z  (0 min 05 s)
+  25  Render PNG from GDS                                     success  2026-11-17T01:04:02Z to 2026-11-17T01:19:48Z  (15 min 46 s)
+  26  Upload gds_render (png) artifact                        success  2026-11-17T01:19:48Z to 2026-11-17T01:19:51Z  (0 min 03 s)
+  27  Compare the build with the release's expected hashes    success  2026-11-17T01:19:51Z to 2026-11-17T01:19:53Z  (0 min 02 s)
+  51  Post Checkout tt-gds-action                             success  2026-11-17T01:19:53Z to 2026-11-17T01:19:54Z  (0 min 01 s)
+  52  Post Setup python                                       success  2026-11-17T01:19:54Z to 2026-11-17T01:19:54Z  (0 min 00 s)
+  53  Post Checkout tt-support-tools repo                     success  2026-11-17T01:19:54Z to 2026-11-17T01:19:54Z  (0 min 00 s)
+  54  Post checkout repo                                      success  2026-11-17T01:19:54Z to 2026-11-17T01:19:54Z  (0 min 00 s)
+  55  Complete job                                            success  2026-11-17T01:19:54Z to 2026-11-17T01:19:54Z  (0 min 00 s)
+
+The submission preset check:
+149: 2026-11-17T00:43:23.6700241Z configuration matches submission preset
+
+The run directory from the previous job (its artifact), its config hashes checked, and the run directory kept:
+878: 2026-11-17T00:44:32.5923074Z - gds_run_routed (ID: 14285754968, Size: 308642964, Expected Digest: sha256:af1efaa077ea07852718d87432f73af301d1f3923b31f689e11d5fc13b57e871)
+884: 2026-11-17T00:44:49.4900770Z Artifact download completed successfully.
+905: 2026-11-17T00:44:49.5442667Z src/user_config.json: OK
+906: 2026-11-17T00:44:49.5442989Z src/config_merged.json: OK
+950: 2026-11-17T00:44:51.9876334Z runs/wokwi kept: this part resumes it
+
+The tools: tt-support-tools and the GDS action (the job's checkouts), LibreLane and the LibreLane image's digest as pulled by its version tag:
+313: 2026-11-17T00:43:46.1605655Z   ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+640: 2026-11-17T00:44:15.2645212Z   ref: 3412659307918422f3f0727917cf9b499aaca588
+779: 2026-11-17T00:44:29.4365258Z Collecting librelane==3.1.0.dev3
+960: 2026-11-17T00:46:18.7261983Z Digest: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a
+961: 2026-11-17T00:46:18.8032913Z Status: Downloaded newer image for ghcr.io/librelane/librelane:3.1.0.dev3
+
+The first and last LibreLane steps this job ran, the flow's own signoff summary and its end:
+1068: 2026-11-17T00:46:24.0099440Z [00:46:24] VERBOSE  Running 'Odb.RemoveRoutingObstructions' at      step.py:1138
+14618: 2026-11-17T01:02:46.8933661Z [01:02:46] VERBOSE  Running 'Misc.ReportManufacturability' at       step.py:1138
+14622: 2026-11-17T01:02:46.8964612Z * Antenna
+14623: 2026-11-17T01:02:46.8964961Z Passed ✅
+14625: 2026-11-17T01:02:46.8965199Z * LVS
+14626: 2026-11-17T01:02:46.8965427Z Passed ✅
+14628: 2026-11-17T01:02:46.8965656Z * DRC
+14629: 2026-11-17T01:02:46.8965877Z Passed ✅
+14634: 2026-11-17T01:02:47.1348112Z [01:02:47] INFO     Flow complete.                             sequential.py:413
+
+The boundary check (the step directory this job must leave):
+14684: 2026-11-17T01:02:48.2374730Z ##[group]Run test -f runs/wokwi/52-odb-removeroutingobstructions/state_out.json
+
+Artifacts uploaded:
+16302: 2026-11-17T01:03:56.5967197Z Artifact GDS_logs has been successfully uploaded! Final size is 568272646 bytes. Artifact ID is 14287178644
+16361: 2026-11-17T01:04:02.2018198Z Artifact tt_submission has been successfully uploaded! Final size is 26717522 bytes. Artifact ID is 14288213228
+16418: 2026-11-17T01:19:51.3866099Z Artifact gds_render has been successfully uploaded! Final size is 26756491 bytes. Artifact ID is 14289536282
+
+The step "Compare the build with the release's expected hashes":
+16420: 2026-11-17T01:19:51.3982833Z ##[group]Run python3 flow/release_expected.py . evidence/8x4-release-expected.json
+16435: 2026-11-17T01:19:53.9207030Z netlist_sha256 expected 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+16436: 2026-11-17T01:19:53.9207775Z netlist_sha256 actual   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08 (match)
+16437: 2026-11-17T01:19:53.9208287Z gds_normalized_sha256 expected 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+16438: 2026-11-17T01:19:53.9208787Z gds_normalized_sha256 actual   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a (match)
+16439: 2026-11-17T01:19:53.9209214Z RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json

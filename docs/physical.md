@@ -355,8 +355,9 @@ buffers (an estimate; `flow/` settings are not changed here).
 ### The 3-core release candidate (2026-11-15)
 
 **Status: the release build (2026-11-16).** The release run, a clean harden
-of the shipping commit `2c97c15`, gave this netlist and GDS and passed the
-release check: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`
+of the shipping commit `2c97c15`, gave this netlist and this GDS once its
+dates are zeroed, and passed the release check:
+`RELEASE PASSED (SDF profile v2, slow target 48 MHz)`
 ([release-evidence.md](release-evidence.md#recorded-release-3-core-8x4-shipping-commit-2c97c15-2026-11-16),
 [records](../evidence/8x4-release-20261116/README.md)).
 It has not been taped out. Evidence levels below: harden and static timing

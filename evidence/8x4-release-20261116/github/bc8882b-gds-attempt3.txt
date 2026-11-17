@@ -1,0 +1,47 @@
+Extract of the log of job 133491890099 (gds) of josusanmartin/wirelingo, commit bc8882b.
+Run 43811275309 (workflow gds), branch main, run attempt 3.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133491890099/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+Steps (from gh api .../actions/jobs/133491890099):
+   1  Set up job                                              success  2026-11-16T17:48:01Z to 2026-11-16T17:48:06Z  (0 min 05 s)
+   2  checkout repo                                           success  2026-11-16T17:48:06Z to 2026-11-16T17:48:11Z  (0 min 05 s)
+   3  Check frozen submission configuration                   success  2026-11-16T17:48:11Z to 2026-11-16T17:48:12Z  (0 min 01 s)
+   4  Build GDS                                               success  2026-11-16T17:48:12Z to 2026-11-16T22:17:47Z  (4 h 29 min 35 s)
+   5  Compare the build with the release's expected hashes    success  2026-11-16T22:17:47Z to 2026-11-16T22:17:49Z  (0 min 02 s)
+   9  Post Build GDS                                          success  2026-11-16T22:17:49Z to 2026-11-16T22:17:50Z  (0 min 01 s)
+  10  Post checkout repo                                      success  2026-11-16T22:17:50Z to 2026-11-16T22:17:50Z  (0 min 00 s)
+  11  Complete job                                            success  2026-11-16T22:17:50Z to 2026-11-16T22:17:50Z  (0 min 00 s)
+
+The submission preset check:
+150: 2026-11-16T17:48:12.2689751Z configuration matches submission preset
+
+The tools: tt-support-tools, LibreLane and the LibreLane image's digest as pulled by its version tag:
+154: 2026-11-16T17:48:12.2829618Z   tools-ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+709: 2026-11-16T17:49:14.3089874Z Collecting librelane==3.1.0.dev3
+813: 2026-11-16T17:50:41.6404243Z Digest: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a
+814: 2026-11-16T17:50:41.6819133Z Status: Downloaded newer image for ghcr.io/librelane/librelane:3.1.0.dev3
+
+The late-clock step's count:
+221830: 2026-11-16T17:54:40.9212434Z LATE_CLOCK_COMPLETE 64 registers 23 branches
+
+Detailed routing, from its start to the next step's start (3 h 11 min 06 s by these two timestamps):
+238377: 2026-11-16T18:32:42.0142562Z [18:32:42] VERBOSE  Running 'Project.DetailedRouting' at            step.py:1138
+241010: 2026-11-16T21:43:48.6887232Z [21:43:48] VERBOSE  Running 'Odb.RemoveRoutingObstructions' at      step.py:1138
+
+The flow's own signoff summary and its end:
+254564: 2026-11-16T22:00:32.3776860Z * Antenna
+254565: 2026-11-16T22:00:32.3777307Z Passed ✅
+254567: 2026-11-16T22:00:32.3777565Z * LVS
+254568: 2026-11-16T22:00:32.3777797Z Passed ✅
+254570: 2026-11-16T22:00:32.3777978Z * DRC
+254571: 2026-11-16T22:00:32.3778177Z Passed ✅
+254576: 2026-11-16T22:00:32.5601287Z [22:00:32] INFO     Flow complete.                             sequential.py:413
+
+The step "Compare the build with the release's expected hashes":
+256409: 2026-11-16T22:17:47.3295495Z ##[group]Run python3 flow/release_expected.py . evidence/8x4-release-expected.json
+256424: 2026-11-16T22:17:49.7748288Z netlist_sha256 expected 453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+256425: 2026-11-16T22:17:49.7749486Z netlist_sha256 actual   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08 (match)
+256426: 2026-11-16T22:17:49.7750665Z gds_normalized_sha256 expected 357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+256427: 2026-11-16T22:17:49.7751300Z gds_normalized_sha256 actual   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a (match)
+256428: 2026-11-16T22:17:49.7751853Z RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json

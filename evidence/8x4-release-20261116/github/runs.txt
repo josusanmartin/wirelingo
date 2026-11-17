@@ -1,29 +1,84 @@
-GitHub Actions runs of josusanmartin/wirelingo, branch ci-8x4-test, as the API gave them at 2026-11-16 03:34 UTC.
-Source: gh api repos/josusanmartin/wirelingo/actions/runs/RUN and .../runs/RUN/jobs (read-only). Times are UTC.
+GitHub Actions runs of josusanmartin/wirelingo for the 3-core 8x4 design, branches ci-8x4-test and main, as the API gave them at 2026-11-17 07:11 UTC,
+in push order.
+Source: gh api repos/josusanmartin/wirelingo/actions/runs/RUN and .../runs/RUN/jobs?filter=all (read-only). Times are UTC.
 A job with no end time had not finished when this was read; a job that waits for another (precheck, gl_test
-and viewer wait for gds) is not listed until it starts.
+and viewer wait for gds; in the split workflow gds_route waits for gds_place and gds for gds_route) is not
+listed until it starts. 'att' is the run attempt: a re-run of failed jobs makes a new attempt of the run,
+and jobs that wait for a cancelled job are listed as skipped in that attempt.
 
-run 43753001925  workflow gds  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status in_progress  conclusion -  attempt 1
-  job 132930882285  gds       completed   success  started 2026-11-15T19:32:36Z  ended 2026-11-16T00:46:09Z  (5 h 13 min 33 s)  runner image ubuntu-24.04
-  job 133022084315  viewer    completed   success  started 2026-11-16T00:46:12Z  ended 2026-11-16T00:46:40Z  (0 min 28 s)  runner image ubuntu-24.04
-  job 133022084329  gl_test   completed   success  started 2026-11-16T00:46:11Z  ended 2026-11-16T02:00:26Z  (1 h 14 min 15 s)  runner image ubuntu-24.04
-  job 133022084379  precheck  in_progress -        started 2026-11-16T00:46:12Z  ended -  runner image ubuntu-24.04
+run 43753001925  workflow gds  branch ci-8x4-test  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion success  attempts 1
+  job 132930882285  att 1  gds       completed   success   started 2026-11-15T19:32:36Z  ended 2026-11-16T00:46:09Z  (5 h 13 min 33 s)  runner image ubuntu-24.04
+  job 133022084329  att 1  gl_test   completed   success   started 2026-11-16T00:46:11Z  ended 2026-11-16T02:00:26Z  (1 h 14 min 15 s)  runner image ubuntu-24.04
+  job 133022084315  att 1  viewer    completed   success   started 2026-11-16T00:46:12Z  ended 2026-11-16T00:46:40Z  (0 min 28 s)  runner image ubuntu-24.04
+  job 133022084379  att 1  precheck  completed   success   started 2026-11-16T00:46:12Z  ended 2026-11-16T05:25:41Z  (4 h 39 min 29 s)  runner image ubuntu-24.04
 
-run 43753002010  workflow test  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion failure  attempt 1
-  job 132930881939  mutants   completed   failure  started 2026-11-15T19:32:36Z  ended 2026-11-15T20:16:20Z  (43 min 44 s)  runner image ubuntu-24.04
-  job 132930882083  test      completed   success  started 2026-11-15T19:32:36Z  ended 2026-11-15T20:59:00Z  (1 h 26 min 24 s)  runner image ubuntu-24.04
-  job 132930882096  formal    completed   success  started 2026-11-15T19:32:35Z  ended 2026-11-15T19:42:00Z  (9 min 25 s)  runner image ubuntu-24.04
+run 43753002010  workflow test  branch ci-8x4-test  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion failure  attempts 1
+  job 132930882096  att 1  formal    completed   success   started 2026-11-15T19:32:35Z  ended 2026-11-15T19:42:00Z  (9 min 25 s)  runner image ubuntu-24.04
+  job 132930881939  att 1  mutants   completed   failure   started 2026-11-15T19:32:36Z  ended 2026-11-15T20:16:20Z  (43 min 44 s)  runner image ubuntu-24.04
+  job 132930882083  att 1  test      completed   success   started 2026-11-15T19:32:36Z  ended 2026-11-15T20:59:00Z  (1 h 26 min 24 s)  runner image ubuntu-24.04
 
-run 43753001926  workflow docs  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion success  attempt 1
-  job 132930882053  docs      completed   success  started 2026-11-15T19:32:36Z  ended 2026-11-15T19:33:14Z  (0 min 38 s)  runner image ubuntu-24.04
+run 43753001926  workflow docs  branch ci-8x4-test  commit a84401ff7d99ba6a9682950f2e9da6d09f0835a8  event push  created 2026-11-15T19:32:33Z  status completed  conclusion success  attempts 1
+  job 132930882053  att 1  docs      completed   success   started 2026-11-15T19:32:36Z  ended 2026-11-15T19:33:14Z  (0 min 38 s)  runner image ubuntu-24.04
 
-run 43787610261  workflow gds  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status in_progress  conclusion -  attempt 1
-  job 133038662531  gds       in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
+run 43787610261  workflow gds  branch ci-8x4-test  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status completed  conclusion success  attempts 1
+  job 133038662531  att 1  gds       completed   success   started 2026-11-16T01:40:24Z  ended 2026-11-16T06:02:22Z  (4 h 21 min 58 s)  runner image ubuntu-24.04
+  job 133122030644  att 1  gl_test   completed   success   started 2026-11-16T06:02:24Z  ended 2026-11-16T07:12:04Z  (1 h 09 min 40 s)  runner image ubuntu-24.04
+  job 133122030635  att 1  viewer    completed   success   started 2026-11-16T06:02:25Z  ended 2026-11-16T06:02:53Z  (0 min 28 s)  runner image ubuntu-24.04
+  job 133122030720  att 1  precheck  completed   success   started 2026-11-16T06:02:25Z  ended 2026-11-16T10:30:56Z  (4 h 28 min 31 s)  runner image ubuntu-24.04
 
-run 43787610305  workflow test  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status in_progress  conclusion -  attempt 1
-  job 133038662609  formal    completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T01:54:16Z  (13 min 52 s)  runner image ubuntu-24.04
-  job 133038662882  test      in_progress -        started 2026-11-16T01:40:24Z  ended -  runner image ubuntu-24.04
-  job 133038663032  mutants   completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T02:47:58Z  (1 h 07 min 34 s)  runner image ubuntu-24.04
+run 43787610305  workflow test  branch ci-8x4-test  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status completed  conclusion success  attempts 1
+  job 133038662609  att 1  formal    completed   success   started 2026-11-16T01:40:24Z  ended 2026-11-16T01:54:16Z  (13 min 52 s)  runner image ubuntu-24.04
+  job 133038662882  att 1  test      completed   success   started 2026-11-16T01:40:24Z  ended 2026-11-16T04:01:58Z  (2 h 21 min 34 s)  runner image ubuntu-24.04
+  job 133038663032  att 1  mutants   completed   success   started 2026-11-16T01:40:24Z  ended 2026-11-16T02:47:58Z  (1 h 07 min 34 s)  runner image ubuntu-24.04
 
-run 43787610191  workflow docs  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status completed  conclusion success  attempt 1
-  job 133038662703  docs      completed   success  started 2026-11-16T01:40:24Z  ended 2026-11-16T01:41:24Z  (1 min 00 s)  runner image ubuntu-24.04
+run 43787610191  workflow docs  branch ci-8x4-test  commit 2c97c15b5ab47d226798ed51d3d88f09eb548b21  event push  created 2026-11-16T01:40:21Z  status completed  conclusion success  attempts 1
+  job 133038662703  att 1  docs      completed   success   started 2026-11-16T01:40:24Z  ended 2026-11-16T01:41:24Z  (1 min 00 s)  runner image ubuntu-24.04
+
+run 43811275309  workflow gds  branch main  commit bc8882b92c3a9019e1707459590bf80464009343  event push  created 2026-11-16T05:35:54Z  status completed  conclusion success  attempts 3
+  job 133113260538  att 1  gds       completed   cancelled started 2026-11-16T05:35:56Z  ended 2026-11-16T11:36:13Z  (6 h 00 min 17 s)  runner image ubuntu-24.04
+  job 133271227269  att 1  gl_test   completed   skipped   (did not run)
+  job 133271228302  att 1  viewer    completed   skipped   (did not run)
+  job 133271228517  att 1  precheck  completed   skipped   (did not run)
+  job 133273103876  att 2  gds       completed   cancelled started 2026-11-16T11:40:00Z  ended 2026-11-16T17:40:15Z  (6 h 00 min 15 s)  runner image ubuntu-24.04
+  job 133487230199  att 2  gl_test   completed   skipped   (did not run)
+  job 133487230252  att 2  precheck  completed   skipped   (did not run)
+  job 133487230411  att 2  viewer    completed   skipped   (did not run)
+  job 133491890099  att 3  gds       completed   success   started 2026-11-16T17:48:00Z  ended 2026-11-16T22:17:53Z  (4 h 29 min 53 s)  runner image ubuntu-24.04
+  job 133654739423  att 3  viewer    completed   success   started 2026-11-16T22:17:56Z  ended 2026-11-16T22:18:12Z  (0 min 16 s)  runner image ubuntu-24.04
+  job 133654739439  att 3  precheck  completed   success   started 2026-11-16T22:17:56Z  ended 2026-11-17T03:21:50Z  (5 h 03 min 54 s)  runner image ubuntu-24.04
+  job 133654739511  att 3  gl_test   completed   success   started 2026-11-16T22:17:57Z  ended 2026-11-16T23:29:08Z  (1 h 11 min 11 s)  runner image ubuntu-24.04
+
+run 43811275254  workflow test  branch main  commit bc8882b92c3a9019e1707459590bf80464009343  event push  created 2026-11-16T05:35:54Z  status completed  conclusion success  attempts 1
+  job 133113260418  att 1  formal    completed   success   started 2026-11-16T05:35:56Z  ended 2026-11-16T05:49:43Z  (13 min 47 s)  runner image ubuntu-24.04
+  job 133113260624  att 1  mutants   completed   success   started 2026-11-16T05:35:56Z  ended 2026-11-16T06:19:10Z  (43 min 14 s)  runner image ubuntu-24.04
+  job 133113260622  att 1  test      completed   success   started 2026-11-16T05:35:57Z  ended 2026-11-16T07:01:36Z  (1 h 25 min 39 s)  runner image ubuntu-24.04
+
+run 43811275355  workflow docs  branch main  commit bc8882b92c3a9019e1707459590bf80464009343  event push  created 2026-11-16T05:35:54Z  status completed  conclusion success  attempts 1
+  job 133113260657  att 1  docs      completed   success   started 2026-11-16T05:35:56Z  ended 2026-11-16T05:36:30Z  (0 min 34 s)  runner image ubuntu-24.04
+
+run 43956712707  workflow gds  branch ci-8x4-test  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-16T21:06:49Z  status completed  conclusion success  attempts 1
+  job 133613065829  att 1  gds_place completed   success   started 2026-11-16T21:06:52Z  ended 2026-11-16T21:51:30Z  (44 min 38 s)  runner image ubuntu-24.04
+  job 133639500221  att 1  gds_route completed   success   started 2026-11-16T21:51:33Z  ended 2026-11-17T00:43:09Z  (2 h 51 min 36 s)  runner image ubuntu-24.04
+  job 133727433238  att 1  gds       completed   success   started 2026-11-17T00:43:12Z  ended 2026-11-17T01:19:58Z  (36 min 46 s)  runner image ubuntu-24.04
+  job 133743926009  att 1  precheck  completed   success   started 2026-11-17T01:20:00Z  ended 2026-11-17T06:50:16Z  (5 h 30 min 16 s)  runner image ubuntu-24.04
+  job 133743926073  att 1  gl_test   completed   success   started 2026-11-17T01:20:00Z  ended 2026-11-17T02:47:13Z  (1 h 27 min 13 s)  runner image ubuntu-24.04
+  job 133743926130  att 1  viewer    completed   success   started 2026-11-17T01:20:00Z  ended 2026-11-17T01:20:22Z  (0 min 22 s)  runner image ubuntu-24.04
+
+run 43956712900  workflow test  branch ci-8x4-test  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-16T21:06:49Z  status completed  conclusion success  attempts 1
+  job 133613065965  att 1  test      completed   success   started 2026-11-16T21:06:52Z  ended 2026-11-16T22:26:54Z  (1 h 20 min 02 s)  runner image ubuntu-24.04
+  job 133613066054  att 1  mutants   completed   success   started 2026-11-16T21:06:52Z  ended 2026-11-16T22:14:55Z  (1 h 08 min 03 s)  runner image ubuntu-24.04
+  job 133613066787  att 1  formal    completed   success   started 2026-11-16T21:06:52Z  ended 2026-11-16T21:22:27Z  (15 min 35 s)  runner image ubuntu-24.04
+
+run 43956712530  workflow docs  branch ci-8x4-test  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-16T21:06:49Z  status completed  conclusion success  attempts 1
+  job 133613064341  att 1  docs      completed   success   started 2026-11-16T21:06:52Z  ended 2026-11-16T21:07:30Z  (0 min 38 s)  runner image ubuntu-24.04
+
+run 44034950929  workflow gds  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status in_progress  conclusion -  attempts 1
+  job 133875476896  att 1  gds_place in_progress -         started 2026-11-17T06:56:52Z  ended -  runner image ubuntu-24.04
+
+run 44034950943  workflow test  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status in_progress  conclusion -  attempts 1
+  job 133875476968  att 1  mutants   in_progress -         started 2026-11-17T06:56:52Z  ended -  runner image ubuntu-24.04
+  job 133875477196  att 1  test      in_progress -         started 2026-11-17T06:56:52Z  ended -  runner image ubuntu-24.04
+  job 133875477353  att 1  formal    completed   success   started 2026-11-17T06:56:52Z  ended 2026-11-17T07:08:43Z  (11 min 51 s)  runner image ubuntu-24.04
+
+run 44034950997  workflow docs  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status completed  conclusion success  attempts 1
+  job 133875477038  att 1  docs      completed   success   started 2026-11-17T06:56:52Z  ended 2026-11-17T06:57:44Z  (0 min 52 s)  runner image ubuntu-24.04

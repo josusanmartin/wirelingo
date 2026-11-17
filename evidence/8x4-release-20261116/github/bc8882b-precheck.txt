@@ -1,0 +1,24 @@
+Extract of the log of job 133654739439 (precheck) of josusanmartin/wirelingo, commit bc8882b.
+Run 43811275309 (workflow gds), branch main, run attempt 3.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133654739439/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC. The hosted runner's home directory is written as ~.
+
+Steps (from gh api .../actions/jobs/133654739439):
+   1  Set up job                                              success  2026-11-16T22:17:57Z to 2026-11-16T22:18:01Z  (0 min 04 s)
+   2  Run Tiny Tapeout Precheck                               success  2026-11-16T22:18:01Z to 2026-11-17T03:21:48Z  (5 h 03 min 47 s)
+   4  Post Run Tiny Tapeout Precheck                          success  2026-11-17T03:21:48Z to 2026-11-17T03:21:48Z  (0 min 00 s)
+   5  Complete job                                            success  2026-11-17T03:21:48Z to 2026-11-17T03:21:49Z  (0 min 01 s)
+
+Each check the precheck ran with KLayout, and the error totals it printed:
+475: 2026-11-16T22:18:49.3951183Z INFO: Running klayout pin_label_purposes_overlapping_drawing on ~/work/wirelingo/wirelingo/tt_submission/tt_um_josusanmartin_protoemu.gds
+501: 2026-11-16T22:18:50.7133686Z        0 total error(s) among 0 error type(s), 33 checks, cell:
+505: 2026-11-16T22:18:50.8297320Z INFO: Running klayout sg13cmos5l on ~/work/wirelingo/wirelingo/tt_submission/tt_um_josusanmartin_protoemu.gds
+1287: 2026-11-17T03:21:40.4723975Z 2026-11-17 03:21:40 +0000: Memory Usage (2125228K) : KLayout DRC run for tables 'main' completed in 18168.64 seconds
+1288: 2026-11-17T03:21:42.0030559Z INFO: Running klayout zero_area on ~/work/wirelingo/wirelingo/tt_submission/tt_um_josusanmartin_protoemu.gds
+
+The start of the main KLayout DRC run's connectivity setup and of its rules (the run's own timestamps, UTC):
+905: 2026-11-16T22:20:06.4832213Z 2026-11-16 22:20:06 +0000: Memory Usage (1167564K) : Starting IHP-SG13CMOS5L DRC connectivity setup
+906: 2026-11-17T03:06:21.1807579Z 2026-11-17 03:06:21 +0000: Memory Usage (1737080K) : Starting IHP-SG13CMOS5L DRC rules.
+
+The verdict:
+1306: 2026-11-17T03:21:47.8315736Z INFO: Precheck passed for ~/work/wirelingo/wirelingo/tt_submission/tt_um_josusanmartin_protoemu.gds! 🎉

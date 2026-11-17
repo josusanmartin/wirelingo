@@ -16,8 +16,9 @@ slow corner, a margin specific to its placement: a moved placement missed
 48 MHz) and misses 50 MHz at the slow corner by 0.40 ns; a release
 rehearsal passes every receipt, and its netlist is formally equivalent to the
 RTL under the checker's model. The release run, a clean harden of the
-shipping commit `2c97c15` on 2026-11-16, passed the release check at the same
-levels (STA, gate level, precheck, formal equivalence; not silicon), so it is
+shipping commit `2c97c15` (2026-11-15 23:20 to 2026-11-16 01:42 UTC), passed
+the release check on 2026-11-16 at the same levels (STA, gate level,
+precheck, formal equivalence; not silicon), so it is
 the release build ([records](../evidence/8x4-release-20261116/README.md)). The 2-core fallback below had its own candidate and
 receipts, on the RTL before the CRC retime. It is not a live option: a
 2-core harden of the current RTL misses 48 MHz at the slow corner by

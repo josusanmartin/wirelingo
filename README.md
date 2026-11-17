@@ -213,8 +213,9 @@ records: [docs/physical.md](docs/physical.md#the-3-core-release-candidate-2026-1
   checks; precheck; and RTL-to-netlist equivalence, 10754 of 10754 points,
   9 of 9 planted netlist bugs caught.
 * **Status:** the release build. The release run, a clean harden of the
-  shipping commit `2c97c15` on 2026-11-16, gave the same netlist and GDS
-  and passed: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`,
+  shipping commit `2c97c15` (2026-11-15 23:20 to 2026-11-16 01:42 UTC), gave
+  the same netlist and the same GDS once its dates are zeroed, and passed on
+  2026-11-16: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`,
   equivalence `EQUIVALENT` (STA, gate level, precheck, formal equivalence;
   [records](evidence/8x4-release-20261116/README.md)). It has not been fabricated. Nothing through the real pads
   has been measured.

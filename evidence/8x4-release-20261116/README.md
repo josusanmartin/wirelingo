@@ -1,4 +1,4 @@
-# The 3-core 8x4 release: the release run of the shipping commit, and GitHub's builds (2026-11-15/16)
+# The 3-core 8x4 release: the release run of the shipping commit, and GitHub's builds (2026-11-15 to 17)
 
 Records for the release of the 3-core 8x4 design described in
 [docs/release-evidence.md](../../docs/release-evidence.md#the-3-core-8x4-release-candidate).
@@ -10,13 +10,14 @@ The shipping commit `S` is `2c97c15b5ab47d226798ed51d3d88f09eb548b21`
   equivalence check, the procedure of
   [docs/release-evidence.md](../../docs/release-evidence.md#the-3-core-8x4-release-candidate).
   It is the record that releases `S`: `RELEASE PASSED (SDF profile v2, slow target 48 MHz)`;
-* `github/`: what GitHub Actions did with the pushed commits `a84401f` and
-  `S`, below the release run's section.
+* `github/`: what GitHub Actions did with the pushed commits `a84401f`,
+  `S`, `bc8882b` and `00cd1c6`, below the release run's section.
 
 The release run's receipts are not in `S` itself: `flow/release_check.py`
 refuses a run whose tree differs from the shipping tree, so they follow `S`
-in commits that touch only `evidence/` and `docs/` (README.md too, from
-2026-11-16; "What may follow `S`" in the same doc).
+in commits that touch only `evidence/` and `docs/` (from 2026-11-16 also
+README.md, `.github/workflows/gds.yaml` and its test file; "What may follow
+`S`" in the same doc).
 
 ## The release run (`release-run/`)
 
@@ -78,7 +79,8 @@ What the records show:
 * **Release identity.** Netlist `453d0af7…`, dates-zeroed GDS `357ea15b…`
   and the late clock, 64 registers on 23 branches, each equal to
   [8x4-release-expected.json](../8x4-release-expected.json) (`identity.txt`).
-  These are the netlist and GDS of the candidate's four earlier hardens
+  These are the netlist and the dates-zeroed GDS of the candidate's earlier
+  hardens
   ([8x4-release-candidate-20261115/](../8x4-release-candidate-20261115/README.md)),
   so the numbers in docs/physical.md are the released netlist's.
 * **Signoff** (`result.txt`, `release-check.log`): routing DRC 0, KLayout
@@ -138,42 +140,52 @@ paths the same way. Nothing else was changed.
 ## GitHub (`github/`)
 
 Evidence level of `github/`: run on GitHub's hosted runners (`ubuntu-24.04`),
-in the public repository `josusanmartin/wirelingo`, branch `ci-8x4-test`, and
-read from the public run logs and the API with read-only `gh api` calls. The
-jobs are a harden with the flow's own DRC, LVS and antenna checks, RTL
-simulation (cocotb on Icarus), functional gate-level simulation of the
-netlist GitHub built (no SDF delays), Tiny Tapeout's precheck, the cycle
-model (pytest), formal properties (SymbiYosys) and the mutation check.
+in the public repository `josusanmartin/wirelingo`, on the test branch
+`ci-8x4-test` and on `main`, and read from the public run logs and the API
+with read-only `gh api` calls. The jobs are a harden with the flow's own DRC,
+LVS and antenna checks, RTL simulation (cocotb on Icarus), functional
+gate-level simulation of the netlist GitHub built (no SDF delays), Tiny
+Tapeout's precheck (KLayout DRC and the tools' own checks of the GDS), the
+cycle model (pytest), formal properties (SymbiYosys) and the mutation check.
 Nothing here is silicon, and nothing here ran on an FPGA. Jobs that had not
 finished when `github/runs.txt` was read are listed there as unfinished and
 have no extract.
 
 | File | What it holds |
 |---|---|
-| `github/runs.txt` | the six runs of the two pushes (workflows `gds`, `test`, `docs` at `a84401f` and at `2c97c15`), each job's result, start, end and duration, as the API gave them at the time the file states |
-| `github/a84401f-gds.txt` | the `gds` job at `a84401f`: its steps and times, the preset check, the tool versions it used, the late-clock count, detailed routing's start and end, the flow's signoff summary, and the hash comparison's printed lines |
-| `github/a84401f-test.txt` | the `test` job at `a84401f`: the model suite's total, the Tcl version, the 31 skips by reason, each cocotb suite's total |
-| `github/a84401f-mutants.txt` | the `mutants` job at `a84401f`: the one mutant that survived, the total, the exit |
-| `github/a84401f-formal.txt` | the `formal` job at `a84401f`: the 14 tasks' verdicts |
-| `github/a84401f-gl_test.txt` | the `gl_test` job at `a84401f`: its steps and times, the netlist it tests, the suite's total |
-| `github/a84401f-viewer.txt` | the `viewer` job at `a84401f`: the GitHub Pages deployment |
-| `github/2c97c15-formal.txt` | the `formal` job at `2c97c15`: the 14 tasks' verdicts |
-| `github/2c97c15-mutants.txt` | the `mutants` job at `2c97c15`: the command, the total (none survived), and the line of the mutant that survived at `a84401f` |
-| `github/earlier-runs.txt` | the repository's six runs before this branch's (all on `main`), with their mutants totals |
-### The two pushes
+| `github/runs.txt` | the fifteen runs of the five pushes below (workflows `gds`, `test`, `docs`), every attempt of each job with its result, start, end and duration, as the API gave them at the time the file states |
+| `github/<commit>-gds.txt` (`a84401f`, `2c97c15`) and `github/bc8882b-gds-attempt3.txt` | a one-job `gds` job that succeeded: its steps and times, the preset check, the tool versions it used, the late-clock count, detailed routing's start and end, the flow's signoff summary, and the hash comparison's printed lines |
+| `github/bc8882b-gds-attempt1.txt`, `-attempt2.txt` | the two `gds` jobs at `bc8882b` that GitHub cancelled at its 6 h limit: their steps and times, the preset check, the tools, the late-clock count, detailed routing's start and end, the last LibreLane step started (and, in attempt 2, the flow's end and the artifacts uploaded), and the cancellation |
+| `github/00cd1c6-gds_place.txt`, `-gds_route.txt`, `-gds.txt` | the three build jobs of the split workflow at `00cd1c6`: for each its steps and times, the preset check, the run directory it received and its config hashes checked (`gds_route`, `gds`), the tools, the first and last LibreLane steps it ran and the flow's end, the boundary check, the artifacts it uploaded; the late-clock count in `gds_place`; the signoff summary and the hash comparison in `gds` |
+| `github/<commit>-precheck.txt` | the `precheck` job (`a84401f`, `2c97c15`, `bc8882b`, `00cd1c6`): its steps and times, each KLayout check it ran with the error totals it printed, the start of the main DRC run's connectivity setup and of its rules, and the verdict |
+| `github/<commit>-gl_test.txt` | the `gl_test` job (the same four): its steps and times, the netlist it tests, the suite's total |
+| `github/<commit>-viewer.txt` | the `viewer` job (the same four): the GitHub Pages deployment |
+| `github/<commit>-test.txt` | the `test` job (`a84401f`, `2c97c15`, `bc8882b`, `00cd1c6`): the model suite's total, the Tcl version, the 31 skips by reason, each cocotb suite's total |
+| `github/<commit>-mutants.txt` | the `mutants` job (the same four): at `a84401f` the one mutant that survived, the total and the exit; at the others the command, the total (none survived) and the line of the mutant that survived at `a84401f` |
+| `github/<commit>-formal.txt` | the `formal` job (the same four, and `main-00cd1c6-formal.txt` for `main`'s run at `00cd1c6`): the 14 tasks' verdicts |
+| `github/earlier-runs.txt` | the repository's six runs before the test branch's (all on `main`), with their mutants totals |
+
+### The pushes
 
 `a84401f` is the commit the independent verifier passed before `S`. `S` is
 four commits later (`git log a84401f..2c97c15`): one redacts verifier
 records, two edit docs and the evidence index, and one, `e610fcb`, fixes a
-test (below). The two have the same build inputs:
-`flow/build_manifest.py compare` on a checkout of each prints `SAME BUILD`
-(run on 2026-11-16 for this record). So GitHub's build of `a84401f` is a
-build of the release's inputs.
+test (below). `bc8882b` is `S` plus the release run's evidence commits
+(`evidence/`, `docs/`, README.md). `00cd1c6` is `bc8882b` plus one commit
+that splits the `gds` workflow into three jobs (`.github/workflows/gds.yaml`
+and its test file, docs and evidence). All four have the same build inputs:
+`flow/build_manifest.py compare` prints `SAME BUILD` for `a84401f` against
+`S` (run on 2026-11-16) and for `S` against `bc8882b` and against `00cd1c6`
+(run on 2026-11-17 for this record, on exported trees of each commit). So
+each GitHub build below is a build of the release's inputs.
 
-| Commit | Pushed (the runs' creation time, UTC) | Runs: `gds`, `test`, `docs` |
-|---|---|---|
-| `a84401f` | 2026-11-15 19:32 | `43753001925`, `43753002010`, `43753001926` |
-| `2c97c15` (`S`) | 2026-11-16 01:40 | `43787610261`, `43787610305`, `43787610191` |
+| Commit | Branch | Pushed (the runs' creation time, UTC) | Runs: `gds`, `test`, `docs` |
+|---|---|---|---|
+| `a84401f` | `ci-8x4-test` | 2026-11-15 19:32 | `43753001925`, `43753002010`, `43753001926` |
+| `2c97c15` (`S`) | `ci-8x4-test` | 2026-11-16 01:40 | `43787610261`, `43787610305`, `43787610191` |
+| `bc8882b` | `main` | 2026-11-16 05:35 | `43811275309`, `43811275254`, `43811275355` |
+| `00cd1c6` | `ci-8x4-test` | 2026-11-16 21:06 | `43956712707`, `43956712900`, `43956712530` |
+| `00cd1c6` | `main` | 2026-11-17 06:56 | `44034950929`, `44034950943`, `44034950997` |
 
 Before these, GitHub had run the repository's workflows on `main` only (six
 runs, of `aa958a7` and `d2ed344`: the 6x4 design, a list of 245 mutants;
@@ -204,7 +216,8 @@ runs, of `aa958a7` and `d2ed344`: the 6x4 design, a list of 245 mutants;
   of which "Build GDS" took 5 h 13 min 22 s and detailed routing 3 h 45 min
   52 s (by the log's timestamps). GitHub's limit for a job on a hosted runner
   is 6 h, so this run finished with about 46 minutes to spare. That is one
-  measurement, on one runner; the time on another day is not known.
+  measurement, on one runner; the later one-job runs below took from 4 h 22
+  min to more than 6 h.
 * **The tools.** tt-support-tools at `d66cf17`, `librelane==3.1.0.dev3`, and
   the LibreLane image pulled by its version tag, which resolved to digest
   `sha256:d109140b…`, the digest the receipted runs on the compute runner
@@ -231,10 +244,11 @@ runs, of `aa958a7` and `d2ed344`: the 6x4 design, a list of 245 mutants;
   `gds` job's artifact, functional (no SDF delays), with the Icarus Verilog
   13.0 package the action downloads: `TESTS=30 PASS=30 FAIL=0 SKIP=0`
   (`github/a84401f-gl_test.txt`).
-* **`precheck`:** still running when `github/runs.txt` was last read
-  (started at 00:46 UTC on 2026-11-16; at the time that file states, in its
-  step "Run Tiny Tapeout Precheck"). Its result is not recorded here. The
-  release run's own precheck of the same GDS passed (`release-run/`).
+* **`precheck`** succeeded: `Precheck passed`, 00:46:12 to 05:25:41 UTC on
+  2026-11-16 (4 h 39 min 29 s), of which its step "Run Tiny Tapeout
+  Precheck" took 4 h 39 min 20 s (`github/a84401f-precheck.txt`; the
+  precheck's time is discussed below). An earlier version of this folder
+  recorded it as still running; it finished after that read.
 
 ### The mutant that survived on GitHub
 
@@ -267,27 +281,147 @@ That is why the shipping commit is `2c97c15` and not `a84401f`.
 
 ### The runs of `2c97c15` (`S`)
 
-As `github/runs.txt` gives them (the time it states):
+All three runs succeeded (`github/runs.txt`):
 
+* **The build reproduces the release identity.** The `gds` job (job
+  `133038662531`) succeeded, 01:40:24 to 06:02:22 UTC on 2026-11-16: 4 h 21
+  min 58 s, of which detailed routing took 3 h 05 min 25 s. Its hash step
+  printed both pairs as `(match)`, netlist `453d0af7…` and dates-zeroed GDS
+  `357ea15b…`, then `RELEASE IDENTITY MATCHES evidence/8x4-release-expected.json`
+  (`github/2c97c15-gds.txt`, log lines 256425-256429). The image tag resolved
+  to `sha256:d109140b…` again, and the late-clock line is there.
+* **`precheck`** succeeded: `Precheck passed`, 06:02:25 to 10:30:56 UTC
+  (job `133122030720`; its step "Run Tiny Tapeout Precheck" 4 h 28 min 24 s;
+  `github/2c97c15-precheck.txt`).
+* **`gl_test`** succeeded in 1 h 09 min 40 s with `TESTS=30 PASS=30 FAIL=0
+  SKIP=0`, and `viewer` deployed the Pages site from this build.
 * **`mutants` succeeded: `367 of 367 mutants killed`**, none survived, and
   `flow-sta-inputs-not-compared` is killed by
   `test_run_changed_after_the_sta_receipt_cannot_release[odb]`
   (`github/2c97c15-mutants.txt`). So GitHub's run of the fixed test agrees
   with the verifier's run on runner1.
-* `docs` succeeded, and `formal` succeeded with its 14 tasks each
-  `DONE (PASS, rc=0)` (`github/2c97c15-formal.txt`).
-* **Not finished then:** the `test` job, and the `gds` job ("Build GDS",
-  started at 01:40 UTC). `precheck`, `gl_test` and `viewer` start only after
-  `gds`. GitHub's limit for a job is 6 h, and the `gds` job of `a84401f` took
-  5 h 13 min, so this one may need a re-run if it reaches the limit; its
-  build inputs are `a84401f`'s. Results that finish later are not recorded
-  here.
+* **`test`** succeeded in 2 h 21 min 34 s (`3714 passed, 31 skipped`, the
+  same 31 skips as at `a84401f`; 18 cocotb summary lines with no failure);
+  `formal` succeeded with its 14 tasks each `DONE (PASS, rc=0)`; `docs`
+  succeeded.
+
+### The runs of `bc8882b` on `main`
+
+`main` was fast-forwarded from the 6x4 design to `bc8882b` on 2026-11-16.
+
+* **The `gds` job ran three times** (run `43811275309`; GitHub's "re-run
+  failed jobs" makes a new attempt of the run):
+  - **Attempt 1** (job `133113260538`), 05:35:56 to 11:36:13 UTC, was
+    cancelled at GitHub's 6 h job limit while LibreLane was still running:
+    detailed routing took 4 h 40 min 34 s, and the last step started was
+    `KLayout.DRC` at 11:27:38 (`github/bc8882b-gds-attempt1.txt`).
+  - **Attempt 2** (job `133273103876`), 11:40:00 to 17:40:15, was cancelled
+    at the limit too. Detailed routing took 4 h 27 min 01 s; LibreLane's
+    flow completed at 17:30:11, 5 h 49 min 18 s after the step "Make GDS
+    with LibreLane" began (11:40:53); the action then uploaded `GDS_logs` and
+    `tt_submission` (17:31:40 and 17:31:46), and the job was cancelled at
+    17:40:13 in the action's step "Render PNG from GDS", which had run for
+    8 min 27 s (`github/bc8882b-gds-attempt2.txt`).
+  - In neither attempt did the hash step run, so neither build is compared
+    with the release identity here, and `precheck`, `gl_test` and `viewer`
+    were skipped.
+  - **Attempt 3** (job `133491890099`) succeeded, 17:48:00 to 22:17:53 UTC:
+    4 h 29 min 53 s, detailed routing 3 h 11 min 06 s. Its hash step printed
+    both pairs as `(match)` and `RELEASE IDENTITY MATCHES
+    evidence/8x4-release-expected.json`, with the same image digest
+    (`github/bc8882b-gds-attempt3.txt`, log lines 256424-256428).
+* **`precheck`** (attempt 3, job `133654739439`) succeeded: `Precheck
+  passed`, 22:17:56 on 2026-11-16 to 03:21:50 UTC on 2026-11-17 (its step
+  5 h 03 min 47 s). `gl_test` succeeded (`TESTS=30 PASS=30 FAIL=0 SKIP=0`,
+  1 h 11 min 11 s) and `viewer` deployed the Pages site from `main`.
+* **The `test` run** (`43811275254`) succeeded: `test` (`3714 passed,
+  31 skipped`), `mutants` (`367 of 367 mutants killed`) and `formal` (14
+  tasks `DONE (PASS, rc=0)`). The `docs` run (`43811275355`) succeeded.
+
+The three attempts built the same commit on hosted runners with the same
+image label (`ubuntu-24.04`); detailed routing took 4 h 40 min, 4 h 27 min
+and 3 h 11 min. The two cancelled attempts are why the build was split
+(next).
+
+### The split workflow at `00cd1c6` (test branch)
+
+`00cd1c6` runs the build as three chained jobs, each under its own 6 h limit
+([docs/release-evidence.md](../../docs/release-evidence.md#the-3-core-8x4-release-candidate),
+"Why GitHub builds in three jobs"; the resume was first checked on runner1,
+[gds-split-20261116/](../gds-split-20261116/README.md)). Pushed to
+`ci-8x4-test`, run `43956712707` succeeded:
+
+| Job | Job id | Start and end (UTC) | Duration | What the extract shows |
+|---|---|---|---|---|
+| `gds_place` | `133613065829` | 2026-11-16 21:06:52 to 21:51:30 | 44 min 38 s | LibreLane from `Verilator.Lint` to `OpenROAD.STAMidPNR-3`, the late-clock line `LATE_CLOCK_COMPLETE 64 registers 23 branches`, the boundary check, `gds_run_placed` uploaded |
+| `gds_route` | `133639500221` | 21:51:33 to 2026-11-17 00:43:09 | 2 h 51 min 36 s | `gds_run_placed` received, both config hashes `OK`, `runs/wokwi kept`, `Project.DetailedRouting` alone, 2 h 48 min 44 s from its start to the flow's end, `gds_run_routed` uploaded |
+| `gds` | `133727433238` | 2026-11-17 00:43:12 to 01:19:58 | 36 min 46 s | `gds_run_routed` received, both config hashes `OK`, `runs/wokwi kept`, LibreLane from `Odb.RemoveRoutingObstructions` to `Misc.ReportManufacturability`, the signoff summary (antenna, LVS, DRC passed), `GDS_logs`, `tt_submission` and `gds_render` uploaded, then the hash step |
+
+* **The hash step** of the `gds` job printed both pairs as `(match)`,
+  netlist `453d0af7…` and dates-zeroed GDS `357ea15b…`, and `RELEASE
+  IDENTITY MATCHES evidence/8x4-release-expected.json`
+  (`github/00cd1c6-gds.txt`, log lines 16435-16439). So the split workflow
+  built the same netlist and the same dates-zeroed GDS as the one-job
+  workflow and the release run.
+* **`precheck`** (job `133743926009`) succeeded: `Precheck passed`, 01:20:00
+  to 06:50:16 UTC on 2026-11-17 (its step 5 h 30 min 10 s). `gl_test`
+  succeeded (`TESTS=30 PASS=30 FAIL=0 SKIP=0`, 01:20:00 to 02:47:13) and
+  `viewer` deployed the Pages site from this test-branch build.
+* **The `test` run** (`43956712900`) succeeded: `test` (`3719 passed,
+  31 skipped`: five more passes than at `bc8882b`; the commit adds workflow
+  tests), `mutants` (`367 of 367 mutants killed`) and `formal` (14 tasks
+  `DONE (PASS, rc=0)`). The `docs` run (`43956712530`) succeeded.
+
+### The runs of `00cd1c6` on `main`
+
+`main` was fast-forwarded to `00cd1c6` on 2026-11-17. When `github/runs.txt`
+was read (the time it states), its `docs` run (`44034950997`) had succeeded,
+and so had the `formal` job of its `test` run (`44034950943`; 14 tasks
+`DONE (PASS, rc=0)`, `github/main-00cd1c6-formal.txt`). Its `gds` run
+(`44034950929`, `gds_place` running) and the `test` and `mutants` jobs had
+not finished. Their results are not recorded here.
+
+### The precheck's time: a measured risk
+
+The `precheck` job is Tiny Tapeout's precheck action, unchanged by the split:
+one job, one KLayout process for its main DRC run. On the four green runs
+above, whose `gds` jobs each printed the release identity's two hashes as
+`(match)`, its step "Run Tiny Tapeout Precheck" took:
+
+| Run | Precheck job | The step's time | The main DRC run's connectivity setup |
+|---|---|---|---|
+| `a84401f` | `133022084379` | 4 h 39 min 20 s (279 min) | 00:48:34 to 05:10:41 (4 h 22 min) |
+| `2c97c15` (`S`) | `133122030720` | 4 h 28 min 24 s (268 min) | 06:05:10 to 10:09:50 (4 h 05 min) |
+| `bc8882b` (`main`) | `133654739439` | 5 h 03 min 47 s (304 min) | 22:20:06 to 03:06:21 (4 h 46 min) |
+| `00cd1c6` (test branch) | `133743926009` | 5 h 30 min 10 s (330 min) | 01:22:44 to 06:30:25 (5 h 08 min) |
+
+GitHub's limit for a job is 6 h (360 min). Most of the step (245 to 308
+min of it) is one phase of the main KLayout DRC run, from its line "Starting IHP-SG13CMOS5L DRC
+connectivity setup" to its line "Starting IHP-SG13CMOS5L DRC rules." (the
+run's own timestamps; the extracts quote both lines). The slowest, the split
+run's, ended 29 min 44 s before the limit (the job, 01:20:00 to 06:50:16).
+The precheck has not timed out on GitHub in these runs, but the margin is
+small: that is a measured risk, from four runs. A precheck that times out
+would be re-run on the same GDS: re-running a run's failed jobs leaves its
+successful `gds` job and its artifacts in place.
+
+### The Pages site
+
+Each green `gds` run's `viewer` job deployed the layout viewer to the
+repository's GitHub Pages site, the test branch's included: `a84401f`
+(00:46 UTC on 2026-11-16), `S` (06:02), `bc8882b` from `main` (22:18) and
+`00cd1c6` from the test branch (01:20 on 2026-11-17), each a build with the
+release identity. When this was written `main` pointed to `00cd1c6` too
+(`gh api repos/josusanmartin/wirelingo/branches/main`); its own `viewer` job
+runs after its `gds` run, which had not finished.
 
 ### Redactions in `github/`
 
-None was needed. The extracts were chosen to hold no path under the hosted
-runner's home directory (the logs have many; none is quoted), and the files
-were searched for tailnet names and addresses, private LAN addresses, email
+The precheck extracts quote lines that name the GDS by its path under the
+hosted runner's home directory; that directory is written as `~` (4 lines in
+each of the four `*-precheck.txt`, as their headers say). Nothing else was
+changed: no other extract quotes a path under that directory. The files were
+searched for tailnet names and addresses, private LAN addresses, email
 addresses, host names and credentials: none was found. The Pages site's
 address is not quoted. Log lines are verbatim apart from trailing spaces,
-which were removed.
+which were removed, and the home directory above.

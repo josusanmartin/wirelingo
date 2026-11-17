@@ -1,0 +1,20 @@
+Extract of the log of job 133875477353 (formal) of josusanmartin/wirelingo, commit 00cd1c6.
+Run 44034950943 (workflow test), branch main, run attempt 1.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133875477353/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+Each SymbiYosys task's verdict (the step requires at least 14 'DONE (PASS' lines):
+284: 2026-11-17T06:57:27.9457401Z SBY  6:57:27 [fifos_cover8] DONE (PASS, rc=0)
+316: 2026-11-17T06:58:02.5642200Z SBY  6:58:02 [fifos_prove4] DONE (PASS, rc=0)
+334: 2026-11-17T06:59:06.6761379Z SBY  6:59:06 [fifos_prove8] DONE (PASS, rc=0)
+446: 2026-11-17T06:59:07.2506802Z SBY  6:59:07 [hostport_prove] DONE (PASS, rc=0)
+525: 2026-11-17T07:00:36.2888273Z SBY  7:00:36 [hostport_cover] DONE (PASS, rc=0)
+1066: 2026-11-17T07:03:17.9755067Z SBY  7:03:17 [hostport_ref_prove] DONE (PASS, rc=0)
+1196: 2026-11-17T07:06:06.5238761Z SBY  7:06:06 [hostport_ref_cover] DONE (PASS, rc=0)
+1256: 2026-11-17T07:06:31.8354185Z SBY  7:06:31 [core_prove] DONE (PASS, rc=0)
+1316: 2026-11-17T07:06:58.4306570Z SBY  7:06:58 [core_prove0] DONE (PASS, rc=0)
+1376: 2026-11-17T07:07:23.9600643Z SBY  7:07:23 [core_prove2] DONE (PASS, rc=0)
+1436: 2026-11-17T07:07:48.5852527Z SBY  7:07:48 [core_prove8_0] DONE (PASS, rc=0)
+1496: 2026-11-17T07:08:14.8650593Z SBY  7:08:14 [core_prove8_1] DONE (PASS, rc=0)
+1556: 2026-11-17T07:08:39.5677013Z SBY  7:08:39 [core_prove8_2] DONE (PASS, rc=0)
+1595: 2026-11-17T07:08:40.0285080Z SBY  7:08:40 [line_prove] DONE (PASS, rc=0)
