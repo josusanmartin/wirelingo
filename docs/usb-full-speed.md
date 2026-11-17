@@ -19,8 +19,10 @@ lists what the runs can't show.
 > autonomous enumeration on the netlist with SDF at 20.834 ns (48 MHz) at typ,
 > slow and fast ([release-evidence.md](release-evidence.md)). Those receipts
 > are for software `5457d8e`: the autonomous enumeration ran with the
-> 246-word `usb_enum` from before `fault-fixes`, and the current 254-word one needs a
-> gate-level rerun before they apply to it.
+> 246-word `usb_enum` from before `fault-fixes`. The 3-core release run of
+> 2026-11-16 ran the current `usb_fs_dev` and 254-word `usb_enum` on the release
+> netlist the same way, with SDF at 20.834 ns at typ, slow and fast
+> ([records](../evidence/8x4-release-20261116/README.md)).
 >
 > **3-core 8x4 release candidate (2026-11-15).** The release clock is 48 MHz,
 > which the candidate's layout meets at every corner in static timing. Its
@@ -484,7 +486,8 @@ meets 50 MHz at every corner and passes this test with SDF at 48 MHz.)
   The current 254-word image includes the bus-reset fix
   ([fault-testing.md](fault-testing.md), finding 6) and the configuration-state
   repair ([usb-enumeration.md](usb-enumeration.md#rejected-configuration-requests)).
-  It needs FPGA and gate-level reruns before these results apply to it.
+  It needs an FPGA rerun before these results apply to it (it ran at gate
+  level in the 3-core release run of 2026-11-16).
   That is the RTL in FPGA fabric with 3.3 V LVCMOS pins and no scope, so the
   analogue items above stay open, and it doesn't measure the jitter margin.
   `usb_fs_dev` carried data to and from Linux the same day, 350 round trips over

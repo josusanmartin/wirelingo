@@ -1,0 +1,13 @@
+Extract of the log of job 133875476968 (mutants) of josusanmartin/wirelingo, commit 00cd1c6.
+Run 44034950943 (workflow test), branch main, run attempt 1.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133875476968/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+The command:
+268: 2026-11-17T06:57:35.9576250Z ##[group]Run python3 test/mutants.py
+
+The total (367 lines say 'killed', none says 'SURVIVED'):
+677: 2026-11-17T07:40:24.3007821Z 367 of 367 mutants killed (scratch: /tmp/protoemu-mutants-ky8dsq6p)
+
+The mutant that survived at a84401f:
+601: 2026-11-17T07:33:24.9920240Z flow-sta-inputs-not-compared     killed: test_run_changed_after_the_sta_receipt_cannot_release[odb] (1 s)

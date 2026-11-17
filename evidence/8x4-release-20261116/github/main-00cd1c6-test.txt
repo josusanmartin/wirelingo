@@ -1,0 +1,50 @@
+Extract of the log of job 133875477196 (test) of josusanmartin/wirelingo, commit 00cd1c6.
+Run 44034950943 (workflow test), branch main, run attempt 1.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133875477196/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+The Tcl the model tests ran through tkinter, and the model suite's total (pytest):
+1478: 2026-11-17T07:49:38.9628610Z Tcl 8.6.14
+1588: 2026-11-17T09:13:02.8147382Z 3719 passed, 31 skipped in 5003.12s (1:23:23)
+
+The 31 skips by reason, from pytest's -rs lines (28 lines; [k] is the line's own count):
+  28 tests: sigrok-cli not found: `sudo apt install sigrok-cli` (Debian/Ubuntu), or flow/install_sigrok.sh for a user-space copy in ~/tools/sigrok, or set SIGROK_CLI=/path/to/sigrok-cli
+            test_cec.py:296, test_dali.py:231, test_dmx512.py:116, test_dshot.py:82, test_dshot_bidir.py:119, test_i2s.py:91, test_iso7816.py:350, test_lin.py:245, test_mdio.py:744, test_mdio.py:759, test_mdio.py:772, test_midi.py:178, test_midi.py:234, test_modbus.py:239, test_nec.py:178, test_pmbus.py:190, test_qsfpdev.py:342, test_quad_enc.py:141, test_rc5.py:219, test_sigrok_can.py:62, test_sigrok_can.py:74, test_smbus.py:330, test_usb_autonomous.py:323 [2], test_usb_uart_pairs.py:66 [3], test_wiegand.py:170  (log lines 1560-1587)
+   1 tests: no scapy venv: python3 -m venv ~/protoemu-flow/eth-venv && pip install scapy
+            test_eth_stack.py:1295  (log lines 1565-1565)
+   1 tests: no micropython: see docs/eth10-network.md
+            test_eth_stack.py:1371  (log lines 1566-1566)
+   1 tests: archive not here: set WIRELINGO_USB_ARCHIVE
+            test_evidence.py:87  (log lines 1567-1567)
+
+The cocotb suites' own totals: the TESTS/PASS/FAIL/SKIP field of each suite's summary line (not the whole line),
+its log line and time, and the job step it ran in (the first step whose start and end times hold it;
+steps from gh api .../actions/jobs/133875477196):
+  line  463  07:11:10  TESTS=30 PASS=30 FAIL=0 SKIP=0   step  6  Top-level tests through the SPI port (8x4 submission config, 3 cores, SRAM model)
+  line  651  07:23:12  TESTS=30 PASS=30 FAIL=0 SKIP=0   step  7  Top-level tests through the SPI port (2-core build, SRAM model)
+  line  696  07:23:49  TESTS=2 PASS=2 FAIL=0 SKIP=0     step  8  Compiled RP2 PIO host transport through the SPI port
+  line  742  07:24:20  TESTS=2 PASS=2 FAIL=0 SKIP=0     step  9  Bounded board Ethernet receive service through the SPI port
+  line  861  07:30:37  TESTS=16 PASS=16 FAIL=0 SKIP=0   step 10  Post-freeze protocol firmware through the SPI port
+  line  979  07:40:43  TESTS=17 PASS=17 FAIL=0 SKIP=0   step 11  Blind protocols, RMII and Ethernet firmware through the SPI port
+  line 1031  07:40:57  TESTS=6 PASS=6 FAIL=0 SKIP=0     step 11  Blind protocols, RMII and Ethernet firmware through the SPI port
+  line 1088  07:43:47  TESTS=7 PASS=7 FAIL=0 SKIP=0     step 11  Blind protocols, RMII and Ethernet firmware through the SPI port
+  line 1132  07:43:59  TESTS=2 PASS=2 FAIL=0 SKIP=0     step 11  Blind protocols, RMII and Ethernet firmware through the SPI port
+  line 1208  07:45:04  TESTS=6 PASS=5 FAIL=0 SKIP=1     step 12  Bench firmware (MDIO, QSFP-style stand-in, PMBus) through the SPI port
+  line 1270  07:46:43  TESTS=5 PASS=4 FAIL=0 SKIP=1     step 13  Pulse timestamps through the SPI port
+  line 1313  07:47:02  TESTS=1 PASS=1 FAIL=0 SKIP=0     step 14  Packed SPI framing through a serialized host
+  line 1355  07:47:09  TESTS=1 PASS=1 FAIL=0 SKIP=0     step 15  Preloaded SPI frames through a serialized host
+  line 1397  07:47:34  TESTS=1 PASS=1 FAIL=0 SKIP=0     step 16  Declared UART capture through a serialized host
+  line 1451  07:49:37  TESTS=3 PASS=3 FAIL=0 SKIP=0     step 17  UART/USB pair modes against the model, clock for clock
+  line 1698  09:15:42  TESTS=8 PASS=8 FAIL=0 SKIP=0     step 19  Lockstep RTL vs model, 8x4 submission config (3 cores, 3 SRAM banks, 8-deep FIFOs)
+  line 1809  09:17:46  TESTS=8 PASS=8 FAIL=0 SKIP=0     step 20  Lockstep RTL vs model, 2-core build (2 cores, 2 SRAM banks, 8-deep FIFOs)
+  line 1909  09:19:54  TESTS=8 PASS=8 FAIL=0 SKIP=0     step 21  Lockstep RTL vs model, 4-core flop build
+
+The two cocotb tests skipped (the SKIP=1 fields above):
+1196: 2026-11-17T07:45:04.4379164Z 26700100.00ns INFO     cocotb.regression                  skipping test_bench_fw.bench_sigrok_available (6/6)
+1259: 2026-11-17T07:46:43.4247453Z 9865340.00ns INFO     cocotb.regression                  skipping test_pps.pps_one_second (5/5)
+
+The sigrok notes (sigrok-cli is not installed on the runner):
+1175: 2026-11-17T07:44:15.9930368Z 1572880.00ns WARNING  cocotb.tb                          SIGROK SKIPPED: bench_mdio_master_and_phy: mdio decoder
+1189: 2026-11-17T07:44:52.3037909Z 5701500.00ns WARNING  cocotb.tb                          SIGROK SKIPPED: bench_qsfp: i2c decoder
+1194: 2026-11-17T07:45:04.4355028Z 26700100.00ns WARNING  cocotb.tb                          SIGROK SKIPPED: bench_pmbus: i2c decoder and PEC recomputed over its bytes
+1558: 2026-11-17T09:13:02.8104737Z SIGROK CHECKS SKIPPED: 28 tests: a pass here says nothing about them (set SIGROK_CLI, flow/install_sigrok.sh)

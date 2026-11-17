@@ -65,11 +65,11 @@ The blocks, from the outside in:
 | Block | What it does | Source | Spec |
 |---|---|---|---|
 | Host port | Takes SPI transactions from the host (1 bit or 4 bits per clock edge of SCK), and turns them into reads and writes of registers and memory. It has its own small state machine on SCK, and hands each word across to the chip's clock | `src/pe_hostport.sv` | `docs/isa.md` §6.1 |
-| Instruction memory | Two SRAM banks, one per core, each 256 words of 32 bits. SRAM is on-chip memory; a word is one 32-bit value | `src/pe_imem.sv` | §3 |
-| Cores | Two tiny processors. Each runs one instruction per tick and has four 16-bit registers, an ALU (the arithmetic unit), input and output shift registers and its own clock divider | `src/pe_core.sv` | §4, §5 |
+| Instruction memory | Three SRAM banks in the release build (two in the v0.2 design this page was written against), one per core, each 256 words of 32 bits. SRAM is on-chip memory; a word is one 32-bit value | `src/pe_imem.sv` | §3 |
+| Cores | Three tiny processors in the release build (two in v0.2). Each runs one instruction per tick and has four 16-bit registers, an ALU (the arithmetic unit), input and output shift registers and its own clock divider | `src/pe_core.sv` | §4, §5 |
 | FIFOs | Small queues between each core and the host, one each way, 8 words deep. FIFO join turns the receive queue into a second transmit stage | `src/pe_fifos.sv`, `src/pe_fifo.sv` | §4.4 |
 | Pins | A 32-entry logical pin space: the bidirectional, output and input pads, plus 8 virtual pins that are wires between the cores. Each pin has an owner core, and pins can be open drain | `src/pe_chip.sv` | §2 |
-| CRC tap | A checksum unit fed by the shift registers, any polynomial up to 16 bits | `src/pe_core.sv` | §4.5 |
+| CRC tap | A checksum unit fed by the shift registers, any polynomial up to 32 bits (up to 16 bits in v0.2) | `src/pe_core.sv` | §4.5 |
 | Line unit | Hardware beside core 0 for serial lines: NRZI and Manchester coding, bit stuffing, end-of-packet detection and receive clock recovery | `src/pe_line.sv` | §4.7 |
 | Top level | Tiny Tapeout's wrapper: the pads and the module name | `src/project.v` | |
 
@@ -554,7 +554,7 @@ These are the limits the repository records. None of them is ranked here.
 ### Questions a reader may ask
 
 **What is Wirelingo, in a minute?**
-Two small cores, each with 256 instructions, built for driving pins on exact
+Three small cores, each with 256 instructions, built for driving pins on exact
 clocks. A host loads a protocol as firmware. It was hardened for IHP
 SG13CMOS5L, a 130 nm manufacturing process, through Tiny Tapeout. Hardening
 means turning RTL into a layout. It has not been fabricated.
@@ -604,7 +604,7 @@ menu reaches (`docs/line-unit-settings.md`).
 
 **What sets the speed limit?**
 The clock period, and routing on one horizontal layer. The 3-core 8x4
-release candidate meets 48 MHz at all three corners in static timing, with
+release build meets 48 MHz at all three corners in static timing, with
 +0.4304 ns of setup slack at the slow corner, and misses 50 MHz there by
 0.40 ns; that margin belongs to its placement (a moved placement missed
 48 MHz). The earlier 6x4, 2-core layout, run fo6, met 50 MHz at all three
@@ -714,8 +714,8 @@ repository.
 ## Appendix A: reproducing the clock counts
 
 This is a reading aid, not a regression test. Icarus Verilog is a free Verilog
-simulator (`iverilog`, `vvp`). This ran on it at `af2c097`, in the tapeout
-configuration, with `test/sram_model.v`; `src/` is the same on
+simulator (`iverilog`, `vvp`). This ran on it at `af2c097`, in the 2-core
+submission configuration of that time, with `test/sram_model.v`; `src/` is the same on
 `improve-2026-11`. It takes seconds. Save the text below as `/tmp/trace/tb.v`,
 then run from the repo root:
 

@@ -87,7 +87,7 @@ writes and restarts landing mid-WAIT.
 
 **The line unit** (§4.7) is in the lockstep too: random LINECFG/LINEDIV/
 LINEPINS (pins chosen so its TX often loops back to its RX), random IN/OUT LINE
-on core 0, and its whole state compared every cycle. The tapeout-config run
+on core 0, and its whole state compared every cycle. The submission-config run
 must reach its coverage goals as well: bits sent and received, stuff bits both
 ways, Manchester halves, frame ends, full and partial IN LINE, RX overflow.
 
@@ -366,10 +366,12 @@ pushed links and registers must equal the model's) at 20 ns, and the
 full-speed USB device with the half-cycle NRZI sample point
 (test_usb_fs_device) at 48 MHz (20.834 ns), each at typ, slow and fast. Run
 fo6 passes all of it (test_usb_fs_device with `usb_fs_dev` before the got_in
-guard of 2026-11-04; not re-run at gate level with it), and the release adds the autonomous USB enumeration
+guard of 2026-11-04; not re-run on fo6's netlist with it; the 3-core release
+run ran the current one with SDF at each corner), and the release adds the autonomous USB enumeration
 tests (low and full speed) with SDF at all three corners (receipts for
 software `5457d8e`, with the 246-word `usb_enum` before `fault-fixes`; the
-current 254-word one needs a gate-level rerun). Historically v2c
+current 254-word one ran at gate level, functional and with SDF at each
+corner, in the 3-core release run of 2026-11-16). Historically v2c
 passed the older version of this set (typ 20 ns, slow 23 ns, and full-speed
 USB at slow/48 MHz, which its STA didn't meet). `v2long` runs the full-length
 test_la_capture_rate and test_reverse_engineering (v2c: pass at typ and slow, ~50 minutes each). Under SDF the
@@ -387,7 +389,7 @@ On branch `v2` with the RTL as committed (kind 7's reference on bits [15:14]):
 
 * model suite: 251 passed;
 * top-level cocotb: `test.py` 20/20, `test_pio.py` 2/2, `test_eth_service.py` 2/2;
-* lockstep, tapeout configuration (`LOCKSTEP_SEEDS=60`, 2 cores, 2 SRAM banks,
+* lockstep, the submission configuration of that time (`LOCKSTEP_SEEDS=60`, 2 cores, 2 SRAM banks,
   8-deep FIFOs): 6/6, every coverage goal reached; 4-core flop build
   (`LOCKSTEP_GOALS=core`, 60 seeds × 1000 cycles): 6/6; plus 400 seeds × 1000
   cycles in four other seed windows (tapeout) and 200 in two (4-core), all

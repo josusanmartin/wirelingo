@@ -58,6 +58,22 @@ name it. The commits
 that record the release run's results name Claude Opus 5.5. The rest of the
 work is credited as this page says.
 
+Eleven commits of 2026-11-12 and 2026-11-13 (UTC) carry a `Co-Authored-By`
+line naming `GPT-6-Astra (Codex)`, the Codex model named above: a review of the 8x4 work as it stood, with its fixes. They
+change the `usb_enum` and `usb_enum_ep1` firmware (configuration and the EP1
+data toggle kept when a request is rejected); the formal core-safety check
+and its mutants (every core index and FIFO depth of the 8x4 build);
+`flow/signoff.py` (invalid and contradictory metrics refused); the assembler
+and its OCaml port (pin directives that would wrap a field refused); the CI
+test workflow (the blind-test, RMII and Ethernet RTL suites added);
+[isa.md](isa.md) (the divider when INT is zero); model tests for these
+changes; the MicroPython driver's firmware image; README.md, `info.yaml`,
+the evidence index and fifteen other docs pages (this one among them); and an
+evidence folder of their validation runs
+([evidence/astra-review/](../evidence/astra-review/README.md)).
+A Claude Opus 5.5 merge commit, `3debe08`, brought them in; its message names
+the independent verifier's item 090, which is not published here.
+
 ## Who did what
 
 | Role | Who | What it did here |
@@ -66,8 +82,11 @@ work is credited as this page says.
 | Engineering | Claude (Claude Code) | ISA spec, golden model, assembler, RTL, firmware, cocotb/formal/mutation tests, LibreLane flow, physical experiments, FPGA bring-up |
 | Independent review | Codex | read the repo cold, reproduced bugs with tests and proposed fixes ([review.md](review.md)) |
 | Parallel work | Claude sub-agents | self-contained tasks in their own git worktrees (FPGA bring-up, the reverse-engineering demo), reporting measured results back |
+| Independent verification | a separate Claude Code session, from 2026-11-02 | took each builder's item cold in its own checkout, reran the tests, attacked the claims and wrote a PASS or FAIL report; items and reports 000 to 078b are in [evidence/verifier/](../evidence/verifier/README.md) ([verification-story.md](verification-story.md#how-an-agents-claim-gets-checked)) |
 
 At commit 19ebe98, 164 of the repository's 184 commits are co-authored by Claude.
+At `001fafa`, 668 of 757 commits carry a Claude `Co-Authored-By` line and 11
+the Codex model's above.
 
 ## The rule: no claim without independent evidence
 
@@ -90,7 +109,9 @@ assumptions:
   line unit's phase tracking.
 * **Mutation testing** checks the checks. Injected bugs in the model, RTL,
   firmware and assembler must each make a named test fail
-  (`test/mutants.py`, 34 of 34 killed in the 2026-10-05 record). Tests that pass whatever the code
+  (`test/mutants.py`, 34 of 34 killed in the 2026-10-05 record; GitHub's
+  `mutants` job killed today's 367 of 367 at the shipping commit `2c97c15` and
+  at `bc8882b` and `00cd1c6`). Tests that pass whatever the code
   does are worthless, and agents write those too.
 * **Third-party oracles.** sigrok's protocol decoders, written by other
   people for logic analyzers, decode the waveforms of the UART, SPI, I2C,
@@ -103,14 +124,15 @@ assumptions:
 * **Physical signoff by script.** `flow/signoff.py` applies Tiny Tapeout's
   criteria to the run's own reports, and Tiny Tapeout's precheck runs on the
   GDS. The gate-level netlist reruns the top-level tests.
-* **Hardware.** The RTL runs on a Kria KV260 FPGA at 50 MHz (the release
-  clock is 48 MHz):
+* **Hardware.** The v0.2 two-core RTL runs on a Kria KV260 FPGA at 50 MHz
+  (the release clock is 48 MHz):
   firmware loads, UART crosses real pins, and the quad host port moves
   193.6 Mbit/s, the figure simulation predicted ([fpga/kv260](../fpga/kv260/README.md)).
   Most firmware, the post-freeze protocols among it, and USB enumeration
   against a replayed host waveform also ran there, against the other core or
-  the FPGA's pattern generator. This is the RTL in FPGA fabric, not the IHP
-  netlist or its pads.
+  the FPGA's pattern generator. This is the v0.2 RTL in FPGA fabric, not the
+  IHP netlist or its pads. The 3-core v0.3 RTL that ships has one board run, a
+  smoke test on 2026-11-10, made before the CRC retime of 2026-11-12.
 * **A second agent as adversary.** Codex reviewed the work cold, and Claude
   reviewed Codex's fixes. Neither was trusted to grade its own work.
 
@@ -163,7 +185,8 @@ flow) and [review.md](review.md) (the independent review).
   scope. The verification is broad, but it checks the spec as the agents
   wrote it; it can't catch a spec that asks for the wrong thing.
 * Synthesis preserving the RTL's behaviour is proved for run fo6's netlist
-  ([equivalence.md](equivalence.md)): functionally, at zero delay, with the
+  ([equivalence.md](equivalence.md)) and for the 3-core release netlist
+  ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)): functionally, at zero delay, with the
   PDK's cell models, under the assumptions listed there. The inside of the
   cells is not checked; timing is left to STA and the timing-annotated
   gate-level tests.

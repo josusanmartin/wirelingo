@@ -19,8 +19,8 @@ results below belong to the earlier 6x4, 2-core v0.2 chip.
 | Level | What has been shown | Limit |
 |---|---|---|
 | **Silicon, Tiny Tapeout demo board** | Nothing yet | The chip has not been fabricated |
-| **FPGA against a real host** | The chip's RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
-| **FPGA against our own far ends** | Most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study, the blind-test firmware and v0.3's `usb_enum_ep1`, `eth10_tx_fcs` and `eth10_rx_fcs`; `eth10_tx_cs` in the 2026-11-03 fabric ping, verified by report 037 ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun |
+| **FPGA against a real host** | The chip's v0.2 two-core RTL on a Kria KV260, wired to the board's own USB port: Linux enumerated and configured it at low and full speed, and a Linux process moved data through it at full speed ([results](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | USB only, one host and hub, no scope, 3.3 V FPGA pins. One attach in about 23 stalls in the data demo, cause not proved. Run with `usb_enum` as it was before `fault-fixes`; the current one needs a rerun |
+| **FPGA against our own far ends** | On the v0.2 two-core RTL, most of the firmware, with results equal to the cycle model: UART across real pins, SPI, I2C (master, sniffer, target), the logic analyzer, CAN, JTAG, 1-Wire, PS/2, WS2812, the one-core USB devices against a replayed host, 10BASE-T TX and RX and `eth10_match` on generator frames, all three post-freeze protocol rounds; quad host port at 193.6 Mbit/s ([fpga/kv260](../fpga/kv260/README.md); the "Verified on" column below says which) | The far end is a model or a replayed waveform, not a real device. Not run there: SWD, the two-core USB device, the USB-UART pairs, `eth10_reply`, `pps_capture`, the bench firmware (MDIO, QSFP-style, PMBus), the RMII study, the blind-test firmware and v0.3's `usb_enum_ep1`, `eth10_tx_fcs` and `eth10_rx_fcs`; `eth10_tx_cs` in the 2026-11-03 fabric ping, verified by report 037 ([evidence](../evidence/fabric-ping-20261103/README.md)). `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran there in their form before `fault-fixes` ([docs/fault-testing.md](fault-testing.md)) and need a rerun. The 3-core v0.3 RTL that ships has one board run, a smoke test on 2026-11-10 (bring-up, a UART ring over three cores, CRC32 on each, the quad host port), made before the CRC retime of 2026-11-12 |
 | **3-core 8x4 release build** | Signoff clean (DRC, LVS, antenna); 48 MHz at every corner in STA (worst non-latch setup slack +0.4304 ns at the slow corner), 50 MHz missed at the slow corner by 0.40 ns; the same netlist from four hardens; a release rehearsal on a clean harden passing functional GL 30/30 plus `test_pio` and `test_eth_service`, the SDF sets at each corner, a fresh slow STA, clock and reset checks, precheck, and RTL-to-netlist equivalence (10754 of 10754 points) | The release run, a clean harden of the shipping commit `2c97c15`, passed the release check on 2026-11-16 ([records](../evidence/8x4-release-20261116/README.md)); not silicon. A moved placement (density 48) misses 48 MHz at the slow corner by 0.815 ns, so the margin is this placement's. Timing-annotated gate level covers directed subsets |
 | **Historical signed-off layout (6x4 run fo6)** | Netlist formally equivalent to the RTL; 50 MHz at all three corners; DRC, LVS and antenna clean; Tiny Tapeout precheck passes; all 29 top-level tests at gate level | Timing-annotated gate level covers directed subsets, and analogue behaviour is not simulated |
 | **Simulation and formal** | A Python model and the RTL compared cycle by cycle; formal proofs of the FIFOs, host port, core invariants and line unit; injected bugs caught | Proofs cover the listed properties, not the whole chip |
@@ -31,9 +31,11 @@ results below belong to the earlier 6x4, 2-core v0.2 chip.
   stuck lines, truncation, bit flips, stretch, jitter) against six firmware on
   the cycle model found six real failures in `uart_rx`, `i2c_master`, `can_rx`
   and `usb_enum`, among them a glitch taken for a start bit, an ACK read from a
-  stuck SDA and a missed bus reset inside a token. Four are fixed (model and
-  RTL simulation only; not yet at gate level or on the FPGA); two are left,
-  with the reason.
+  stuck SDA and a missed bus reset inside a token. Four are fixed and tested on
+  the model and in RTL simulation; three of the fixed programs (`uart_rx`,
+  `i2c_master`, `usb_enum`) also ran at gate level in the 3-core release run
+  (2026-11-16), and `can_rx` has no gate-level test. None has been rerun on the
+  FPGA. Two are left, with the reason.
 * [docs/blind-test.md](blind-test.md): a fresh agent given two protocols
   drawn by a rule (HD44780 4-bit and ATA PIO), with the chip and tools frozen.
   HD44780 fits in 99 words; ATA PIO does not fit as specified, and an 8-bit
@@ -50,12 +52,13 @@ verifier's reports, the kernel and step logs of the 2026-10-30 real-host USB
 runs, and the 2026-11-03 fabric ping (verified,
 [verifier report 037](../evidence/verifier/037-fabric-ping-fix3.report.md)). The release
 receipts' archive, `wirelingo-release-evidence-7685aba-fo6.tar.gz` (about
-55 MB, sha256 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`), is not in git: it is to be attached as a release asset
-when the repository is published ([docs/release-evidence.md](release-evidence.md)).
+55 MB, sha256 `868c5d3ab8010cac27040617a869377076df6067e9fa1f28203ba5cf357409bf`), is not in git, and neither is the 3-core
+release's ([records](../evidence/8x4-release-20261116/README.md)). The repository is public but has no GitHub release
+yet, so neither archive is published ([docs/release-evidence.md](release-evidence.md)).
 
 ## Where it stands
 
-* **Real USB host (2026-10-30):** on the KV260, Linux enumerated and configured
+* **Real USB host (2026-10-30):** on the KV260 (the v0.2 RTL), Linux enumerated and configured
   the autonomous USB firmware at both speeds with no host software on the chip's
   side after loading: 32 of 32 attaches, 66,000 of 66,000 descriptor reads
   (`GET_DESCRIPTOR` control transfers) and 188 of 188 bus resets. (That was the
@@ -92,7 +95,8 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   last exception of the previous candidate, t48ba (antenna diodes taking a
   net to 11 loads against the IHP cells' fanout limit of 8), is removed by a
   flow step that buffers such nets after routing ([docs/physical.md](physical.md)).
-* Running on a Kria KV260 FPGA at 50 MHz: firmware loads and runs, UART
+* Running on a Kria KV260 FPGA at 50 MHz (the v0.2 RTL; the 3-core v0.3 RTL
+  has one smoke run there, 2026-11-10, before the CRC retime): firmware loads and runs, UART
   crosses real pins in both directions, and the quad host port moves
   193.6 Mbit/s, matching simulation ([fpga/kv260](../fpga/kv260/README.md)).
   That is against the FPGA's own fabric SPI master on the chip's clock; the
@@ -142,7 +146,7 @@ when the repository is published ([docs/release-evidence.md](release-evidence.md
   with SDF at 20 ns 16/16 at the typical corner, two of them after their
   timing assertions got a 1 ns tolerance for sub-ns pad skew; 16/16 at the
   slow and fast corners in supplementary single-case runs of 2026-11-02,
-  outside the release gate and with no verifier report). All three rounds also ran on the KV260 FPGA build of the RTL,
+  outside the release gate and with no verifier report). All three rounds also ran on the KV260 FPGA build of the v0.2 RTL,
   against the other core or the FPGA's pattern generator playing our own
   (mostly pre-timed) device models, with results equal to the cycle model's
   ([docs/post-freeze-protocols.md](post-freeze-protocols.md), with the

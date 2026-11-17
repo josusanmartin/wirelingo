@@ -25,7 +25,7 @@ release rehearsal whose receipts pass. The release run, a clean harden of
 the shipping commit `2c97c15`, passed the release check on 2026-11-16 (STA,
 gate level, precheck, formal equivalence; not silicon;
 [records](../evidence/8x4-release-20261116/README.md)); see
-[the 3-core release candidate](#the-3-core-release-candidate-2026-11-15).
+[the 3-core release build's section](#the-3-core-release-candidate-2026-11-15).
 The 2-core 8x4 build is not a live option: its receipted candidate below
 predates the CRC retime now in the RTL, a 2-core harden of the current RTL
 (aqf-2c) misses 48 MHz at the slow corner by 0.433 ns, and the 2-core work
@@ -72,8 +72,9 @@ added buffers.
 ## 8x4 (2026-11-10)
 
 The organizers confirmed 8x4 tiles; the 8x4 build lives on the branch
-`next-8x4`, where `info.yaml` says `tiles: "8x4"`. `main` stays the 6x4 fo6
-design until an 8x4 netlist has a full harden, precheck and release receipts.
+`next-8x4`, where `info.yaml` says `tiles: "8x4"`. `main` stayed the 6x4 fo6
+design until an 8x4 netlist had a full harden, precheck and release receipts;
+since 2026-11-16 it is the 3-core 8x4 release build.
 The study that chose what to add is [8x4-study.md](8x4-study.md).
 
 * **The die** is 1724.16 × 710.64 µm (tt-support-tools `d66cf17`,

@@ -1,4 +1,4 @@
-GitHub Actions runs of josusanmartin/wirelingo for the 3-core 8x4 design, branches ci-8x4-test and main, as the API gave them at 2026-11-17 07:11 UTC,
+GitHub Actions runs of josusanmartin/wirelingo for the 3-core 8x4 design, branches ci-8x4-test and main, as the API gave them at 2026-11-17 14:28 UTC,
 in push order.
 Source: gh api repos/josusanmartin/wirelingo/actions/runs/RUN and .../runs/RUN/jobs?filter=all (read-only). Times are UTC.
 A job with no end time had not finished when this was read; a job that waits for another (precheck, gl_test
@@ -73,11 +73,16 @@ run 43956712530  workflow docs  branch ci-8x4-test  commit 00cd1c6c6d46a10c19d56
   job 133613064341  att 1  docs      completed   success   started 2026-11-16T21:06:52Z  ended 2026-11-16T21:07:30Z  (0 min 38 s)  runner image ubuntu-24.04
 
 run 44034950929  workflow gds  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status in_progress  conclusion -  attempts 1
-  job 133875476896  att 1  gds_place in_progress -         started 2026-11-17T06:56:52Z  ended -  runner image ubuntu-24.04
+  job 133875476896  att 1  gds_place completed   success   started 2026-11-17T06:56:52Z  ended 2026-11-17T07:42:01Z  (45 min 09 s)  runner image ubuntu-24.04
+  job 133894334152  att 1  gds_route completed   success   started 2026-11-17T07:42:03Z  ended 2026-11-17T12:23:17Z  (4 h 41 min 14 s)  runner image ubuntu-24.04
+  job 134036897492  att 1  gds       completed   success   started 2026-11-17T12:23:20Z  ended 2026-11-17T13:00:01Z  (36 min 41 s)  runner image ubuntu-24.04
+  job 134056765985  att 1  precheck  in_progress -         started 2026-11-17T13:00:03Z  ended -  runner image ubuntu-24.04
+  job 134056766024  att 1  gl_test   completed   success   started 2026-11-17T13:00:03Z  ended 2026-11-17T14:26:55Z  (1 h 26 min 52 s)  runner image ubuntu-24.04
+  job 134056765957  att 1  viewer    completed   success   started 2026-11-17T13:00:04Z  ended 2026-11-17T13:00:34Z  (0 min 30 s)  runner image ubuntu-24.04
 
-run 44034950943  workflow test  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status in_progress  conclusion -  attempts 1
-  job 133875476968  att 1  mutants   in_progress -         started 2026-11-17T06:56:52Z  ended -  runner image ubuntu-24.04
-  job 133875477196  att 1  test      in_progress -         started 2026-11-17T06:56:52Z  ended -  runner image ubuntu-24.04
+run 44034950943  workflow test  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status completed  conclusion success  attempts 1
+  job 133875476968  att 1  mutants   completed   success   started 2026-11-17T06:56:52Z  ended 2026-11-17T07:40:28Z  (43 min 36 s)  runner image ubuntu-24.04
+  job 133875477196  att 1  test      completed   success   started 2026-11-17T06:56:52Z  ended 2026-11-17T09:19:59Z  (2 h 23 min 07 s)  runner image ubuntu-24.04
   job 133875477353  att 1  formal    completed   success   started 2026-11-17T06:56:52Z  ended 2026-11-17T07:08:43Z  (11 min 51 s)  runner image ubuntu-24.04
 
 run 44034950997  workflow docs  branch main  commit 00cd1c6c6d46a10c19d56d5ec4eba6cb4a34db7c  event push  created 2026-11-17T06:56:49Z  status completed  conclusion success  attempts 1

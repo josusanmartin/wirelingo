@@ -8,8 +8,8 @@ The author subsequently selected the 3-core package; `next-8x4` implements
 it. The dates and measurements below describe the study, not current
 release qualification.
 
-**Outcome (2026-11-15).** The package, hardened with tuned settings, is the
-release candidate: three cores at 8x4 with a 48 MHz project clock (the
+**Outcome (2026-11-15).** The package, hardened with tuned settings, became the
+release candidate and, since 2026-11-16, is the release build: three cores at 8x4 with a 48 MHz project clock (the
 author's rule: aim for 50 MHz, accept 48). Its layout passes signoff, meets
 48 MHz at every corner in STA (worst non-latch setup slack +0.4304 ns at the
 slow corner, a margin specific to its placement: a moved placement missed
@@ -205,7 +205,7 @@ predicts 376,827 µm², and the 8x4 harden measured 378,074 µm² (+0.3 %).
 
 The control rows (`V8_NONE`, `X_NONE`: the prototype files with nothing
 enabled) land within 0.2K µm² of the 2-core row, so the prototypes start from
-the taped-out RTL; synthesis noise between equivalent netlists is about
+the submitted 2-core RTL of that time; synthesis noise between equivalent netlists is about
 ±0.5K µm² here (the v3 study gave ±0.4K).
 
 ## Candidates
@@ -315,7 +315,7 @@ flexibility. The architecture, register map and encodings have always
 described four cores (`docs/isa.md` §1, §7); `PE_NCORES` is a parameter of
 the RTL, the model (`sim.Chip(ncores=...)`), the OCaml port
 (`ocaml/rtl/config.ml`) and the FPGA profile (`flow/fpga_profile.py`); and
-CI already runs the lockstep on a 4-core flop build next to the tapeout one
+CI already runs the lockstep on a 4-core flop build next to the submission one
 (`.github/workflows/test.yaml`, `lockstep_4core.xml`). What is new: a
 3-core SRAM-build lockstep in the regression, the RTL tests' core spreading
 (`test/test.py` takes `PE_NCORES`), the formal Lean testbenches fixed at

@@ -6,8 +6,10 @@ page lists the claims, how each is checked, how far the evidence goes, and what
 the checks caught. It is a summary of [verification.md](verification.md),
 [review.md](review.md) and [claims-audit.md](claims-audit.md).
 
-State at 2026-11-02, `main` at `af2c097`. Nothing has been fabricated. FPGA runs
-are RTL in FPGA fabric, not silicon.
+First written on 2026-11-02 at `af2c097`; rows have been updated since as
+they say, last on 2026-11-17. Nothing has been fabricated. FPGA runs are the
+v0.2 two-core RTL in FPGA fabric (the 3-core v0.3 RTL that ships has one board
+smoke run, 2026-11-10, before the CRC retime), not silicon.
 
 **Evidence levels:** model, RTL simulation, formal, gate level (GL), gate level
 with delays (SDF), RTL in FPGA fabric, silicon.
@@ -20,18 +22,18 @@ with delays (SDF), RTL in FPGA fabric, silicon.
 | FIFOs are correct, including the join | k-induction against reference queues, depths 4 and 8 | Formal | One block. Says nothing about latch timing |
 | Host port does the right thing | k-induction against a pin-level reference; 8 of 8 planted bugs killed ([formal-hostport.md](formal-hostport.md)) | Formal | Inside the host timing contract. No metastability or pad timing |
 | Core and line unit stay in bounds | Safety invariants with free inputs | Formal | Safety only. Not functional equivalence |
-| Tests catch bugs | 34 of 34 mutants killed in the run recorded 2026-10-05, the v2 code at 2 cores ([verification.md](verification.md)) | Mutation: model, RTL, firmware, assembler | Recorded count, not rerun for this page. `test/mutants.py` now defines 367 mutants (25 judged by 3-core tests: the 22 3-core lockstep entries and the 3 top-level entries), run by CI's `mutants` job; no full run of today's list is recorded here. The list is finite: see the first catch below |
-| Netlist equals RTL | The 3-core candidate: 10754 of 10754 points, 9 planted bugs caught ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)); fo6: 7429 points proved by two engines, 5 planted bugs caught ([equivalence.md](equivalence.md)) | Formal, on each netlist | Zero delay. Cell insides are not checked |
-| fo6's netlist runs the tests | 29 of 29 top-level tests; SDF subsets at three corners, with an overclocked control that must fail (the 3-core candidate's rehearsal: 34 of 34, [release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)) | GL, SDF | SDF covers exercised paths. Icarus has no setup or hold checks. The two top-level tests `fault-fixes` added, and its firmware, were not run at gate level, nor `usb_fs_dev` / `usb_ls_dev` with the got_in guard, nor `usb_ls_tx` with its SETUP flush and guard (branch `usb-ls-restage`) |
-| fo6: 50 MHz at all three corners; DRC, LVS and antenna clean (the 3-core candidate: 48 MHz at every corner, 50 MHz at typical and fast only) | STA and `flow/release_check.py`, no waiver ([release-evidence.md](release-evidence.md)) | Signoff on run fo6's layout | Models, not silicon. Thin margins at 50 MHz: slow-corner setup +0.010 ns (worst flop or SRAM pin), fast-corner hold 0.095 ns; the demos run at 48 MHz. Receipts stop at software `5457d8e` |
+| Tests catch bugs | 34 of 34 mutants killed in the run recorded 2026-10-05, the v2 code at 2 cores ([verification.md](verification.md)) | Mutation: model, RTL, firmware, assembler | Recorded count, not rerun for this page. `test/mutants.py` now defines 367 mutants (25 judged by 3-core tests: the 22 3-core lockstep entries and the 3 top-level entries), run by CI's `mutants` job, which on GitHub killed 367 of 367 at `2c97c15`, `bc8882b` and `00cd1c6` ([records](../evidence/8x4-release-20261116/README.md)). The list is finite: see the first catch below |
+| Netlist equals RTL | The 3-core release build: 10754 of 10754 points, 9 planted bugs caught ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)); fo6: 7429 points proved by two engines, 5 planted bugs caught ([equivalence.md](equivalence.md)) | Formal, on each netlist | Zero delay. Cell insides are not checked |
+| fo6's netlist runs the tests | 29 of 29 top-level tests; SDF subsets at three corners, with an overclocked control that must fail (the 3-core release build, in its rehearsal and in the release run: 34 of 34, [release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate)) | GL, SDF | SDF covers exercised paths. Icarus has no setup or hold checks. On fo6's netlist, the two top-level tests `fault-fixes` added, and its firmware, were not run at gate level, nor `usb_fs_dev` / `usb_ls_dev` with the got_in guard, nor `usb_ls_tx` with its SETUP flush and guard (branch `usb-ls-restage`); on the 3-core release netlist the release run of 2026-11-16 ran all of them with the shipping firmware, apart from `can_rx`, which has no gate-level test |
+| fo6: 50 MHz at all three corners; DRC, LVS and antenna clean (the 3-core release build: 48 MHz at every corner, 50 MHz at typical and fast only) | STA and `flow/release_check.py`, no waiver ([release-evidence.md](release-evidence.md)) | Signoff on run fo6's layout | Models, not silicon. Thin margins at 50 MHz: slow-corner setup +0.010 ns (worst flop or SRAM pin), fast-corner hold 0.095 ns; the demos run at 48 MHz. Receipts stop at software `5457d8e` |
 | USB works against a real host | Linux enumerated and configured it: 32 of 32 attaches, 66,000 of 66,000 descriptor reads (`GET_DESCRIPTOR` control transfers), 188 of 188 resets ([results](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30)) | RTL in FPGA fabric | One host and hub, no scope, 3.3 V FPGA pins. Run with `usb_enum` before `fault-fixes`; the current 254-word one has not run there and needs a rerun before this applies to it |
 | Data moves over full-speed USB | 350 of 350 round trips equal, over 2 MB, at 17.6 kB/s | RTL in FPGA fabric | Rate is the Python loop's. 5 of 116 attaches stall, cause not proved. Run with `usb_fs_dev` before the got_in guard (141 words); the 142-word one has not run there and needs a rerun before this applies to it |
-| Firmware runs on hardware | Most firmware ran with results equal to the cycle model | RTL in FPGA fabric | Far ends are our own models or replayed waveforms. Two-core USB did not run there. SWD is parked. `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran in their form before `fault-fixes`, and `usb_ls_dev` / `usb_fs_dev` in theirs before the got_in guard; the changed firmware needs a rerun there |
-| Quad host port moves 193 Mbit/s | 193 Mbit/s simulated; 193.6 Mbit/s measured on the FPGA | RTL simulation, RTL in FPGA fabric | No board or pad measurement |
+| Firmware runs on hardware | Most firmware ran with results equal to the cycle model | v0.2 RTL in FPGA fabric | Far ends are our own models or replayed waveforms. Two-core USB did not run there. SWD is parked. `uart_rx`, `i2c_master`, `can_rx` and `usb_enum` ran in their form before `fault-fixes`, and `usb_ls_dev` / `usb_fs_dev` in theirs before the got_in guard; the changed firmware needs a rerun there |
+| Quad host port moves 193 Mbit/s | At a 50 MHz clock (SCK = clk): 193 Mbit/s simulated; 193.6 Mbit/s measured on the FPGA (v0.2 RTL, and again in the v0.3 smoke run) | RTL simulation, RTL in FPGA fabric | No board or pad measurement |
 | Protocols work on the wire | Pins-only device models; sigrok decoders where one exists | Model, RTL simulation | Digital only. No electrical compliance |
-| Firmware survives wire faults | Seeded glitches, stuck lines, truncation, flips, stretch and jitter on six firmware: 576 cases, 0 needs-reset, 1 not `ok` (a second-frame) since `fault-fixes`; a bus reset at every clock of a full-speed control read ([fault-testing.md](fault-testing.md)) | Model; two of the fixes also as RTL tests (`test_uart_rx_glitch`, `test_i2c_master_bus_fault`) | A sample, one fault per case. Not at gate level or on the FPGA |
+| Firmware survives wire faults | Seeded glitches, stuck lines, truncation, flips, stretch and jitter on six firmware: 576 cases, 0 needs-reset, 1 not `ok` (a second-frame) since `fault-fixes`; a bus reset at every clock of a full-speed control read ([fault-testing.md](fault-testing.md)) | Model; two of the fixes also as RTL tests (`test_uart_rx_glitch`, `test_i2c_master_bus_fault`), and those two at gate level in the 3-core release run of 2026-11-16 | A sample, one fault per case. The seeded cases are model only; nothing here ran on the FPGA |
 | 14 protocols added with the RTL frozen | Timing checker, pins-only models, sigrok, 16 RTL tests ([post-freeze-protocols.md](post-freeze-protocols.md)) | RTL simulation, GL, SDF at typical, FPGA | SDF at typical 16/16. Slow and fast 16/16 each in supplementary single-case runs of 2026-11-02 (`1e3d0ed`, on `improve-2026-11`, not `main`), outside the release gate, with no verifier report. Two exact assertions got a 1 ns tolerance (`dfdaa27`) |
-| 10BASE-T receive meets 802.3's ±13.5 ns edge jitter, at 50 MHz | `test_eth10`, three seeds each; RTL frames with jitter (`test_eth10_rx_jitter`), both at 50 MHz | Model, RTL simulation | 50 MHz closes STA on the 3-core candidate at the typical and fast corners only; at 40 MHz, which closes at every corner, ±12 ns in a one-off model sweep ([guide.md](guide.md#known-limits)). No real network. The receive circuit is unbuilt ([eth10-receiver.md](eth10-receiver.md)) |
+| 10BASE-T receive meets 802.3's ±13.5 ns edge jitter, at 50 MHz | `test_eth10`, three seeds each; RTL frames with jitter (`test_eth10_rx_jitter`), both at 50 MHz | Model, RTL simulation | 50 MHz closes STA on the 3-core release build at the typical and fast corners only; at 40 MHz, which closes at every corner by inference from the 48 MHz STA (not timed separately), ±12 ns in a one-off model sweep ([guide.md](guide.md#known-limits)). No real network. The receive circuit is unbuilt ([eth10-receiver.md](eth10-receiver.md)) |
 | `eth10_match` raises a pin 10 to 11 clocks after a field | Model tests; 5 frames on the FPGA | Model, RTL in FPGA fabric | No RTL simulation. Pad and comparator delays unmeasured. Passed on the third fix ([report 009](../evidence/verifier/009-eth10-match-fix3.report.md)), see below |
 | Compared with RP2040 PIO | Reference programs on a PIO model and the cycle model ([pio-comparison.md](pio-comparison.md)) | Model | Simulation only. PIO is faster and smaller |
 | The chip works | Nothing yet | None | Not fabricated |
@@ -86,7 +88,7 @@ On 2026-11-02 an independent verifier agent failed the `eth10_match` work.
 * The verifier added N `mov r1, r1` instructions before `pin HIT, hi`.
 * At N = 9 the firmware reacted in 381-398 ns, about double the claim. All 5 tests
   still passed.
-* The range itself was the spread of 8 frames. Over 600 frames it was 200-220 ns.
+* The range itself was the spread of 8 frames. Over 600 frames it was 200-220 ns (at 50 MHz).
 * The "38 us before the frame ends" claim had no assertion.
 * Four limits were unstated: silent FIFO loss, threshold wrap, short preambles,
   and no jitter margin at 40 MHz.
@@ -97,7 +99,7 @@ in [evidence/verifier/](../evidence/verifier/README.md), verbatim apart from
 the listed redactions.
 
 **Status of the fixes: passed at `86abad7`, on the third fix.** All of them are
-on the local branch `improve-2026-11`, not on `main`.
+on `main` now (`86abad7` is an ancestor of the release build's commits).
 
 | Commits | Review | Result |
 |---|---|---|
@@ -105,8 +107,7 @@ on the local branch `improve-2026-11`, not on `main`.
 | `84e853c` | [Report 004](../evidence/verifier/004-eth10-match-fix2.report.md) | FAIL. The new "exact" assertion cancelled the rise time out of its own equation, so it passed with the pin 2 us late (N = 100). The doc's ranges held, because the reaction tests guard them |
 | `86abad7` | [Report 009](../evidence/verifier/009-eth10-match-fix3.report.md) | PASS. The rise is bounded directly against the sender's geometry; delay mutations N = 1, 3 and 100 fail, the unmodified firmware passes. The verifier counts the fixes for reports [000](../evidence/verifier/000-eth10-match.report.md), [001](../evidence/verifier/001-eth10-match-fix.report.md) and [004](../evidence/verifier/004-eth10-match-fix2.report.md) complete at this commit |
 
-The `eth10_match` numbers on `improve-2026-11` are the ones [report 009](../evidence/verifier/009-eth10-match-fix3.report.md) passed.
-`main` still carries the failed commit's doc and test.
+The `eth10_match` numbers on `main` are the ones [report 009](../evidence/verifier/009-eth10-match-fix3.report.md) passed.
 
 ## How an agent's claim gets checked
 
@@ -131,5 +132,5 @@ Limits of this process:
   share blind spots.
 * It cannot rerun the FPGA. [Report 001](../evidence/verifier/001-eth10-match-fix.report.md) could not tell a board log from a model
   transcript, and said so.
-* `af2c097` reached `main` before this process existed. Its fix commits sit on
-  `improve-2026-11` without a PASS, which departs from step 8.
+* `af2c097` reached `main` before this process existed; its fix commits, which
+  report 009 passed, are now on `main` too.

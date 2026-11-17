@@ -14,7 +14,7 @@ SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
 clock. A clean harden of the shipping commit `2c97c15` passed the release
 check on 2026-11-16, at the levels STA, gate level, precheck and formal
 equivalence; not silicon
-([below](#physical-status-the-3-core-8x4-release-candidate),
+([below](#physical-status-the-3-core-8x4-release-build),
 [records](evidence/8x4-release-20261116/README.md)). The 2-core 8x4
 build is not a live option: its receipted build predates the CRC retime now
 in the RTL, a 2-core harden of the current RTL misses 48 MHz at the slow
@@ -85,7 +85,7 @@ unit's settings are chosen by the host when it loads a program.
   infrared, I2S, Wiegand, DShot600 (also bidirectional), DALI, Modbus RTU,
   MIDI, a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with
   PEC, 21 programs. Their 16 RTL tests also pass on fo6's signed-off gate-level
-  netlist, and all three rounds ran on the RTL in FPGA fabric
+  netlist, and all three rounds ran on the v0.2 RTL in FPGA fabric
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)). A fresh
   agent later added HD44780 and a subset of ATA PIO the same way
   ([docs/blind-test.md](docs/blind-test.md)).
@@ -107,22 +107,28 @@ Columns: **M** model (cycle-accurate, lockstep-checked against the RTL),
 **R** RTL simulation through the real SPI host port, **G** gate level on
 fo6's signed-off netlist (the historical 6x4, 2-core v0.2 chip) unless the
 row says "3-core", **F** RTL in FPGA fabric (Kria KV260) against the
-other core, a pattern generator or, where it says so, Linux. A **\*** means
+other core, a pattern generator or, where it says so, Linux. Column F's
+results are for the v0.2 two-core RTL: the 3-core v0.3 RTL that ships has one
+board run, a smoke test on 2026-11-10 (bring-up, a UART ring over the three
+cores, CRC32 on each, the quad host port), made before the CRC retime of
+2026-11-12 ([fpga/kv260](fpga/kv260/README.md)). A **\*** means
 that level was reached by an earlier version of that firmware, and the
 current one needs a rerun there. "Suppl." marks a gate-level run outside the
 release gate. No column is silicon. A blank means no test at that level. The
 [full firmware table](#what-runs-on-it) gives each program's limits.
 
-**Clock, and where timing closes.** The release candidate's project clock is
-48 MHz. Its STA closes 48 MHz, and so any slower clock, at every corner; 50 MHz
+**Clock, and where timing closes.** The release build's project clock is
+48 MHz. Its STA closes 48 MHz at every corner, and so any slower clock by
+inference (a longer period only adds setup time on same-clock paths; no slower
+clock was timed separately); 50 MHz
 closes at the typical and fast corners only (the slow corner misses by
 0.40 ns; [physical.md](docs/physical.md#the-3-core-release-candidate-2026-11-15)).
 In the column, **any** means the program's bit rate is a CLKDIV setting
 (its header gives the divider at 48 or 50 MHz), so it runs at 48 MHz with
 the divider set for it; `test/test.py` runs the RTL at 50 MHz unless a test
 sets another clock, so most of those RTL results are at 50 MHz. "3-core" in
-G: the candidate's rehearsal netlist, which passes all 30 `test/test.py`
-tests functionally; its SDF sets ran the slow corner at 20.832 ns (48 MHz)
+G: the release netlist, which passes all 30 `test/test.py`
+tests functionally (in the rehearsal and in the release run); its SDF sets ran the slow corner at 20.832 ns (48 MHz)
 ([release-evidence.md](docs/release-evidence.md#the-3-core-8x4-release-candidate)).
 
 | Protocol | Firmware | Clock (timing at it) | M | R | G | F |
@@ -136,7 +142,7 @@ tests functionally; its SDF sets ran the slow corner at 20.832 ns (48 MHz)
 | USB full speed (12 Mbit/s), one core and the line unit | `usb_fs_dev` | exactly 48 MHz: every corner | yes | yes | yes\*; 3-core, also with SDF | yes\*, also with Linux |
 | USB device that enumerates by itself | `usb_enum` | exactly 48 MHz: every corner | yes | yes | yes\*, also with SDF; 3-core, also with SDF | yes\*, also with Linux |
 | The same with an interrupt IN endpoint 1 (v0.3) | `usb_enum_ep1` | exactly 48 MHz: every corner | yes | full speed | 3-core (full speed) | |
-| 10BASE-T transmit, receive | `eth10_tx`, `eth10_rx` | 40 MHz (every corner) or 50 MHz (typical and fast only), not 48; 802.3's ±13.5 ns jitter only at 50 MHz | yes | yes | yes; 3-core | yes |
+| 10BASE-T transmit, receive | `eth10_tx`, `eth10_rx` | 40 MHz (every corner, inferred from the 48 MHz STA, not timed separately) or 50 MHz (typical and fast only), not 48; 802.3's ±13.5 ns jitter only at 50 MHz | yes | yes | yes; 3-core | yes |
 | 10BASE-T with carrier sense; ARP, ping and UDP echo with the host's stack | `eth10_tx_cs` + `eth10_rx` | 40 or 50 MHz, as above | yes | yes | yes | yes, one frame at a time, also with Linux |
 | 10BASE-T FCS appended and checked in the engine (v0.3, the 32-bit CRC tap) | `eth10_tx_fcs`, `eth10_rx_fcs` | `eth10_rx_fcs`: 50 MHz only (typical and fast only); `eth10_tx_fcs`: 40 or 50 MHz | yes | yes (core 1 to core 0, 50 MHz) | 3-core | |
 | 10BASE-T cut-through match; match and reply with no host | `eth10_match`, `eth10_reply` | 40 or 50 MHz, as above | yes | `eth10_reply` | | `eth10_match` |
@@ -150,7 +156,7 @@ tests functionally; its SDF sets ran the slow corner at 20.832 ns (48 MHz)
 | HD44780 4-bit, ATA PIO subset (blind test) | `hd44780_4bit`, `ata_pio` | any | yes | yes | | |
 | SWD probe (parked) | `swd_probe` | | yes | | | |
 
-The release gate's gate-level runs used software `5457d8e`. The post-freeze,
+fo6's release gate's gate-level runs used software `5457d8e`; the 3-core release run's used the shipping commit `2c97c15`. The post-freeze,
 network-stack and host-workflow runs on the same netlist are supplementary
 receipts outside the gate; the host-workflow ones (`test_usb_uart_rtl` 3/3,
 `test_spi_packed_host` 1/1, functional, validation `af2c097`) are in
@@ -169,10 +175,10 @@ network stack in
 | Two implementations, compared every cycle | A Python cycle model and the RTL on random programs, pins and host traffic, with required coverage goals | RTL simulation | [docs/verification.md](docs/verification.md) |
 | A third implementation | A Hardcaml and OCaml port whose generated Verilog is proved equal to `src/`: to the current RTL, after the CRC retime, at 3 cores (the 8x4 release build; 10763 of 10763 points) and at 2 (7978), in the independent verifier's rerun of 2026-11-12; its full parity gates ran on v0.3 before the retime | Formal, simulation | [evidence/hardcaml-equiv-20261112](evidence/hardcaml-equiv-20261112/README.md), [docs/hardcaml-port.md](docs/hardcaml-port.md) |
 | Formal proofs | FIFOs (with join), the host port against a pin-level reference, core invariants, line-unit bounds | Formal | [docs/verification.md](docs/verification.md), [docs/formal-hostport.md](docs/formal-hostport.md) |
-| Mutation testing | 34 of 34 mutants killed in the run recorded on 2026-10-05 (the v2 code, 2 cores). `test/mutants.py` now defines 367 mutants (25 of them judged by 3-core tests: the 22 3-core lockstep entries and the 3 top-level entries; the others by model, flow or 2-core RTL tests), which CI's `mutants` job runs; no full run of today's list is recorded in the repository | Model, RTL | [docs/verification.md](docs/verification.md), `test/mutants.py` |
-| Netlist equivalence | The 3-core release candidate's netlist equals the v0.3 RTL: 10754 of 10754 points, 9 of 9 planted netlist bugs caught; historically fo6's equals the v0.2 RTL: 7429 of 7429 points, two engines, 5 of 5 caught | Formal, on the netlist | [docs/physical.md](docs/physical.md#the-3-core-release-candidate-2026-11-15), [docs/equivalence.md](docs/equivalence.md) |
-| Gate-level simulation | The release candidate's rehearsal: 30 of 30 top-level tests plus the compiled-PIO and Ethernet-capture modules; SDF delays at typ, slow and fast, with an overclocked control that must fail. Historically all 29 on fo6's netlist | Gate level | [docs/release-evidence.md](docs/release-evidence.md) |
-| Outside oracles | sigrok's protocol decoders; Linux's USB and network stacks on the FPGA build | RTL simulation, FPGA | [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), [fpga/kv260](fpga/kv260/README.md) |
+| Mutation testing | 34 of 34 mutants killed in the run recorded on 2026-10-05 (the v2 code, 2 cores). `test/mutants.py` now defines 367 mutants (25 of them judged by 3-core tests: the 22 3-core lockstep entries and the 3 top-level entries; the others by model, flow or 2-core RTL tests), which CI's `mutants` job runs: on GitHub it killed 367 of 367 at `2c97c15`, `bc8882b` and `00cd1c6` (and 366 of 367 at `a84401f`, whose survivor led to a test fix before the shipping commit; [records](evidence/8x4-release-20261116/README.md)) | Model, RTL | [docs/verification.md](docs/verification.md), `test/mutants.py` |
+| Netlist equivalence | The 3-core release build's netlist equals the v0.3 RTL: 10754 of 10754 points, 9 of 9 planted netlist bugs caught; historically fo6's equals the v0.2 RTL: 7429 of 7429 points, two engines, 5 of 5 caught | Formal, on the netlist | [docs/physical.md](docs/physical.md#the-3-core-release-candidate-2026-11-15), [docs/equivalence.md](docs/equivalence.md) |
+| Gate-level simulation | The release build, in its rehearsal and in the release run: 30 of 30 top-level tests plus the compiled-PIO and Ethernet-capture modules; SDF delays at typ, slow and fast, with an overclocked control that must fail. Historically all 29 on fo6's netlist | Gate level | [docs/release-evidence.md](docs/release-evidence.md) |
+| Outside oracles | sigrok's protocol decoders; Linux's USB and network stacks on the FPGA build of the v0.2 RTL | RTL simulation, FPGA | [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md), [fpga/kv260](fpga/kv260/README.md) |
 | Fault injection | Seeded wire faults: six real failures found, four fixed | Model, RTL | [docs/fault-testing.md](docs/fault-testing.md) |
 | Blind test | Two protocols drawn by a rule, chip and tools frozen | Model, RTL | [docs/blind-test.md](docs/blind-test.md) |
 | Independent verifier agent | Reruns and attacks the claims of each item sent to it: reports 000-078b, 52 PASS and 31 FAIL, kept verbatim apart from listed redactions | Review | [evidence/verifier](evidence/verifier/README.md) |
@@ -181,11 +187,12 @@ network stack in
 What is proven at each level, and what is still open:
 [docs/status.md](docs/status.md) and
 [docs/verification-story.md](docs/verification-story.md). Raw records are in
-[evidence/](evidence/README.md). The release receipts' archive
-(`wirelingo-release-evidence-7685aba-fo6.tar.gz`, sha256 `868c5d3a…`) is not
-in git; it is to be attached as a release asset.
+[evidence/](evidence/README.md). The release receipts' archives
+(`wirelingo-release-evidence-7685aba-fo6.tar.gz`, sha256 `868c5d3a…`, and the
+3-core release's, sha256 `1ff19b7d…`) are not in git and not yet published:
+the repository has no GitHub release yet.
 
-## Physical status: the 3-core 8x4 release candidate
+## Physical status: the 3-core 8x4 release build
 
 Evidence levels: static timing (STA), gate-level simulation (functional and
 with SDF delays), Tiny Tapeout's precheck, and formal equivalence under the
@@ -291,8 +298,9 @@ for:
   and Manchester decoding with a phase-tracking loop, so one core runs a whole
   USB device, low or full speed (at 48 MHz), and 10BASE-T receive meets
   802.3's ±13.5 ns edge jitter at 50 MHz (model and RTL simulation; the
-  candidate closes 50 MHz at the typical and fast corners only, and at
-  40 MHz, which closes everywhere, receive tolerates ±12 ns).
+  release build closes 50 MHz at the typical and fast corners only, and at
+  40 MHz, which closes everywhere by inference from the 48 MHz STA (no run at
+  25 ns), receive tolerates ±12 ns).
 - **A host link that keeps up:** quad SPI at SCK = clk, 193 Mbit/s of payload
   at a 50 MHz clock in RTL simulation and 193.6 Mbit/s on the FPGA, against
   its fabric SPI master on the same clock; not yet measured through the pads
@@ -323,20 +331,21 @@ differ by 50–170 ps) and pass after a 1 ns tolerance (commit dfdaa27):
 [docs/post-freeze-protocols.md](docs/post-freeze-protocols.md).
 The host-workflow modules (`test_usb_uart_rtl`, `test_spi_packed_host`, `test_spi_preloaded_host`, `test_uart_capture_host`) pass on the RTL and, functionally, on fo6's gate-level netlist ([release evidence](docs/release-evidence.md)).
 "Model" = on the cycle-accurate model, which is lockstep-checked against the RTL. "KV260" =
-the RTL built for the Kria KV260 FPGA, against the other core or the FPGA's
-pattern generator ([fpga/kv260](fpga/kv260/README.md)).
+the v0.2 two-core RTL built for the Kria KV260 FPGA, against the other core or the FPGA's
+pattern generator ([fpga/kv260](fpga/kv260/README.md)); the 3-core v0.3 RTL that
+ships has one board smoke run (2026-11-10), made before the CRC retime.
 
 | Firmware | What it does | Limits | Verified on |
 |---|---|---|---|
-| `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error; RX drops a start bit that is high again at mid-bit (a glitch) | RTL; ±3 % and back-to-back on the model. The mid-bit check, added by `fault-fixes`, is verified on the model and in RTL simulation only (`test_uart_rx_glitch`); the gate-level receipts and the KV260 runs (loopback and real PMOD pins) used `uart_rx` from before it, and neither has been rerun |
+| `uart_tx`, `uart_rx` | 8N1, 8 ticks per bit (fractional divider) | RX tolerates a ±3 % sender, back to back; F0 on a framing error; RX drops a start bit that is high again at mid-bit (a glitch) | RTL; ±3 % and back-to-back on the model. The mid-bit check, added by `fault-fixes`, is verified on the model and in RTL simulation only (`test_uart_rx_glitch`); fo6's gate-level receipts and the KV260 runs (loopback and real PMOD pins) used `uart_rx` from before it; the 3-core release run's functional gate-level suite (2026-11-16) ran the current one, `test_uart_rx_glitch` included, and the KV260 has not been rerun |
 | `spi_master` | mode 0, MSB first, 8-bit frames, f_SCK = f_tick / 4 | chip select by the host or a wrapper | RTL; KV260 against pe_lab's SPI device (DELAY sweeps at CLKDIV 1-3) |
 | `spi_master_modes` | modes 0-3 (CPOL by a define, CPHA by program block), MSB first, 8-bit full-duplex frames, compact and unrolled forms | chip select by the host or a wrapper; in mode 3 at CLKDIV 3 MISO is read 4 clocks after the launching fall: on the KV260 a MISO delay up to 77.5 ns was read right and a longer one 1 bit late; no RTL test | model, an independent peer sampling SCK edges: every mode at dividers 3 and 4 and two MISO delays, TX starvation, RX backpressure, a reload in another mode (`test_spi_modes`, `test_spi_modes_timing`); KV260: modes 0 and 3 against pe_lab's SPI device (DELAY sweeps), all four modes captured by `la_capture` ([fpga/kv260](fpga/kv260/README.md)) |
 | `spi_master_fast` (v2) | the same at 4 clocks per SCK (12.5 MHz at 50 MHz): MISO's pad in `SYNC_BYPASS` (one synchroniser flop), sampled at the SCK rise | the device must answer within 2 clocks of SCK falling, pad and board delays included | RTL against a device model; delay sweep on the model; KV260 (DELAY table with and without the bypass) |
-| `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released); **SDA read back** where it is released (a low read-back: F1, reply 0x200) | 4 + 4 ticks per SCL period; a WRITE command takes 9 ticks more than before the read-back, a READ 3 | RTL; stuck-SCL in every phase and stuck-SDA on the model; stuck SDA on the RTL. The SDA read-back, added by `fault-fixes`, is verified on the model and in RTL simulation only (`test_i2c_master_bus_fault`); the gate-level receipts and the KV260 runs (against `i2c_device`, beside `i2c_sniff`) used the firmware from before it, and neither has been rerun |
+| `i2c_master` | open drain, clock stretching, repeated START; **every SCL release times out** (F1, reply 0x100, bus released); **SDA read back** where it is released (a low read-back: F1, reply 0x200) | 4 + 4 ticks per SCL period; a WRITE command takes 9 ticks more than before the read-back, a READ 3 | RTL; stuck-SCL in every phase and stuck-SDA on the model; stuck SDA on the RTL. The SDA read-back, added by `fault-fixes`, is verified on the model and in RTL simulation only (`test_i2c_master_bus_fault`); fo6's gate-level receipts and the KV260 runs (against `i2c_device`, beside `i2c_sniff`) used the firmware from before it; the 3-core release run's functional gate-level suite (2026-11-16) ran the current one, `test_i2c_master_bus_fault` included, and the KV260 has not been rerun |
 | `usb_ls_rx` + `usb_ls_tx` (2 cores) | low-speed device: NRZI, stuffing, CRC16 check via the CRC tap, **token filter** (address, endpoint, CRC5), ACK/NAK within the turnaround, framed DATA records (good or bad), staged IN data | vendor endpoint 0; host software handles requests/toggles | Concurrent RTL service: descriptors, address changes, lost ACK, malformed packets, duplicate OUT and reset; ±2.5 % bit rate on the model |
 | `usb_ls_dev` (**1 core**, line unit) | the same device on one core: the line unit does NRZI, stuffing, bit timing and the EOP; the core decodes packets, filters tokens, checks CRC16 bit by bit through the CRC tap, answers | same host protocol (pe.usbdev) | Same concurrent RTL service/error/reset cases; model enumeration and lockstep line unit; KV260: enumeration against a replayed host, every pad edge equal to the model's (the 129-word firmware before the got_in guard; not re-measured on the board with the 130-word one yet) |
 | `usb_fs_dev` (**1 core**, line unit) | **full-speed USB (12 Mbit/s)** at 48 MHz, 4 clocks per bit: the line unit does NRZI, stuffing and clock recovery; the core does PID, CRC16, address filtering and the handshakes within the bus turnaround ([docs/usb-full-speed.md](docs/usb-full-speed.md)) | exactly 48 MHz; packets up to 16 (OUT) / 24 (IN) bytes from the FIFOs, 64 with the host streaming over quad SPI; receive jitter tolerance about 31 ns edge to edge, 12 ns past the spec's 18.5 (g4: about 21 ns) | RTL and gate-level (fo6's signed-off netlist): SETUP/DATA0, ACK at 10.5 clocks (spec 8–26; g4 11.5), NAK, staged DATA1, bad CRC/PID/stuffing ignored; enumeration on the model; KV260 at 48 MHz against a replayed host, every pad edge equal to the model's. The gate-level and KV260 runs used the 141-word firmware before the got_in guard and have not been re-run with the 142-word one; with it the RTL's staged DATA1 comes one clock later (15.9 clocks, [docs/usb-full-speed.md](docs/usb-full-speed.md)). Since branch `usb-config-prestage` (159 words) the firmware answers SET_CONFIGURATION's status stage itself; model and RTL simulation only. The 3-core 8x4 release rehearsal re-ran `test_usb_fs_device` at gate level, functional and with SDF at 20.834 ns at typ, slow and fast, on the 8x4 netlist with the firmware of `77c3936` ([record](evidence/8x4-release-candidate-20261115/rt10s5-pre/gl-sdf-counts.txt)) |
-| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 254 of 256 words; full speed at exactly 48 MHz | The current configuration-rejection fix is model-tested at both speeds and both core counts. Earlier versions have model/RTL and sigrok coverage with the host port idle. The 253-word program from `fault-fixes`, which sees a bus reset starting at any clock of a control read, is verified on the model (that sweep) and in RTL simulation only. The gate-level receipts (SDF, both speeds) and the KV260 runs at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator and against Linux, used the 246-word firmware from before it: the current 254-word one needs a rerun on the KV260 before those results apply to it. The 3-core 8x4 release rehearsal re-ran the autonomous enumeration at both speeds at gate level, functional and with SDF at 20.834 ns at typ, slow and fast, on the 8x4 netlist with the firmware of `77c3936` ([record](evidence/8x4-release-candidate-20261115/rt10s5-pre/gl-sdf-counts.txt)); the KV260 rerun is still open |
+| `usb_enum` (**1 core**, line unit) | **autonomous USB enumeration**, low or full speed ([docs/usb-enumeration.md](docs/usb-enumeration.md)): descriptors in instruction memory, standard requests, DATA toggles, lost-ACK retries, SET_ADDRESS after its status stage, bus reset, STALL for the rest; the host only loads it | endpoint 0 only; 254 of 256 words; full speed at exactly 48 MHz | The current configuration-rejection fix is model-tested at both speeds and both core counts. Earlier versions have model/RTL and sigrok coverage with the host port idle. The 253-word program from `fault-fixes`, which sees a bus reset starting at any clock of a control read, is verified on the model (that sweep) and in RTL simulation only. The gate-level receipts (SDF, both speeds) and the KV260 runs at 48 MHz, both speeds, against a host replayed by pe_lab's pattern generator and against Linux, used the 246-word firmware from before it: the current 254-word one needs a rerun on the KV260 before those results apply to it. The 3-core 8x4 release rehearsal re-ran the autonomous enumeration at both speeds at gate level, functional and with SDF at 20.834 ns at typ, slow and fast, on the 8x4 netlist with the firmware of `77c3936` ([record](evidence/8x4-release-candidate-20261115/rt10s5-pre/gl-sdf-counts.txt)), and the release run of the shipping commit `2c97c15` ran them again with the current 254-word firmware, the same way ([records](evidence/8x4-release-20261116/README.md)); the KV260 rerun is still open |
 | `usb_enum_ep1` (**1 core**, line unit, v0.3) | `usb_enum` plus a vendor **interrupt IN endpoint 1** reporting two bytes of pin state; fits core 0's bank with v0.3's table read, CMPW, `jmp !t` and `flag tog` ([docs/usb-enumeration.md](docs/usb-enumeration.md)) | 256 of 256 words; a retry samples the pins again instead of resending the first payload; exactly 48 MHz | model at both speeds (`test_usb_enum_ep1`, `test_usb_config_reject`); RTL at full speed (`test_usb_autonomous_ep1_fs`); the 3-core rehearsal netlist, functional; not run on the KV260 |
 | `eth10_rx` (core 0) | **10BASE-T RX** through the line unit: Manchester clock recovery, frames with preamble/SFD to the host (24 bits per FIFO word + a bit-count trailer) | 802.3's ±13.5 ns edge jitter at 50 MHz (see below; the release clock is 48 MHz; 50 MHz closes STA at the typical and fast corners, not the slow one) | RTL: 64/128/1518-byte frames, jitter, quad-SPI draining, overflow/recovery; model: TX→RX and external sender; KV260: generator frames (sync and 45.93 MHz clock) and from eth10_tx |
 | `eth10_tx` | **10BASE-T TX** at 40 MHz (4 clocks per bit): Manchester on a TD+/TD− pair, preamble/SFD in-core, TP_IDL, 16 ms link pulses | up to 1518-byte frames (64 bytes fit the FIFOs; longer ones stream through the host port) | RTL (64-byte frame, FCS decoded); streaming bound and link pulses on the model; KV260 at 50 MHz (CLKDIV 1.25), sampled every clock |
@@ -344,7 +353,7 @@ pattern generator ([fpga/kv260](fpga/kv260/README.md)).
 | `eth10_tx_fcs` (v0.3) | `eth10_tx` with the **802.3 FCS appended in the engine** by the 32-bit CRC tap: the host gives DA to payload | 40 MHz at CLKDIV 1 or 50 MHz at CLKDIV 1.25 | model (the wire equals `eth10_tx`'s with the host's FCS); RTL with `eth10_rx_fcs`, core 1 to core 0 over virtual pins at 50 MHz (`test_eth10_fcs_in_engine_loopback`); the 3-core rehearsal netlist, functional |
 | `eth10_rx_fcs` (core 0, v0.3) | `eth10_rx` that finds the SFD itself, queues DA to FCS and reports **FCS good or bad** in the trailer, checked in the engine by the 32-bit CRC tap | needs 50 MHz (at 40 MHz the preamble could fill the queue), which the candidate closes at the typical and fast corners only | model (external sender with jitter and frequency offset, good frames and one-bit flips; core 1 as sender); RTL and the 3-core netlist as `eth10_tx_fcs` |
 | `pps_capture` | **pulse timestamps**: a free-running 48-bit count of chip clocks stamped at each edge of one input; `pe.pps` reports interval and drift against the chip's own clock ([docs/pps-capture.md](docs/pps-capture.md)) | no UTC, local clock only; 3 ticks in 65536 are blind, and the record says so; the FIFO holds 4 edges between host reads | model; RTL (70000-clock train, one 1 s interval) |
-| `eth10_match` | **10BASE-T cut-through match**: EtherType, then a 16-bit field against a threshold; a pin rises 200-220 ns after the field's last mid-bit edge, about 38 us before a 64-byte frame ends ([docs/eth10-cut-through.md](docs/eth10-cut-through.md)) | decides before the FCS; one field, one threshold | model; KV260 (generator frames) |
+| `eth10_match` | **10BASE-T cut-through match**: EtherType, then a 16-bit field against a threshold; a pin rises 200-220 ns at 50 MHz (250-275 ns at 40 MHz) after the field's last mid-bit edge, about 38 us before a 64-byte frame ends ([docs/eth10-cut-through.md](docs/eth10-cut-through.md)) | decides before the FCS; one field, one threshold | model; KV260 (generator frames) |
 | `eth10_reply` (**1 core**, line unit) | **10BASE-T match, then answer** with no host: `eth10_match`'s compare, then after the frame and 96 quiet bit times a fixed 64-byte reply frame (built into the program, FCS computed on the PC) through the line unit; the first edge comes 0-1 clock after the 96-bit gap from the far end's last edge ([docs/eth10-reaction.md](docs/eth10-reaction.md)) | fixed reply; no link pulses; no collision handling; it decides before the FCS, so a corrupted frame can be answered | model; RTL |
 | `can_tx`, `can_rx` | CAN 2.0A: stuffing, CRC15 via the CRC tap, arbitration, ACK; RX edge resync, stuff errors detected (error flag sent); RX confirms the SOF at its sample point (an idle-bus glitch is ignored) | frames, not a full controller (no error counters or bus-off, no form check) | model, incl. a TX→RX link between the two cores; sigrok `can`. The SOF confirmation, added by `fault-fixes`, is verified on the model only; the KV260 runs (both cores on a wired-AND line; generator frames and pre-timed nodes) used `can_rx` from before it, not rerun there since |
 | `swd_probe` | ARM SWD engine: request parity, ACK, DPIDR, register writes | | model |
@@ -465,7 +474,10 @@ make -C formal                                                   # proofs
   must fail; autonomous full-speed USB enumeration runs on it with real
   delays. (These receipts ran software `5457d8e`, with the firmware of that
   time; `uart_rx`, `i2c_master`, `can_rx` and the current 254-word `usb_enum`,
-  with subsequent fault/configuration fixes, need a gate-level rerun.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
+  with subsequent fault/configuration fixes, have not run on fo6's netlist;
+  the 3-core release run's gate-level suite of 2026-11-16 ran the current
+  `uart_rx`, `i2c_master` and `usb_enum` on the release netlist; `can_rx` has
+  no gate-level test.) The GDS passes Tiny Tapeout's precheck. Outside the release gate,
   the 16 post-freeze protocol tests pass on the netlist too (functional,
   hash-bound receipt). With SDF at the typical corner all 16 pass
   ([docs/post-freeze-protocols.md](docs/post-freeze-protocols.md)), and at the

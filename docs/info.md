@@ -4,7 +4,7 @@ This file is used to generate the project datasheet.
 
 ## How it works
 
-Wirelingo (repository name protoemu) is a programmable protocol emulator:
+Wirelingo (repository `josusanmartin/wirelingo`; `protoemu` in its module and tool names) is a programmable protocol emulator:
 small processor cores built for
 bit-banging, which implement serial protocols in firmware instead of fixed
 logic. Each core executes one 32-bit instruction per tick and has:
@@ -32,7 +32,8 @@ gate-level release tests, functional and with SDF delays
 Full-speed USB needs exactly 48 MHz, which closes at every corner. The
 in-core 10BASE-T FCS receiver (`eth10_rx_fcs`) and the RMII examples require
 50 MHz, which the slow corner does not meet; 10BASE-T's other programs run at
-40 MHz (every corner) or 50 MHz, not 48. 10BASE-T receive meets 802.3's
+40 MHz (every corner, inferred from the 48 MHz STA, not timed separately) or
+50 MHz, not 48. 10BASE-T receive meets 802.3's
 ±13.5 ns edge jitter at 50 MHz; at 40 MHz it tolerated ±12 ns in a one-off
 model sweep. The 2-core 8x4 build is not a live option (a 2-core harden of
 the current RTL misses 48 MHz at the slow corner), and the 6x4, 2-core fo6
@@ -77,8 +78,10 @@ README's firmware table gives it for each: most run through the SPI port in
 RTL simulation, while CAN, JTAG, 1-Wire, PS/2, WS2812 and the I2C sniffer are
 checked on the cycle model, which is lockstep-checked against the RTL. An SWD
 debug probe exists on the model only, and is parked.
-Most of these programs have also run on an FPGA build of the RTL (Kria KV260)
-against pins-only device models or the other core: not SWD, the two-core USB
+Most of these programs have also run on an FPGA build of the v0.2 two-core
+RTL (Kria KV260) against pins-only device models or the other core (the 3-core
+v0.3 RTL that ships has one board smoke run, 2026-11-10, made before the CRC
+retime): not SWD, the two-core USB
 device or the UART-over-USB pairs, and none of the bench firmware (MDIO,
 QSFP-style, PMBus), `pps_capture`, `eth10_reply`, the blind-test firmware or
 v0.3's three programs.
@@ -86,7 +89,7 @@ Four of those programs (UART RX, I2C master, CAN RX
 and the autonomous USB device) were changed afterwards, on `fault-fixes`, and
 need an FPGA rerun before those results apply to them. None of it has run on
 silicon yet.
-The release candidate's netlist is formally proved equivalent to the v0.3
+The release build's netlist is formally proved equivalent to the v0.3
 RTL (10754 of 10754 points, 9 of 9 planted netlist bugs caught), as the
 historical fo6 netlist is to its v0.2 RTL: functionally, for every input and
 state, under the assumptions listed in `docs/equivalence.md`. Timing is
@@ -103,7 +106,7 @@ The host talks to the chip over SPI mode 0:
   optional quad mode 4 bits per SCK (192 Mbit/s on the wire at 48 MHz) on
   ui[5:2] / uo[7:4] (docs/isa.md §6.1). The rates were shown at a 50 MHz
   clock in RTL simulation (a quad burst moves 193 Mbit/s of payload) and in
-  FPGA fabric, where
+  FPGA fabric (the v0.2 RTL, and the v0.3 RTL in its 2026-11-10 smoke run), where
   the KV260's own fabric SPI master runs on the chip's 50 MHz clock: 199.9
   Mbit/s for 4096-word quad bursts, 193.6 Mbit/s for a 64-word write, and
   183.6 Mbit/s from a separate 45.93 MHz clock (`fpga/kv260/README.md`).
@@ -196,11 +199,13 @@ derived from the specifications, not yet validated on silicon):
   at both speeds and both core counts. The prior 253-word bus-reset fix has
   model and RTL coverage. The 246-word firmware
   before it was also tested in timing-annotated gate-level simulation, and on
-  the KV260 FPGA build of the RTL against a host model's waveform replayed on
+  the KV260 FPGA build of the v0.2 RTL against a host model's waveform replayed on
   its pins (no PHY); on that FPGA build, wired to the board's own USB port,
   Linux enumerated and configured it at low and full speed (2026-10-30).
-  Those results are for the earlier firmware: the current one needs a
-  gate-level and an FPGA rerun before they apply to it. Signalling through
+  Those results are for the earlier firmware. The current one ran at gate
+  level on the 3-core release netlist in the release run (2026-11-16),
+  functional and with SDF at 20.834 ns at each corner; it needs an FPGA
+  rerun before the FPGA results apply to it. Signalling through
   the chip's pads is unmeasured.
 * **10BASE-T TX:** TD+ on `uo[0]`, TD- on `uo[1]`, into an RJ45 jack with 1:1
   magnetics. 802.3 asks for 2.2–2.8 V peak differential into 100 Ω. The two

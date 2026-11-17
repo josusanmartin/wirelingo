@@ -1117,7 +1117,7 @@ second round, 17..25 from the third.)
     chain of compares; with the SysEx bookkeeping the worst parser path is
     48 ticks, which forced 128 ticks per bit (CLKDIV 12.5 at 50 MHz) so that
     it fits in half a stop bit; a lookup would allow 64.
-16. **Two cores in the tapeout.** A MIDI port in and out at once, or any
+16. **Two cores in the 6x4 chip.** A MIDI port in and out at once, or any
     full-duplex pair of these programs, uses both cores; nothing is left for a
     third protocol. Each program alone fits one core's 256 words (at most
     132).

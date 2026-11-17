@@ -1,0 +1,52 @@
+Extract of the log of job 133875476896 (gds_place) of josusanmartin/wirelingo, commit 00cd1c6.
+Run 44034950929 (workflow gds), branch main, run attempt 1.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/133875476896/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+Steps (from gh api .../actions/jobs/133875476896):
+   1  Set up job                                              success  2026-11-17T06:56:53Z to 2026-11-17T06:56:57Z  (0 min 04 s)
+   2  checkout repo                                           success  2026-11-17T06:56:57Z to 2026-11-17T06:57:02Z  (0 min 05 s)
+   3  Check frozen submission configuration                   success  2026-11-17T06:57:02Z to 2026-11-17T06:57:03Z  (0 min 01 s)
+   4  Set up environment variables                            success  2026-11-17T06:57:03Z to 2026-11-17T06:57:03Z  (0 min 00 s)
+   5  Install prerequisites                                   success  2026-11-17T06:57:03Z to 2026-11-17T06:57:21Z  (0 min 18 s)
+   6  Checkout tt-support-tools repo                          success  2026-11-17T06:57:21Z to 2026-11-17T06:57:22Z  (0 min 01 s)
+   7  Setup python                                            success  2026-11-17T06:57:22Z to 2026-11-17T06:57:28Z  (0 min 06 s)
+   8  Install tt-support-tools dependencies                   success  2026-11-17T06:57:28Z to 2026-11-17T06:57:40Z  (0 min 12 s)
+   9  Fetch verilog and build config                          success  2026-11-17T06:57:40Z to 2026-11-17T06:57:50Z  (0 min 10 s)
+  10  Checkout tt-gds-action                                  success  2026-11-17T06:57:50Z to 2026-11-17T06:57:51Z  (0 min 01 s)
+  11  Install ihp-sg13cmos5l PDK                              success  2026-11-17T06:57:51Z to 2026-11-17T06:58:05Z  (0 min 14 s)
+  12  Install LibreLane                                       success  2026-11-17T06:58:05Z to 2026-11-17T06:58:11Z  (0 min 06 s)
+  13  Make GDS with LibreLane                                 success  2026-11-17T06:58:11Z to 2026-11-17T07:41:48Z  (43 min 37 s)
+  14  Check that the part stopped before detailed routing     success  2026-11-17T07:41:48Z to 2026-11-17T07:41:48Z  (0 min 00 s)
+  15  Pack the run directory                                  success  2026-11-17T07:41:48Z to 2026-11-17T07:41:52Z  (0 min 04 s)
+  16  Publish the run directory for gds_route                 success  2026-11-17T07:41:52Z to 2026-11-17T07:41:57Z  (0 min 05 s)
+  17  Publish build logs of a failed part                     skipped  2026-11-17T07:41:57Z to 2026-11-17T07:41:57Z  (0 min 00 s)
+  31  Post Checkout tt-gds-action                             success  2026-11-17T07:41:57Z to 2026-11-17T07:41:57Z  (0 min 00 s)
+  32  Post Setup python                                       success  2026-11-17T07:41:57Z to 2026-11-17T07:41:57Z  (0 min 00 s)
+  33  Post Checkout tt-support-tools repo                     success  2026-11-17T07:41:57Z to 2026-11-17T07:41:57Z  (0 min 00 s)
+  34  Post checkout repo                                      success  2026-11-17T07:41:57Z to 2026-11-17T07:41:57Z  (0 min 00 s)
+  35  Complete job                                            success  2026-11-17T07:41:57Z to 2026-11-17T07:41:58Z  (0 min 01 s)
+
+The submission preset check:
+148: 2026-11-17T06:57:03.3248543Z configuration matches submission preset
+
+The tools: tt-support-tools and the GDS action (the job's checkouts), LibreLane and the LibreLane image's digest as pulled by its version tag:
+312: 2026-11-17T06:57:21.4933338Z   ref: d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
+639: 2026-11-17T06:57:50.9195580Z   ref: 3412659307918422f3f0727917cf9b499aaca588
+778: 2026-11-17T06:58:06.8807096Z Collecting librelane==3.1.0.dev3
+910: 2026-11-17T06:59:33.4584661Z Digest: sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a
+911: 2026-11-17T06:59:33.4647215Z Status: Downloaded newer image for ghcr.io/librelane/librelane:3.1.0.dev3
+
+The late-clock step's count:
+221927: 2026-11-17T07:03:39.0826444Z LATE_CLOCK_COMPLETE 64 registers 23 branches
+
+The first and last LibreLane steps this job ran, and its end (42 min 09 s from the first step's start to the end):
+950: 2026-11-17T06:59:39.4157930Z [06:59:39] VERBOSE  Running 'Verilator.Lint' at                     step.py:1138
+238430: 2026-11-17T07:41:08.4503344Z [07:41:08] VERBOSE  Running 'OpenROAD.STAMidPNR-3' at               step.py:1138
+238532: 2026-11-17T07:41:48.7309029Z [07:41:48] INFO     Flow complete.                             sequential.py:413
+
+The boundary check (the step directory this job must leave):
+238589: 2026-11-17T07:41:48.9701623Z ##[group]Run test -f runs/wokwi/50-openroad-stamidpnr-3/state_out.json
+
+Artifacts uploaded:
+238686: 2026-11-17T07:41:57.3860183Z Artifact gds_run_placed has been successfully uploaded! Final size is 229533117 bytes. Artifact ID is 14309451487

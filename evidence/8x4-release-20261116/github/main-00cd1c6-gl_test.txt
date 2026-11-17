@@ -1,0 +1,19 @@
+Extract of the log of job 134056766024 (gl_test) of josusanmartin/wirelingo, commit 00cd1c6.
+Run 44034950929 (workflow gds), branch main, run attempt 1.
+Source: gh api repos/josusanmartin/wirelingo/actions/jobs/134056766024/logs. Each line is 'N: ' and line N of that log, verbatim
+apart from trailing spaces removed; the timestamps are GitHub's, UTC.
+
+Steps (from gh api .../actions/jobs/134056766024):
+   1  Set up job                                              success  2026-11-17T13:00:04Z to 2026-11-17T13:00:07Z  (0 min 03 s)
+   2  checkout repo                                           success  2026-11-17T13:00:07Z to 2026-11-17T13:00:09Z  (0 min 02 s)
+   3  GL test                                                 success  2026-11-17T13:00:09Z to 2026-11-17T14:26:52Z  (1 h 26 min 43 s)
+   5  Post GL test                                            success  2026-11-17T14:26:52Z to 2026-11-17T14:26:52Z  (0 min 00 s)
+   6  Post checkout repo                                      success  2026-11-17T14:26:52Z to 2026-11-17T14:26:53Z  (0 min 01 s)
+   7  Complete job                                            success  2026-11-17T14:26:53Z to 2026-11-17T14:26:53Z  (0 min 00 s)
+
+The netlist under test (the gds job's artifact) and the simulator the action downloads:
+266: 2026-11-17T13:00:30.3208404Z ##[group]Run wget https://github.com/TinyTapeout/iverilog/releases/download/v13.0/iverilog_13.0-1_amd64.deb
+675: 2026-11-17T13:00:41.0047391Z ##[group]Run cp tt_submission/*.v "test/gate_level_netlist.v"
+
+The cocotb summary line of `GATES=yes make` (module `test`, functional gate level, no SDF):
+933: 2026-11-17T14:26:50.6396244Z                                                           ** TESTS=30 PASS=30 FAIL=0 SKIP=0                             92121062.72        5162.85      17843.06  **

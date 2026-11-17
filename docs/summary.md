@@ -1,6 +1,6 @@
 # Wirelingo in two pages
 
-Wirelingo (repository name protoemu) is an entry for the
+Wirelingo (repository `josusanmartin/wirelingo`; `protoemu` in its module and tool names) is an entry for the
 [Jane Street protocol emulator ASIC competition](https://blog.janestreet.com/protocol-emulator-asic-competition/):
 a Tiny Tapeout design on IHP SG13CMOS5L, 8x4 tiles. It has not been
 fabricated. Every result below names its evidence level: model, RTL
@@ -11,7 +11,7 @@ SRAM banks and 8-word FIFOs, implementing ISA v0.3, at a 48 MHz project
 clock. A clean harden of the shipping commit `2c97c15` passed the release
 check on 2026-11-16, at the levels STA, gate level, precheck and formal
 equivalence; not silicon
-([below](#physical-status-the-3-core-8x4-release-candidate),
+([below](#physical-status-the-3-core-8x4-release-build),
 [records](../evidence/8x4-release-20261116/README.md)). The 2-core 8x4
 build is not a live option: its receipted build predates the CRC retime now
 in the RTL, a 2-core harden of the current RTL misses 48 MHz at the slow
@@ -70,7 +70,7 @@ a quadrature encoder counter, HDMI-CEC, ISO 7816-3 T=0 and SMBus with PEC:
 sigrok's decoder where one exists. Their 16 RTL tests through the SPI port
 also pass on fo6's signed-off gate-level netlist (functional 16/16; with SDF
 delays at the typical corner 16/16, two after their timing assertions got a
-1 ns tolerance). All three rounds also ran on the RTL in FPGA fabric (Kria
+1 ns tolerance). All three rounds also ran on the v0.2 RTL in FPGA fabric (Kria
 KV260) against the other core or a pattern generator playing our own device
 models ([post-freeze-protocols.md](post-freeze-protocols.md), with the 25
 ISA limitations they ran into). Later, a fresh agent was given two protocols
@@ -83,11 +83,11 @@ simulation, [blind-test.md](blind-test.md)).
 | Result | Level | Where |
 |---|---|---|
 | A full-speed USB device on one core at 48 MHz, handshake 10.5 clocks after the host's packet (spec 8-26) | RTL simulation; gate level on fo6's signed-off netlist (141-word firmware, before the got_in guard) and, with SDF at 20.834 ns at each corner, on the 3-core rehearsal netlist | [usb-full-speed.md](usb-full-speed.md), [release-evidence.md](release-evidence.md#the-3-core-8x4-release-candidate) |
-| USB enumeration with no host software after loading: Linux enumerated and configured it at low and full speed, 32 of 32 attaches, 66,000 of 66,000 descriptor reads, 188 of 188 bus resets | RTL in FPGA fabric, with the 246-word `usb_enum` from before `fault-fixes` (the current 254-word one has not run there) | [fpga/kv260](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30) |
-| 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz (which the release candidate meets in STA at the typical and fast corners, not the slow one; at 40 MHz, met at every corner, ±12 ns in a one-off model sweep) | Model, RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
-| 10BASE-T cut-through match: a pin rises 200-220 ns after a frame field's last mid-bit edge, before the frame ends | Model; RTL in FPGA fabric on generator frames | [eth10-cut-through.md](eth10-cut-through.md) |
-| Logic analyzer, then an I2C target that clones what it captured | RTL simulation; RTL in FPGA fabric | [reverse-engineering.md](reverse-engineering.md) |
-| Quad host port: 193 Mbit/s of payload | RTL simulation; 193.6 Mbit/s in FPGA fabric against its own SPI master | [fpga/kv260](../fpga/kv260/README.md) |
+| USB enumeration with no host software after loading: Linux enumerated and configured it at low and full speed, 32 of 32 attaches, 66,000 of 66,000 descriptor reads, 188 of 188 bus resets | v0.2 RTL in FPGA fabric, with the 246-word `usb_enum` from before `fault-fixes` (the current 254-word one has not run there) | [fpga/kv260](../fpga/kv260/README.md#result-against-linux-low-speed-2026-10-30) |
+| 10BASE-T receive with 802.3's ±13.5 ns edge jitter at 50 MHz (which the release build meets in STA at the typical and fast corners, not the slow one; at 40 MHz, met at every corner by inference from the 48 MHz STA, not timed separately, ±12 ns in a one-off model sweep) | Model, RTL simulation | [isa.md §4.7](isa.md#47-line-unit-core-0) |
+| 10BASE-T cut-through match: a pin rises 200-220 ns after a frame field's last mid-bit edge at 50 MHz (250-275 ns at 40 MHz), before the frame ends | Model; v0.2 RTL in FPGA fabric on generator frames, at 50 MHz | [eth10-cut-through.md](eth10-cut-through.md) |
+| Logic analyzer, then an I2C target that clones what it captured | RTL simulation; v0.2 RTL in FPGA fabric | [reverse-engineering.md](reverse-engineering.md) |
+| Quad host port: 193 Mbit/s of payload at a 50 MHz clock (SCK = clk) | RTL simulation; 193.6 Mbit/s in FPGA fabric against its own SPI master at 50 MHz, on the v0.2 RTL and again in the v0.3 smoke run | [fpga/kv260](../fpga/kv260/README.md) |
 
 ## How it is verified
 
@@ -107,10 +107,12 @@ rest on an agent's word:
 * **Formal proofs** of the FIFOs, the host port against a pin-level
   reference, core invariants and line-unit bounds; **mutation testing**
   (34 of 34 mutants killed in the run recorded 2026-10-05, the v2 code at
-  2 cores; `test/mutants.py` now defines 367, run by CI with no full run of
-  today's list recorded here; 25 of them are judged by 3-core tests: the 22
-  3-core lockstep entries and the 3 top-level entries).
-* **The release candidate's netlist is formally equivalent to the v0.3 RTL**
+  2 cores; `test/mutants.py` now defines 367, run by CI's `mutants` job,
+  which on GitHub killed 367 of 367 at `2c97c15`, `bc8882b` and `00cd1c6`
+  ([records](../evidence/8x4-release-20261116/README.md)); 25 of them are
+  judged by 3-core tests: the 22 3-core lockstep entries and the 3 top-level
+  entries).
+* **The release build's netlist is formally equivalent to the v0.3 RTL**
   under the checker's model (10754 of 10754 points, 9 of 9 planted netlist
   bugs caught), and passes the gate-level release tests, functional and with
   SDF delays ([physical.md](physical.md#the-3-core-release-candidate-2026-11-15)).
@@ -125,7 +127,7 @@ rest on an agent's word:
   reports (000-078b), 52 PASS and 31 FAIL, kept verbatim apart from listed redactions
   ([evidence/verifier](../evidence/verifier/README.md)).
 
-## Physical status: the 3-core 8x4 release candidate
+## Physical status: the 3-core 8x4 release build
 
 Signoff passes: 0 routing DRC, KLayout DRC clean, LVS clean, no antenna
 violation, and no slew or capacitance violation at any corner. **Clock:
@@ -167,10 +169,13 @@ tolerates ±12 ns in a one-off model sweep ([guide.md](guide.md#known-limits)).
 Nothing has been fabricated. Pad timing, the host port's speed through the
 pads and every analogue interface are unmeasured. FPGA runs used 3.3 V FPGA
 pins and, apart from the Linux USB host, far ends that are our own models or
-replayed waveforms. Seven programs have changed since software `5457d8e`,
-the software of the gate-level receipts (`uart_rx`, `i2c_master`, `can_rx`,
-`usb_enum`, `usb_fs_dev`, `usb_ls_dev`, `usb_ls_tx`), and their gate-level
-and FPGA results apply to them only after a rerun; the
+replayed waveforms; they ran the v0.2 two-core RTL, apart from one smoke run of
+the 3-core v0.3 RTL on 2026-11-10, made before the CRC retime. Seven programs
+have changed since software `5457d8e`, the software of fo6's gate-level
+receipts (`uart_rx`, `i2c_master`, `can_rx`, `usb_enum`, `usb_fs_dev`,
+`usb_ls_dev`, `usb_ls_tx`). The 3-core release run's gate-level suite
+(2026-11-16) ran the current version of all of them but `can_rx`, which has
+no gate-level test; their FPGA results apply to them only after a rerun; the
 [README's firmware table](../README.md#what-runs-on-it) and
 [verification-story.md](verification-story.md) say which run used which
 version. SWD exists on the model only and is parked.

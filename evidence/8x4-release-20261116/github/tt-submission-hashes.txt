@@ -1,0 +1,51 @@
+The tt_submission artifacts of GitHub's GDS runs of the 3-core 8x4 design: the sha256 of the files that
+describe the layout. Downloaded read-only on 2026-11-17 with gh api repos/josusanmartin/wirelingo/actions/artifacts/ID/zip; each zip's sha256
+equals the digest the API lists for the artifact. Computed with Python's hashlib; the dates-zeroed GDS digest with
+flow/build_manifest.py's normalized_gds_digest (the BGNLIB/BGNSTR dates set to zero), as the gds job's hash step does.
+The gds job's hash step (flow/release_expected.py) compares runs/wokwi/final's netlist and dates-zeroed GDS, not
+this artifact's files. Here the artifact's .v and dates-zeroed .gds are hashed too, and equal the expected identity
+(evidence/8x4-release-expected.json). The .oas and .lef are recorded here only: no workflow step checks them.
+
+a84401f: run 43753001925 attempt 1, branch ci-8x4-test, artifact 14188237225 (zip sha256 1e6635266d5d661fec545ca00594883f2139b9f6bed301d9fc649e2e5cf58a60)
+  .oas           b990a29e1bcca7071f103374c90a14c3b28b8f6d1dc872dc06c62c8ce89ce58c
+  .lef           498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d
+  .v (netlist)   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+  .gds (raw)     97ec747736f3263ca78cbf5cf5a6daa8f774110daba0250bcc15b9489bd0d00b
+  .gds dates 0   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+
+2c97c15: run 43787610261 attempt 1, branch ci-8x4-test, artifact 14200753017 (zip sha256 1cbd60c344c9d109b700ce4058cd6ab299b3b60991623374d0d6e07e278c5388)
+  .oas           b990a29e1bcca7071f103374c90a14c3b28b8f6d1dc872dc06c62c8ce89ce58c
+  .lef           498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d
+  .v (netlist)   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+  .gds (raw)     2d72f771a65b749802dd926a0ea11a0945683c5a125ca43a11abdcd74932167d
+  .gds dates 0   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+
+bc8882b-att2: run 43811275309 attempt 2, branch main, artifact 14254545353 (zip sha256 c1983ea0cd94e8b2dfde0778c2852592ca07eb216ef964e0357d045e41d96157)
+  .oas           b990a29e1bcca7071f103374c90a14c3b28b8f6d1dc872dc06c62c8ce89ce58c
+  .lef           498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d
+  .v (netlist)   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+  .gds (raw)     1f7ccb58d79687414f690826301c83281e33c996862c63a0653f62e1db38290d
+  .gds dates 0   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+
+bc8882b-att3: run 43811275309 attempt 3, branch main, artifact 14276150781 (zip sha256 cdb4e5cc5ee2b0e0abdb40041398e6ab1462e7bf1d5fa15b7d5031635566e2e9)
+  .oas           b990a29e1bcca7071f103374c90a14c3b28b8f6d1dc872dc06c62c8ce89ce58c
+  .lef           498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d
+  .v (netlist)   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+  .gds (raw)     572f59c0e8781ae93379fcafb1a7ba61350b629cdbbc13b5c2543f18403b5b0e
+  .gds dates 0   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+
+split-00cd1c6: run 43956712707 attempt 1, branch ci-8x4-test, artifact 14288213228 (zip sha256 3ae7343e19ea24d983d5eed6fcf0df074a75917a66c2f5de43d4630bc93a2723)
+  .oas           b990a29e1bcca7071f103374c90a14c3b28b8f6d1dc872dc06c62c8ce89ce58c
+  .lef           498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d
+  .v (netlist)   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+  .gds (raw)     ada4831ec03b8b92ad2603f25d015a079943d8d6f0914751e17b058612adc0ca
+  .gds dates 0   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+
+main-00cd1c6: run 44034950929 attempt 1, branch main, artifact 14329306992 (zip sha256 8d60e53d6dc3267656f9dcdc8627b16073a27233b427470a55599ea19d61854d)
+  .oas           b990a29e1bcca7071f103374c90a14c3b28b8f6d1dc872dc06c62c8ce89ce58c
+  .lef           498cd3ef2d298a2c8fdfddb51c797f2b31bf711cba0d41d1cedaaa2071913f4d
+  .v (netlist)   453d0af7bea77dd59421b9391c737312aee8c10b9eb024d213f65e1e8e468b08
+  .gds (raw)     1894d51af8b14bfbfc4cb98f370035eabb7887e193db456638bf755ef0436d3f
+  .gds dates 0   357ea15b4546ef28c7a9b35d62377c2702262da9396c2711c8654c4dea8c470a
+
+Equal in all six: .oas, .lef, .v (netlist), .gds dates 0. Different: .gds (raw).

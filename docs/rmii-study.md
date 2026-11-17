@@ -52,7 +52,7 @@ two dibits past the FCS in every record; the host keeps whole bytes.
 
 ### Measured
 
-All on the cycle model with the tapeout's 2 cores and 8-deep FIFOs. The host is
+All on the cycle model with the 6x4 chip's 2 cores and 8-deep FIFOs. The host is
 `pe.rmii.QuadPort`, the clk side of `src/pe_hostport.sv` register by register, so its
 latency, read-ahead, headers and CS gaps are paid. The rate tests run both phases of SCK
 against clk.

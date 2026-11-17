@@ -130,6 +130,16 @@ follows from this:
 
 * Write a bank only while its core is disabled.
 
+Why (`src/pe_imem.sv`): in the chip each bank is a single-port SRAM macro, and
+a write cycle does not read: the macro's output keeps the previous word. A core
+that fetches (or table-reads) from its bank in a cycle when the host writes
+that bank gets that previous word, not the word at its PC, and executes it.
+Only the written bank's core is affected. Nothing in the RTL enforces the
+rule, and no test covers a write to a running core's bank; the flop build
+(`PE_FLOP_IMEM`, simulation only) reads normally during a write and does not
+show the effect. The MicroPython driver's `load()` says the core must be
+stopped; it does not check.
+
 ## 4. Core programming model
 
 Per-core architectural state:
@@ -313,6 +323,15 @@ becomes possible.
 
 A symbol is a bit in NRZ and NRZI, and half a bit in Manchester. Writing
 LINECFG with EN = 0 empties both queues and returns the unit to idle.
+
+Enable the unit before its receiver when RX may idle high: write LINECFG with
+EN = 1 and RX_EN = 0 first, then with RX_EN = 1. The receiver starts a frame on
+any transition of `rx` against the level it saw in the previous enabled cycle.
+That level is cleared to 0 at reset and by a LINECFG write with EN = 0, and is
+not updated while EN = 0 (`src/pe_line.sv`). Setting EN and RX_EN in one write while `rx` is high
+therefore starts a frame at once, with no edge on the wire (a phantom frame).
+With EN set first, the unit has sampled `rx` before RX_EN is set. The shipped
+USB and 10BASE-T settings idle low and are not affected.
 
 **Core 0 side.**
 
@@ -795,15 +814,19 @@ Timing, in system clocks (clk), at any phase between SCK and clk:
 | CS_n low to the first SCK rise | 1 |
 | last SCK fall to CS_n high | 1 |
 | CS_n high between transactions | 4 |
-| CS_n high after global reset release, before starting SCK | 5 |
+| CS_n high after global reset release, before starting SCK | 7 |
 
 Global reset aborts a selected transaction, including pending reads. Keep CS_n
-high for five clk cycles after reset release. If held low through reset, all
-continuing SCK activity is ignored until CS_n returns high. Reset assertion
-works with SCK stopped. After reset release the clk side accepts host-port
-events only once it has seen CS_n high for three clk cycles, which the
-five-cycle interval covers; the SCK side resets when CS_n rises, as between
-any two transactions.
+high for at least seven clk cycles after reset release. If held low through
+reset, all continuing SCK activity is ignored until CS_n returns high. Reset
+assertion works with SCK stopped. After reset release the clk side accepts
+host-port events only once it has seen CS_n high for three clk cycles, and it
+starts sampling only after the reset synchroniser's two clocks
+(`src/project.v`, `src/pe_hostport.sv`): five cycles in all, with no margin for
+where the release falls between clock edges, so a host that starts exactly
+five cycles after the pin is released can have its first transaction ignored.
+Seven cycles give two cycles of margin. The SCK side resets when CS_n rises,
+as between any two transactions.
 
 Words cross from the SCK domain to clk through 2-flop synchronizers, and their
 data is held for at least 8 SCK, longer than the crossing. SDC bounds all

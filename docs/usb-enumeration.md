@@ -312,7 +312,9 @@ receipts include `test_usb_autonomous` and `test_usb_autonomous_fs` on the
 netlist with SDF at typ, slow and fast at 20.834 ns (48 MHz), validation root
 `4f5179d` and again `5457d8e` ([release-evidence.md](release-evidence.md)).
 That was the 246-word `usb_enum.pasm` of `5457d8e`. The current 254-word image, including the bus-reset and configuration-rejection
-fixes, needs a gate-level rerun before that result applies to it.
+fixes, ran the same tests on the 3-core release netlist in the release run of
+2026-11-16, functional and with SDF at 20.834 ns at typ, slow and fast
+([records](../evidence/8x4-release-20261116/README.md)).
 
 ## On the KV260, with a replayed host (2026-10-14)
 

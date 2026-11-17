@@ -490,14 +490,19 @@ with the image tag resolved to the digest above:
 | `2c97c15` = `S` (test branch) | 43787610261 | one job, 4 h 21 min 58 s | 4 h 28 min | all green; `mutants` 367 of 367 |
 | `bc8882b` (`main`) | 43811275309 | attempts 1 and 2 cancelled at the 6 h limit; attempt 3 one job, 4 h 29 min 53 s | 5 h 04 min | all green; `mutants` 367 of 367 |
 | `00cd1c6` (test branch) | 43956712707 | three jobs: 44 min 38 s, 2 h 51 min 36 s, 36 min 46 s | 5 h 30 min | all green; `mutants` 367 of 367 |
+| `00cd1c6` (`main`) | 44034950929 | three jobs: 45 min 09 s, 4 h 41 min 14 s, 36 min 41 s | still running when this was written (started 13:00:03 UTC) | `viewer` green; `gl_test` green; `test`, `formal` green; `mutants` 367 of 367 |
 
 On `main`, attempt 1 of the one-job build was still in LibreLane (its
 `KLayout.DRC` step) when GitHub cancelled it; attempt 2's flow completed
 after 5 h 49 min but the job was cancelled in the action's PNG render after
 it, so its hash step did not run. Detailed routing alone took from 2 h 49 min
-(the split run's) to 4 h 41 min (`main`'s attempt 1). `main` was fast-forwarded to `00cd1c6` on
-2026-11-17; its runs there (`gds` 44034950929, `test` 44034950943) had not
-finished when this was written, and their results are not claimed here.
+(the test-branch split run's) to 4 h 41 min (`main`'s attempt 1). `main` was
+fast-forwarded to `00cd1c6` on 2026-11-17. Its `gds_route` job took 281 min
+(07:42:03 to 12:23:17 UTC) against the workflow's own `timeout-minutes: 350`
+for the job, 69 min of margin, measured once; its `gds` job's hash step printed
+both pairs as `(match)`. Its `gl_test` succeeded (`TESTS=30 PASS=30 FAIL=0 SKIP=0`); its `precheck`,
+started at 13:00:03 UTC, had not finished when this was written, and no result
+of it is claimed here.
 Records, with every job's result, times and the log lines quoted:
 [evidence/8x4-release-20261116/](../evidence/8x4-release-20261116/README.md).
 
@@ -509,9 +514,12 @@ against GitHub's 6 h (360 min) limit for a job. Most of it is one phase of
 that DRC run, from "Starting IHP-SG13CMOS5L DRC connectivity setup" to
 "Starting IHP-SG13CMOS5L DRC rules.": 01:22:44 to 06:30:25 UTC (5 h 08 min)
 in the split run's precheck job 133743926009. None timed out, but the
-slowest ended about 30 min before the limit. A precheck that timed out would
-be re-run on the same GDS (re-running a run's failed jobs leaves its
-successful build and its artifacts in place).
+slowest ended about 30 min before the limit. If one timed out, the plan is to
+re-run the failed job on the same GDS. That has not been exercised. The basis
+is how run 43811275309 kept its artifacts: after its third attempt, the
+`tt_submission` artifact of the cancelled second attempt is still listed in
+the run (`gh api repos/josusanmartin/wirelingo/actions/runs/43811275309/artifacts`),
+so a re-run attempt does not remove an earlier attempt's artifacts.
 
 **Why GitHub builds in three jobs.** On a slower hosted runner the one-job
 build needs about 6 h 10 min, and GitHub cancels a hosted job at 6 h:
@@ -549,8 +557,11 @@ composite step's last sub-step writes its state file in the same instant as
 the step itself. LibreLane numbers a resumed run's steps on from the highest
 step directory, so the directories are named as in one run, and each job
 checks the boundary directory. The `gds` job keeps the job id, the artifact
-names and the steps after the build, so `precheck`, `gl_test`, `viewer` and
-Tiny Tapeout's app read the same artifacts as before. The hash step, unchanged
+names and the steps after the build, so `precheck`, `gl_test` and `viewer`
+read the same artifacts as before (they ran green on the split runs). That
+Tiny Tapeout's app reads a split run as it reads a one-job run is an
+expectation only: the app's source is not public, and nothing in these
+records tests it. The hash step, unchanged
 at the end of `gds`, is what shows the split changed nothing in the chip.
 Checked on runner1 (2026-11-16), on copies of the release run aqp-rel-2c97c15
 with the later steps removed, the run directory packed and unpacked as the
@@ -610,8 +621,16 @@ job has uploaded the `tt_submission` artifact, so on a mismatch the job is red b
 the artifact exists. tt-support-tools' `create_tt_submission` copies the
 hashed GDS into `tt_submission/` with `shutil.copyfile`, so the artifact's
 `.gds` is a byte copy of the hashed file. Next to it the same function writes
-an `.oas` conversion (KLayout), which nothing hashes. This too is read from
-the source, not run.
+an `.oas` conversion (KLayout), which no workflow step hashes. This too is read
+from the source, not run. The `.oas` and `.lef` of six `tt_submission`
+artifacts (`a84401f`, `S`, `bc8882b` attempts 2 and 3, and `00cd1c6` on the
+test branch and on `main`) were downloaded and hashed on 2026-11-17: each is
+the same file in all six (`.oas` `b990a29e…`, `.lef` `498cd3ef…`), and each
+artifact's netlist and dates-zeroed GDS equal the expected identity
+([evidence/8x4-release-20261116/github/tt-submission-hashes.txt](../evidence/8x4-release-20261116/github/tt-submission-hashes.txt)).
+That is a record, not a check: the hash step still covers neither file, and
+which file a Tiny Tapeout shuttle takes from the artifact is not recorded
+here.
 
 ## Recorded release: 3-core 8x4, shipping commit 2c97c15 (2026-11-16)
 
@@ -663,7 +682,7 @@ Records:
 * **The archive.** `wirelingo-release-evidence-2c97c15-aqp-rel-2c97c15.tar.gz`,
   sha256 `1ff19b7d7d673aeb37c88d941d13ae01750274f2cc838fbdb9283ef2e8bedb8b`,
   72,314,042 bytes, 568 payload files, 10 verified receipts. It is not in
-  git: it is to be attached as a release asset.
+  git and not yet published: the repository has no GitHub release yet (`gh api repos/josusanmartin/wirelingo/releases`, 2026-11-17).
 
 The netlist and the dates-zeroed GDS are the release candidate's
 ([evidence/8x4-release-candidate-20261115/](../evidence/8x4-release-candidate-20261115/README.md)),
@@ -705,8 +724,8 @@ contents as the 4f5179d record's: every hashed input and result, the job
 logs, the verdict, the source bundle, ci7's candidate files and the
 reproduction comparison. Extracted into an empty directory, its own
 `release_check.py` re-verifies all seven receipts and passes. The archive
-(about 55 MB) is not in git: it is to be attached as a release asset when the
-repository is published.
+(about 55 MB) is not in git and not yet published, although the repository
+is public: the repository has no GitHub release yet (`gh api repos/josusanmartin/wirelingo/releases`, 2026-11-17).
 
 Supplementary, outside the release gate: `test_post_freeze` (16 tests) on
 the same netlist with `flow/gl_module_test.py`, validation `9254b9e`

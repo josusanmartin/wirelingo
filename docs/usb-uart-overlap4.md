@@ -218,7 +218,7 @@ missing READY grant and a missing retry.
 ## RTL simulation
 
 [`test_overlap4_rtl`](../test/test_usb_uart_rtl.py) runs one scenario on
-`tt_um_josusanmartin_protoemu` in tb.v (Icarus Verilog, the tapeout profile
+`tt_um_josusanmartin_protoemu` in tb.v (Icarus Verilog, the submission profile
 with the behavioral SRAM model, 48 MHz). The host loads the pair through the
 SPI port: the helper's 374 writes in 15 transactions at SCK = clk/2, 24,664
 clocks. It then leaves CS_n high and SCK and MOSI still, which the test
